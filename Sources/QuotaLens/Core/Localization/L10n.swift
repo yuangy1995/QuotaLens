@@ -259,6 +259,116 @@ public enum L10n {
 }
 
 private let keyedTranslations: [String: [AppLanguage: String]] = [
+    "A newer QuotaLens is available, but this Mac cannot install it.": [
+        .traditionalChinese: "發現新版本，但這台 Mac 無法安裝。",
+        .japanese: "新しい QuotaLens がありますが、この Mac にはインストールできません。",
+        .korean: "새 QuotaLens 버전이 있지만 이 Mac에는 설치할 수 없습니다.",
+        .spanish: "Hay una versión más reciente de QuotaLens, pero este Mac no puede instalarla.",
+        .german: "Eine neuere QuotaLens-Version ist verfügbar, kann auf diesem Mac aber nicht installiert werden.",
+        .french: "Une version plus récente de QuotaLens est disponible, mais ce Mac ne peut pas l’installer.",
+        .portuguese: "Está disponível uma versão mais recente do QuotaLens, mas este Mac não a pode instalar.",
+        .portugueseBrazil: "Há uma versão mais recente do QuotaLens, mas este Mac não pode instalá-la."
+    ],
+    "Checking...": [
+        .traditionalChinese: "正在檢查...",
+        .japanese: "確認中...",
+        .korean: "확인 중...",
+        .spanish: "Comprobando...",
+        .german: "Suche läuft...",
+        .french: "Recherche...",
+        .portuguese: "A verificar...",
+        .portugueseBrazil: "Verificando..."
+    ],
+    "Download and Install": [
+        .traditionalChinese: "下載並安裝",
+        .japanese: "ダウンロードしてインストール",
+        .korean: "다운로드 및 설치",
+        .spanish: "Descargar e instalar",
+        .german: "Laden und installieren",
+        .french: "Télécharger et installer",
+        .portuguese: "Transferir e instalar",
+        .portugueseBrazil: "Baixar e instalar"
+    ],
+    "Later": [
+        .traditionalChinese: "稍後",
+        .japanese: "後で",
+        .korean: "나중에",
+        .spanish: "Más tarde",
+        .german: "Später",
+        .french: "Plus tard",
+        .portuguese: "Mais tarde",
+        .portugueseBrazil: "Mais tarde"
+    ],
+    "QuotaLens %@ is available for the %@ build. Continue to download and install it.": [
+        .traditionalChinese: "QuotaLens %@ 已發布，將下載並安裝 %@ 對應版本。",
+        .japanese: "QuotaLens %@ が利用可能です。%@ ビルドをダウンロードしてインストールします。",
+        .korean: "QuotaLens %@을 사용할 수 있습니다. %@ 빌드를 다운로드하여 설치합니다.",
+        .spanish: "QuotaLens %@ está disponible para la versión %@. Continúa para descargarla e instalarla.",
+        .german: "QuotaLens %@ ist für den %@-Build verfügbar. Fahre fort, um es zu laden und zu installieren.",
+        .french: "QuotaLens %@ est disponible pour la version %@. Continuez pour la télécharger et l’installer.",
+        .portuguese: "QuotaLens %@ está disponível para a versão %@. Continue para transferir e instalar.",
+        .portugueseBrazil: "QuotaLens %@ está disponível para a versão %@. Continue para baixar e instalar."
+    ],
+    "QuotaLens %@ is currently the newest version available.": [
+        .traditionalChinese: "QuotaLens %@ 是目前可用的最新版本。",
+        .japanese: "QuotaLens %@ は現在利用可能な最新バージョンです。",
+        .korean: "QuotaLens %@은 현재 사용 가능한 최신 버전입니다.",
+        .spanish: "QuotaLens %@ es actualmente la versión más reciente disponible.",
+        .german: "QuotaLens %@ ist derzeit die neueste verfügbare Version.",
+        .french: "QuotaLens %@ est actuellement la dernière version disponible.",
+        .portuguese: "QuotaLens %@ é atualmente a versão mais recente disponível.",
+        .portugueseBrazil: "QuotaLens %@ é atualmente a versão mais recente disponível."
+    ],
+    "QuotaLens could not complete the update check. Try again later.": [
+        .traditionalChinese: "QuotaLens 未能完成更新檢查，請稍後再試。",
+        .japanese: "QuotaLens はアップデート確認を完了できませんでした。後でもう一度お試しください。",
+        .korean: "QuotaLens가 업데이트 확인을 완료하지 못했습니다. 나중에 다시 시도하세요.",
+        .spanish: "QuotaLens no pudo completar la comprobación de actualizaciones. Inténtalo de nuevo más tarde.",
+        .german: "QuotaLens konnte die Suche nach Updates nicht abschließen. Versuche es später erneut.",
+        .french: "QuotaLens n’a pas pu terminer la recherche de mises à jour. Réessayez plus tard.",
+        .portuguese: "O QuotaLens não conseguiu concluir a verificação de atualizações. Tente novamente mais tarde.",
+        .portugueseBrazil: "O QuotaLens não conseguiu concluir a verificação de atualizações. Tente novamente mais tarde."
+    ],
+    "The available update does not match this Mac's macOS or hardware requirements.": [
+        .traditionalChinese: "可用更新不符合這台 Mac 的 macOS 或硬體要求。",
+        .japanese: "利用可能なアップデートは、この Mac の macOS またはハードウェア要件に一致しません。",
+        .korean: "사용 가능한 업데이트가 이 Mac의 macOS 또는 하드웨어 요구 사항과 맞지 않습니다.",
+        .spanish: "La actualización disponible no coincide con los requisitos de macOS o hardware de este Mac.",
+        .german: "Das verfügbare Update passt nicht zu den macOS- oder Hardwareanforderungen dieses Mac.",
+        .french: "La mise à jour disponible ne correspond pas aux exigences macOS ou matérielles de ce Mac.",
+        .portuguese: "A atualização disponível não corresponde aos requisitos de macOS ou hardware deste Mac.",
+        .portugueseBrazil: "A atualização disponível não corresponde aos requisitos de macOS ou hardware deste Mac."
+    ],
+    "Unable to Check for Updates": [
+        .traditionalChinese: "無法檢查更新",
+        .japanese: "アップデートを確認できません",
+        .korean: "업데이트를 확인할 수 없음",
+        .spanish: "No se pueden buscar actualizaciones",
+        .german: "Updates konnten nicht gesucht werden",
+        .french: "Impossible de rechercher des mises à jour",
+        .portuguese: "Não foi possível verificar atualizações",
+        .portugueseBrazil: "Não foi possível verificar atualizações"
+    ],
+    "Update Available": [
+        .traditionalChinese: "發現可用更新",
+        .japanese: "アップデートがあります",
+        .korean: "업데이트 사용 가능",
+        .spanish: "Actualización disponible",
+        .german: "Update verfügbar",
+        .french: "Mise à jour disponible",
+        .portuguese: "Atualização disponível",
+        .portugueseBrazil: "Atualização disponível"
+    ],
+    "You're up to date!": [
+        .traditionalChinese: "您使用的就是最新版本！",
+        .japanese: "最新版を使用しています！",
+        .korean: "최신 버전을 사용 중입니다!",
+        .spanish: "¡Ya tienes la versión más reciente!",
+        .german: "Du verwendest die neueste Version!",
+        .french: "Vous utilisez la dernière version !",
+        .portuguese: "Está a usar a versão mais recente!",
+        .portugueseBrazil: "Você está usando a versão mais recente!"
+    ],
     "To %@": [
         .traditionalChinese: "變更到 %@",
         .japanese: "%@ へ",

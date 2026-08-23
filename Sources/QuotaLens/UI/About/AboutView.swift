@@ -194,7 +194,7 @@ public struct AboutView: View {
                 }) {
                     HStack(spacing: 6) {
                         Image(systemName: "arrow.clockwise.circle.fill")
-                        Text(L10n.text("检查更新", "Check for Updates"))
+                        Text(updateManager.isCheckingForUpdates ? L10n.text("正在检查...", "Checking...") : L10n.text("检查更新", "Check for Updates"))
                     }
                     .font(.system(size: 12, weight: .bold, design: .monospaced))
                     .padding(.horizontal, 12)
@@ -204,7 +204,7 @@ public struct AboutView: View {
                     .foregroundStyle(cyan)
                 }
                 .buttonStyle(.plain)
-                .disabled(updateManager.isConfigured && !updateManager.canCheckForUpdates)
+                .disabled(!updateManager.isConfigured || updateManager.isCheckingForUpdates || !updateManager.canCheckForUpdates)
 
                 Spacer()
             }
