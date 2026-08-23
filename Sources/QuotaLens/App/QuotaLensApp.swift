@@ -63,6 +63,11 @@ struct QuotaLensApp: App {
         .commands {
             CommandGroup(replacing: .newItem) {}
             CommandGroup(after: .appInfo) {
+                Button(L10n.text("检查更新...", "Check for Updates...")) {
+                    env.updateManager.checkForUpdates()
+                }
+                .disabled(env.updateManager.isConfigured && !env.updateManager.canCheckForUpdates)
+
                 Button(L10n.text("刷新数据", "Refresh Data")) {
                     Task {
                         await env.refreshData()

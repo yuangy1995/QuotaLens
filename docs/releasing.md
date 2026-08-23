@@ -34,6 +34,21 @@ The script reads `VERSION` automatically. You can override it:
 
 ## Publishing A GitHub Release
 
+Before publishing an update-capable build, configure Sparkle signing secrets in the GitHub repository:
+
+- `SPARKLE_PUBLIC_ED_KEY`: public EdDSA key embedded into the app bundle.
+- `SPARKLE_PRIVATE_ED_KEY`: private EdDSA key used only by GitHub Actions to sign update archives and appcasts.
+
+Generate the key pair once with Sparkle's tools, then keep the private key out of git:
+
+```bash
+# After SwiftPM has resolved Sparkle, the tool is usually under:
+# .build/artifacts/sparkle/Sparkle/bin/generate_keys
+./.build/artifacts/sparkle/Sparkle/bin/generate_keys -f sparkle_private_key
+```
+
+Put the printed public key into `SPARKLE_PUBLIC_ED_KEY`, and put the private key file contents into `SPARKLE_PRIVATE_ED_KEY`.
+
 1. Update `VERSION`.
 2. Commit the version change.
 3. Create and push a matching tag:
@@ -49,6 +64,17 @@ The `Release macOS` workflow builds and uploads:
 - Apple Silicon: `QuotaLens-vX.Y.Z-macOS-apple-silicon.dmg` and `.zip`
 - Intel: `QuotaLens-vX.Y.Z-macOS-intel.dmg` and `.zip`
 - Universal: `QuotaLens-vX.Y.Z-macOS-universal.dmg` and `.zip`
+- In-app update feeds: `appcast-apple-silicon.xml` and `appcast-intel.xml`
 - `SHA256SUMS.txt`
 
 The workflow validates that the pushed tag matches `VERSION`.
+
+## In-App Updates
+
+QuotaLens uses Sparkle for macOS self-updates. The app never asks users to choose an architecture when they click "Check for Updates":
+
+- Apple Silicon builds read `appcast-apple-silicon.xml`.
+- Intel builds read `appcast-intel.xml`.
+- The Universal package remains available on the GitHub Release page for manual web downloads, but it is not the default in-app update feed.
+
+The first public `v1.0.0` build did not include Sparkle. Users must manually install the first Sparkle-enabled version once; versions after that can update in-app.

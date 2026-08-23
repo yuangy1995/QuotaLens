@@ -16,6 +16,7 @@ public final class AppEnvironment: ObservableObject {
     public let transport: JSONRPCTransport
     public let processManager: CodexProcessManager
     public let accountProbe: AccountProbeActor
+    public let updateManager: UpdateManager
 
     private var refreshLoopTask: Task<Void, Never>?
     private var serverRecoveryTask: Task<Void, Never>?
@@ -58,6 +59,7 @@ public final class AppEnvironment: ObservableObject {
         self.transport = JSONRPCTransport()
         self.processManager = CodexProcessManager(transport: transport)
         self.accountProbe = AccountProbeActor(transport: transport, repositories: repositories)
+        self.updateManager = UpdateManager()
         self.installThemeAppearanceObservers()
         self.applyThemeAppearance()
         self.registerRPCNotifications()

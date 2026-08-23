@@ -68,7 +68,7 @@ git push origin main
 git push origin v1.0.0
 ```
 
-推送匹配的 `vX.Y.Z` tag 后，GitHub Actions 会自动构建并发布 Release，上传 Apple Silicon、Intel 和 Universal 三种 macOS 下载包。完整流程见 [docs/releasing.md](docs/releasing.md)。
+推送匹配的 `vX.Y.Z` tag 后，GitHub Actions 会自动构建并发布 Release，上传 Apple Silicon、Intel 和 Universal 三种 macOS 下载包。App 内 Sparkle 升级会自动使用当前 Mac 架构对应的 appcast，用户不需要手动选择安装包。完整流程见 [docs/releasing.md](docs/releasing.md)。
 
 ## 工作方式
 

@@ -65,12 +65,36 @@ jobs:
 
       - name: Build package
         shell: bash
+        env:
+          SPARKLE_PUBLIC_ED_KEY: ${{ secrets.SPARKLE_PUBLIC_ED_KEY }}
         run: |
           set -euo pipefail
+          if [[ -z "${SPARKLE_PUBLIC_ED_KEY}" ]]; then
+            echo "Missing SPARKLE_PUBLIC_ED_KEY repository secret."
+            exit 1
+          fi
           ./scripts/build_and_package.sh \
             --arch "${{ matrix.arch }}" \
             --version "${APP_VERSION}" \
             --build-number "${GITHUB_RUN_NUMBER}"
+
+      - name: Generate architecture appcast
+        if: matrix.arch != 'universal'
+        shell: bash
+        env:
+          SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${SPARKLE_PRIVATE_ED_KEY}" ]]; then
+            echo "Missing SPARKLE_PRIVATE_ED_KEY repository secret."
+            exit 1
+          fi
+          ./scripts/generate_appcast.sh \
+            --arch "${{ matrix.arch }}" \
+            --version "${APP_VERSION}" \
+            --build-number "${GITHUB_RUN_NUMBER}" \
+            --archive "dist/QuotaLens-v${APP_VERSION}-macOS-${{ matrix.arch }}.zip" \
+            --output "dist/appcast-${{ matrix.arch }}.xml"
 
       - name: Collect assets
         shell: bash
@@ -78,6 +102,9 @@ jobs:
           set -euo pipefail
           mkdir -p release-assets
           cp dist/*.dmg dist/*.zip release-assets/
+          if compgen -G "dist/appcast-*.xml" > /dev/null; then
+            cp dist/appcast-*.xml release-assets/
+          fi
           ls -lh release-assets
 
       - name: Upload package artifact
@@ -139,6 +166,7 @@ jobs:
           - Apple Silicon: for Macs with Apple M-series chips.
           - Intel: for Intel-based Macs.
           - Universal: one app containing both Apple Silicon and Intel binaries.
+          - In-app updates: QuotaLens automatically uses the appcast matching the current Mac architecture.
 
           Check \`SHA256SUMS.txt\` to verify downloaded files.
           EOF

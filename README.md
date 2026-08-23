@@ -68,7 +68,7 @@ git push origin main
 git push origin v1.0.0
 ```
 
-Pushing a matching `vX.Y.Z` tag starts the GitHub Actions release workflow. It uploads Apple Silicon, Intel, and Universal macOS downloads to GitHub Releases. See [docs/releasing.md](docs/releasing.md) for the full process.
+Pushing a matching `vX.Y.Z` tag starts the GitHub Actions release workflow. It uploads Apple Silicon, Intel, and Universal macOS downloads to GitHub Releases. Sparkle in-app updates use the appcast for the current Mac architecture automatically, so users do not choose a package manually. See [docs/releasing.md](docs/releasing.md) for the full process.
 
 ## How It Works
 

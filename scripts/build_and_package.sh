@@ -23,6 +23,7 @@ REQUESTED_ARCH="${ARCH:-universal}"
 APP_VERSION="${VERSION:-}"
 BUILD_NUMBER="${BUILD_NUMBER:-}"
 SIGN_IDENTITY="${DEVELOPER_ID_APPLICATION:-"-"}"
+SPARKLE_PUBLIC_ED_KEY="${SPARKLE_PUBLIC_ED_KEY:-}"
 
 usage() {
     cat <<EOF
@@ -191,6 +192,7 @@ echo -e "${GREEN}Release build succeeded${NC}"
 echo -e "\n${YELLOW}[3/6] Assembling .app bundle...${NC}"
 mkdir -p "${APP_BUNDLE}/Contents/MacOS"
 mkdir -p "${APP_BUNDLE}/Contents/Resources"
+mkdir -p "${APP_BUNDLE}/Contents/Frameworks"
 
 cp "${RELEASE_BIN}" "${APP_BUNDLE}/Contents/MacOS/${APP_NAME}"
 chmod +x "${APP_BUNDLE}/Contents/MacOS/${APP_NAME}"
@@ -227,6 +229,20 @@ plutil -replace CFBundleIdentifier -string "${BUNDLE_IDENTIFIER}" "${APP_BUNDLE}
 plutil -replace CFBundleName -string "${APP_NAME}" "${APP_BUNDLE}/Contents/Info.plist"
 plutil -replace CFBundleShortVersionString -string "${APP_VERSION}" "${APP_BUNDLE}/Contents/Info.plist"
 plutil -replace CFBundleVersion -string "${BUILD_NUMBER}" "${APP_BUNDLE}/Contents/Info.plist"
+
+if [[ -n "${SPARKLE_PUBLIC_ED_KEY}" ]]; then
+    plutil -replace SUPublicEDKey -string "${SPARKLE_PUBLIC_ED_KEY}" "${APP_BUNDLE}/Contents/Info.plist"
+fi
+
+SPARKLE_FRAMEWORK="$(find "${BUILD_ROOT}" "${PROJECT_DIR}/.build" -path "*/Sparkle.framework" -type d -print -quit 2>/dev/null || true)"
+if [[ -n "${SPARKLE_FRAMEWORK}" && -d "${SPARKLE_FRAMEWORK}" ]]; then
+    ditto --norsrc --noextattr "${SPARKLE_FRAMEWORK}" "${APP_BUNDLE}/Contents/Frameworks/Sparkle.framework"
+    if ! otool -l "${APP_BUNDLE}/Contents/MacOS/${APP_NAME}" | grep -q "@executable_path/../Frameworks"; then
+        install_name_tool -add_rpath "@executable_path/../Frameworks" "${APP_BUNDLE}/Contents/MacOS/${APP_NAME}"
+    fi
+else
+    echo -e "${YELLOW}Sparkle.framework not found in build output; continuing without embedded Sparkle framework.${NC}"
+fi
 
 if [[ -f "${PROJECT_DIR}/Resources/AppIcon.icns" ]]; then
     cp "${PROJECT_DIR}/Resources/AppIcon.icns" "${APP_BUNDLE}/Contents/Resources/AppIcon.icns"

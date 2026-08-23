@@ -6,6 +6,7 @@ import AppKit
 public enum NavigationTab: CaseIterable, Identifiable {
     case dashboard
     case settings
+    case about
 
     public var id: Self { self }
 
@@ -13,6 +14,7 @@ public enum NavigationTab: CaseIterable, Identifiable {
         switch self {
         case .dashboard: return L10n.text("概览", "Overview")
         case .settings: return L10n.text("设置", "Settings")
+        case .about: return L10n.text("关于", "About")
         }
     }
 
@@ -20,6 +22,7 @@ public enum NavigationTab: CaseIterable, Identifiable {
         switch self {
         case .dashboard: return "gauge.with.needle.fill"
         case .settings: return "gearshape.2.fill"
+        case .about: return "info.circle.fill"
         }
     }
 
@@ -27,6 +30,7 @@ public enum NavigationTab: CaseIterable, Identifiable {
         switch self {
         case .dashboard: return "TELEMETRY"
         case .settings: return "CONTROL DECK"
+        case .about: return "VERSION / UPDATE"
         }
     }
 }
@@ -101,6 +105,8 @@ public struct MainView: View {
                             DashboardView(state: state)
                         case .settings:
                             SettingsView(state: state)
+                        case .about:
+                            AboutView(state: state)
                         }
                     }
                 }
