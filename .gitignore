@@ -5,8 +5,16 @@
 !/LICENSE
 !/README.md
 !/README.zh-CN.md
+!/VERSION
 !/Package.swift
 !/Package.resolved
+
+!/.github/
+!/.github/workflows/
+!/.github/workflows/release.yml
+
+!/docs/
+!/docs/releasing.md
 
 !/Sources/
 !/Sources/**
@@ -16,7 +24,7 @@
 !/Resources/AppIcon.icns
 
 !/scripts/
-!/scripts/build_and_package.sh
+!/scripts/*.sh
 
 !/Tests/
 !/Tests/**

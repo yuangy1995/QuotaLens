@@ -41,7 +41,7 @@ swift build -c release
 生成已签名的 `.app`、`.zip` 和 `.dmg` 安装包：
 
 ```bash
-./scripts/build_and_package.sh
+./scripts/build_and_package.sh --arch universal
 ```
 
 打包脚本默认使用 ad-hoc 本地签名。如果需要使用 Developer ID 证书签名，可以在执行前设置 `DEVELOPER_ID_APPLICATION`：
@@ -49,6 +49,26 @@ swift build -c release
 ```bash
 DEVELOPER_ID_APPLICATION="Developer ID Application: Your Name (TEAMID)" ./scripts/build_and_package.sh
 ```
+
+构建不同架构的下载包：
+
+```bash
+./scripts/build_and_package.sh --arch apple-silicon
+./scripts/build_and_package.sh --arch intel
+./scripts/build_and_package.sh --arch universal
+```
+
+## 版本号与发布
+
+初始版本是 `v1.0.0`。项目根目录的 [`VERSION`](VERSION) 是版本号的唯一来源。发布版本时：
+
+```bash
+git tag -a v1.0.0 -m "QuotaLens v1.0.0"
+git push origin main
+git push origin v1.0.0
+```
+
+推送匹配的 `vX.Y.Z` tag 后，GitHub Actions 会自动构建并发布 Release，上传 Apple Silicon、Intel 和 Universal 三种 macOS 下载包。完整流程见 [docs/releasing.md](docs/releasing.md)。
 
 ## 工作方式
 

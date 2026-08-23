@@ -1,0 +1,157 @@
+name: Release macOS
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to release, for example v1.0.0'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.label }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: apple-silicon
+            label: Apple Silicon
+            runner: macos-15
+          - arch: intel
+            label: Intel
+            runner: macos-15-intel
+          - arch: universal
+            label: Universal
+            runner: macos-15
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Validate release version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(tr -d '[:space:]' < VERSION)"
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            tag="${{ inputs.tag }}"
+          else
+            tag="${GITHUB_REF_NAME}"
+          fi
+
+          if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid VERSION: ${version}"
+            exit 1
+          fi
+
+          if [[ "${tag}" != "v${version}" ]]; then
+            echo "Tag ${tag} does not match VERSION ${version}. Expected v${version}."
+            exit 1
+          fi
+
+          echo "APP_VERSION=${version}" >> "${GITHUB_ENV}"
+          echo "RELEASE_TAG=${tag}" >> "${GITHUB_ENV}"
+
+      - name: Build package
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./scripts/build_and_package.sh \
+            --arch "${{ matrix.arch }}" \
+            --version "${APP_VERSION}" \
+            --build-number "${GITHUB_RUN_NUMBER}"
+
+      - name: Collect assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          cp dist/*.dmg dist/*.zip release-assets/
+          ls -lh release-assets
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: quotalens-${{ matrix.arch }}
+          path: release-assets/*
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Validate release version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(tr -d '[:space:]' < VERSION)"
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            tag="${{ inputs.tag }}"
+          else
+            tag="${GITHUB_REF_NAME}"
+          fi
+          if [[ "${tag}" != "v${version}" ]]; then
+            echo "Tag ${tag} does not match VERSION ${version}. Expected v${version}."
+            exit 1
+          fi
+          echo "APP_VERSION=${version}" >> "${GITHUB_ENV}"
+          echo "RELEASE_TAG=${tag}" >> "${GITHUB_ENV}"
+
+      - name: Download package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Create checksums and release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          (
+            cd release-assets
+            shasum -a 256 *.dmg *.zip > SHA256SUMS.txt
+          )
+
+          cat > release-notes.md <<EOF
+          # QuotaLens ${RELEASE_TAG}
+
+          ## Downloads
+
+          - Apple Silicon: for Macs with Apple M-series chips.
+          - Intel: for Intel-based Macs.
+          - Universal: one app containing both Apple Silicon and Intel binaries.
+
+          Check \`SHA256SUMS.txt\` to verify downloaded files.
+          EOF
+
+          ls -lh release-assets
+
+      - name: Publish release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release create "${RELEASE_TAG}" release-assets/* \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "QuotaLens ${RELEASE_TAG}" \
+            --notes-file release-notes.md

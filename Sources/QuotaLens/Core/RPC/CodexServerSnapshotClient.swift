@@ -53,7 +53,7 @@ public struct CodexServerSnapshotClient: Sendable {
 
         let writer = stdin.fileHandleForWriting
         try writeRequest(id: 1, method: "initialize", params: [
-            "clientInfo": ["name": "QuotaLens", "version": "1.0.0"],
+            "clientInfo": ["name": "QuotaLens", "version": AppVersion.marketingVersion],
             "capabilities": [:]
         ], to: writer)
         try writeRequest(id: 2, method: "account/read", params: [:], to: writer)

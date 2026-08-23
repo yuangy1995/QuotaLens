@@ -41,7 +41,7 @@ swift build -c release
 Create a signed `.app`, `.zip`, and `.dmg` package:
 
 ```bash
-./scripts/build_and_package.sh
+./scripts/build_and_package.sh --arch universal
 ```
 
 By default, the packaging script uses ad-hoc signing. To sign with a Developer ID certificate, set `DEVELOPER_ID_APPLICATION` before running it:
@@ -49,6 +49,26 @@ By default, the packaging script uses ad-hoc signing. To sign with a Developer I
 ```bash
 DEVELOPER_ID_APPLICATION="Developer ID Application: Your Name (TEAMID)" ./scripts/build_and_package.sh
 ```
+
+Build architecture-specific downloads:
+
+```bash
+./scripts/build_and_package.sh --arch apple-silicon
+./scripts/build_and_package.sh --arch intel
+./scripts/build_and_package.sh --arch universal
+```
+
+## Versioning And Releases
+
+The initial version is `v1.0.0`. The source of truth is the root [`VERSION`](VERSION) file. To publish a release:
+
+```bash
+git tag -a v1.0.0 -m "QuotaLens v1.0.0"
+git push origin main
+git push origin v1.0.0
+```
+
+Pushing a matching `vX.Y.Z` tag starts the GitHub Actions release workflow. It uploads Apple Silicon, Intel, and Universal macOS downloads to GitHub Releases. See [docs/releasing.md](docs/releasing.md) for the full process.
 
 ## How It Works
 

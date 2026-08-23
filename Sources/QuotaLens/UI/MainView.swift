@@ -257,7 +257,7 @@ public struct MainView: View {
 
                 Spacer()
 
-                Text("v1.0 HUD")
+                Text("\(AppVersion.displayString) HUD")
                     .font(.system(size: 9, weight: .bold, design: .monospaced))
                     .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
             }

@@ -32,7 +32,7 @@ public struct ChatGPTSubscriptionClient: Sendable {
         request.timeoutInterval = timeoutSeconds
         request.setValue("Bearer \(auth.accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("QuotaLens/1.0", forHTTPHeaderField: "User-Agent")
+        request.setValue("QuotaLens/\(AppVersion.marketingVersion)", forHTTPHeaderField: "User-Agent")
 
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse,

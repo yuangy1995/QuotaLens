@@ -101,7 +101,7 @@ public actor CodexProcessManager {
             let initParams: [String: AnyCodable] = [
                 "clientInfo": AnyCodable([
                     "name": "QuotaLens",
-                    "version": "1.0.0"
+                    "version": AppVersion.marketingVersion
                 ]),
                 "capabilities": AnyCodable([:] as [String: Sendable])
             ]
