@@ -45,6 +45,8 @@
     <string>Copyright © 2026 QuotaLens. All rights reserved.</string>
     <key>SUAutomaticallyUpdate</key>
     <false/>
+    <key>SUAllowsAutomaticUpdates</key>
+    <true/>
     <key>SUEnableAutomaticChecks</key>
     <true/>
     <key>SUFeedURL</key>

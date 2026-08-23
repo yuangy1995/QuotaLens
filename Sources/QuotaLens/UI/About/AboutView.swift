@@ -181,7 +181,7 @@ public struct AboutView: View {
                     get: { updateManager.automaticallyDownloadsUpdates },
                     set: { updateManager.automaticallyDownloadsUpdates = $0 }
                 ))
-                .disabled(!updateManager.isConfigured)
+                .disabled(!updateManager.isConfigured || !updateManager.allowsAutomaticDownloads)
             }
             .font(.system(size: 12, weight: .semibold))
 

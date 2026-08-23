@@ -43,13 +43,23 @@ public final class UpdateManager: NSObject, ObservableObject, SPUUpdaterDelegate
         get { updaterController?.updater.automaticallyChecksForUpdates ?? false }
         set {
             updaterController?.updater.automaticallyChecksForUpdates = newValue
+            if !newValue {
+                updaterController?.updater.automaticallyDownloadsUpdates = false
+            }
             objectWillChange.send()
         }
+    }
+
+    public var allowsAutomaticDownloads: Bool {
+        updaterController?.updater.allowsAutomaticUpdates ?? false
     }
 
     public var automaticallyDownloadsUpdates: Bool {
         get { updaterController?.updater.automaticallyDownloadsUpdates ?? false }
         set {
+            if newValue, updaterController?.updater.automaticallyChecksForUpdates == false {
+                updaterController?.updater.automaticallyChecksForUpdates = true
+            }
             updaterController?.updater.automaticallyDownloadsUpdates = newValue
             objectWillChange.send()
         }
