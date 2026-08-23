@@ -42,9 +42,19 @@ Before publishing an update-capable build, configure Sparkle signing secrets in 
 Generate the key pair once with Sparkle's tools, then keep the private key out of git:
 
 ```bash
+swift package resolve
+
 # After SwiftPM has resolved Sparkle, the tool is usually under:
-# .build/artifacts/sparkle/Sparkle/bin/generate_keys
-./.build/artifacts/sparkle/Sparkle/bin/generate_keys -f sparkle_private_key
+SPARKLE_KEYS_TOOL="./.build/artifacts/sparkle/Sparkle/bin/generate_keys"
+
+# Generate or reuse the keychain-stored key pair for this app.
+"${SPARKLE_KEYS_TOOL}" --account yuangy1995.QuotaLens
+
+# Print the public key for SPARKLE_PUBLIC_ED_KEY.
+"${SPARKLE_KEYS_TOOL}" --account yuangy1995.QuotaLens -p
+
+# Export the private key for SPARKLE_PRIVATE_ED_KEY.
+"${SPARKLE_KEYS_TOOL}" --account yuangy1995.QuotaLens -x sparkle_private_key
 ```
 
 Put the printed public key into `SPARKLE_PUBLIC_ED_KEY`, and put the private key file contents into `SPARKLE_PRIVATE_ED_KEY`.
