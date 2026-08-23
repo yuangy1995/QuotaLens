@@ -74,7 +74,7 @@ public struct MenuBarContentView: View {
                             .font(.system(size: 13, weight: .black, design: .rounded))
                             .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
 
-                        Text("HUD")
+                        Text(L10n.text("状态", "Status"))
                             .font(.system(size: 9, weight: .heavy, design: .monospaced))
                             .foregroundStyle(cyan)
                             .padding(.horizontal, 4)
@@ -269,12 +269,11 @@ public struct MenuBarContentView: View {
         let isDark = colorScheme == .dark
 
         return HStack(spacing: 8) {
-            // 打开主控制台
             Button(action: onOpenMainWindow) {
                 HStack(spacing: 6) {
                     Image(systemName: "macwindow")
                         .font(.system(size: 11, weight: .bold))
-                    Text(L10n.text("打开主控制台", "Open Console"))
+                    Text(L10n.text("打开 QuotaLens", "Open QuotaLens"))
                         .font(.system(size: 11, weight: .bold, design: .rounded))
                 }
                 .frame(maxWidth: .infinity)

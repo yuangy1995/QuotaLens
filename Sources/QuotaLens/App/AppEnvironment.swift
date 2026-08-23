@@ -510,7 +510,7 @@ public final class AppEnvironment: ObservableObject {
             let rateLimits = await rateLimitsPayload
 
             guard account != nil || rateLimits != nil else {
-                throw NSError(domain: "QuotaLens.RPC", code: -1, userInfo: [NSLocalizedDescriptionKey: L10n.text("服务器暂未返回数据", "Server returned no data yet")])
+                throw NSError(domain: "QuotaLens.RPC", code: -1, userInfo: [NSLocalizedDescriptionKey: L10n.text("暂时没有获取到额度数据", "Quota data was not available yet")])
             }
 
             let snapshot = CodexServerSnapshot(
@@ -579,7 +579,7 @@ public final class AppEnvironment: ObservableObject {
             state.hasCurrentServerQuota = false
             state.latestRateLimit = nil
             restoreResetCreditState(for: state.selectedAccountKey ?? state.account?.accountKey ?? "acc_local", snapshot: nil)
-            state.connectionStatus = .failed(L10n.format("Server read failed: %@", zhHans: "服务器读取失败: %@", error.localizedDescription))
+            state.connectionStatus = .failed(L10n.format("Quota refresh failed: %@", zhHans: "额度刷新失败：%@", error.localizedDescription))
             if scheduleRetryOnFailure {
                 scheduleServerRecovery()
             }

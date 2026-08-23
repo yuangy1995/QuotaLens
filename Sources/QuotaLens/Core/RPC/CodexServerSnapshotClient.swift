@@ -15,7 +15,7 @@ public struct CodexServerSnapshot: Sendable {
 public struct CodexServerSnapshotClient: Sendable {
     public static func fetch(customPath: String? = nil, timeoutSeconds: Double = 6.0) throws -> CodexServerSnapshot {
         guard let binaryPath = CodexBinaryLocator.locateBinary(customPath: customPath) else {
-            throw NSError(domain: "CodexServerSnapshotClient", code: -1, userInfo: [NSLocalizedDescriptionKey: L10n.text("未找到 codex 可执行文件", "Codex executable not found")])
+            throw NSError(domain: "CodexServerSnapshotClient", code: -1, userInfo: [NSLocalizedDescriptionKey: L10n.text("未找到 Codex", "Codex was not found")])
         }
 
         let process = Process()
@@ -72,7 +72,7 @@ public struct CodexServerSnapshotClient: Sendable {
         let rateResult = collector.result(for: 3)
 
         if accountResult == nil && rateResult == nil {
-            let error = collector.error(for: 2) ?? collector.error(for: 3) ?? L10n.text("读取 Codex App Server 超时", "Timed out while reading Codex App Server")
+            let error = collector.error(for: 2) ?? collector.error(for: 3) ?? L10n.text("读取额度超时", "Timed out while reading quota data")
             throw NSError(domain: "CodexServerSnapshotClient", code: -3, userInfo: [NSLocalizedDescriptionKey: error])
         }
 

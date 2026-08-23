@@ -2,12 +2,12 @@
 
 [English](README.md)
 
-QuotaLens 是一个原生 macOS 菜单栏应用，用来监测 Codex 与 ChatGPT 的额度遥测信息。它会读取本机 Codex 登录状态，连接 Codex app server，并以桌面 HUD 的形式展示额度消耗、重置倒计时、订阅状态和重置卡可用情况。
+QuotaLens 是一个原生 macOS 菜单栏应用，用来监测 Codex 与 ChatGPT 的额度使用情况。它会读取本机 Codex 登录状态，并以紧凑桌面视图展示额度消耗、重置倒计时、订阅状态和重置卡可用情况。
 
 ## 功能
 
-- 菜单栏 HUD：显示本周已用/剩余额度、重置倒计时、订阅周期、刷新状态和重置卡储备。
-- 原生 SwiftUI 仪表盘：支持浅色、深色 HUD、跟随系统三种外观。
+- 菜单栏概览：显示本周已用/剩余额度、重置倒计时、订阅周期、刷新状态和重置卡储备。
+- 原生 SwiftUI 仪表盘：支持浅色、深色、跟随系统三种外观。
 - 从 `~/.codex/auth.json` 自动发现本地 Codex 账号身份。
 - 通过 `codex app-server --stdio` 读取账号与 rate-limit 服务端快照。
 - 使用本地 ChatGPT access token 补齐订阅权益信息，识别自动续订、即将结束、计划变更等状态。
@@ -68,7 +68,7 @@ git push origin main
 git push origin v1.0.0
 ```
 
-推送匹配的 `vX.Y.Z` tag 后，GitHub Actions 会自动构建并发布 Release，上传 Apple Silicon、Intel 和 Universal 三种 macOS 下载包。App 内 Sparkle 升级会自动使用当前 Mac 架构对应的 appcast，用户不需要手动选择安装包。完整流程见 [docs/releasing.md](docs/releasing.md)。
+推送匹配的 `vX.Y.Z` tag 后，GitHub Actions 会自动构建并发布 Release，上传 Apple Silicon、Intel 和 Universal 三种 macOS 下载包。支持在线升级的版本可以在 App 内检查并安装新版本。完整流程见 [docs/releasing.md](docs/releasing.md)。
 
 ## 工作方式
 

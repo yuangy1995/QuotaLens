@@ -259,6 +259,16 @@ public enum L10n {
 }
 
 private let keyedTranslations: [String: [AppLanguage: String]] = [
+    "Account": [
+        .traditionalChinese: "帳號",
+        .japanese: "アカウント",
+        .korean: "계정",
+        .spanish: "Cuenta",
+        .german: "Konto",
+        .french: "Compte",
+        .portuguese: "Conta",
+        .portugueseBrazil: "Conta"
+    ],
     "A newer QuotaLens is available, but this Mac cannot install it.": [
         .traditionalChinese: "發現新版本，但這台 Mac 無法安裝。",
         .japanese: "新しい QuotaLens がありますが、この Mac にはインストールできません。",
@@ -268,6 +278,66 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .french: "Une version plus récente de QuotaLens est disponible, mais ce Mac ne peut pas l’installer.",
         .portuguese: "Está disponível uma versão mais recente do QuotaLens, mas este Mac não a pode instalar.",
         .portugueseBrazil: "Há uma versão mais recente do QuotaLens, mas este Mac não pode instalá-la."
+    ],
+    "Appearance & Language": [
+        .traditionalChinese: "外觀與語言",
+        .japanese: "外観と言語",
+        .korean: "외관 및 언어",
+        .spanish: "Apariencia e idioma",
+        .german: "Darstellung und Sprache",
+        .french: "Apparence et langue",
+        .portuguese: "Aspeto e idioma",
+        .portugueseBrazil: "Aparência e idioma"
+    ],
+    "Auto-check": [
+        .traditionalChinese: "自動檢查",
+        .japanese: "自動確認",
+        .korean: "자동 확인",
+        .spanish: "Comprobación automática",
+        .german: "Automatisch suchen",
+        .french: "Recherche auto",
+        .portuguese: "Verificação automática",
+        .portugueseBrazil: "Verificação automática"
+    ],
+    "Auto-detect Codex": [
+        .traditionalChinese: "自動偵測 Codex",
+        .japanese: "Codex を自動検出",
+        .korean: "Codex 자동 감지",
+        .spanish: "Detectar Codex automáticamente",
+        .german: "Codex automatisch erkennen",
+        .french: "Détecter Codex automatiquement",
+        .portuguese: "Detetar Codex automaticamente",
+        .portugueseBrazil: "Detectar Codex automaticamente"
+    ],
+    "Auto-download": [
+        .traditionalChinese: "自動下載",
+        .japanese: "自動ダウンロード",
+        .korean: "자동 다운로드",
+        .spanish: "Descarga automática",
+        .german: "Automatisch laden",
+        .french: "Téléchargement auto",
+        .portuguese: "Transferência automática",
+        .portugueseBrazil: "Download automático"
+    ],
+    "Automatic and manual quota refresh": [
+        .traditionalChinese: "自動刷新與手動同步額度",
+        .japanese: "クォータの自動更新と手動同期",
+        .korean: "할당량 자동 새로고침 및 수동 동기화",
+        .spanish: "Actualización automática y manual de cuota",
+        .german: "Automatische und manuelle Quota-Aktualisierung",
+        .french: "Actualisation automatique et manuelle du quota",
+        .portuguese: "Atualização automática e manual da quota",
+        .portugueseBrazil: "Atualização automática e manual da cota"
+    ],
+    "Automatic background refresh": [
+        .traditionalChinese: "背景自動刷新",
+        .japanese: "バックグラウンド自動更新",
+        .korean: "백그라운드 자동 새로고침",
+        .spanish: "Actualización automática en segundo plano",
+        .german: "Automatische Aktualisierung im Hintergrund",
+        .french: "Actualisation automatique en arrière-plan",
+        .portuguese: "Atualização automática em segundo plano",
+        .portugueseBrazil: "Atualização automática em segundo plano"
     ],
     "Checking...": [
         .traditionalChinese: "正在檢查...",
@@ -279,6 +349,186 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "A verificar...",
         .portugueseBrazil: "Verificando..."
     ],
+    "Check for Updates": [
+        .traditionalChinese: "檢查更新",
+        .japanese: "アップデートを確認",
+        .korean: "업데이트 확인",
+        .spanish: "Buscar actualizaciones",
+        .german: "Nach Updates suchen",
+        .french: "Rechercher les mises à jour",
+        .portuguese: "Verificar atualizações",
+        .portugueseBrazil: "Verificar atualizações"
+    ],
+    "Check for Updates...": [
+        .traditionalChinese: "檢查更新...",
+        .japanese: "アップデートを確認...",
+        .korean: "업데이트 확인...",
+        .spanish: "Buscar actualizaciones...",
+        .german: "Nach Updates suchen...",
+        .french: "Rechercher les mises à jour...",
+        .portuguese: "Verificar atualizações...",
+        .portugueseBrazil: "Verificar atualizações..."
+    ],
+    "Check that Codex is installed and signed in.": [
+        .traditionalChinese: "請檢查 Codex 是否已安裝並登入。",
+        .japanese: "Codex がインストールされ、サインイン済みであることを確認してください。",
+        .korean: "Codex가 설치되어 있고 로그인되어 있는지 확인하세요.",
+        .spanish: "Comprueba que Codex esté instalado y con sesión iniciada.",
+        .german: "Prüfe, ob Codex installiert und angemeldet ist.",
+        .french: "Vérifiez que Codex est installé et connecté.",
+        .portuguese: "Verifique se o Codex está instalado e com sessão iniciada.",
+        .portugueseBrazil: "Verifique se o Codex está instalado e conectado."
+    ],
+    "Choose Codex": [
+        .traditionalChinese: "選擇 Codex",
+        .japanese: "Codex を選択",
+        .korean: "Codex 선택",
+        .spanish: "Elegir Codex",
+        .german: "Codex wählen",
+        .french: "Choisir Codex",
+        .portuguese: "Escolher Codex",
+        .portugueseBrazil: "Escolher Codex"
+    ],
+    "Choose Codex Path": [
+        .traditionalChinese: "選擇 Codex 路徑",
+        .japanese: "Codex のパスを選択",
+        .korean: "Codex 경로 선택",
+        .spanish: "Elegir ruta de Codex",
+        .german: "Codex-Pfad wählen",
+        .french: "Choisir le chemin de Codex",
+        .portuguese: "Escolher caminho do Codex",
+        .portugueseBrazil: "Escolher caminho do Codex"
+    ],
+    "Choose the Codex executable.": [
+        .traditionalChinese: "請選擇 Codex 可執行檔。",
+        .japanese: "Codex 実行ファイルを選択してください。",
+        .korean: "Codex 실행 파일을 선택하세요.",
+        .spanish: "Elige el ejecutable de Codex.",
+        .german: "Wähle die Codex-Datei aus.",
+        .french: "Choisissez l’exécutable Codex.",
+        .portuguese: "Escolha o executável do Codex.",
+        .portugueseBrazil: "Escolha o executável do Codex."
+    ],
+    "Choose where Codex is installed, or keep auto-detection enabled.": [
+        .traditionalChinese: "選擇 Codex 的位置，或保持自動偵測。",
+        .japanese: "Codex の場所を選択するか、自動検出を使用します。",
+        .korean: "Codex 설치 위치를 선택하거나 자동 감지를 유지하세요.",
+        .spanish: "Elige dónde está instalado Codex o conserva la detección automática.",
+        .german: "Wähle den Codex-Speicherort oder behalte die automatische Erkennung bei.",
+        .french: "Choisissez l’emplacement de Codex ou gardez la détection automatique.",
+        .portuguese: "Escolha onde o Codex está instalado ou mantenha a deteção automática.",
+        .portugueseBrazil: "Escolha onde o Codex está instalado ou mantenha a detecção automática."
+    ],
+    "Codex exited unexpectedly (code %d)": [
+        .traditionalChinese: "Codex 意外結束（代碼 %d）",
+        .japanese: "Codex が予期せず終了しました（コード %d）",
+        .korean: "Codex가 예기치 않게 종료되었습니다(코드 %d).",
+        .spanish: "Codex se cerró inesperadamente (código %d)",
+        .german: "Codex wurde unerwartet beendet (Code %d)",
+        .french: "Codex s’est fermé de façon inattendue (code %d)",
+        .portuguese: "O Codex fechou inesperadamente (código %d)",
+        .portugueseBrazil: "O Codex fechou inesperadamente (código %d)"
+    ],
+    "Codex Path": [
+        .traditionalChinese: "Codex 路徑",
+        .japanese: "Codex パス",
+        .korean: "Codex 경로",
+        .spanish: "Ruta de Codex",
+        .german: "Codex-Pfad",
+        .french: "Chemin de Codex",
+        .portuguese: "Caminho do Codex",
+        .portugueseBrazil: "Caminho do Codex"
+    ],
+    "Codex quota tracking and menu bar monitoring.": [
+        .traditionalChinese: "Codex 額度監測與選單列監控",
+        .japanese: "Codex クォータ追跡とメニューバー監視。",
+        .korean: "Codex 할당량 추적 및 메뉴 막대 모니터링.",
+        .spanish: "Seguimiento de cuota de Codex y supervisión en la barra de menús.",
+        .german: "Codex-Quota verfolgen und in der Menüleiste überwachen.",
+        .french: "Suivi du quota Codex et surveillance dans la barre de menus.",
+        .portuguese: "Monitorização da quota do Codex na barra de menus.",
+        .portugueseBrazil: "Monitoramento da cota do Codex na barra de menus."
+    ],
+    "Codex not found": [
+        .traditionalChinese: "未找到 Codex",
+        .japanese: "Codex が見つかりません",
+        .korean: "Codex를 찾을 수 없음",
+        .spanish: "Codex no encontrado",
+        .german: "Codex nicht gefunden",
+        .french: "Codex introuvable",
+        .portuguese: "Codex não encontrado",
+        .portugueseBrazil: "Codex não encontrado"
+    ],
+    "Codex was not found": [
+        .traditionalChinese: "未找到 Codex",
+        .japanese: "Codex が見つかりません",
+        .korean: "Codex를 찾을 수 없습니다",
+        .spanish: "No se encontró Codex",
+        .german: "Codex wurde nicht gefunden",
+        .french: "Codex est introuvable",
+        .portuguese: "O Codex não foi encontrado",
+        .portugueseBrazil: "O Codex não foi encontrado"
+    ],
+    "Codex was not found. Choose its location in Settings or install Codex.": [
+        .traditionalChinese: "未找到 Codex，請在設定中選擇位置或安裝 Codex。",
+        .japanese: "Codex が見つかりません。設定で場所を選択するか、Codex をインストールしてください。",
+        .korean: "Codex를 찾을 수 없습니다. 설정에서 위치를 선택하거나 Codex를 설치하세요.",
+        .spanish: "No se encontró Codex. Elige su ubicación en Ajustes o instala Codex.",
+        .german: "Codex wurde nicht gefunden. Wähle den Speicherort in den Einstellungen oder installiere Codex.",
+        .french: "Codex est introuvable. Choisissez son emplacement dans les réglages ou installez Codex.",
+        .portuguese: "O Codex não foi encontrado. Escolha a localização nas Definições ou instale o Codex.",
+        .portugueseBrazil: "O Codex não foi encontrado. Escolha o local nos Ajustes ou instale o Codex."
+    ],
+    "Connection disconnected": [
+        .traditionalChinese: "連接已斷開",
+        .japanese: "接続が切断されました",
+        .korean: "연결이 끊어졌습니다",
+        .spanish: "Conexión desconectada",
+        .german: "Verbindung getrennt",
+        .french: "Connexion interrompue",
+        .portuguese: "Ligação desligada",
+        .portugueseBrazil: "Conexão desconectada"
+    ],
+    "Connection is not running or has disconnected": [
+        .traditionalChinese: "連接未啟動或已斷開",
+        .japanese: "接続が開始されていないか切断されています",
+        .korean: "연결이 시작되지 않았거나 끊어졌습니다",
+        .spanish: "La conexión no está activa o se ha desconectado",
+        .german: "Die Verbindung läuft nicht oder wurde getrennt",
+        .french: "La connexion n’est pas active ou a été interrompue",
+        .portuguese: "A ligação não está ativa ou foi desligada",
+        .portugueseBrazil: "A conexão não está ativa ou foi desconectada"
+    ],
+    "Dark": [
+        .traditionalChinese: "深色",
+        .japanese: "ダーク",
+        .korean: "다크",
+        .spanish: "Oscuro",
+        .german: "Dunkel",
+        .french: "Sombre",
+        .portuguese: "Escuro",
+        .portugueseBrazil: "Escuro"
+    ],
+    "Data location:": [
+        .traditionalChinese: "資料位置：",
+        .japanese: "データの場所:",
+        .korean: "데이터 위치:",
+        .spanish: "Ubicación de datos:",
+        .german: "Datenspeicherort:",
+        .french: "Emplacement des données :",
+        .portuguese: "Localização dos dados:",
+        .portugueseBrazil: "Local dos dados:"
+    ],
+    "Install and sign in to Codex to show quota data.": [
+        .traditionalChinese: "安裝並登入 Codex 後會顯示額度。",
+        .japanese: "クォータを表示するには Codex をインストールしてサインインしてください。",
+        .korean: "할당량을 표시하려면 Codex를 설치하고 로그인하세요.",
+        .spanish: "Instala Codex e inicia sesión para mostrar la cuota.",
+        .german: "Installiere Codex und melde dich an, um Quota-Daten anzuzeigen.",
+        .french: "Installez Codex et connectez-vous pour afficher le quota.",
+        .portuguese: "Instale o Codex e inicie sessão para mostrar a quota.",
+        .portugueseBrazil: "Instale o Codex e faça login para mostrar a cota."
+    ],
     "Download and Install": [
         .traditionalChinese: "下載並安裝",
         .japanese: "ダウンロードしてインストール",
@@ -288,6 +538,56 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .french: "Télécharger et installer",
         .portuguese: "Transferir e instalar",
         .portugueseBrazil: "Baixar e instalar"
+    ],
+    "Enabled": [
+        .traditionalChinese: "已啟用",
+        .japanese: "有効",
+        .korean: "사용 중",
+        .spanish: "Activado",
+        .german: "Aktiviert",
+        .french: "Activé",
+        .portuguese: "Ativado",
+        .portugueseBrazil: "Ativado"
+    ],
+    "Expired": [
+        .traditionalChinese: "已過期",
+        .japanese: "期限切れ",
+        .korean: "만료됨",
+        .spanish: "Caducado",
+        .german: "Abgelaufen",
+        .french: "Expiré",
+        .portuguese: "Expirado",
+        .portugueseBrazil: "Expirado"
+    ],
+    "Follow the system by default, or choose a fixed language.": [
+        .traditionalChinese: "預設跟隨系統，也可以選擇固定語言。",
+        .japanese: "既定ではシステムに従い、固定言語も選択できます。",
+        .korean: "기본값은 시스템을 따르며, 고정 언어도 선택할 수 있습니다.",
+        .spanish: "Sigue el sistema por defecto o elige un idioma fijo.",
+        .german: "Standardmäßig dem System folgen oder eine feste Sprache wählen.",
+        .french: "Suit le système par défaut, ou choisissez une langue fixe.",
+        .portuguese: "Segue o sistema por predefinição, ou escolha um idioma fixo.",
+        .portugueseBrazil: "Segue o sistema por padrão, ou escolha um idioma fixo."
+    ],
+    "In-app online updates": [
+        .traditionalChinese: "應用程式內線上升級",
+        .japanese: "アプリ内オンラインアップデート",
+        .korean: "앱 내 온라인 업데이트",
+        .spanish: "Actualizaciones dentro de la app",
+        .german: "Updates in der App",
+        .french: "Mises à jour dans l’app",
+        .portuguese: "Atualizações dentro da app",
+        .portugueseBrazil: "Atualizações dentro do app"
+    ],
+    "Open QuotaLens": [
+        .traditionalChinese: "打開 QuotaLens",
+        .japanese: "QuotaLens を開く",
+        .korean: "QuotaLens 열기",
+        .spanish: "Abrir QuotaLens",
+        .german: "QuotaLens öffnen",
+        .french: "Ouvrir QuotaLens",
+        .portuguese: "Abrir QuotaLens",
+        .portugueseBrazil: "Abrir QuotaLens"
     ],
     "Later": [
         .traditionalChinese: "稍後",
@@ -299,15 +599,185 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Mais tarde",
         .portugueseBrazil: "Mais tarde"
     ],
-    "QuotaLens %@ is available for the %@ build. Continue to download and install it.": [
-        .traditionalChinese: "QuotaLens %@ 已發布，將下載並安裝 %@ 對應版本。",
-        .japanese: "QuotaLens %@ が利用可能です。%@ ビルドをダウンロードしてインストールします。",
-        .korean: "QuotaLens %@을 사용할 수 있습니다. %@ 빌드를 다운로드하여 설치합니다.",
-        .spanish: "QuotaLens %@ está disponible para la versión %@. Continúa para descargarla e instalarla.",
-        .german: "QuotaLens %@ ist für den %@-Build verfügbar. Fahre fort, um es zu laden und zu installieren.",
-        .french: "QuotaLens %@ est disponible pour la version %@. Continuez pour la télécharger et l’installer.",
-        .portuguese: "QuotaLens %@ está disponível para a versão %@. Continue para transferir e instalar.",
-        .portugueseBrazil: "QuotaLens %@ está disponível para a versão %@. Continue para baixar e instalar."
+    "Last check": [
+        .traditionalChinese: "上次檢查",
+        .japanese: "前回の確認",
+        .korean: "마지막 확인",
+        .spanish: "Última comprobación",
+        .german: "Letzte Suche",
+        .french: "Dernière recherche",
+        .portuguese: "Última verificação",
+        .portugueseBrazil: "Última verificação"
+    ],
+    "Local Data": [
+        .traditionalChinese: "本機資料",
+        .japanese: "ローカルデータ",
+        .korean: "로컬 데이터",
+        .spanish: "Datos locales",
+        .german: "Lokale Daten",
+        .french: "Données locales",
+        .portuguese: "Dados locais",
+        .portugueseBrazil: "Dados locais"
+    ],
+    "Manage appearance, language, account, refresh, and local data.": [
+        .traditionalChinese: "管理外觀、語言、帳號、刷新和本機資料。",
+        .japanese: "外観、言語、アカウント、更新、ローカルデータを管理します。",
+        .korean: "외관, 언어, 계정, 새로고침 및 로컬 데이터를 관리합니다.",
+        .spanish: "Gestiona apariencia, idioma, cuenta, actualización y datos locales.",
+        .german: "Darstellung, Sprache, Konto, Aktualisierung und lokale Daten verwalten.",
+        .french: "Gérez l’apparence, la langue, le compte, l’actualisation et les données locales.",
+        .portuguese: "Gira aspeto, idioma, conta, atualização e dados locais.",
+        .portugueseBrazil: "Gerencie aparência, idioma, conta, atualização e dados locais."
+    ],
+    "Menu bar mode with optional hidden Dock icon": [
+        .traditionalChinese: "選單列常駐模式與隱藏 Dock 圖示",
+        .japanese: "Dock アイコン非表示に対応したメニューバーモード",
+        .korean: "Dock 아이콘 숨김 옵션이 있는 메뉴 막대 모드",
+        .spanish: "Modo de barra de menús con icono del Dock opcional",
+        .german: "Menüleistenmodus mit optional ausgeblendetem Dock-Symbol",
+        .french: "Mode barre de menus avec icône Dock masquable",
+        .portuguese: "Modo de barra de menus com ícone da Dock opcional",
+        .portugueseBrazil: "Modo de barra de menus com ícone do Dock opcional"
+    ],
+    "Monitor quota usage and reset windows for the current account.": [
+        .traditionalChinese: "監測目前帳號的額度使用與重置週期。",
+        .japanese: "現在のアカウントのクォータ使用量とリセット周期を監視します。",
+        .korean: "현재 계정의 할당량 사용량과 리셋 주기를 모니터링합니다.",
+        .spanish: "Supervisa el uso de cuota y los periodos de reinicio de la cuenta actual.",
+        .german: "Quota-Nutzung und Reset-Zeiträume für das aktuelle Konto überwachen.",
+        .french: "Surveille l’utilisation du quota et les périodes de réinitialisation du compte actuel.",
+        .portuguese: "Monitoriza a utilização da quota e os períodos de reinício da conta atual.",
+        .portugueseBrazil: "Monitora o uso da cota e os períodos de reinício da conta atual."
+    ],
+    "Never checked": [
+        .traditionalChinese: "尚未檢查",
+        .japanese: "未確認",
+        .korean: "확인한 적 없음",
+        .spanish: "Nunca comprobado",
+        .german: "Noch nie gesucht",
+        .french: "Jamais vérifié",
+        .portuguese: "Nunca verificado",
+        .portugueseBrazil: "Nunca verificado"
+    ],
+    "No reset cards reported yet.": [
+        .traditionalChinese: "暫無可用重置卡。",
+        .japanese: "利用可能なリセットカードはまだありません。",
+        .korean: "아직 사용 가능한 리셋 카드가 없습니다.",
+        .spanish: "Aún no hay tarjetas de reinicio disponibles.",
+        .german: "Noch keine Reset-Karten verfügbar.",
+        .french: "Aucune carte de réinitialisation disponible pour le moment.",
+        .portuguese: "Ainda não há cartões de reposição disponíveis.",
+        .portugueseBrazil: "Ainda não há cartões de redefinição disponíveis."
+    ],
+    "Online updates enabled": [
+        .traditionalChinese: "線上升級已啟用",
+        .japanese: "オンラインアップデートは有効です",
+        .korean: "온라인 업데이트 사용 중",
+        .spanish: "Actualizaciones en línea activadas",
+        .german: "Online-Updates aktiviert",
+        .french: "Mises à jour en ligne activées",
+        .portuguese: "Atualizações online ativadas",
+        .portugueseBrazil: "Atualizações online ativadas"
+    ],
+    "Online updates unavailable": [
+        .traditionalChinese: "線上升級不可用",
+        .japanese: "オンラインアップデートは利用できません",
+        .korean: "온라인 업데이트를 사용할 수 없음",
+        .spanish: "Actualizaciones en línea no disponibles",
+        .german: "Online-Updates nicht verfügbar",
+        .french: "Mises à jour en ligne indisponibles",
+        .portuguese: "Atualizações online indisponíveis",
+        .portugueseBrazil: "Atualizações online indisponíveis"
+    ],
+    "Plan": [
+        .traditionalChinese: "方案",
+        .japanese: "プラン",
+        .korean: "플랜",
+        .spanish: "Plan",
+        .german: "Plan",
+        .french: "Offre",
+        .portuguese: "Plano",
+        .portugueseBrazil: "Plano"
+    ],
+    "Plan:": [
+        .traditionalChinese: "方案：",
+        .japanese: "プラン:",
+        .korean: "플랜:",
+        .spanish: "Plan:",
+        .german: "Plan:",
+        .french: "Offre :",
+        .portuguese: "Plano:",
+        .portugueseBrazil: "Plano:"
+    ],
+    "Preferences": [
+        .traditionalChinese: "偏好",
+        .japanese: "設定",
+        .korean: "환경설정",
+        .spanish: "Preferencias",
+        .german: "Einstellungen",
+        .french: "Préférences",
+        .portuguese: "Preferências",
+        .portugueseBrazil: "Preferências"
+    ],
+    "Quota": [
+        .traditionalChinese: "額度",
+        .japanese: "クォータ",
+        .korean: "할당량",
+        .spanish: "Cuota",
+        .german: "Quota",
+        .french: "Quota",
+        .portuguese: "Quota",
+        .portugueseBrazil: "Cota"
+    ],
+    "Quota data was not available yet": [
+        .traditionalChinese: "暫時沒有取得額度資料",
+        .japanese: "クォータデータはまだ利用できません",
+        .korean: "아직 할당량 데이터를 사용할 수 없습니다",
+        .spanish: "Los datos de cuota aún no están disponibles",
+        .german: "Quota-Daten sind noch nicht verfügbar",
+        .french: "Les données de quota ne sont pas encore disponibles",
+        .portuguese: "Os dados de quota ainda não estão disponíveis",
+        .portugueseBrazil: "Os dados de cota ainda não estão disponíveis"
+    ],
+    "Quota data was not available yet. Retrying automatically.": [
+        .traditionalChinese: "暫時沒有取得額度，正在自動重試。",
+        .japanese: "クォータデータはまだ利用できません。自動で再試行します。",
+        .korean: "아직 할당량 데이터를 사용할 수 없습니다. 자동으로 다시 시도합니다.",
+        .spanish: "Los datos de cuota aún no están disponibles. Reintentando automáticamente.",
+        .german: "Quota-Daten sind noch nicht verfügbar. Automatischer erneuter Versuch läuft.",
+        .french: "Les données de quota ne sont pas encore disponibles. Nouvelle tentative automatique.",
+        .portuguese: "Os dados de quota ainda não estão disponíveis. A tentar novamente automaticamente.",
+        .portugueseBrazil: "Os dados de cota ainda não estão disponíveis. Tentando novamente automaticamente."
+    ],
+    "Quota Overview": [
+        .traditionalChinese: "額度概覽",
+        .japanese: "クォータ概要",
+        .korean: "할당량 개요",
+        .spanish: "Resumen de cuota",
+        .german: "Quota-Überblick",
+        .french: "Aperçu du quota",
+        .portuguese: "Resumo da quota",
+        .portugueseBrazil: "Resumo da cota"
+    ],
+    "Quota usage and remaining quota": [
+        .traditionalChinese: "額度使用與剩餘額度",
+        .japanese: "クォータ使用量と残量",
+        .korean: "할당량 사용량 및 남은 할당량",
+        .spanish: "Uso de cuota y cuota restante",
+        .german: "Quota-Nutzung und verbleibende Quota",
+        .french: "Utilisation et quota restant",
+        .portuguese: "Utilização e quota restante",
+        .portugueseBrazil: "Uso e cota restante"
+    ],
+    "QuotaLens %@ is available. Continue to download and install it.": [
+        .traditionalChinese: "QuotaLens %@ 已可下載。是否下載並安裝？",
+        .japanese: "QuotaLens %@ が利用可能です。ダウンロードしてインストールしますか？",
+        .korean: "QuotaLens %@을 사용할 수 있습니다. 다운로드하여 설치할까요?",
+        .spanish: "QuotaLens %@ está disponible. ¿Quieres descargarlo e instalarlo?",
+        .german: "QuotaLens %@ ist verfügbar. Laden und installieren?",
+        .french: "QuotaLens %@ est disponible. Voulez-vous le télécharger et l’installer ?",
+        .portuguese: "QuotaLens %@ está disponível. Pretende transferir e instalar?",
+        .portugueseBrazil: "QuotaLens %@ está disponível. Deseja baixar e instalar?"
     ],
     "QuotaLens %@ is currently the newest version available.": [
         .traditionalChinese: "QuotaLens %@ 是目前可用的最新版本。",
@@ -318,6 +788,186 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .french: "QuotaLens %@ est actuellement la dernière version disponible.",
         .portuguese: "QuotaLens %@ é atualmente a versão mais recente disponível.",
         .portugueseBrazil: "QuotaLens %@ é atualmente a versão mais recente disponível."
+    ],
+    "Quota refresh failed: %@": [
+        .traditionalChinese: "額度刷新失敗：%@",
+        .japanese: "クォータの更新に失敗しました: %@",
+        .korean: "할당량 새로고침 실패: %@",
+        .spanish: "No se pudo actualizar la cuota: %@",
+        .german: "Quota-Aktualisierung fehlgeschlagen: %@",
+        .french: "Échec de l’actualisation du quota : %@",
+        .portuguese: "Falha ao atualizar a quota: %@",
+        .portugueseBrazil: "Falha ao atualizar a cota: %@"
+    ],
+    "Recorded": [
+        .traditionalChinese: "已記錄",
+        .japanese: "記録済み",
+        .korean: "기록됨",
+        .spanish: "Registrado",
+        .german: "Erfasst",
+        .french: "Enregistré",
+        .portuguese: "Registado",
+        .portugueseBrazil: "Registrado"
+    ],
+    "Refreshes quota every %@.": [
+        .traditionalChinese: "每 %@ 自動刷新額度。",
+        .japanese: "%@ ごとにクォータを更新します。",
+        .korean: "%@마다 할당량을 새로고침합니다.",
+        .spanish: "Actualiza la cuota cada %@.",
+        .german: "Aktualisiert die Quota alle %@.",
+        .french: "Actualise le quota toutes les %@.",
+        .portuguese: "Atualiza a quota a cada %@.",
+        .portugueseBrazil: "Atualiza a cota a cada %@."
+    ],
+    "Resync Data": [
+        .traditionalChinese: "重新同步資料",
+        .japanese: "データを再同期",
+        .korean: "데이터 다시 동기화",
+        .spanish: "Resincronizar datos",
+        .german: "Daten erneut synchronisieren",
+        .french: "Resynchroniser les données",
+        .portuguese: "Ressincronizar dados",
+        .portugueseBrazil: "Ressincronizar dados"
+    ],
+    "Show in Menu Bar Only": [
+        .traditionalChinese: "僅顯示選單列圖示",
+        .japanese: "メニューバーのみに表示",
+        .korean: "메뉴 막대에만 표시",
+        .spanish: "Mostrar solo en la barra de menús",
+        .german: "Nur in der Menüleiste anzeigen",
+        .french: "Afficher uniquement dans la barre de menus",
+        .portuguese: "Mostrar apenas na barra de menus",
+        .portugueseBrazil: "Mostrar apenas na barra de menus"
+    ],
+    "Status": [
+        .traditionalChinese: "狀態",
+        .japanese: "状態",
+        .korean: "상태",
+        .spanish: "Estado",
+        .german: "Status",
+        .french: "État",
+        .portuguese: "Estado",
+        .portugueseBrazil: "Status"
+    ],
+    "Status: %@": [
+        .traditionalChinese: "狀態：%@",
+        .japanese: "状態: %@",
+        .korean: "상태: %@",
+        .spanish: "Estado: %@",
+        .german: "Status: %@",
+        .french: "État : %@",
+        .portuguese: "Estado: %@",
+        .portugueseBrazil: "Status: %@"
+    ],
+    "Sync & Refresh": [
+        .traditionalChinese: "同步與刷新",
+        .japanese: "同期と更新",
+        .korean: "동기화 및 새로고침",
+        .spanish: "Sincronización y actualización",
+        .german: "Sync und Aktualisierung",
+        .french: "Synchronisation et actualisation",
+        .portuguese: "Sincronização e atualização",
+        .portugueseBrazil: "Sincronização e atualização"
+    ],
+    "The selected file is not executable. Choose another file.": [
+        .traditionalChinese: "所選檔案不可執行，請重新選擇。",
+        .japanese: "選択したファイルは実行できません。別のファイルを選択してください。",
+        .korean: "선택한 파일을 실행할 수 없습니다. 다른 파일을 선택하세요.",
+        .spanish: "El archivo seleccionado no es ejecutable. Elige otro archivo.",
+        .german: "Die ausgewählte Datei ist nicht ausführbar. Wähle eine andere Datei.",
+        .french: "Le fichier sélectionné n’est pas exécutable. Choisissez un autre fichier.",
+        .portuguese: "O ficheiro selecionado não é executável. Escolha outro ficheiro.",
+        .portugueseBrazil: "O arquivo selecionado não é executável. Escolha outro arquivo."
+    ],
+    "This build is not configured for online updates": [
+        .traditionalChinese: "目前版本未設定線上升級",
+        .japanese: "このビルドはオンラインアップデートに対応していません",
+        .korean: "이 빌드는 온라인 업데이트가 설정되어 있지 않습니다",
+        .spanish: "Esta compilación no está configurada para actualizaciones en línea",
+        .german: "Dieser Build ist nicht für Online-Updates konfiguriert",
+        .french: "Cette version n’est pas configurée pour les mises à jour en ligne",
+        .portuguese: "Esta compilação não está configurada para atualizações online",
+        .portugueseBrazil: "Esta compilação não está configurada para atualizações online"
+    ],
+    "This version does not support online updates.": [
+        .traditionalChinese: "目前版本暫不支援線上升級。",
+        .japanese: "このバージョンはオンラインアップデートに対応していません。",
+        .korean: "이 버전은 온라인 업데이트를 지원하지 않습니다.",
+        .spanish: "Esta versión no admite actualizaciones en línea.",
+        .german: "Diese Version unterstützt keine Online-Updates.",
+        .french: "Cette version ne prend pas en charge les mises à jour en ligne.",
+        .portuguese: "Esta versão não suporta atualizações online.",
+        .portugueseBrazil: "Esta versão não oferece suporte a atualizações online."
+    ],
+    "Subscription details are temporarily unavailable": [
+        .traditionalChinese: "暫時無法取得訂閱資訊",
+        .japanese: "サブスクリプション情報は一時的に利用できません",
+        .korean: "구독 정보를 일시적으로 사용할 수 없습니다",
+        .spanish: "Los detalles de la suscripción no están disponibles temporalmente",
+        .german: "Abonnementdetails sind vorübergehend nicht verfügbar",
+        .french: "Les détails de l’abonnement sont temporairement indisponibles",
+        .portuguese: "Os detalhes da subscrição estão temporariamente indisponíveis",
+        .portugueseBrazil: "Os detalhes da assinatura estão temporariamente indisponíveis"
+    ],
+    "Subscription details could not be read": [
+        .traditionalChinese: "無法讀取訂閱資訊",
+        .japanese: "サブスクリプション情報を読み取れませんでした",
+        .korean: "구독 정보를 읽을 수 없습니다",
+        .spanish: "No se pudieron leer los detalles de la suscripción",
+        .german: "Abonnementdetails konnten nicht gelesen werden",
+        .french: "Impossible de lire les détails de l’abonnement",
+        .portuguese: "Não foi possível ler os detalhes da subscrição",
+        .portugueseBrazil: "Não foi possível ler os detalhes da assinatura"
+    ],
+    "Timed out while reading quota data": [
+        .traditionalChinese: "讀取額度逾時",
+        .japanese: "クォータデータの読み取りがタイムアウトしました",
+        .korean: "할당량 데이터 읽기 시간이 초과되었습니다",
+        .spanish: "Se agotó el tiempo al leer los datos de cuota",
+        .german: "Zeitüberschreitung beim Lesen der Quota-Daten",
+        .french: "Délai dépassé lors de la lecture du quota",
+        .portuguese: "Excedeu o tempo ao ler os dados de quota",
+        .portugueseBrazil: "Tempo esgotado ao ler os dados de cota"
+    ],
+    "Using the current signed-in account": [
+        .traditionalChinese: "使用目前登入帳號",
+        .japanese: "現在サインイン中のアカウントを使用",
+        .korean: "현재 로그인된 계정 사용",
+        .spanish: "Usando la cuenta con sesión iniciada",
+        .german: "Aktuell angemeldetes Konto verwenden",
+        .french: "Utilise le compte actuellement connecté",
+        .portuguese: "A utilizar a conta com sessão iniciada",
+        .portugueseBrazil: "Usando a conta conectada atual"
+    ],
+    "Version": [
+        .traditionalChinese: "版本",
+        .japanese: "バージョン",
+        .korean: "버전",
+        .spanish: "Versión",
+        .german: "Version",
+        .french: "Version",
+        .portuguese: "Versão",
+        .portugueseBrazil: "Versão"
+    ],
+    "Version information": [
+        .traditionalChinese: "版本資訊",
+        .japanese: "バージョン情報",
+        .korean: "버전 정보",
+        .spanish: "Información de versión",
+        .german: "Versionsinformationen",
+        .french: "Informations de version",
+        .portuguese: "Informação da versão",
+        .portugueseBrazil: "Informações da versão"
+    ],
+    "When enabled, QuotaLens only appears in the menu bar.": [
+        .traditionalChinese: "開啟後，QuotaLens 只顯示在選單列中。",
+        .japanese: "有効にすると、QuotaLens はメニューバーのみに表示されます。",
+        .korean: "활성화하면 QuotaLens가 메뉴 막대에만 표시됩니다.",
+        .spanish: "Cuando está activado, QuotaLens solo aparece en la barra de menús.",
+        .german: "Wenn aktiviert, erscheint QuotaLens nur in der Menüleiste.",
+        .french: "Lorsque cette option est activée, QuotaLens apparaît uniquement dans la barre de menus.",
+        .portuguese: "Quando ativado, o QuotaLens aparece apenas na barra de menus.",
+        .portugueseBrazil: "Quando ativado, o QuotaLens aparece apenas na barra de menus."
     ],
     "QuotaLens could not complete the update check. Try again later.": [
         .traditionalChinese: "QuotaLens 未能完成更新檢查，請稍後再試。",
@@ -348,6 +998,16 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .french: "Impossible de rechercher des mises à jour",
         .portuguese: "Não foi possível verificar atualizações",
         .portugueseBrazil: "Não foi possível verificar atualizações"
+    ],
+    "Unable to start Codex: %@": [
+        .traditionalChinese: "無法啟動 Codex：%@",
+        .japanese: "Codex を起動できません: %@",
+        .korean: "Codex를 시작할 수 없음: %@",
+        .spanish: "No se pudo iniciar Codex: %@",
+        .german: "Codex konnte nicht gestartet werden: %@",
+        .french: "Impossible de démarrer Codex : %@",
+        .portuguese: "Não foi possível iniciar o Codex: %@",
+        .portugueseBrazil: "Não foi possível iniciar o Codex: %@"
     ],
     "Update Available": [
         .traditionalChinese: "發現可用更新",

@@ -28,9 +28,9 @@ public enum NavigationTab: CaseIterable, Identifiable {
 
     public var subtitle: String {
         switch self {
-        case .dashboard: return "TELEMETRY"
-        case .settings: return "CONTROL DECK"
-        case .about: return "VERSION / UPDATE"
+        case .dashboard: return L10n.text("额度", "Quota")
+        case .settings: return L10n.text("偏好", "Preferences")
+        case .about: return L10n.text("版本", "Version")
         }
     }
 }
@@ -150,7 +150,7 @@ public struct MainView: View {
                     .foregroundStyle(cyan)
             }
             .buttonStyle(.plain)
-            .help(L10n.text("立即刷新服务端配额数据", "Refresh server quota data now"))
+            .help(L10n.text("立即刷新数据", "Refresh data now"))
             .disabled(state.isRefreshing)
         }
         .frame(height: 64)
@@ -256,14 +256,14 @@ public struct MainView: View {
                         .fill(state.connectionStatus.isConnected ? emerald : AppTheme.textSecondary(for: colorScheme))
                         .frame(width: 5, height: 5)
 
-                    Text(state.connectionStatus.isConnected ? L10n.text("ENGINE: ACTIVE", "ENGINE: ACTIVE") : L10n.text("ENGINE: IDLE", "ENGINE: IDLE"))
+                    Text(state.connectionStatus.isConnected ? L10n.text("已连接", "Connected") : L10n.text("未连接", "Offline"))
                         .font(.system(size: 9, weight: .heavy, design: .monospaced))
                         .foregroundStyle(state.connectionStatus.isConnected ? emerald : AppTheme.textSecondary(for: colorScheme))
                 }
 
                 Spacer()
 
-                Text("\(AppVersion.displayString) HUD")
+                Text(AppVersion.displayString)
                     .font(.system(size: 9, weight: .bold, design: .monospaced))
                     .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
             }

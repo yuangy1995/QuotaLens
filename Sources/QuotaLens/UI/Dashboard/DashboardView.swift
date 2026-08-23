@@ -9,7 +9,7 @@ public struct DashboardView: View {
     public var body: some View {
         ScrollView {
             VStack(spacing: 20) {
-                // 顶部 HUD 标题与遥测状态栏
+                // 顶部标题与状态栏
                 headerHUDBar
 
                 // 核心 Hero 主控舱：周额度全息仪表与数据流
@@ -21,10 +21,10 @@ public struct DashboardView: View {
                     }
                 }
 
-                // 实时遥测指标矩阵 (3-Column Telemetry Metrics)
+                // 指标矩阵
                 telemetryMetricsMatrix
 
-                // 重置卡配额机库 (Reset Credits Hangar Bay)
+                // 重置卡列表
                 resetCreditsHangarView
             }
             .padding(24)
@@ -32,7 +32,7 @@ public struct DashboardView: View {
         .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
     }
 
-    // MARK: - 顶部 HUD 标题栏
+    // MARK: - 顶部标题栏
     private var headerHUDBar: some View {
         let cyan = AppTheme.accentCyan(for: colorScheme)
         return HStack(alignment: .center) {
@@ -42,15 +42,9 @@ public struct DashboardView: View {
                         .font(.system(.title, design: .rounded, weight: .black))
                         .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
 
-                    Text("TELEMETRY")
-                        .font(.system(size: 10, weight: .heavy, design: .monospaced))
-                        .foregroundStyle(cyan)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(cyan.opacity(colorScheme == .dark ? 0.15 : 0.12), in: RoundedRectangle(cornerRadius: 4))
                 }
 
-                Text(L10n.text("实时监测当前账号额度消耗、重置周期与模型遥测", "Monitor quota usage, reset windows, and model telemetry for the current account."))
+                Text(L10n.text("监测当前账号额度消耗与重置周期", "Monitor quota usage and reset windows for the current account."))
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
             }
@@ -85,7 +79,7 @@ public struct DashboardView: View {
         }
     }
 
-    // MARK: - 核心 Hero 配额全息舱
+    // MARK: - 核心配额卡片
     private var quotaHeroHUDCard: some View {
         let cyan = AppTheme.accentCyan(for: colorScheme)
         return VStack(alignment: .leading, spacing: 18) {
@@ -93,7 +87,7 @@ public struct DashboardView: View {
             HStack {
                 CyberSectionHeader(
                     tag: "01",
-                    title: L10n.text("核心额度通道 (PRIMARY QUOTA CHANNEL)", "Primary Quota Channel"),
+                    title: L10n.text("额度概览", "Quota Overview"),
                     icon: "gauge.with.needle.fill"
                 )
 
@@ -116,7 +110,7 @@ public struct DashboardView: View {
                     subtitle: "\(state.quotaDisplayMode.complementLabel) \(state.complementQuotaPercentString)"
                 )
 
-                // 结构化 HUD 遥测网格
+                // 结构化指标网格
                 VStack(alignment: .leading, spacing: 14) {
                     // 主额度遥测大字卡
                     HStack(spacing: 28) {
@@ -195,7 +189,7 @@ public struct DashboardView: View {
         .cyberCard(cornerRadius: 16, padding: 22, isHighlighted: true, glowColor: cyan)
     }
 
-    // MARK: - 实时遥测指标矩阵 (3-Column Metrics)
+    // MARK: - 指标矩阵
     private var telemetryMetricsMatrix: some View {
         HStack(spacing: 14) {
             StatMetricCard(
@@ -209,7 +203,7 @@ public struct DashboardView: View {
             StatMetricCard(
                 title: L10n.text("刷新频率", "Refresh Rate"),
                 value: state.refreshIntervalDescription,
-                subtitle: L10n.text("后台自动刷新监测", "Background auto-refresh monitoring"),
+                subtitle: L10n.text("后台自动刷新", "Automatic background refresh"),
                 icon: "arrow.triangle.2.circlepath",
                 color: AppTheme.accentCyan(for: colorScheme)
             )
@@ -257,7 +251,7 @@ public struct DashboardView: View {
         }
     }
 
-    // MARK: - 额度不可用 HUD 提示卡
+    // MARK: - 额度不可用提示卡
     private var quotaUnavailableHUDCard: some View {
         let amber = AppTheme.accentAmber(for: colorScheme)
         return VStack(spacing: 16) {
@@ -281,12 +275,6 @@ public struct DashboardView: View {
                         Text(state.quotaUnavailableTitle)
                             .font(.system(.title3, design: .rounded, weight: .bold))
                             .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
-                        Text("[OFFLINE / PENDING]")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .foregroundStyle(amber)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(amber.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
                     }
 
                     Text(state.quotaUnavailableDescription)
@@ -301,7 +289,7 @@ public struct DashboardView: View {
         .frame(minHeight: 140)
     }
 
-    // MARK: - 重置卡配额机库
+    // MARK: - 重置卡列表
     private var resetCreditsHangarView: some View {
         let amber = AppTheme.accentAmber(for: colorScheme)
         let countColor = state.resetCreditAvailableCount > 0 ? amber : AppTheme.textSecondary(for: colorScheme)
@@ -310,7 +298,7 @@ public struct DashboardView: View {
             HStack(spacing: 8) {
                 CyberSectionHeader(
                     tag: "02",
-                    title: L10n.text("重置卡配额机库 (RESET CREDITS HANGAR)", "Reset Credits Hangar"),
+                    title: L10n.text("重置卡", "Reset Cards"),
                     icon: "ticket.fill"
                 )
 
@@ -348,7 +336,7 @@ public struct DashboardView: View {
                         Image(systemName: "ticket")
                             .font(.system(size: 28))
                             .foregroundStyle(AppTheme.textSecondary(for: colorScheme).opacity(0.5))
-                        Text(L10n.text("服务器当前未登记可用重置卡配额", "The server has not reported any reset card quota."))
+                        Text(L10n.text("暂无可用重置卡", "No reset cards reported yet."))
                             .font(.system(size: 12, weight: .medium, design: .monospaced))
                             .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
                     }
@@ -383,7 +371,7 @@ public struct DashboardView: View {
     }
 }
 
-// MARK: - 科技风重置卡行卡片
+// MARK: - 重置卡行卡片
 private struct ResetCreditHangarRow: View {
     @Environment(\.colorScheme) var colorScheme
     let credit: ResetCreditDisplay
@@ -467,15 +455,15 @@ private struct ResetCreditHangarRow: View {
 
     private func statusText(_ credit: ResetCreditDisplay) -> String {
         switch (credit.status ?? "").lowercased() {
-        case "available": return "AVAILABLE"
-        case "used": return "USED"
-        case "expired": return "EXPIRED"
-        default: return "LOGGED"
+        case "available": return L10n.text("可用", "Available")
+        case "used": return L10n.text("已用", "Used")
+        case "expired": return L10n.text("已过期", "Expired")
+        default: return L10n.text("已记录", "Recorded")
         }
     }
 }
 
-// MARK: - 科技风套餐胶囊
+// MARK: - 套餐胶囊
 private struct PlanPillView: View {
     @Environment(\.colorScheme) var colorScheme
     let plan: String?
@@ -490,7 +478,7 @@ private struct PlanPillView: View {
                 .frame(width: 6, height: 6)
                 .shadow(color: cyan.opacity(colorScheme == .dark ? 0.8 : 0.4), radius: 3)
 
-            Text("TIER")
+            Text(L10n.text("套餐", "Plan"))
                 .font(.system(size: 9, weight: .heavy, design: .monospaced))
                 .foregroundStyle(cyan)
 

@@ -105,7 +105,7 @@ public enum AppThemeMode: String, CaseIterable, Identifiable {
     public var title: String {
         switch self {
         case .light: return L10n.text("浅色", "Light")
-        case .dark: return L10n.text("深色科技", "Dark HUD")
+        case .dark: return L10n.text("深色", "Dark")
         case .system: return L10n.text("跟随系统", "System")
         }
     }
@@ -338,7 +338,7 @@ public final class AppState: ObservableObject {
             return L10n.text("还没读到额度", "No quota yet")
         case .failed(let message):
             if Self.isMissingCodexMessage(message) {
-                return L10n.text("未安装命令行工具", "CLI not installed")
+                return L10n.text("未找到 Codex", "Codex not found")
             }
             return L10n.text("无法连接", "Cannot connect")
         case .disconnected:
@@ -348,7 +348,7 @@ public final class AppState: ObservableObject {
 
     public var quotaUnavailableDescription: String {
         if isRetryingServerConnection {
-            return L10n.text("服务器刚才没有返回额度，正在自动重试。", "The server did not return quota data yet. Retrying automatically.")
+            return L10n.text("暂时没有获取到额度，正在自动重试。", "Quota data was not available yet. Retrying automatically.")
         }
 
         switch connectionStatus {
@@ -358,9 +358,9 @@ public final class AppState: ObservableObject {
             return L10n.text("请确认已登录账号，稍后刷新。", "Confirm you are signed in, then refresh again shortly.")
         case .failed(let message):
             if Self.isMissingCodexMessage(message) {
-                return L10n.text("安装并登录命令行工具后会显示额度。", "Install and sign in to the Codex CLI to show quota data.")
+                return L10n.text("安装并登录 Codex 后会显示额度。", "Install and sign in to Codex to show quota data.")
             }
-            return L10n.text("请检查命令行工具是否已安装并登录。", "Check that the CLI is installed and signed in.")
+            return L10n.text("请检查 Codex 是否已安装并登录。", "Check that Codex is installed and signed in.")
         case .disconnected:
             return L10n.text("连接后会显示当前账号额度。", "Quota for the current account appears after connecting.")
         }

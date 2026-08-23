@@ -2,12 +2,12 @@
 
 [简体中文](README.zh-CN.md)
 
-QuotaLens is a native macOS menu bar app for monitoring Codex and ChatGPT quota telemetry. It reads the local Codex sign-in state, connects to the Codex app server, and presents quota usage, reset timing, subscription status, and reset-card availability in a compact desktop HUD.
+QuotaLens is a native macOS menu bar app for tracking Codex and ChatGPT quota usage. It reads the local Codex sign-in state and presents quota usage, reset timing, subscription status, and reset-card availability in a compact desktop view.
 
 ## Features
 
-- Menu bar HUD with weekly used/remaining quota, reset countdown, subscription period, refresh state, and reset-card reserve.
-- Native SwiftUI dashboard with light, dark HUD, and system appearance modes.
+- Menu bar overview with weekly used/remaining quota, reset countdown, subscription period, refresh state, and reset-card reserve.
+- Native SwiftUI dashboard with light, dark, and system appearance modes.
 - Local Codex account discovery from `~/.codex/auth.json`.
 - Codex app-server snapshot reading via `codex app-server --stdio` for account and rate-limit data.
 - Subscription entitlement refresh using the local ChatGPT access token, with renewal, ending, and scheduled-plan-change states.
@@ -68,7 +68,7 @@ git push origin main
 git push origin v1.0.0
 ```
 
-Pushing a matching `vX.Y.Z` tag starts the GitHub Actions release workflow. It uploads Apple Silicon, Intel, and Universal macOS downloads to GitHub Releases. Sparkle in-app updates use the appcast for the current Mac architecture automatically, so users do not choose a package manually. See [docs/releasing.md](docs/releasing.md) for the full process.
+Pushing a matching `vX.Y.Z` tag starts the GitHub Actions release workflow. It uploads Apple Silicon, Intel, and Universal macOS downloads to GitHub Releases. Update-capable builds can check for and install new versions in the app. See [docs/releasing.md](docs/releasing.md) for the full process.
 
 ## How It Works
 

@@ -32,25 +32,7 @@ public final class UpdateManager: NSObject, ObservableObject, SPUUpdaterDelegate
         if isConfigured {
             return L10n.text("在线升级已启用", "Online updates enabled")
         }
-        return L10n.text("开发者发布密钥未配置", "Developer update signing key is not configured")
-    }
-
-    public var detailText: String {
-        if isConfigured {
-            return L10n.format("In-app updates automatically use the %@ build; users do not choose a package manually.", zhHans: "App 内升级会自动使用 %@ 版本，不需要手动选择安装包。", architectureDisplayName)
-        }
-        return L10n.text("正式发布前需要写入 Sparkle 公钥，并在 GitHub Secrets 中保存私钥。", "Before release, embed the Sparkle public key and store the private key in GitHub Secrets.")
-    }
-
-    public var architectureDisplayName: String {
-        switch Self.currentArchitectureKey {
-        case "apple-silicon":
-            return "Apple Silicon"
-        case "intel":
-            return "Intel"
-        default:
-            return "macOS"
-        }
+        return L10n.text("在线升级不可用", "Online updates unavailable")
     }
 
     public var canCheckForUpdates: Bool {
@@ -187,10 +169,9 @@ public final class UpdateManager: NSObject, ObservableObject, SPUUpdaterDelegate
         let alert = NSAlert()
         alert.messageText = L10n.text("发现可用更新", "Update Available")
         alert.informativeText = L10n.format(
-            "QuotaLens %@ is available for the %@ build. Continue to download and install it.",
-            zhHans: "QuotaLens %@ 已发布，将下载并安装 %@ 对应版本。",
-            item.displayVersionString,
-            architectureDisplayName
+            "QuotaLens %@ is available. Continue to download and install it.",
+            zhHans: "QuotaLens %@ 已可下载。是否下载并安装？",
+            item.displayVersionString
         )
         alert.alertStyle = .informational
         alert.addButton(withTitle: L10n.text("下载并安装", "Download and Install"))
@@ -256,7 +237,7 @@ public final class UpdateManager: NSObject, ObservableObject, SPUUpdaterDelegate
     private func showUpdatesNotConfiguredAlert() {
         let alert = NSAlert()
         alert.messageText = L10n.text("当前构建未配置在线升级", "This build is not configured for online updates")
-        alert.informativeText = detailText
+        alert.informativeText = L10n.text("当前版本暂不支持在线升级。", "This version does not support online updates.")
         alert.alertStyle = .informational
         alert.addButton(withTitle: L10n.text("知道了", "OK"))
         alert.runModal()

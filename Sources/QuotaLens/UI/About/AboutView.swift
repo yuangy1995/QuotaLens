@@ -8,12 +8,12 @@ public struct AboutView: View {
     @Environment(\.colorScheme) var colorScheme
 
     private let featureRows: [(String, String)] = [
-        ("gauge.with.needle.fill", L10n.text("额度消耗与剩余可用量 HUD", "Quota usage and remaining-capacity HUD")),
-        ("clock.arrow.2.circlepath", L10n.text("自动刷新与手动同步 Codex 服务端额度", "Automatic refresh and manual Codex quota sync")),
+        ("gauge.with.needle.fill", L10n.text("额度使用与剩余额度", "Quota usage and remaining quota")),
+        ("clock.arrow.2.circlepath", L10n.text("自动刷新与手动同步额度", "Automatic and manual quota refresh")),
         ("ticket.fill", L10n.text("重置卡储备与到期提醒", "Reset-card reserve and expiry reminders")),
         ("calendar.badge.clock", L10n.text("订阅周期、续订与计划变更识别", "Subscription period, renewal, and plan-change detection")),
         ("menubar.rectangle", L10n.text("菜单栏常驻模式与隐藏 Dock 图标", "Menu bar mode with optional hidden Dock icon")),
-        ("arrow.triangle.2.circlepath.circle.fill", L10n.text("基于 GitHub Release 的在线升级", "GitHub Release powered in-app updates"))
+        ("arrow.triangle.2.circlepath.circle.fill", L10n.text("应用内在线升级", "In-app online updates"))
     ]
 
     public var body: some View {
@@ -42,7 +42,7 @@ public struct AboutView: View {
                     .padding(.vertical, 2)
                     .background(cyan.opacity(colorScheme == .dark ? 0.15 : 0.12), in: RoundedRectangle(cornerRadius: 4))
             }
-            Text(L10n.text("桌面级 Codex 额度遥测、菜单栏监控与在线升级中心", "Desktop Codex quota telemetry, menu bar monitoring, and online update center."))
+            Text(L10n.text("Codex 额度监测与菜单栏监控", "Codex quota tracking and menu bar monitoring."))
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
         }
@@ -54,7 +54,7 @@ public struct AboutView: View {
         return VStack(alignment: .leading, spacing: 14) {
             CyberSectionHeader(
                 tag: "01",
-                title: L10n.text("版本信息 (VERSION)", "Version"),
+                title: L10n.text("版本信息", "Version information"),
                 icon: "info.circle.fill"
             )
             CyberDivider()
@@ -73,7 +73,7 @@ public struct AboutView: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("QuotaLens")
                         .font(.system(size: 22, weight: .black, design: .rounded))
-                    Text("\(AppVersion.displayString) (\(AppVersion.buildNumber))")
+                    Text(AppVersion.displayString)
                         .font(.system(size: 12, weight: .bold, design: .monospaced))
                         .foregroundStyle(cyan)
                     Text("Apache License 2.0")
@@ -106,7 +106,7 @@ public struct AboutView: View {
         VStack(alignment: .leading, spacing: 14) {
             CyberSectionHeader(
                 tag: "02",
-                title: L10n.text("核心功能 (FEATURES)", "Features"),
+                title: L10n.text("核心功能", "Features"),
                 icon: "sparkles"
             )
             CyberDivider()
@@ -141,7 +141,7 @@ public struct AboutView: View {
             HStack {
                 CyberSectionHeader(
                     tag: "03",
-                    title: L10n.text("在线升级 (UPDATES)", "Online Updates"),
+                    title: L10n.text("在线升级", "Online Updates"),
                     icon: "arrow.triangle.2.circlepath.circle.fill"
                 )
                 Spacer()
@@ -158,9 +158,6 @@ public struct AboutView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(updateManager.statusText)
                     .font(.system(size: 14, weight: .bold))
-                Text(updateManager.detailText)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
             }
 
             HStack(spacing: 12) {
@@ -168,7 +165,7 @@ public struct AboutView: View {
                     Text(L10n.text("上次检查", "Last check"))
                         .font(.system(size: 10, weight: .bold, design: .monospaced))
                         .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-                    Text("\(updateManager.lastUpdateCheckText) · \(updateManager.architectureDisplayName)")
+                    Text(updateManager.lastUpdateCheckText)
                         .font(.system(size: 12, weight: .semibold))
                 }
 

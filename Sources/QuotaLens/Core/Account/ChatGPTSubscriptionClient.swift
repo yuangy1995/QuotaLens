@@ -37,13 +37,13 @@ public struct ChatGPTSubscriptionClient: Sendable {
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse,
               (200..<300).contains(httpResponse.statusCode) else {
-            throw NSError(domain: "QuotaLens.Subscription", code: -2, userInfo: [NSLocalizedDescriptionKey: L10n.text("订阅接口暂不可用", "Subscription API is temporarily unavailable")])
+            throw NSError(domain: "QuotaLens.Subscription", code: -2, userInfo: [NSLocalizedDescriptionKey: L10n.text("暂时无法获取订阅信息", "Subscription details are temporarily unavailable")])
         }
 
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let accounts = root["accounts"] as? [String: Any],
               let defaultAccount = accounts["default"] as? [String: Any] else {
-            throw NSError(domain: "QuotaLens.Subscription", code: -3, userInfo: [NSLocalizedDescriptionKey: L10n.text("订阅接口返回结构不可识别", "Subscription API returned an unrecognized response")])
+            throw NSError(domain: "QuotaLens.Subscription", code: -3, userInfo: [NSLocalizedDescriptionKey: L10n.text("无法读取订阅信息", "Subscription details could not be read")])
         }
 
         let account = defaultAccount["account"] as? [String: Any]

@@ -166,7 +166,7 @@ jobs:
           - Apple Silicon: for Macs with Apple M-series chips.
           - Intel: for Intel-based Macs.
           - Universal: one app containing both Apple Silicon and Intel binaries.
-          - In-app updates: QuotaLens automatically uses the appcast matching the current Mac architecture.
+          - In-app updates: supported in update-capable builds.
 
           Check \`SHA256SUMS.txt\` to verify downloaded files.
           EOF

@@ -39,7 +39,7 @@ public actor JSONRPCTransport {
         inputHandle = nil
         outputHandle = nil
 
-        let error = NSError(domain: "JSONRPCTransport", code: -1, userInfo: [NSLocalizedDescriptionKey: L10n.text("通信传输已断开", "Transport disconnected")])
+        let error = NSError(domain: "JSONRPCTransport", code: -1, userInfo: [NSLocalizedDescriptionKey: L10n.text("连接已断开", "Connection disconnected")])
         for (_, continuation) in pendingRequests {
             continuation.resume(throwing: error)
         }
@@ -49,7 +49,7 @@ public actor JSONRPCTransport {
     /// 发送 JSON-RPC 请求并等待响应 (支持超时)
     public func sendRequest(method: String, params: [String: AnyCodable]? = nil, timeoutSeconds: Double = 5.0) async throws -> JSONRPCResponse {
         guard isRunning, let output = outputHandle else {
-            throw NSError(domain: "JSONRPCTransport", code: -100, userInfo: [NSLocalizedDescriptionKey: L10n.text("App Server 未启动或已断开", "App Server is not running or has disconnected")])
+            throw NSError(domain: "JSONRPCTransport", code: -100, userInfo: [NSLocalizedDescriptionKey: L10n.text("连接未启动或已断开", "Connection is not running or has disconnected")])
         }
 
         let requestId = nextRequestId

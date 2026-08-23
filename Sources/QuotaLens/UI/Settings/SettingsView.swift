@@ -1,4 +1,4 @@
-// QuotaLens 科技风系统设置与控制舱视图 (Dual Theme Control Deck)
+// QuotaLens system settings view.
 
 import SwiftUI
 import AppKit
@@ -19,19 +19,19 @@ public struct SettingsView: View {
     public var body: some View {
         ScrollView {
             VStack(spacing: 22) {
-                // 顶部 HUD 标题
+                // 顶部标题
                 settingsHeaderHUD
 
-                // 模块 01 · 外观与主题偏好 (Appearance & Theme)
+                // 模块 01 · 外观与语言
                 appearanceHUDCard
 
-                // 模块 02 · 账号与身份网关 (Identity Gateway)
+                // 模块 02 · 账号
                 accountIdentityHUDCard
 
-                // 模块 03 · 引擎调度与通信链路 (Engine Dispatch & Daemons)
+                // 模块 03 · 同步与刷新
                 engineDispatchHUDCard
 
-                // 模块 04 · 本地存储与数据核心 (Storage Core)
+                // 模块 04 · 本地数据
                 storageCoreHUDCard
             }
             .padding(24)
@@ -42,31 +42,23 @@ public struct SettingsView: View {
         }
     }
 
-    // MARK: - 顶部 HUD 标题
+    // MARK: - 顶部标题
     private var settingsHeaderHUD: some View {
-        let cyan = AppTheme.accentCyan(for: colorScheme)
         return VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
                 Text(L10n.text("系统设置", "Settings"))
                     .font(.system(.title, design: .rounded, weight: .black))
                     .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
-
-                Text("CONTROL DECK")
-                    .font(.system(size: 10, weight: .heavy, design: .monospaced))
-                    .foregroundStyle(cyan)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(cyan.opacity(colorScheme == .dark ? 0.15 : 0.12), in: RoundedRectangle(cornerRadius: 4))
             }
 
-            Text(L10n.text("管理当前外观主题、身份网关、守护进程调度与本地数据核心参数", "Manage appearance, account identity, background scheduling, and local data storage."))
+            Text(L10n.text("管理外观、语言、账号、刷新和本地数据", "Manage appearance, language, account, refresh, and local data."))
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    // MARK: - 模块 01 · 外观与主题偏好
+    // MARK: - 模块 01 · 外观与语言
     private var appearanceHUDCard: some View {
         let cyan = AppTheme.accentCyan(for: colorScheme)
         let isDark = colorScheme == .dark
@@ -74,7 +66,7 @@ public struct SettingsView: View {
         return VStack(alignment: .leading, spacing: 14) {
             CyberSectionHeader(
                 tag: "01",
-                title: L10n.text("外观与主题偏好 (APPEARANCE & THEME)", "Appearance & Theme"),
+                title: L10n.text("外观与语言", "Appearance & Language"),
                 icon: "paintpalette.fill"
             )
 
@@ -86,11 +78,8 @@ public struct SettingsView: View {
                         Text(L10n.text("界面视觉皮肤", "Interface Theme"))
                             .font(.system(size: 13, weight: .bold))
                             .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
-                        Text("[THEME PRESET]")
-                            .font(.system(size: 9, weight: .heavy, design: .monospaced))
-                            .foregroundStyle(cyan)
                     }
-                    Text(L10n.text("默认推荐浅色水晶模式，同时支持深色暗曜 HUD 与系统联动", "Choose light, dark, or follow the macOS appearance."))
+                    Text(L10n.text("选择浅色、深色，或跟随系统外观", "Choose light, dark, or follow the macOS appearance."))
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
                 }
@@ -127,11 +116,8 @@ public struct SettingsView: View {
                         Text(L10n.text("界面语言", "Interface Language"))
                             .font(.system(size: 13, weight: .bold))
                             .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
-                        Text("[LANGUAGE]")
-                            .font(.system(size: 9, weight: .heavy, design: .monospaced))
-                            .foregroundStyle(cyan)
                     }
-                    Text(L10n.text("默认跟随系统，也可固定为指定语言", "Follow the system by default, or pin the interface to a language."))
+                    Text(L10n.text("默认跟随系统，也可以选择固定语言", "Follow the system by default, or choose a fixed language."))
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
                 }
@@ -159,7 +145,7 @@ public struct SettingsView: View {
         .cyberCard(cornerRadius: 16, padding: 18)
     }
 
-    // MARK: - 模块 02 · 账号与身份网关
+    // MARK: - 模块 02 · 账号
     private var accountIdentityHUDCard: some View {
         let cyan = AppTheme.accentCyan(for: colorScheme)
         let purple = AppTheme.accentPurple(for: colorScheme)
@@ -168,7 +154,7 @@ public struct SettingsView: View {
             HStack {
                 CyberSectionHeader(
                     tag: "02",
-                    title: L10n.text("账号与身份网关 (IDENTITY GATEWAY)", "Identity Gateway"),
+                    title: L10n.text("账号", "Account"),
                     icon: "person.crop.circle.badge.checkmark"
                 )
 
@@ -230,7 +216,7 @@ public struct SettingsView: View {
                             .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
 
                         HStack(spacing: 4) {
-                            Text("TIER:")
+                            Text(L10n.text("套餐:", "Plan:"))
                                 .font(.system(size: 9, weight: .bold, design: .monospaced))
                                 .foregroundStyle(cyan)
                             Text(state.subscriptionPlanTitle.uppercased())
@@ -248,7 +234,7 @@ public struct SettingsView: View {
                         )
                     }
 
-                    Text(L10n.text("当前会话绑定 · 始终跟随真实登录状态", "Bound to the current session and live sign-in state"))
+                    Text(L10n.text("使用当前登录账号", "Using the current signed-in account"))
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
                 }
@@ -267,7 +253,7 @@ public struct SettingsView: View {
         .cyberCard(cornerRadius: 16, padding: 18)
     }
 
-    // MARK: - 模块 03 · 引擎调度与通信链路
+    // MARK: - 模块 03 · 同步与刷新
     private var engineDispatchHUDCard: some View {
         let cyan = AppTheme.accentCyan(for: colorScheme)
         let amber = AppTheme.accentAmber(for: colorScheme)
@@ -276,7 +262,7 @@ public struct SettingsView: View {
         return VStack(alignment: .leading, spacing: 18) {
             CyberSectionHeader(
                 tag: "03",
-                title: L10n.text("引擎调度与通信链路 (ENGINE DISPATCH)", "Engine Dispatch"),
+                title: L10n.text("同步与刷新", "Sync & Refresh"),
                 icon: "cpu.fill"
             )
 
@@ -290,11 +276,8 @@ public struct SettingsView: View {
                             Text(L10n.text("刷新频率", "Refresh Rate"))
                                 .font(.system(size: 13, weight: .bold))
                                 .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
-                            Text("[CADENCE]")
-                                .font(.system(size: 9, weight: .heavy, design: .monospaced))
-                                .foregroundStyle(cyan)
                         }
-                        Text(L10n.format("Reads server quota snapshots every %@.", zhHans: "每 %@ 读取一次服务端额度快照", state.refreshIntervalDescription))
+                        Text(L10n.format("Refreshes quota every %@.", zhHans: "每 %@ 自动刷新额度", state.refreshIntervalDescription))
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
                     }
@@ -348,7 +331,7 @@ public struct SettingsView: View {
                     .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
             )
 
-            // 2. 守护进程与启动行为
+            // 2. 后台刷新与启动行为
             VStack(spacing: 10) {
                 // 开机自启动
                 HStack {
@@ -357,11 +340,8 @@ public struct SettingsView: View {
                             Text(L10n.text("开机自动启动", "Launch at Login"))
                                 .font(.system(size: 13, weight: .bold))
                                 .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
-                            Text("[AUTO-LAUNCH]")
-                                .font(.system(size: 9, weight: .heavy, design: .monospaced))
-                                .foregroundStyle(cyan)
                         }
-                        Text(L10n.format("Login item status: %@", zhHans: "系统登录状态: %@", state.launchAtLoginStatusText))
+                        Text(L10n.format("Status: %@", zhHans: "状态: %@", state.launchAtLoginStatusText))
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
                     }
@@ -386,14 +366,11 @@ public struct SettingsView: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 6) {
-                            Text(L10n.text("常驻菜单栏模式 (隐藏 Dock 图标)", "Menu Bar Mode (Hide Dock Icon)"))
+                            Text(L10n.text("仅显示菜单栏图标", "Show in Menu Bar Only"))
                                 .font(.system(size: 13, weight: .bold))
                                 .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
-                            Text("[MENU-BAR DAEMON]")
-                                .font(.system(size: 9, weight: .heavy, design: .monospaced))
-                                .foregroundStyle(cyan)
                         }
-                        Text(L10n.text("开启后仅在顶部菜单栏驻留，点击菜单栏即可呼出控制面板", "When enabled, QuotaLens stays in the menu bar and opens from the status item."))
+                        Text(L10n.text("开启后，QuotaLens 只显示在菜单栏中", "When enabled, QuotaLens only appears in the menu bar."))
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
                     }
@@ -421,9 +398,6 @@ public struct SettingsView: View {
                             Text(L10n.text("重置卡到期提醒", "Reset Card Expiry Reminder"))
                                 .font(.system(size: 13, weight: .bold))
                                 .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
-                            Text("[RESET CARD ALERT]")
-                                .font(.system(size: 9, weight: .heavy, design: .monospaced))
-                                .foregroundStyle(amber)
                         }
                         Text(state.resetCreditReminderDetailText)
                             .font(.system(size: 11, weight: .medium))
@@ -459,13 +433,13 @@ public struct SettingsView: View {
                 )
             }
 
-            // 3. 终端命令行程序覆盖
+            // 3. Codex 路径
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 6) {
                     Image(systemName: "terminal.fill")
                         .font(.system(size: 11))
                         .foregroundStyle(cyan)
-                    Text(L10n.text("命令行程序执行路径 (CLI BINARY PATH)", "CLI Binary Path"))
+                    Text(L10n.text("Codex 路径", "Codex Path"))
                         .font(.system(size: 11, weight: .bold, design: .monospaced))
                         .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
                 }
@@ -501,9 +475,9 @@ public struct SettingsView: View {
                         )
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(L10n.text("选择命令行程序目标", "Choose CLI binary target"))
+                    .accessibilityLabel(L10n.text("选择 Codex 路径", "Choose Codex Path"))
                     .accessibilityValue(cliBinaryTargetDescription)
-                    .confirmationDialog(L10n.text("选择命令行程序目标", "Choose CLI binary target"), isPresented: $isShowingBinaryTargetDialog) {
+                    .confirmationDialog(L10n.text("选择 Codex 路径", "Choose Codex Path"), isPresented: $isShowingBinaryTargetDialog) {
                         Button(L10n.text("自动探测 codex", "Auto-detect codex")) {
                             customPath = ""
                         }
@@ -522,7 +496,7 @@ public struct SettingsView: View {
 
                         Button(L10n.text("取消", "Cancel"), role: .cancel) {}
                     } message: {
-                        Text(L10n.text("选择 codex CLI 可执行文件，或保持自动探测。", "Choose a codex CLI executable, or keep auto-detection enabled."))
+                        Text(L10n.text("选择 Codex 的位置，或保持自动探测。", "Choose where Codex is installed, or keep auto-detection enabled."))
                     }
 
                     Button(action: {
@@ -534,7 +508,7 @@ public struct SettingsView: View {
                         HStack(spacing: 5) {
                             Image(systemName: "bolt.fill")
                                 .font(.system(size: 10))
-                            Text(L10n.text("重连通道", "Reconnect"))
+                            Text(L10n.text("重新连接", "Reconnect"))
                                 .font(.system(size: 11, weight: .bold, design: .monospaced))
                         }
                         .padding(.horizontal, 12)
@@ -577,7 +551,7 @@ public struct SettingsView: View {
         .cyberCard(cornerRadius: 16, padding: 18)
     }
 
-    // MARK: - 模块 04 · 本地存储与数据核心
+    // MARK: - 模块 04 · 本地数据
     private var storageCoreHUDCard: some View {
         let cyan = AppTheme.accentCyan(for: colorScheme)
         let isDark = colorScheme == .dark
@@ -585,7 +559,7 @@ public struct SettingsView: View {
         return VStack(alignment: .leading, spacing: 14) {
             CyberSectionHeader(
                 tag: "04",
-                title: L10n.text("本地持久化核心 (STORAGE CORE)", "Storage Core"),
+                title: L10n.text("本地数据", "Local Data"),
                 icon: "externaldrive.fill"
             )
 
@@ -596,7 +570,7 @@ public struct SettingsView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text(L10n.text("SQLITE 数据库端点:", "SQLite database endpoint:"))
+                    Text(L10n.text("数据位置:", "Data location:"))
                         .font(.system(size: 11, weight: .bold, design: .monospaced))
                         .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
 
@@ -643,7 +617,7 @@ public struct SettingsView: View {
                     HStack(spacing: 6) {
                         Image(systemName: "arrow.triangle.2.circlepath")
                             .font(.system(size: 11, weight: .bold))
-                        Text(L10n.text("执行全量数据重探 (SYNC SERVER RE-PROBE)", "Run Full Server Re-Probe"))
+                        Text(L10n.text("重新同步数据", "Resync Data"))
                             .font(.system(size: 11, weight: .bold, design: .monospaced))
                     }
                     .padding(.horizontal, 14)
@@ -677,7 +651,7 @@ public struct SettingsView: View {
             if let detectedPath = currentDetectedBinaryPath {
                 return L10n.format("Auto-detect · %@", zhHans: "自动探测 · %@", detectedPath)
             }
-            return L10n.text("自动探测 · 按环境查找 codex", "Auto-detect · Search environment for codex")
+            return L10n.text("自动探测 Codex", "Auto-detect Codex")
         }
         return trimmedPath
     }
@@ -715,9 +689,9 @@ public struct SettingsView: View {
 
     private func chooseCodexBinaryTarget() {
         let panel = NSOpenPanel()
-        panel.title = L10n.text("选择 Codex CLI 可执行文件", "Choose Codex CLI Executable")
-        panel.message = L10n.text("请选择用于连接的 codex 命令行程序目标。", "Choose the codex CLI executable to use for the connection.")
-        panel.prompt = L10n.text("选择目标", "Choose")
+        panel.title = L10n.text("选择 Codex", "Choose Codex")
+        panel.message = L10n.text("请选择 Codex 可执行文件。", "Choose the Codex executable.")
+        panel.prompt = L10n.text("选择", "Choose")
         panel.allowsMultipleSelection = false
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
@@ -733,7 +707,7 @@ public struct SettingsView: View {
 
         let selectedPath = selectedURL.path
         guard FileManager.default.isExecutableFile(atPath: selectedPath) else {
-            binaryTargetAlertMessage = L10n.text("所选文件不可执行，请选择 codex CLI 二进制文件。", "The selected file is not executable. Choose a codex CLI binary.")
+            binaryTargetAlertMessage = L10n.text("所选文件不可执行，请重新选择。", "The selected file is not executable. Choose another file.")
             return
         }
 

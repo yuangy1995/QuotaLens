@@ -81,10 +81,11 @@ The workflow validates that the pushed tag matches `VERSION`.
 
 ## In-App Updates
 
-QuotaLens uses Sparkle for macOS self-updates. The app never asks users to choose an architecture when they click "Check for Updates":
+QuotaLens uses Sparkle for macOS self-updates. The release workflow publishes separate appcast feeds for the app's internal update checks:
 
-- Apple Silicon builds read `appcast-apple-silicon.xml`.
-- Intel builds read `appcast-intel.xml`.
-- The Universal package remains available on the GitHub Release page for manual web downloads, but it is not the default in-app update feed.
+- `appcast-apple-silicon.xml`
+- `appcast-intel.xml`
+
+The Universal package remains available on the GitHub Release page for direct downloads.
 
 The first public `v1.0.0` build did not include Sparkle. Users must manually install the first Sparkle-enabled version once; versions after that can update in-app.

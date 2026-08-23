@@ -41,7 +41,7 @@ public actor CodexProcessManager {
     /// 启动 codex app-server 子进程
     public func start() async -> Bool {
         guard let binaryPath = CodexBinaryLocator.locateBinary(customPath: customBinaryPath) else {
-            self.status = .failed(L10n.text("未找到 codex 可执行文件，请在设置中指定路径或安装 Codex CLI", "Codex executable not found. Specify a path in Settings or install Codex CLI."))
+            self.status = .failed(L10n.text("未找到 Codex，请在设置中指定位置或安装 Codex。", "Codex was not found. Choose its location in Settings or install Codex."))
             return false
         }
 
@@ -90,7 +90,7 @@ public actor CodexProcessManager {
 
             return true
         } catch {
-            self.status = .failed(L10n.format("Failed to start subprocess: %@", zhHans: "启动子进程失败: %@", error.localizedDescription))
+            self.status = .failed(L10n.format("Unable to start Codex: %@", zhHans: "无法启动 Codex：%@", error.localizedDescription))
             return false
         }
     }
@@ -142,7 +142,7 @@ public actor CodexProcessManager {
             return
         }
         lastExitCode = exitCode
-        status = .failed(L10n.format("codex app-server exited with code %d", zhHans: "codex app-server 已退出，退出码 %d", exitCode))
+        status = .failed(L10n.format("Codex exited unexpectedly (code %d)", zhHans: "Codex 意外退出（代码 %d）", exitCode))
         await transport.stop()
 
         if autoReconnect && reconnectAttempts < 5 {
