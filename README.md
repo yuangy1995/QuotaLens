@@ -1,0 +1,65 @@
+# QuotaLens
+
+[简体中文](README.zh-CN.md)
+
+QuotaLens is a native macOS menu bar app for monitoring Codex and ChatGPT quota telemetry. It reads the local Codex sign-in state, connects to the Codex app server, and presents quota usage, reset timing, subscription status, and reset-card availability in a compact desktop HUD.
+
+## Features
+
+- Menu bar HUD with weekly used/remaining quota, reset countdown, subscription period, refresh state, and reset-card reserve.
+- Native SwiftUI dashboard with light, dark HUD, and system appearance modes.
+- Local Codex account discovery from `~/.codex/auth.json`.
+- Codex app-server snapshot reading via `codex app-server --stdio` for account and rate-limit data.
+- Subscription entitlement refresh using the local ChatGPT access token, with renewal, ending, and scheduled-plan-change states.
+- Reset-card expiry reminders with acknowledge and snooze controls.
+- Local SQLite persistence under `~/Library/Application Support/QuotaLens/quotalens.sqlite`.
+- Local session baseline scanning from `~/.codex/sessions` for later attribution and reconciliation.
+- Adjustable refresh interval, custom Codex CLI path, launch-at-login toggle, and pure menu-bar mode.
+- Built-in localization for English, Simplified Chinese, Traditional Chinese, Japanese, Korean, Spanish, German, French, Portuguese, and Brazilian Portuguese.
+
+## Requirements
+
+- macOS 14 or later.
+- Swift 6 toolchain or Xcode with Swift 6 support.
+- A working `codex` CLI installation.
+- A signed-in local Codex/ChatGPT session, usually stored in `~/.codex/auth.json`.
+
+## Build And Run
+
+Run from the project root:
+
+```bash
+swift run QuotaLens
+```
+
+Build a release binary:
+
+```bash
+swift build -c release
+```
+
+Create a signed `.app`, `.zip`, and `.dmg` package:
+
+```bash
+./scripts/build_and_package.sh
+```
+
+By default, the packaging script uses ad-hoc signing. To sign with a Developer ID certificate, set `DEVELOPER_ID_APPLICATION` before running it:
+
+```bash
+DEVELOPER_ID_APPLICATION="Developer ID Application: Your Name (TEAMID)" ./scripts/build_and_package.sh
+```
+
+## How It Works
+
+QuotaLens looks for the Codex CLI in common installation paths and in `PATH`. When connected, it starts a short-lived `codex app-server --stdio` process and requests account and rate-limit snapshots. It also reads local Codex authentication metadata to identify the current account and, when possible, refreshes ChatGPT subscription entitlement details.
+
+The app keeps its own local SQLite database for state, quota snapshots, local usage baselines, and reconciliation metadata. Build outputs, packaged apps, temporary files, credentials, and local machine artifacts are intentionally excluded from the repository.
+
+## Privacy Notes
+
+QuotaLens is designed as a local desktop utility. It reads local Codex configuration and session files on your Mac and stores derived app data locally in SQLite. It does not require committing credentials, packaged binaries, logs, or local databases to source control. The subscription entitlement refresh uses your existing local ChatGPT access token to call ChatGPT's account endpoint.
+
+## License
+
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE).

@@ -1,0 +1,22 @@
+# Whitelist-only repository: keep source, resources, scripts, and docs.
+*
+
+!/.gitignore
+!/LICENSE
+!/README.md
+!/README.zh-CN.md
+!/Package.swift
+!/Package.resolved
+
+!/Sources/
+!/Sources/**
+
+!/Resources/
+!/Resources/Info.plist
+!/Resources/AppIcon.icns
+
+!/scripts/
+!/scripts/build_and_package.sh
+
+!/Tests/
+!/Tests/**

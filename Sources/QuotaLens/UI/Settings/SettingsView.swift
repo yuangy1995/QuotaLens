@@ -1,0 +1,902 @@
+// QuotaLens 科技风系统设置与控制舱视图 (Dual Theme Control Deck)
+
+import SwiftUI
+import AppKit
+
+public struct SettingsView: View {
+    @ObservedObject var state: AppState
+    @EnvironmentObject var env: AppEnvironment
+    @Environment(\.colorScheme) var colorScheme
+
+    @State private var customPath: String = ""
+    @State private var isCopiedDbPath: Bool = false
+    @State private var isShowingBinaryTargetDialog: Bool = false
+    @State private var binaryTargetAlertMessage: String?
+    @State private var autoDetectedBinaryPath: String?
+
+    private let presetIntervals: [Int] = [15, 30, 60, 300, 900]
+
+    public var body: some View {
+        ScrollView {
+            VStack(spacing: 22) {
+                // 顶部 HUD 标题
+                settingsHeaderHUD
+
+                // 模块 01 · 外观与主题偏好 (Appearance & Theme)
+                appearanceHUDCard
+
+                // 模块 02 · 账号与身份网关 (Identity Gateway)
+                accountIdentityHUDCard
+
+                // 模块 03 · 引擎调度与通信链路 (Engine Dispatch & Daemons)
+                engineDispatchHUDCard
+
+                // 模块 04 · 本地存储与数据核心 (Storage Core)
+                storageCoreHUDCard
+            }
+            .padding(24)
+        }
+        .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+        .task {
+            await refreshAutoDetectedBinaryPath()
+        }
+    }
+
+    // MARK: - 顶部 HUD 标题
+    private var settingsHeaderHUD: some View {
+        let cyan = AppTheme.accentCyan(for: colorScheme)
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Text(L10n.text("系统设置", "Settings"))
+                    .font(.system(.title, design: .rounded, weight: .black))
+                    .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+
+                Text("CONTROL DECK")
+                    .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                    .foregroundStyle(cyan)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(cyan.opacity(colorScheme == .dark ? 0.15 : 0.12), in: RoundedRectangle(cornerRadius: 4))
+            }
+
+            Text(L10n.text("管理当前外观主题、身份网关、守护进程调度与本地数据核心参数", "Manage appearance, account identity, background scheduling, and local data storage."))
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: - 模块 01 · 外观与主题偏好
+    private var appearanceHUDCard: some View {
+        let cyan = AppTheme.accentCyan(for: colorScheme)
+        let isDark = colorScheme == .dark
+
+        return VStack(alignment: .leading, spacing: 14) {
+            CyberSectionHeader(
+                tag: "01",
+                title: L10n.text("外观与主题偏好 (APPEARANCE & THEME)", "Appearance & Theme"),
+                icon: "paintpalette.fill"
+            )
+
+            CyberDivider()
+
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(L10n.text("界面视觉皮肤", "Interface Theme"))
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                        Text("[THEME PRESET]")
+                            .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                            .foregroundStyle(cyan)
+                    }
+                    Text(L10n.text("默认推荐浅色水晶模式，同时支持深色暗曜 HUD 与系统联动", "Choose light, dark, or follow the macOS appearance."))
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                }
+
+                Spacer()
+
+                HStack(spacing: 8) {
+                    ForEach(AppThemeMode.allCases) { mode in
+                        ThemeModeChip(
+                            mode: mode,
+                            isSelected: state.themeMode == mode,
+                            isDark: isDark,
+                            cyan: cyan,
+                            textSecondary: AppTheme.textSecondary(for: colorScheme),
+                            onSelect: {
+                                withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                                    state.setThemeMode(mode)
+                                }
+                            }
+                        )
+                    }
+                }
+            }
+            .padding(12)
+            .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
+            )
+
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(L10n.text("界面语言", "Interface Language"))
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                        Text("[LANGUAGE]")
+                            .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                            .foregroundStyle(cyan)
+                    }
+                    Text(L10n.text("默认跟随系统，也可固定为指定语言", "Follow the system by default, or pin the interface to a language."))
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                }
+
+                Spacer()
+
+                LanguageModeMenu(
+                    selection: state.languageMode,
+                    isDark: isDark,
+                    cyan: cyan,
+                    textSecondary: AppTheme.textSecondary(for: colorScheme)
+                ) { mode in
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                        state.setLanguageMode(mode)
+                    }
+                }
+            }
+            .padding(12)
+            .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
+            )
+        }
+        .cyberCard(cornerRadius: 16, padding: 18)
+    }
+
+    // MARK: - 模块 02 · 账号与身份网关
+    private var accountIdentityHUDCard: some View {
+        let cyan = AppTheme.accentCyan(for: colorScheme)
+        let purple = AppTheme.accentPurple(for: colorScheme)
+
+        return VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                CyberSectionHeader(
+                    tag: "02",
+                    title: L10n.text("账号与身份网关 (IDENTITY GATEWAY)", "Identity Gateway"),
+                    icon: "person.crop.circle.badge.checkmark"
+                )
+
+                Spacer()
+
+                Button(action: {
+                    Task {
+                        await env.refreshData()
+                    }
+                }) {
+                    HStack(spacing: 5) {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 10, weight: .bold))
+                        Text(L10n.text("刷新账号", "Refresh Account"))
+                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(cyan.opacity(colorScheme == .dark ? 0.15 : 0.12), in: RoundedRectangle(cornerRadius: 6))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .strokeBorder(cyan.opacity(0.4), lineWidth: 0.8)
+                    )
+                    .foregroundStyle(cyan)
+                }
+                .buttonStyle(.plain)
+                .disabled(state.isRefreshing)
+            }
+
+            CyberDivider()
+
+            // 身份状态卡片
+            HStack(spacing: 16) {
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [cyan, purple],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 44, height: 44)
+                        .overlay(
+                            Circle()
+                                .strokeBorder(Color.white.opacity(0.4), lineWidth: 1.5)
+                        )
+                        .shadow(color: cyan.opacity(colorScheme == .dark ? 0.4 : 0.25), radius: 6)
+
+                    Image(systemName: "person.fill")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Text(state.displayName(for: state.account?.accountKey))
+                            .font(.system(size: 14, weight: .bold, design: .monospaced))
+                            .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+
+                        HStack(spacing: 4) {
+                            Text("TIER:")
+                                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                .foregroundStyle(cyan)
+                            Text(state.subscriptionPlanTitle.uppercased())
+                                .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.75)
+                                .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                        }
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                        .background(cyan.opacity(colorScheme == .dark ? 0.15 : 0.12), in: Capsule())
+                        .overlay(
+                            Capsule()
+                                .strokeBorder(cyan.opacity(0.35), lineWidth: 0.8)
+                        )
+                    }
+
+                    Text(L10n.text("当前会话绑定 · 始终跟随真实登录状态", "Bound to the current session and live sign-in state"))
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                }
+
+                Spacer()
+
+                StatusBadge.forConnection(state.connectionStatus)
+            }
+            .padding(14)
+            .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
+            )
+        }
+        .cyberCard(cornerRadius: 16, padding: 18)
+    }
+
+    // MARK: - 模块 03 · 引擎调度与通信链路
+    private var engineDispatchHUDCard: some View {
+        let cyan = AppTheme.accentCyan(for: colorScheme)
+        let amber = AppTheme.accentAmber(for: colorScheme)
+        let isDark = colorScheme == .dark
+
+        return VStack(alignment: .leading, spacing: 18) {
+            CyberSectionHeader(
+                tag: "03",
+                title: L10n.text("引擎调度与通信链路 (ENGINE DISPATCH)", "Engine Dispatch"),
+                icon: "cpu.fill"
+            )
+
+            CyberDivider()
+
+            // 1. 自动刷新周期设置与快速芯片
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text(L10n.text("刷新频率", "Refresh Rate"))
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                            Text("[CADENCE]")
+                                .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                                .foregroundStyle(cyan)
+                        }
+                        Text(L10n.format("Reads server quota snapshots every %@.", zhHans: "每 %@ 读取一次服务端额度快照", state.refreshIntervalDescription))
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                    }
+
+                    Spacer()
+
+                    // 快速预设芯片选择器
+                    HStack(spacing: 6) {
+                        ForEach(presetIntervals, id: \.self) { seconds in
+                            let isSelected = state.refreshIntervalSeconds == seconds
+                            Button(action: {
+                                env.setRefreshInterval(seconds: seconds)
+                            }) {
+                                Text(displayPreset(seconds))
+                                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(
+                                        isSelected ? cyan.opacity(isDark ? 0.24 : 0.18) : (isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.04)),
+                                        in: RoundedRectangle(cornerRadius: 5)
+                                    )
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 5)
+                                            .strokeBorder(
+                                                isSelected ? cyan.opacity(0.65) : (isDark ? Color.white.opacity(0.18) : Color.black.opacity(0.10)),
+                                                lineWidth: isSelected ? 1 : 0.6
+                                            )
+                                    )
+                                    .foregroundStyle(isSelected ? cyan : AppTheme.textPrimary(for: colorScheme))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    Stepper(
+                        "",
+                        value: Binding(
+                            get: { state.refreshIntervalSeconds },
+                            set: { env.setRefreshInterval(seconds: $0) }
+                        ),
+                        in: 15...3600,
+                        step: 15
+                    )
+                    .labelsHidden()
+                }
+            }
+            .padding(12)
+            .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
+            )
+
+            // 2. 守护进程与启动行为
+            VStack(spacing: 10) {
+                // 开机自启动
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text(L10n.text("开机自动启动", "Launch at Login"))
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                            Text("[AUTO-LAUNCH]")
+                                .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                                .foregroundStyle(cyan)
+                        }
+                        Text(L10n.format("Login item status: %@", zhHans: "系统登录状态: %@", state.launchAtLoginStatusText))
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                    }
+
+                    Spacer()
+
+                    Toggle("", isOn: Binding(
+                        get: { state.launchAtLoginEnabled },
+                        set: { env.setLaunchAtLogin(enabled: $0) }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                }
+                .padding(12)
+                .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
+                )
+
+                // 隐藏 Dock 图标 / 纯菜单栏模式
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text(L10n.text("常驻菜单栏模式 (隐藏 Dock 图标)", "Menu Bar Mode (Hide Dock Icon)"))
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                            Text("[MENU-BAR DAEMON]")
+                                .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                                .foregroundStyle(cyan)
+                        }
+                        Text(L10n.text("开启后仅在顶部菜单栏驻留，点击菜单栏即可呼出控制面板", "When enabled, QuotaLens stays in the menu bar and opens from the status item."))
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                    }
+
+                    Spacer()
+
+                    Toggle("", isOn: Binding(
+                        get: { state.hideDockIcon },
+                        set: { env.setDockIconHidden($0) }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                }
+                .padding(12)
+                .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
+                )
+
+                // 重置卡到期提醒
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 6) {
+                            Text(L10n.text("重置卡到期提醒", "Reset Card Expiry Reminder"))
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                            Text("[RESET CARD ALERT]")
+                                .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                                .foregroundStyle(amber)
+                        }
+                        Text(state.resetCreditReminderDetailText)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                            .lineLimit(2)
+                    }
+
+                    Spacer()
+
+                    Text(state.resetCreditReminderStatusText)
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(state.hasActiveResetCreditReminder ? amber : AppTheme.textSecondary(for: colorScheme))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background((state.hasActiveResetCreditReminder ? amber : AppTheme.textSecondary(for: colorScheme)).opacity(colorScheme == .dark ? 0.14 : 0.10), in: Capsule())
+                        .overlay(
+                            Capsule()
+                                .strokeBorder((state.hasActiveResetCreditReminder ? amber : AppTheme.textSecondary(for: colorScheme)).opacity(0.36), lineWidth: 0.8)
+                        )
+
+                    Toggle("", isOn: Binding(
+                        get: { state.resetCreditReminderEnabled },
+                        set: { env.setResetCreditReminderEnabled($0) }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                }
+                .padding(12)
+                .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder((state.hasActiveResetCreditReminder ? amber : (isDark ? Color.white : Color.black)).opacity(state.hasActiveResetCreditReminder ? 0.34 : 0.10), lineWidth: 0.8)
+                )
+            }
+
+            // 3. 终端命令行程序覆盖
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
+                    Image(systemName: "terminal.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(cyan)
+                    Text(L10n.text("命令行程序执行路径 (CLI BINARY PATH)", "CLI Binary Path"))
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                }
+
+                HStack(spacing: 10) {
+                    Button(action: {
+                        isShowingBinaryTargetDialog = true
+                    }) {
+                        HStack(spacing: 7) {
+                            Image(systemName: customPath.isEmpty ? "scope" : "terminal.fill")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(cyan)
+
+                            Text(cliBinaryTargetDescription)
+                                .font(.system(size: 12, design: .monospaced))
+                                .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+
+                            Spacer(minLength: 8)
+
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(isDark ? Color.black.opacity(0.4) : Color.white.opacity(0.8), in: RoundedRectangle(cornerRadius: 7))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 7)
+                                .strokeBorder(cyan.opacity(0.35), lineWidth: 0.8)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(L10n.text("选择命令行程序目标", "Choose CLI binary target"))
+                    .accessibilityValue(cliBinaryTargetDescription)
+                    .confirmationDialog(L10n.text("选择命令行程序目标", "Choose CLI binary target"), isPresented: $isShowingBinaryTargetDialog) {
+                        Button(L10n.text("自动探测 codex", "Auto-detect codex")) {
+                            customPath = ""
+                        }
+
+                        ForEach(binaryTargetCandidates, id: \.self) { target in
+                            Button(target) {
+                                customPath = target
+                            }
+                        }
+
+                        Button(L10n.text("从文件中选择…", "Choose from File...")) {
+                            DispatchQueue.main.async {
+                                chooseCodexBinaryTarget()
+                            }
+                        }
+
+                        Button(L10n.text("取消", "Cancel"), role: .cancel) {}
+                    } message: {
+                        Text(L10n.text("选择 codex CLI 可执行文件，或保持自动探测。", "Choose a codex CLI executable, or keep auto-detection enabled."))
+                    }
+
+                    Button(action: {
+                        Task {
+                            await env.processManager.setCustomBinaryPath(customPath.isEmpty ? nil : customPath)
+                            await env.connectCodex()
+                        }
+                    }) {
+                        HStack(spacing: 5) {
+                            Image(systemName: "bolt.fill")
+                                .font(.system(size: 10))
+                            Text(L10n.text("重连通道", "Reconnect"))
+                                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(
+                            LinearGradient(
+                                colors: [cyan, AppTheme.accentBlue(for: colorScheme)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            in: RoundedRectangle(cornerRadius: 7)
+                        )
+                        .foregroundStyle(.white)
+                        .shadow(color: cyan.opacity(isDark ? 0.3 : 0.15), radius: 4)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(12)
+            .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
+            )
+            .alert(L10n.text("无法选择目标", "Cannot choose target"), isPresented: Binding(
+                get: { binaryTargetAlertMessage != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        binaryTargetAlertMessage = nil
+                    }
+                }
+            )) {
+                Button(L10n.text("知道了", "OK"), role: .cancel) {
+                    binaryTargetAlertMessage = nil
+                }
+            } message: {
+                Text(binaryTargetAlertMessage ?? "")
+            }
+        }
+        .cyberCard(cornerRadius: 16, padding: 18)
+    }
+
+    // MARK: - 模块 04 · 本地存储与数据核心
+    private var storageCoreHUDCard: some View {
+        let cyan = AppTheme.accentCyan(for: colorScheme)
+        let isDark = colorScheme == .dark
+
+        return VStack(alignment: .leading, spacing: 14) {
+            CyberSectionHeader(
+                tag: "04",
+                title: L10n.text("本地持久化核心 (STORAGE CORE)", "Storage Core"),
+                icon: "externaldrive.fill"
+            )
+
+            CyberDivider()
+
+            let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            let dbPath = appSupport.appendingPathComponent("QuotaLens/quotalens.sqlite").path
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text(L10n.text("SQLITE 数据库端点:", "SQLite database endpoint:"))
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+
+                    Spacer()
+
+                    Button(action: {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(dbPath, forType: .string)
+                        isCopiedDbPath = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                            isCopiedDbPath = false
+                        }
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: isCopiedDbPath ? "checkmark" : "doc.on.doc")
+                                .font(.system(size: 10))
+                            Text(isCopiedDbPath ? L10n.text("已复制", "Copied") : L10n.text("复制路径", "Copy Path"))
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        }
+                        .foregroundStyle(isCopiedDbPath ? AppTheme.accentEmerald(for: colorScheme) : cyan)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                DatabasePathViewer(
+                    dbPath: dbPath,
+                    isDark: isDark,
+                    textColor: AppTheme.textPrimary(for: colorScheme)
+                )
+            }
+            .padding(12)
+            .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
+            )
+
+            HStack {
+                Button(action: {
+                    Task {
+                        await env.refreshData()
+                    }
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .font(.system(size: 11, weight: .bold))
+                        Text(L10n.text("执行全量数据重探 (SYNC SERVER RE-PROBE)", "Run Full Server Re-Probe"))
+                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(cyan.opacity(colorScheme == .dark ? 0.15 : 0.12), in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .strokeBorder(cyan.opacity(0.4), lineWidth: 0.8)
+                    )
+                    .foregroundStyle(cyan)
+                }
+                .buttonStyle(.plain)
+                .disabled(state.isRefreshing)
+
+                Spacer()
+            }
+        }
+        .cyberCard(cornerRadius: 16, padding: 18)
+    }
+
+    private func displayPreset(_ seconds: Int) -> String {
+        if seconds < 60 {
+            return "\(seconds)s"
+        }
+        return "\(seconds / 60)m"
+    }
+
+    private var cliBinaryTargetDescription: String {
+        let trimmedPath = customPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedPath.isEmpty else {
+            if let detectedPath = currentDetectedBinaryPath {
+                return L10n.format("Auto-detect · %@", zhHans: "自动探测 · %@", detectedPath)
+            }
+            return L10n.text("自动探测 · 按环境查找 codex", "Auto-detect · Search environment for codex")
+        }
+        return trimmedPath
+    }
+
+    private var currentDetectedBinaryPath: String? {
+        if case .connected(_, let binaryPath) = state.connectionStatus {
+            return binaryPath
+        }
+        return autoDetectedBinaryPath
+    }
+
+    private var binaryTargetCandidates: [String] {
+        let fileManager = FileManager.default
+        let homePath = fileManager.homeDirectoryForCurrentUser.path
+        var candidates: [String] = []
+
+        if let detectedBinaryPath = currentDetectedBinaryPath {
+            candidates.append(detectedBinaryPath)
+        }
+
+        candidates.append(contentsOf: CodexBinaryLocator.standardSearchPaths.map { path in
+            path.replacingOccurrences(of: "~", with: homePath)
+        })
+
+        if !customPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            candidates.append(expandedPath(customPath))
+        }
+
+        var seen = Set<String>()
+        return candidates.filter { path in
+            guard seen.insert(path).inserted else { return false }
+            return fileManager.isExecutableFile(atPath: path)
+        }
+    }
+
+    private func chooseCodexBinaryTarget() {
+        let panel = NSOpenPanel()
+        panel.title = L10n.text("选择 Codex CLI 可执行文件", "Choose Codex CLI Executable")
+        panel.message = L10n.text("请选择用于连接的 codex 命令行程序目标。", "Choose the codex CLI executable to use for the connection.")
+        panel.prompt = L10n.text("选择目标", "Choose")
+        panel.allowsMultipleSelection = false
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.canCreateDirectories = false
+        panel.resolvesAliases = true
+        panel.showsHiddenFiles = true
+
+        if let directoryURL = binaryTargetInitialDirectoryURL() {
+            panel.directoryURL = directoryURL
+        }
+
+        guard panel.runModal() == .OK, let selectedURL = panel.url else { return }
+
+        let selectedPath = selectedURL.path
+        guard FileManager.default.isExecutableFile(atPath: selectedPath) else {
+            binaryTargetAlertMessage = L10n.text("所选文件不可执行，请选择 codex CLI 二进制文件。", "The selected file is not executable. Choose a codex CLI binary.")
+            return
+        }
+
+        customPath = selectedPath
+    }
+
+    private func binaryTargetInitialDirectoryURL() -> URL? {
+        let fileManager = FileManager.default
+        let trimmedPath = customPath.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if !trimmedPath.isEmpty {
+            let currentURL = URL(fileURLWithPath: expandedPath(trimmedPath))
+            let directoryURL = currentURL.deletingLastPathComponent()
+            if fileManager.fileExists(atPath: directoryURL.path) {
+                return directoryURL
+            }
+        }
+
+        for candidate in ["/opt/homebrew/bin", "/usr/local/bin", fileManager.homeDirectoryForCurrentUser.appendingPathComponent(".codex/bin").path] {
+            if fileManager.fileExists(atPath: candidate) {
+                return URL(fileURLWithPath: candidate, isDirectory: true)
+            }
+        }
+
+        return fileManager.homeDirectoryForCurrentUser
+    }
+
+    private func expandedPath(_ path: String) -> String {
+        path.replacingOccurrences(of: "~", with: FileManager.default.homeDirectoryForCurrentUser.path)
+    }
+
+    private func refreshAutoDetectedBinaryPath() async {
+        let detectedPath = await Task.detached(priority: .utility) {
+            CodexBinaryLocator.locateBinary()
+        }.value
+        autoDetectedBinaryPath = detectedPath
+    }
+}
+
+// MARK: - 主题模式芯片按钮组件
+private struct ThemeModeChip: View {
+    let mode: AppThemeMode
+    let isSelected: Bool
+    let isDark: Bool
+    let cyan: Color
+    let textSecondary: Color
+    let onSelect: () -> Void
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 6) {
+                Image(systemName: mode.icon)
+                    .font(.system(size: 11, weight: .bold))
+                Text(mode.title)
+                    .font(.system(size: 11, weight: isSelected ? .bold : .semibold, design: .rounded))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(
+                chipBackground,
+                in: RoundedRectangle(cornerRadius: 7)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 7)
+                    .strokeBorder(chipBorder, lineWidth: isSelected ? 1.2 : 0.8)
+            )
+            .foregroundStyle(isSelected ? cyan : textSecondary)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var chipBackground: Color {
+        if isSelected {
+            return isDark ? cyan.opacity(0.24) : cyan.opacity(0.18)
+        }
+        return isDark ? Color.white.opacity(0.06) : Color.black.opacity(0.04)
+    }
+
+    private var chipBorder: Color {
+        if isSelected {
+            return cyan.opacity(isDark ? 0.75 : 0.6)
+        }
+        return isDark ? Color.white.opacity(0.14) : Color.black.opacity(0.10)
+    }
+}
+
+// MARK: - 语言模式菜单选择器
+private struct LanguageModeMenu: View {
+    let selection: AppLanguageMode
+    let isDark: Bool
+    let cyan: Color
+    let textSecondary: Color
+    let onSelect: (AppLanguageMode) -> Void
+
+    var body: some View {
+        Menu {
+            ForEach(AppLanguageMode.allCases) { mode in
+                Button(action: {
+                    onSelect(mode)
+                }) {
+                    Label(mode.title, systemImage: selection == mode ? "checkmark.circle.fill" : mode.icon)
+                }
+            }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: selection.icon)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(cyan)
+                    .frame(width: 26, height: 26)
+                    .background(cyan.opacity(isDark ? 0.18 : 0.12), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .strokeBorder(cyan.opacity(isDark ? 0.45 : 0.30), lineWidth: 0.8)
+                    )
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(selection.title)
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundStyle(AppTheme.textPrimary(for: isDark ? .dark : .light))
+
+                    Text(selection.detail)
+                        .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                        .foregroundStyle(textSecondary)
+                        .lineLimit(1)
+                }
+
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(textSecondary)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .frame(minWidth: 210, alignment: .leading)
+            .background(
+                isDark ? Color.white.opacity(0.06) : Color.black.opacity(0.04),
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(cyan.opacity(isDark ? 0.35 : 0.25), lineWidth: 0.8)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - 数据库路径展示子视图
+private struct DatabasePathViewer: View {
+    let dbPath: String
+    let isDark: Bool
+    let textColor: Color
+
+    var body: some View {
+        Text(dbPath)
+            .font(.system(size: 11, design: .monospaced))
+            .foregroundStyle(textColor)
+            .padding(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(isDark ? Color.black.opacity(0.4) : Color.white.opacity(0.8), in: RoundedRectangle(cornerRadius: 6))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .strokeBorder(isDark ? Color.white.opacity(0.16) : Color.black.opacity(0.10), lineWidth: 0.6)
+            )
+            .textSelection(.enabled)
+    }
+}

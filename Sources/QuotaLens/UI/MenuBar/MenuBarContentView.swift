@@ -1,0 +1,497 @@
+// QuotaLens 科技风菜单栏全息浮窗视图 (Dual Theme MenuBar Popover)
+
+import SwiftUI
+
+public struct MenuBarContentView: View {
+    @ObservedObject var state: AppState
+    @Environment(\.colorScheme) var colorScheme
+    var onOpenMainWindow: () -> Void
+    var onRefresh: () -> Void
+
+    public var body: some View {
+        let isDark = colorScheme == .dark
+        let cyan = AppTheme.accentCyan(for: colorScheme)
+
+        VStack(spacing: 12) {
+            // 顶部 HUD 品牌与连接状态栏
+            headerBar
+
+            CyberDivider()
+
+            // 主全息遥测区域 (已收敛内嵌模式切换)
+            if state.hasQuotaSnapshot {
+                quotaHUDView
+            } else {
+                quotaUnavailableHUDView
+            }
+
+            CyberDivider(glowColor: isDark ? Color.white.opacity(0.12) : Color.black.opacity(0.08))
+
+            // 底部操作坞 (Action Dock)
+            actionDock
+        }
+        .padding(16)
+        .frame(width: 340)
+        .background(
+            AppTheme.popoverGradient(for: colorScheme)
+        )
+        .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+        .tint(cyan)
+        .preferredColorScheme(state.colorScheme)
+    }
+
+    // MARK: - 顶部品牌与状态栏
+    private var headerBar: some View {
+        let cyan = AppTheme.accentCyan(for: colorScheme)
+        let blue = AppTheme.accentBlue(for: colorScheme)
+
+        return HStack(alignment: .center) {
+            HStack(spacing: 8) {
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [cyan, blue],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 28, height: 28)
+                        .overlay(
+                            Circle()
+                                .strokeBorder(Color.white.opacity(0.4), lineWidth: 1)
+                        )
+                        .shadow(color: cyan.opacity(colorScheme == .dark ? 0.5 : 0.25), radius: 5)
+
+                    Image(systemName: "gauge.with.needle.fill")
+                        .font(.system(size: 13, weight: .black))
+                        .foregroundStyle(.white)
+                }
+
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: 5) {
+                        Text("QUOTALENS")
+                            .font(.system(size: 13, weight: .black, design: .rounded))
+                            .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+
+                        Text("HUD")
+                            .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                            .foregroundStyle(cyan)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(cyan.opacity(colorScheme == .dark ? 0.15 : 0.12), in: RoundedRectangle(cornerRadius: 3))
+                    }
+
+                    Text(state.displayName(for: state.account?.accountKey))
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer()
+
+            StatusBadge.forConnection(state.connectionStatus)
+        }
+    }
+
+    // MARK: - 主配额 HUD 视图 (左右对齐布局：左侧大表盘，右侧模式切换+核心指标)
+    private var quotaHUDView: some View {
+        let cyan = AppTheme.accentCyan(for: colorScheme)
+        let amber = AppTheme.accentAmber(for: colorScheme)
+        let emerald = AppTheme.accentEmerald(for: colorScheme)
+        let rose = AppTheme.accentRose(for: colorScheme)
+        let isDark = colorScheme == .dark
+        let renewalColor = renewalBadgeColor(emerald: emerald, amber: amber, rose: rose, fallback: cyan)
+
+        return VStack(spacing: 12) {
+            // 上半区：发光全息主双环量表卡片 (左图右文垂直对齐)
+            HStack(alignment: .center, spacing: 14) {
+                // 左侧：双环量表 (扩大展示空间)
+                Button(action: {
+                    withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
+                        state.toggleQuotaDisplayMode()
+                    }
+                }) {
+                    CircularProgressView(
+                        progress: state.displayedQuotaProgress,
+                        riskProgress: state.quotaRiskProgress,
+                        lineWidth: 12.5,
+                        size: 104,
+                        title: state.quotaDisplayMode.shortTitle,
+                        valueText: state.displayedQuotaPercentString,
+                        subtitle: "\(state.quotaDisplayMode.complementLabel) \(state.complementQuotaPercentString)"
+                    )
+                }
+                .buttonStyle(.plain)
+                .help(L10n.text("点击切换已用/可用视角", "Click to toggle used/available view"))
+
+                Spacer(minLength: 8)
+
+                // 右侧：2 (模式微胶囊) 与 3 (核心数据指标) 垂直排布
+                VStack(alignment: .leading, spacing: 8) {
+                    // 2: 紧凑模式微胶囊
+                    QuotaMiniModeToggle(
+                        selection: Binding(
+                            get: { state.quotaDisplayMode },
+                            set: { state.setQuotaDisplayMode($0) }
+                        )
+                    )
+
+                    // 3: 核心指标数值
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 4) {
+                            Text(state.quotaDisplayMode.primaryLabel)
+                                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                            Text(state.displayedQuotaPercentString)
+                                .font(.system(size: 23, weight: .black, design: .rounded))
+                                .foregroundStyle(cyan)
+                                .monospacedDigit()
+                        }
+
+                        HStack(spacing: 4) {
+                            Text(state.quotaDisplayMode.complementLabel)
+                                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                            Text(state.complementQuotaPercentString)
+                                .font(.system(size: 13, weight: .heavy, design: .monospaced))
+                                .foregroundStyle(state.quotaSeverityColor)
+                        }
+                    }
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity)
+            .background(
+                isDark ? Color.black.opacity(0.35) : Color.white.opacity(0.92),
+                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(cyan.opacity(isDark ? 0.45 : 0.35), lineWidth: 0.9)
+            )
+            .shadow(color: isDark ? Color.black.opacity(0.25) : Color.black.opacity(0.04), radius: 6, y: 2)
+
+            // 下半区：2x2 结构化微型指标卡
+            Grid(horizontalSpacing: 8, verticalSpacing: 8) {
+                GridRow {
+                    MicroHUDTile(
+                        icon: "hourglass",
+                        iconColor: amber,
+                        title: L10n.text("重置倒计时", "Reset Countdown"),
+                        value: state.resetCountdownString,
+                        caption: state.resetExactDateString ?? L10n.text("下周期自动重置", "Auto-resets next cycle")
+                    )
+
+                    MicroHUDTile(
+                        icon: "ticket.fill",
+                        iconColor: state.resetCreditAvailableCount > 0 ? amber : AppTheme.textSecondary(for: colorScheme),
+                        title: L10n.text("重置卡储备", "Reset Cards"),
+                        value: L10n.format("%d available", zhHans: "%d 张可用", state.resetCreditAvailableCount),
+                        caption: state.nearestResetCreditExpiryShortString != nil ? L10n.format("Expires %@", zhHans: "截止 %@", state.nearestResetCreditExpiryShortString!) : L10n.text("随时可用", "Ready")
+                    )
+                }
+
+                GridRow {
+                    MicroHUDTile(
+                        icon: "calendar.badge.clock",
+                        iconColor: cyan,
+                        title: L10n.text("订阅有效期", "Subscription"),
+                        value: state.subscriptionPlanTitle.uppercased(),
+                        caption: state.hasSubscriptionPeriod ? state.subscriptionPeriodRangeShortText : L10n.text("有效周期内", "Within active period"),
+                        badgeText: state.subscriptionRenewalStatusShortText,
+                        badgeColor: renewalColor
+                    )
+
+                    MicroHUDTile(
+                        icon: "bolt.horizontal.fill",
+                        iconColor: emerald,
+                        title: L10n.text("刷新频率", "Refresh Rate"),
+                        value: L10n.format("Every %@", zhHans: "每 %@", state.refreshIntervalDescription),
+                        caption: L10n.format("Sync: %@", zhHans: "同步: %@", state.formatTime(state.lastRefreshTime))
+                    )
+                }
+            }
+        }
+    }
+
+    private func renewalBadgeColor(emerald: Color, amber: Color, rose: Color, fallback: Color) -> Color {
+        switch state.subscriptionRenewalState {
+        case .autoRenews:
+            return emerald
+        case .ending:
+            return rose
+        case .changing:
+            return amber
+        case .unknown:
+            return fallback
+        }
+    }
+
+    // MARK: - 额度不可用浮窗提示
+    private var quotaUnavailableHUDView: some View {
+        let amber = AppTheme.accentAmber(for: colorScheme)
+        let isDark = colorScheme == .dark
+
+        return VStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 28, weight: .bold))
+                .foregroundStyle(amber)
+
+            Text(state.quotaUnavailableTitle)
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+
+            Text(state.quotaUnavailableDescription)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 10)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, minHeight: 140)
+        .background(
+            isDark ? Color.black.opacity(0.35) : Color.white.opacity(0.92),
+            in: RoundedRectangle(cornerRadius: 12)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(amber.opacity(isDark ? 0.45 : 0.35), lineWidth: 0.9)
+        )
+    }
+
+    // MARK: - 底部操作坞
+    private var actionDock: some View {
+        let cyan = AppTheme.accentCyan(for: colorScheme)
+        let blue = AppTheme.accentBlue(for: colorScheme)
+        let rose = AppTheme.accentRose(for: colorScheme)
+        let isDark = colorScheme == .dark
+
+        return HStack(spacing: 8) {
+            // 打开主控制台
+            Button(action: onOpenMainWindow) {
+                HStack(spacing: 6) {
+                    Image(systemName: "macwindow")
+                        .font(.system(size: 11, weight: .bold))
+                    Text(L10n.text("打开主控制台", "Open Console"))
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 7)
+                .background(
+                    LinearGradient(
+                        colors: [cyan, blue],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    ),
+                    in: RoundedRectangle(cornerRadius: 7)
+                )
+                .foregroundStyle(.white)
+                .shadow(color: cyan.opacity(isDark ? 0.35 : 0.20), radius: 4)
+            }
+            .buttonStyle(.plain)
+
+            // 外观主题深浅双态切换 (浅色 / 深色)
+            Button(action: {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    if state.themeMode == .dark {
+                        state.setThemeMode(.light)
+                    } else {
+                        state.setThemeMode(.dark)
+                    }
+                }
+            }) {
+                Image(systemName: state.themeMode == .dark ? "moon.fill" : "sun.max.fill")
+                    .font(.system(size: 11, weight: .bold))
+                    .frame(width: 30, height: 28)
+                    .background(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.05), in: RoundedRectangle(cornerRadius: 7))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 7)
+                            .strokeBorder(isDark ? Color.white.opacity(0.15) : Color.black.opacity(0.10), lineWidth: 0.8)
+                    )
+                    .foregroundStyle(cyan)
+            }
+            .buttonStyle(.plain)
+            .help(state.themeMode == .dark ? L10n.text("当前深色模式 (点击切换为浅色)", "Dark mode active (click for light)") : L10n.text("当前浅色模式 (点击切换为深色)", "Light mode active (click for dark)"))
+
+            // 刷新
+            Button(action: onRefresh) {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 11, weight: .bold))
+                    .frame(width: 30, height: 28)
+                    .background(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.05), in: RoundedRectangle(cornerRadius: 7))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 7)
+                            .strokeBorder(isDark ? Color.white.opacity(0.15) : Color.black.opacity(0.10), lineWidth: 0.8)
+                    )
+                    .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+            }
+            .buttonStyle(.plain)
+            .help(L10n.text("立即刷新数据", "Refresh data now"))
+            .disabled(state.isRefreshing)
+
+            // 退出
+            Button(action: {
+                NSApplication.shared.terminate(nil)
+            }) {
+                Image(systemName: "power")
+                    .font(.system(size: 11, weight: .bold))
+                    .frame(width: 30, height: 28)
+                    .background(rose.opacity(isDark ? 0.15 : 0.10), in: RoundedRectangle(cornerRadius: 7))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 7)
+                            .strokeBorder(rose.opacity(isDark ? 0.35 : 0.25), lineWidth: 0.8)
+                    )
+                    .foregroundStyle(rose)
+            }
+            .buttonStyle(.plain)
+            .help(L10n.text("退出 QuotaLens", "Quit QuotaLens"))
+        }
+    }
+}
+
+// MARK: - 紧凑型 HUD 指标微卡 (MicroHUDTile)
+private struct MicroHUDTile: View {
+    @Environment(\.colorScheme) var colorScheme
+    let icon: String
+    let iconColor: Color
+    let title: String
+    let value: String
+    let caption: String
+    var badgeText: String? = nil
+    var badgeColor: Color? = nil
+
+    var body: some View {
+        let isDark = colorScheme == .dark
+
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 5) {
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(iconColor)
+
+                Text(title)
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+
+                Spacer()
+            }
+
+            HStack(spacing: 5) {
+                Text(value)
+                    .font(.system(size: 13, weight: .heavy, design: .rounded))
+                    .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+
+                if let badgeText, let badgeColor {
+                    RenewalStatusChip(text: badgeText, color: badgeColor)
+                        .layoutPriority(1)
+                }
+            }
+
+            Text(caption)
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            isDark ? Color(red: 0.145, green: 0.180, blue: 0.285).opacity(0.94) : Color.white.opacity(0.95),
+            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(isDark ? Color.white.opacity(0.18) : Color.black.opacity(0.10), lineWidth: 1.0)
+        )
+    }
+}
+
+// MARK: - 订阅续费状态胶囊
+private struct RenewalStatusChip: View {
+    @Environment(\.colorScheme) var colorScheme
+    let text: String
+    let color: Color
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 8.5, weight: .heavy, design: .rounded))
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(color.opacity(colorScheme == .dark ? 0.16 : 0.12), in: Capsule())
+            .overlay(
+                Capsule()
+                    .strokeBorder(color.opacity(colorScheme == .dark ? 0.42 : 0.34), lineWidth: 0.8)
+            )
+            .foregroundStyle(color)
+    }
+}
+
+// MARK: - 迷你套餐标签
+private struct PlanMiniChip: View {
+    @Environment(\.colorScheme) var colorScheme
+    let plan: String?
+
+    var body: some View {
+        let cyan = AppTheme.accentCyan(for: colorScheme)
+        Text((plan ?? "PLUS").uppercased())
+            .font(.system(size: 9, weight: .black, design: .monospaced))
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(cyan.opacity(colorScheme == .dark ? 0.15 : 0.12), in: Capsule())
+            .overlay(
+                Capsule()
+                    .strokeBorder(cyan.opacity(0.4), lineWidth: 0.8)
+            )
+            .foregroundStyle(cyan)
+    }
+}
+
+// MARK: - 紧凑模式微胶囊切换器 (QuotaMiniModeToggle)
+private struct QuotaMiniModeToggle: View {
+    @Environment(\.colorScheme) var colorScheme
+    @Binding var selection: QuotaDisplayMode
+
+    var body: some View {
+        let isDark = colorScheme == .dark
+        let cyan = AppTheme.accentCyan(for: colorScheme)
+
+        HStack(spacing: 2) {
+            ForEach(QuotaDisplayMode.allCases) { mode in
+                let isSelected = selection == mode
+                Button(action: {
+                    withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
+                        selection = mode
+                    }
+                }) {
+                    Text(mode.shortTitle)
+                        .font(.system(size: 10, weight: isSelected ? .bold : .medium, design: .rounded))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2.5)
+                        .background(
+                            isSelected ? cyan.opacity(isDark ? 0.22 : 0.16) : Color.clear,
+                            in: Capsule()
+                        )
+                        .overlay(
+                            Capsule()
+                                .strokeBorder(isSelected ? cyan.opacity(isDark ? 0.55 : 0.40) : Color.clear, lineWidth: 0.8)
+                        )
+                        .foregroundStyle(isSelected ? cyan : AppTheme.textSecondary(for: colorScheme))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(2)
+        .background(
+            isDark ? Color.white.opacity(0.06) : Color.black.opacity(0.045),
+            in: Capsule()
+        )
+    }
+}
