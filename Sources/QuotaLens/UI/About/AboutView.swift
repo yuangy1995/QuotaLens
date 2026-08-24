@@ -53,6 +53,18 @@ public struct AboutView: View {
     private var defaultChangelogs: [ChangelogEntry] {
         [
             ChangelogEntry(
+                id: "v1.0.7",
+                version: "v1.0.7",
+                date: "2026-08-24",
+                changes: [
+                    L10n.text("全面优化「确认使用重置卡」弹窗 Cyber 视觉质感，并严格按规则智能生成确认提示文案", "Refined reset card confirmation dialog visual aesthetics with smart rule-based copy"),
+                    L10n.text("顶栏左侧升级为动态展示当前菜单名称，并将 App 品牌整合至侧边栏底座", "Dynamic top bar title reflecting active tab and brand integration in sidebar footer"),
+                    L10n.text("全局清理各菜单页面内容顶部的冗余大标题，将概览页视图模式与同步状态下沉至 Hero 卡片", "Cleaned up redundant page titles and streamlined overview controls into Hero header"),
+                    L10n.text("倒计时与建议日均消耗全面升级为秒级精确度，接入 TimelineView 实现每秒实时平滑跳动", "Upgraded countdown and daily budget pace to real-time second-level precision"),
+                    L10n.text("全面覆盖 10 种语言的多语言本地化翻译", "Complete localized translations for 10 supported languages")
+                ]
+            ),
+            ChangelogEntry(
                 id: "v1.0.6",
                 version: "v1.0.6",
                 date: "2026-08-24",
