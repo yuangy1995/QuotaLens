@@ -338,7 +338,7 @@ public final class AppState: ObservableObject {
             return L10n.text("还没读到额度", "No quota yet")
         case .failed(let message):
             if Self.isMissingCodexMessage(message) {
-                return L10n.text("未找到 Codex", "Codex not found")
+                return L10n.text("未找到 Codex 可执行文件", "Codex executable not found")
             }
             return L10n.text("无法连接", "Cannot connect")
         case .disconnected:
@@ -358,9 +358,9 @@ public final class AppState: ObservableObject {
             return L10n.text("请确认已登录账号，稍后刷新。", "Confirm you are signed in, then refresh again shortly.")
         case .failed(let message):
             if Self.isMissingCodexMessage(message) {
-                return L10n.text("安装并登录 Codex 后会显示额度。", "Install and sign in to Codex to show quota data.")
+                return Self.cleanedConnectionFailureMessage(message)
             }
-            return L10n.text("请检查 Codex 是否已安装并登录。", "Check that Codex is installed and signed in.")
+            return Self.cleanedConnectionFailureMessage(message)
         case .disconnected:
             return L10n.text("连接后会显示当前账号额度。", "Quota for the current account appears after connecting.")
         }
@@ -843,9 +843,23 @@ public final class AppState: ObservableObject {
     private static func isMissingCodexMessage(_ message: String) -> Bool {
         let lower = message.lowercased()
         return lower.contains("未找到 codex")
+            || lower.contains("没有找到 codex")
             || lower.contains("codex executable")
+            || lower.contains("codex was not found")
             || lower.contains("codex cli")
             || lower.contains("not found")
+    }
+
+    private static func cleanedConnectionFailureMessage(_ message: String) -> String {
+        var cleaned = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        for prefix in ["额度刷新失败：", "Quota refresh failed: "] {
+            if cleaned.hasPrefix(prefix) {
+                cleaned = String(cleaned.dropFirst(prefix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+        return cleaned.isEmpty
+            ? L10n.text("请检查 Codex 是否已安装并登录。", "Check that Codex is installed and signed in.")
+            : cleaned
     }
 
     private var nearestAvailableResetCreditForReminder: ResetCreditDisplay? {

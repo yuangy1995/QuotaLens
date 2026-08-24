@@ -40,8 +40,9 @@ public actor CodexProcessManager {
 
     /// 启动 codex app-server 子进程
     public func start() async -> Bool {
-        guard let binaryPath = CodexBinaryLocator.locateBinary(customPath: customBinaryPath) else {
-            self.status = .failed(L10n.text("未找到 Codex，请在设置中指定位置或安装 Codex。", "Codex was not found. Choose its location in Settings or install Codex."))
+        let lookup = CodexBinaryLocator.inspectBinary(customPath: customBinaryPath)
+        guard let binaryPath = lookup.binaryPath else {
+            self.status = .failed(lookup.failureReason ?? L10n.text("未找到 Codex，请在设置中指定位置或安装 Codex。", "Codex was not found. Choose its location in Settings or install Codex."))
             return false
         }
 

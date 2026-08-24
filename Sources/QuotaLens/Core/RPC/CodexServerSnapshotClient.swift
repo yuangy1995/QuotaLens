@@ -14,8 +14,13 @@ public struct CodexServerSnapshot: Sendable {
 
 public struct CodexServerSnapshotClient: Sendable {
     public static func fetch(customPath: String? = nil, timeoutSeconds: Double = 6.0) throws -> CodexServerSnapshot {
-        guard let binaryPath = CodexBinaryLocator.locateBinary(customPath: customPath) else {
-            throw NSError(domain: "CodexServerSnapshotClient", code: -1, userInfo: [NSLocalizedDescriptionKey: L10n.text("未找到 Codex", "Codex was not found")])
+        let lookup = CodexBinaryLocator.inspectBinary(customPath: customPath)
+        guard let binaryPath = lookup.binaryPath else {
+            throw NSError(
+                domain: "CodexServerSnapshotClient",
+                code: -1,
+                userInfo: [NSLocalizedDescriptionKey: lookup.failureReason ?? L10n.text("未找到 Codex", "Codex was not found")]
+            )
         }
 
         let process = Process()

@@ -19,7 +19,7 @@ public enum LoginItemManager {
         case .notRegistered:
             return LoginItemState(isEnabled: false, description: L10n.text("未开启", "Off"))
         case .notFound:
-            return LoginItemState(isEnabled: false, description: L10n.text("当前应用包不支持", "Not supported by this app bundle"))
+            return LoginItemState(isEnabled: false, description: L10n.text("未开启", "Off"))
         @unknown default:
             return LoginItemState(isEnabled: false, description: L10n.text("状态未知", "Unknown"))
         }

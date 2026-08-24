@@ -12,7 +12,7 @@ public struct SettingsView: View {
     @State private var isCopiedDbPath: Bool = false
     @State private var isShowingBinaryTargetDialog: Bool = false
     @State private var binaryTargetAlertMessage: String?
-    @State private var autoDetectedBinaryPath: String?
+    @State private var autoDetectedBinaryResult: CodexBinaryLookupResult?
 
     private let presetIntervals: [Int] = [15, 30, 60, 300, 900]
 
@@ -503,6 +503,7 @@ public struct SettingsView: View {
                         Task {
                             await env.processManager.setCustomBinaryPath(customPath.isEmpty ? nil : customPath)
                             await env.connectCodex()
+                            await refreshAutoDetectedBinaryPath()
                         }
                     }) {
                         HStack(spacing: 5) {
@@ -525,6 +526,14 @@ public struct SettingsView: View {
                         .shadow(color: cyan.opacity(isDark ? 0.3 : 0.15), radius: 4)
                     }
                     .buttonStyle(.plain)
+                }
+
+                if let failure = autoDetectedBinaryFailureText {
+                    Text(failure)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(amber)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .padding(12)
@@ -660,7 +669,15 @@ public struct SettingsView: View {
         if case .connected(_, let binaryPath) = state.connectionStatus {
             return binaryPath
         }
-        return autoDetectedBinaryPath
+        return autoDetectedBinaryResult?.binaryPath
+    }
+
+    private var autoDetectedBinaryFailureText: String? {
+        guard customPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              currentDetectedBinaryPath == nil else {
+            return nil
+        }
+        return autoDetectedBinaryResult?.failureReason
     }
 
     private var binaryTargetCandidates: [String] {
@@ -740,10 +757,10 @@ public struct SettingsView: View {
     }
 
     private func refreshAutoDetectedBinaryPath() async {
-        let detectedPath = await Task.detached(priority: .utility) {
-            CodexBinaryLocator.locateBinary()
+        let result = await Task.detached(priority: .utility) {
+            CodexBinaryLocator.inspectBinary()
         }.value
-        autoDetectedBinaryPath = detectedPath
+        autoDetectedBinaryResult = result
     }
 }
 
