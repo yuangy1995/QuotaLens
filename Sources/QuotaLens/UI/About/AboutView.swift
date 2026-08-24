@@ -53,6 +53,18 @@ public struct AboutView: View {
     private var defaultChangelogs: [ChangelogEntry] {
         [
             ChangelogEntry(
+                id: "v1.0.8",
+                version: "v1.0.8",
+                date: "2026-08-25",
+                changes: [
+                    L10n.text("新增 Codex 本地历史用量与 Rollout 审计日志实时追踪解析引擎，支持秒级流式索引", "Real-time parsing and streaming index for Codex local history & rollout audit logs"),
+                    L10n.text("新增配额消耗预测引擎（基于线性投影与历史会话特征预估周期耗尽时间与建议节奏）", "Quota consumption forecast engine with linear projection and runout estimation"),
+                    L10n.text("新增「会话明细」与「历史用量」分析看板，支持按会话、模型、分支多维度聚合统计", "Interactive session breakdown and usage analytics dashboard"),
+                    L10n.text("新增独立全息悬浮置顶窗与菜单栏交互增强，实时监控用量与重置倒计时", "Floating HUD overlay window and enhanced menu bar interactions"),
+                    L10n.text("修复在线检查更新源 URL 缓存问题，确保每次请求均拉取远端最新版本", "Fixed update feed cache-busting to ensure latest release metadata")
+                ]
+            ),
+            ChangelogEntry(
                 id: "v1.0.7",
                 version: "v1.0.7",
                 date: "2026-08-24",
