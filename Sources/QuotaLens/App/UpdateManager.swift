@@ -116,6 +116,8 @@ public final class UpdateManager: NSObject, ObservableObject, SPUUpdaterDelegate
             return
         }
 
+        // 清理 URLCache，确保每次手动检查更新都向服务器获取最新 Appcast
+        URLCache.shared.removeAllCachedResponses()
         updater.checkForUpdates()
     }
 
@@ -159,7 +161,9 @@ public final class UpdateManager: NSObject, ObservableObject, SPUUpdaterDelegate
     }
 
     public func feedURLString(for updater: SPUUpdater) -> String? {
-        Self.currentArchitectureFeedURL.absoluteString
+        let base = Self.currentArchitectureFeedURL.absoluteString
+        let timestamp = Int(Date().timeIntervalSince1970)
+        return "\(base)?t=\(timestamp)"
     }
 
     fileprivate func showChecking(cancellation: @escaping () -> Void) {
