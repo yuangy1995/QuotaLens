@@ -246,6 +246,46 @@ public enum L10n {
 }
 
 private let keyedTranslations: [String: [AppLanguage: String]] = [
+    "Dynamic fetching and manual refresh for changelog & license": [
+        .traditionalChinese: "更新日誌與開源協議升級為動態網路拉取，每次點開彈窗時自動獲取最新發布內容",
+        .japanese: "変更ログとライセンスを動的ネットワーク取得に対応、ダイアログ表示時に最新情報を自動更新",
+        .korean: "변경 로그와 라이선스를 동적 네트워크 조회로 개선하여 팝업을 열 때마다 최신 내용을 자동 수신",
+        .spanish: "Obtención dinámica del registro de cambios y la licencia en cada apertura con actualización manual.",
+        .german: "Dynamisches Nachladen von Changelog und Lizenz beim Öffnen mit manueller Aktualisierung.",
+        .french: "Chargement dynamique des notes de version et de la licence à chaque ouverture avec actualisation manuelle.",
+        .portuguese: "Obtenção dinâmica do registo de alterações e licença a cada abertura com atualização manual.",
+        .portugueseBrazil: "Obtenção dinâmica do histórico de alterações e licença a cada abertura com atualização manual."
+    ],
+    "Fixed current version matching algorithm to accurately highlight active release": [
+        .traditionalChinese: "修復目前版本反白比對邏輯，與目前執行應用程式版本即時保持一致",
+        .japanese: "現在のバージョン判定ロジックを修正し、実行中アプリのバージョンを正確に強調表示",
+        .korean: "현재 버전 하이라이트 매칭 로직을 수정하여 실행 중인 앱 버전과 실시간 동기화",
+        .spanish: "Lógica de coincidencia de versión actual corregida para resaltar con precisión la versión activa.",
+        .german: "Versionsabgleich korrigiert, um die aktuell ausgeführte Version präzise hervorzuheben.",
+        .french: "Correction de la détection de la version actuelle pour mettre en valeur la version active.",
+        .portuguese: "Lógica de correspondência da versão atual corrigida para destacar com precisão a versão ativa.",
+        .portugueseBrazil: "Lógica de correspondência da versão atual corrigida para destacar com precisão a versão ativa."
+    ],
+    "Fetching latest updates...": [
+        .traditionalChinese: "正在獲取最新內容...",
+        .japanese: "最新情報を取得中...",
+        .korean: "최신 정보를 가져오는 중...",
+        .spanish: "Obteniendo las últimas actualizaciones...",
+        .german: "Neueste Updates werden geladen...",
+        .french: "Récupération des dernières mises à jour...",
+        .portuguese: "A obter as atualizações mais recentes...",
+        .portugueseBrazil: "Obtendo as atualizações mais recentes..."
+    ],
+    "Performance and stability improvements": [
+        .traditionalChinese: "版本效能與穩定性優化",
+        .japanese: "パフォーマンスと安定性の向上",
+        .korean: "성능 및 안정성 향상",
+        .spanish: "Mejoras de rendimiento y estabilidad",
+        .german: "Leistungs- und Stabilitätsverbesserungen",
+        .french: "Améliorations des performances et de la stabilité",
+        .portuguese: "Melhorias de desempenho e estabilidade",
+        .portugueseBrazil: "Melhorias de desempenho e estabilidade"
+    ],
     "Daily Budget Pace": [
         .traditionalChinese: "建議日均消耗",
         .japanese: "推奨日別消費ペース",

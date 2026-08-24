@@ -1,5 +1,6 @@
 // QuotaLens about and update center.
 
+import Foundation
 import SwiftUI
 import AppKit
 
@@ -10,6 +11,12 @@ public struct AboutView: View {
 
     @State private var activeModal: AboutModalType? = nil
     @State private var isLicenseCopied: Bool = false
+
+    // 动态网络获取状态
+    @State private var remoteChangelogs: [ChangelogEntry]? = nil
+    @State private var isFetchingChangelog: Bool = false
+    @State private var remoteLicenseText: String? = nil
+    @State private var isFetchingLicense: Bool = false
 
     private enum AboutModalType: Identifiable {
         case changelog
@@ -28,20 +35,46 @@ public struct AboutView: View {
     }
 
     // 版本更新记录数据模型
-    private struct ChangelogEntry: Identifiable {
-        let id = UUID()
+    private struct ChangelogEntry: Identifiable, Sendable, Equatable {
+        let id: String
         let version: String
         let date: String
-        let isCurrent: Bool
         let changes: [String]
+
+        var isCurrent: Bool {
+            let current = AppVersion.marketingVersion.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let target = version.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                .replacingOccurrences(of: "v", with: "")
+            return current == target
+        }
     }
 
-    private var changelogs: [ChangelogEntry] {
+    // 本地内置兜底数据（保障首次秒开与离线状态）
+    private var defaultChangelogs: [ChangelogEntry] {
         [
             ChangelogEntry(
+                id: "v1.0.6",
+                version: "v1.0.6",
+                date: "2026-08-24",
+                changes: [
+                    L10n.text("更新日志与开源协议升级为动态网络拉取，每次点开弹窗时自动获取最新发布内容", "Dynamic fetching and manual refresh for changelog & license"),
+                    L10n.text("修复当前版本高亮匹配逻辑，与当前运行应用版本实时保持一致", "Fixed current version matching algorithm to accurately highlight active release")
+                ]
+            ),
+            ChangelogEntry(
+                id: "v1.0.5",
+                version: "v1.0.5",
+                date: "2026-08-24",
+                changes: [
+                    L10n.text("新增建议日均消耗微卡片，根据当前周期的剩余时间与剩余配额智能推算均摊用量", "Added daily budget pace module based on cycle remaining time and quota"),
+                    L10n.text("全局清理页面与侧边栏次级说明小字，提升界面清爽与精致度", "Cleaned up auxiliary subtitles and tags across pages and sidebar"),
+                    L10n.text("全面覆盖 10 种语言的多语言本地化翻译并清理冗余词条", "Complete 10-language localized translations and code cleanup")
+                ]
+            ),
+            ChangelogEntry(
+                id: "v1.0.4",
                 version: "v1.0.4",
                 date: "2026-08-24",
-                isCurrent: true,
                 changes: [
                     L10n.text("移除构建次数显示，并去掉概览与设置页面的分块序号徽章", "Removed build count and section number tags across overview and settings"),
                     L10n.text("更新日志与开源协议采用应用内可滚动弹窗展示，并支持一键复制", "In-app scrollable dialogs for changelog and license with one-click copy support"),
@@ -49,9 +82,9 @@ public struct AboutView: View {
                 ]
             ),
             ChangelogEntry(
+                id: "v1.0.3",
                 version: "v1.0.3",
                 date: "2026-08-24",
-                isCurrent: false,
                 changes: [
                     L10n.text("全新关于页面 UI 排版重构，引入 Hero 品牌中心与 2x3 核心特性矩阵", "Redesigned About view layout with Hero brand center and 2x3 feature grid"),
                     L10n.text("全面覆盖 10 种语言的多语言本地化翻译", "Complete localized translations for 10 supported languages"),
@@ -59,32 +92,40 @@ public struct AboutView: View {
                 ]
             ),
             ChangelogEntry(
+                id: "v1.0.2",
                 version: "v1.0.2",
                 date: "2026-08-24",
-                isCurrent: false,
                 changes: [
                     L10n.text("修复 Sparkle 在线增量升级检测与版本比对流程", "Fixed Sparkle in-app delta update checking and version comparison"),
                     L10n.text("统一语言与偏好设置图标", "Unified language and preference setting icons")
                 ]
             ),
             ChangelogEntry(
+                id: "v1.0.1",
                 version: "v1.0.1",
                 date: "2026-08-24",
-                isCurrent: false,
                 changes: [
                     L10n.text("新增轻量菜单栏模式与 Dock 隐藏支持", "Added menu bar compact mode and optional hidden Dock icon"),
                     L10n.text("优化 ChatGPT 与 Codex 额度快照解析器", "Improved ChatGPT and Codex quota snapshot parsers")
                 ]
             ),
             ChangelogEntry(
+                id: "v1.0.0",
                 version: "v1.0.0",
                 date: "2026-08-24",
-                isCurrent: false,
                 changes: [
                     L10n.text("QuotaLens 正式发布！首发支持实时配额监控、重置卡追踪与周期推算", "Initial release of QuotaLens with real-time quota tracking, reset card alerts, and cycle detection")
                 ]
             )
         ]
+    }
+
+    private var displayedChangelogs: [ChangelogEntry] {
+        remoteChangelogs ?? defaultChangelogs
+    }
+
+    private var displayedLicenseText: String {
+        remoteLicenseText ?? apacheLicenseText
     }
 
     private var features: [FeatureItem] {
@@ -251,6 +292,9 @@ public struct AboutView: View {
                         withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
                             activeModal = .changelog
                         }
+                        Task {
+                            await fetchRemoteChangelogs()
+                        }
                     }
                 )
 
@@ -266,6 +310,9 @@ public struct AboutView: View {
                     action: {
                         withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
                             activeModal = .license
+                        }
+                        Task {
+                            await fetchRemoteLicense()
                         }
                     }
                 )
@@ -564,6 +611,7 @@ public struct AboutView: View {
     private func modalOverlayView(for modal: AboutModalType) -> some View {
         let isDark = colorScheme == .dark
         let cyan = AppTheme.accentCyan(for: colorScheme)
+        let isFetching = modal == .changelog ? isFetchingChangelog : isFetchingLicense
 
         ZStack {
             // 背景暗色遮罩
@@ -589,14 +637,44 @@ public struct AboutView: View {
                                 .font(.system(size: 15, weight: .black, design: .rounded))
                                 .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
 
-                            Text(modal == .changelog ? L10n.text("版本发布历史与更新日志", "Release history and changelog") : "Apache License 2.0")
-                                .font(.system(size: 10.5, weight: .medium))
-                                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                            HStack(spacing: 6) {
+                                if isFetching {
+                                    ProgressView()
+                                        .controlSize(.mini)
+                                    Text(L10n.text("正在获取最新内容...", "Fetching latest updates..."))
+                                        .font(.system(size: 10, weight: .medium))
+                                        .foregroundStyle(cyan)
+                                } else {
+                                    Text(modal == .changelog ? L10n.text("版本发布历史与更新日志", "Release history and changelog") : "Apache License 2.0")
+                                        .font(.system(size: 10.5, weight: .medium))
+                                        .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                                }
+                            }
                         }
                     }
 
                     Spacer()
 
+                    // 手动刷新按钮
+                    Button(action: {
+                        Task {
+                            if modal == .changelog {
+                                await fetchRemoteChangelogs()
+                            } else {
+                                await fetchRemoteLicense()
+                            }
+                        }
+                    }) {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(isFetching ? cyan : AppTheme.textSecondary(for: colorScheme))
+                            .frame(width: 26, height: 26)
+                            .background(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.06), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isFetching)
+
+                    // 关闭按钮
                     Button(action: {
                         withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
                             activeModal = nil
@@ -690,7 +768,7 @@ public struct AboutView: View {
         let cyan = AppTheme.accentCyan(for: colorScheme)
 
         return VStack(alignment: .leading, spacing: 16) {
-            ForEach(changelogs) { entry in
+            ForEach(displayedChangelogs) { entry in
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 8) {
                         Text(entry.version)
@@ -714,9 +792,11 @@ public struct AboutView: View {
 
                         Spacer()
 
-                        Text(entry.date)
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                        if !entry.date.isEmpty {
+                            Text(entry.date)
+                                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                        }
                     }
 
                     VStack(alignment: .leading, spacing: 4) {
@@ -746,7 +826,7 @@ public struct AboutView: View {
 
     // MARK: - 开源协议内容
     private var licenseContent: some View {
-        Text(apacheLicenseText)
+        Text(displayedLicenseText)
             .font(.system(size: 11, weight: .regular, design: .monospaced))
             .foregroundStyle(AppTheme.textPrimary(for: colorScheme).opacity(0.92))
             .padding(12)
@@ -762,7 +842,7 @@ public struct AboutView: View {
     private func copyLicenseToClipboard() {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        pasteboard.setString(apacheLicenseText, forType: .string)
+        pasteboard.setString(displayedLicenseText, forType: .string)
         withAnimation(.spring(response: 0.2, dampingFraction: 0.8)) {
             isLicenseCopied = true
         }
@@ -770,6 +850,156 @@ public struct AboutView: View {
             withAnimation {
                 isLicenseCopied = false
             }
+        }
+    }
+
+    // MARK: - 异步网络拉取逻辑
+    @MainActor
+    private func fetchRemoteChangelogs() async {
+        isFetchingChangelog = true
+        defer { isFetchingChangelog = false }
+
+        // 1. 优先拉取 raw CHANGELOG.md（包含详细改动项）
+        let changelogURL = URL(string: "https://raw.githubusercontent.com/yuangy1995/QuotaLens/main/CHANGELOG.md")!
+        var request = URLRequest(url: changelogURL, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData, timeoutInterval: 8)
+        request.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode),
+               let text = String(data: data, encoding: .utf8) {
+                let parsed = parseMarkdownChangelog(text)
+                if !parsed.isEmpty {
+                    remoteChangelogs = parsed
+                    return
+                }
+            }
+        } catch {
+            // 继续尝试 GitHub Releases API
+        }
+
+        // 2. 备用方案：拉取 GitHub Releases API
+        let releasesURL = URL(string: "https://api.github.com/repos/yuangy1995/QuotaLens/releases?per_page=20")!
+        var relRequest = URLRequest(url: releasesURL, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData, timeoutInterval: 8)
+        relRequest.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        relRequest.setValue("QuotaLens-App", forHTTPHeaderField: "User-Agent")
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: relRequest)
+            if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
+                let parsed = parseGitHubReleases(data)
+                if !parsed.isEmpty {
+                    remoteChangelogs = parsed
+                }
+            }
+        } catch {
+            // 失败时保留 fallback
+        }
+    }
+
+    @MainActor
+    private func fetchRemoteLicense() async {
+        isFetchingLicense = true
+        defer { isFetchingLicense = false }
+
+        let licenseURL = URL(string: "https://raw.githubusercontent.com/yuangy1995/QuotaLens/main/LICENSE")!
+        var request = URLRequest(url: licenseURL, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData, timeoutInterval: 8)
+        request.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode),
+               let text = String(data: data, encoding: .utf8), !text.isEmpty {
+                remoteLicenseText = text
+            }
+        } catch {
+            // 失败时使用本地内置
+        }
+    }
+
+    private func parseMarkdownChangelog(_ text: String) -> [ChangelogEntry] {
+        var entries: [ChangelogEntry] = []
+        let lines = text.components(separatedBy: .newlines)
+
+        var currentVersion = ""
+        var currentDate = ""
+        var currentChanges: [String] = []
+
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("## ") {
+                if !currentVersion.isEmpty && !currentChanges.isEmpty {
+                    entries.append(ChangelogEntry(
+                        id: currentVersion,
+                        version: currentVersion,
+                        date: currentDate,
+                        changes: currentChanges
+                    ))
+                }
+                currentChanges = []
+                let headerContent = trimmed.dropFirst(3).trimmingCharacters(in: .whitespaces)
+                let parts = headerContent.components(separatedBy: " - ")
+                if let vPart = parts.first {
+                    currentVersion = vPart.replacingOccurrences(of: "[", with: "").replacingOccurrences(of: "]", with: "").trimmingCharacters(in: .whitespaces)
+                }
+                currentDate = parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespaces) : ""
+            } else if trimmed.hasPrefix("- ") || trimmed.hasPrefix("* ") || trimmed.hasPrefix("• ") {
+                let change = String(trimmed.dropFirst(2)).trimmingCharacters(in: .whitespaces)
+                if !change.isEmpty {
+                    currentChanges.append(change)
+                }
+            }
+        }
+
+        if !currentVersion.isEmpty && !currentChanges.isEmpty {
+            entries.append(ChangelogEntry(
+                id: currentVersion,
+                version: currentVersion,
+                date: currentDate,
+                changes: currentChanges
+            ))
+        }
+
+        return entries
+    }
+
+    private struct GitHubReleaseDTO: Decodable {
+        let tag_name: String
+        let published_at: String?
+        let body: String?
+    }
+
+    private func parseGitHubReleases(_ data: Data) -> [ChangelogEntry] {
+        guard let items = try? JSONDecoder().decode([GitHubReleaseDTO].self, from: data) else { return [] }
+        return items.compactMap { release in
+            let version = release.tag_name
+            let rawDate = release.published_at ?? ""
+            let date = rawDate.prefix(10).isEmpty ? "" : String(rawDate.prefix(10))
+            var changes: [String] = []
+
+            if let body = release.body {
+                let lines = body.components(separatedBy: .newlines)
+                for line in lines {
+                    let trimmed = line.trimmingCharacters(in: .whitespaces)
+                    if (trimmed.hasPrefix("- ") || trimmed.hasPrefix("* ") || trimmed.hasPrefix("• ")) && !trimmed.lowercased().contains("downloads") && !trimmed.lowercased().contains("check `sha256sums") {
+                        let change = String(trimmed.dropFirst(2)).trimmingCharacters(in: .whitespaces)
+                        if !change.isEmpty {
+                            changes.append(change)
+                        }
+                    }
+                }
+            }
+
+            if changes.isEmpty {
+                changes.append(L10n.text("版本性能与稳定性优化", "Performance and stability improvements"))
+            }
+
+            return ChangelogEntry(
+                id: version,
+                version: version,
+                date: date,
+                changes: changes
+            )
         }
     }
 
