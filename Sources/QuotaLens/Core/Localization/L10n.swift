@@ -117,20 +117,7 @@ public enum AppLanguageMode: String, CaseIterable, Identifiable, Sendable, Hasha
     }
 
     public var icon: String {
-        switch self {
-        case .system:
-            return "globe"
-        case .english:
-            return "textformat.abc"
-        case .simplifiedChinese, .traditionalChinese:
-            return "character.book.closed.fill"
-        case .japanese:
-            return "character.phonetic"
-        case .korean:
-            return "textformat"
-        case .spanish, .german, .french, .portuguese, .portugueseBrazil:
-            return "text.book.closed.fill"
-        }
+        "globe"
     }
 }
 
