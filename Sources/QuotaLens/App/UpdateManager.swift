@@ -140,6 +140,24 @@ public final class UpdateManager: NSObject, ObservableObject, SPUUpdaterDelegate
         NSWorkspace.shared.open(Self.projectURL)
     }
 
+    public func openReleasesPage() {
+        if let url = URL(string: "https://github.com/yuangy1995/QuotaLens/releases") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    public func openIssuesPage() {
+        if let url = URL(string: "https://github.com/yuangy1995/QuotaLens/issues") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    public func openLicensePage() {
+        if let url = URL(string: "https://github.com/yuangy1995/QuotaLens/blob/main/LICENSE") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
     public func feedURLString(for updater: SPUUpdater) -> String? {
         Self.currentArchitectureFeedURL.absoluteString
     }

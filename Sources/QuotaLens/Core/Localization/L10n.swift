@@ -246,6 +246,296 @@ public enum L10n {
 }
 
 private let keyedTranslations: [String: [AppLanguage: String]] = [
+    "About QuotaLens": [
+        .traditionalChinese: "關於 QuotaLens",
+        .japanese: "QuotaLens について",
+        .korean: "QuotaLens 정보",
+        .spanish: "Acerca de QuotaLens",
+        .german: "Über QuotaLens",
+        .french: "À propos de QuotaLens",
+        .portuguese: "Sobre o QuotaLens",
+        .portugueseBrazil: "Sobre o QuotaLens"
+    ],
+    "Version info, core features, and online updates": [
+        .traditionalChinese: "版本資訊、核心特性與線上升級",
+        .japanese: "バージョン情報、コア機能とオンライン更新",
+        .korean: "버전 정보, 핵심 기능 및 온라인 업데이트",
+        .spanish: "Información de versión, funciones clave y actualizaciones",
+        .german: "Versionsinfo, Kernfunktionen und Online-Updates",
+        .french: "Infos de version, fonctionnalités clés et mises à jour",
+        .portuguese: "Informações de versão, funcionalidades e atualizações",
+        .portugueseBrazil: "Informações de versão, recursos e atualizações"
+    ],
+    "A desktop dashboard for tracking Codex & AI model quotas in real time.": [
+        .traditionalChinese: "即時掌控 Codex 與 AI 模型配額的桌面助手",
+        .japanese: "Codex と AI モデルのクォータをリアルタイムで追跡するデスクトップツール",
+        .korean: "Codex 및 AI 모델 할당량을 실시간으로 추적하는 데스크톱 대시보드",
+        .spanish: "Panel de escritorio para supervisar cuotas de Codex e IA en tiempo real.",
+        .german: "Desktop-Dashboard zur Echtzeit-Überwachung von Codex- und KI-Quotas.",
+        .french: "Tableau de bord de bureau pour suivre les quotas Codex et IA en temps réel.",
+        .portuguese: "Painel para monitorizar quotas de Codex e IA em tempo real.",
+        .portugueseBrazil: "Painel para monitorar cotas de Codex e IA em tempo real."
+    ],
+    "Build": [
+        .traditionalChinese: "組建",
+        .japanese: "ビルド",
+        .korean: "빌드",
+        .spanish: "Compilación",
+        .german: "Build",
+        .french: "Build",
+        .portuguese: "Build",
+        .portugueseBrazil: "Build"
+    ],
+    "Changelog": [
+        .traditionalChinese: "更新日誌",
+        .japanese: "更新履歴",
+        .korean: "변경 로그",
+        .spanish: "Registro de cambios",
+        .german: "Änderungsprotokoll",
+        .french: "Notes de version",
+        .portuguese: "Registo de alterações",
+        .portugueseBrazil: "Histórico de alterações"
+    ],
+    "Feedback": [
+        .traditionalChinese: "問題反饋",
+        .japanese: "フィードバック",
+        .korean: "피드백",
+        .spanish: "Comentarios",
+        .german: "Feedback",
+        .french: "Commentaires",
+        .portuguese: "Comentários",
+        .portugueseBrazil: "Feedback"
+    ],
+    "License": [
+        .traditionalChinese: "開源協議",
+        .japanese: "ライセンス",
+        .korean: "라이선스",
+        .spanish: "Licencia",
+        .german: "Lizenz",
+        .french: "Licence",
+        .portuguese: "Licença",
+        .portugueseBrazil: "Licença"
+    ],
+    "Updates & Maintenance": [
+        .traditionalChinese: "線上升級與維護",
+        .japanese: "オンライン更新と保守",
+        .korean: "온라인 업데이트 및 유지 관리",
+        .spanish: "Actualizaciones y mantenimiento",
+        .german: "Online-Updates & Wartung",
+        .french: "Mises à jour et maintenance",
+        .portuguese: "Atualizações e manutenção",
+        .portugueseBrazil: "Atualizações e manutenção"
+    ],
+    "Checking": [
+        .traditionalChinese: "檢查中",
+        .japanese: "確認中",
+        .korean: "확인 중",
+        .spanish: "Comprobando",
+        .german: "Wird geprüft",
+        .french: "Vérification",
+        .portuguese: "A verificar",
+        .portugueseBrazil: "Verificando"
+    ],
+    "Last Checked": [
+        .traditionalChinese: "上次檢查時間",
+        .japanese: "最終確認日時",
+        .korean: "마지막 확인 시간",
+        .spanish: "Última comprobación",
+        .german: "Zuletzt gesucht",
+        .french: "Dernière vérification",
+        .portuguese: "Última verificação",
+        .portugueseBrazil: "Última verificação"
+    ],
+    "Automatic Check": [
+        .traditionalChinese: "自動檢查更新",
+        .japanese: "自動更新確認",
+        .korean: "자동 업데이트 확인",
+        .spanish: "Comprobación automática",
+        .german: "Automatisch suchen",
+        .french: "Recherche automatique",
+        .portuguese: "Verificação automática",
+        .portugueseBrazil: "Verificação automática"
+    ],
+    "Check for updates periodically in background": [
+        .traditionalChinese: "背景定期檢查新版本並提醒",
+        .japanese: "バックグラウンドで定期的にアップデートを確認",
+        .korean: "백그라운드에서 주기적으로 업데이트를 확인하고 알림",
+        .spanish: "Buscar actualizaciones periódicamente en segundo plano",
+        .german: "Regelmäßig im Hintergrund nach Updates suchen",
+        .french: "Rechercher régulièrement des mises à jour en arrière-plan",
+        .portuguese: "Verificar atualizações periodicamente em segundo plano",
+        .portugueseBrazil: "Verificar atualizações periodicamente em segundo plano"
+    ],
+    "Automatic Download": [
+        .traditionalChinese: "自動下載更新",
+        .japanese: "自動ダウンロード",
+        .korean: "자동 다운로드",
+        .spanish: "Descarga automática",
+        .german: "Automatisch laden",
+        .french: "Téléchargement automatique",
+        .portuguese: "Transferência automática",
+        .portugueseBrazil: "Download automático"
+    ],
+    "Download new versions automatically in background": [
+        .traditionalChinese: "發現新版本時在背景靜默下載",
+        .japanese: "新しいバージョンをバックグラウンドで自動取得",
+        .korean: "새 버전 발견 시 백그라운드에서 자동 다운로드",
+        .spanish: "Descargar nuevas versiones automáticamente en segundo plano",
+        .german: "Neue Versionen automatisch im Hintergrund laden",
+        .french: "Télécharger automatiquement les versions en arrière-plan",
+        .portuguese: "Transferir novas versões automaticamente em segundo plano",
+        .portugueseBrazil: "Baixar novas versões automaticamente em segundo plano"
+    ],
+    "Key Features": [
+        .traditionalChinese: "核心特性",
+        .japanese: "主な機能",
+        .korean: "핵심 기능",
+        .spanish: "Funciones principales",
+        .german: "Hauptfunktionen",
+        .french: "Fonctionnalités clés",
+        .portuguese: "Principais funcionalidades",
+        .portugueseBrazil: "Principais recursos"
+    ],
+    "Real-Time Quota Tracking": [
+        .traditionalChinese: "配額即時追蹤",
+        .japanese: "クォータのリアルタイム追跡",
+        .korean: "할당량 실시간 추적",
+        .spanish: "Seguimiento de cuota en tiempo real",
+        .german: "Echtzeit-Quota-Tracking",
+        .french: "Suivi du quota en temps réel",
+        .portuguese: "Acompanhamento da quota em tempo real",
+        .portugueseBrazil: "Acompanhamento da cota em tempo real"
+    ],
+    "Track Codex & AI quota usage and remaining percentage instantly.": [
+        .traditionalChinese: "毫秒級擷取 Codex 與 AI 配額用量及剩餘百分比",
+        .japanese: "Codex と AI のクォータ使用量と残量を即座に把握",
+        .korean: "Codex 및 AI 할당량 사용량과 잔여율을 즉시 확인",
+        .spanish: "Obtén al instante el consumo de cuota y el porcentaje restante de Codex e IA.",
+        .german: "Erfasse Codex- und KI-Nutzung sowie verbleibende Prozente sofort.",
+        .french: "Suivez instantanément l’utilisation et le pourcentage restant de Codex et IA.",
+        .portuguese: "Obtenha instantaneamente a utilização e a percentagem restante de Codex e IA.",
+        .portugueseBrazil: "Obtenha instantaneamente a utilização e a porcentagem restante de Codex e IA."
+    ],
+    "Smart Cycle Detection": [
+        .traditionalChinese: "智慧週期識別",
+        .japanese: "スマートな周期検出",
+        .korean: "스마트 주기 감지",
+        .spanish: "Detección inteligente de ciclos",
+        .german: "Intelligente Zykluserkennung",
+        .french: "Détection intelligente des cycles",
+        .portuguese: "Deteção inteligente de ciclos",
+        .portugueseBrazil: "Detecção inteligente de ciclos"
+    ],
+    "Detect 5-hour reset windows, weekly quotas, and renewal dates.": [
+        .traditionalChinese: "自動計算 5 小時重置窗口、週配額與續訂週期",
+        .japanese: "5時間のリセット枠、週間クォータ、更新日を自動検出",
+        .korean: "5시간 리셋 윈도우, 주간 할당량 및 갱신 주기 자동 계산",
+        .spanish: "Detecta ventanas de 5 horas, cuotas semanales y fechas de renovación.",
+        .german: "Erkennt 5-Stunden-Resetfenster, wöchentliche Quotas und Verlängerungsdaten.",
+        .french: "Détecte les fenêtres de réinitialisation de 5 h, quotas hebdo et renouvellements.",
+        .portuguese: "Deteta janelas de 5 horas, quotas semanais e datas de renovação.",
+        .portugueseBrazil: "Detecta janelas de 5 horas, cotas semanais e datas de renovação."
+    ],
+    "Reset Card Alerts": [
+        .traditionalChinese: "重置卡失效預警",
+        .japanese: "リセットカード期限警告",
+        .korean: "리셋 카드 만료 알림",
+        .spanish: "Alertas de tarjetas de reinicio",
+        .german: "Reset-Karten-Warnungen",
+        .french: "Alertes de cartes de réinitialisation",
+        .portuguese: "Alertas de cartões de reinício",
+        .portugueseBrazil: "Alertas de cartões de reinício"
+    ],
+    "Monitor multiple reset card reserves and get timely expiry alerts.": [
+        .traditionalChinese: "多張重置卡儲備追蹤，智慧預警最近到期時間",
+        .japanese: "複数のリセットカード残数を管理し、期限切れを事前に通知",
+        .korean: "여러 장의 리셋 카드 보유량을 추적하고 최근 만료 시점을 사전 경고",
+        .spanish: "Controla reservas de tarjetas de reinicio y recibe alertas de vencimiento.",
+        .german: "Verwalte Reset-Karten und erhalte rechtzeitige Ablaufwarnungen.",
+        .french: "Gérez vos réserves de cartes et recevez des alertes avant expiration.",
+        .portuguese: "Monitorize reservas de cartões e receba alertas de expiração a tempo.",
+        .portugueseBrazil: "Monitore reservas de cartões e receba alertas de expiração a tempo."
+    ],
+    "Menu Bar Compact Mode": [
+        .traditionalChinese: "極簡選單列模式",
+        .japanese: "メニューバー常駐モード",
+        .korean: "메뉴 막대 컴팩트 모드",
+        .spanish: "Modo compacto en la barra de menús",
+        .german: "Kompakter Menüleistenmodus",
+        .french: "Mode compact barre de menus",
+        .portuguese: "Modo compacto na barra de menus",
+        .portugueseBrazil: "Modo compacto na barra de menus"
+    ],
+    "Run quietly in the macOS menu bar with an optional hidden Dock icon.": [
+        .traditionalChinese: "支援常駐 macOS 選單列與隱藏 Dock 圖示靜默運行",
+        .japanese: "Dock アイコンを非表示にして macOS メニューバーで静かに動作",
+        .korean: "Dock 아이콘을 숨기고 macOS 메뉴 막대에서 조용히 실행 가능",
+        .spanish: "Ejecución discreta en la barra de menús con opción de ocultar el Dock.",
+        .german: "Läuft diskret in der Menüleiste mit optional ausgeblendetem Dock-Symbol.",
+        .french: "Fonctionne discrètement dans la barre des menus en masquant le Dock.",
+        .portuguese: "Executa discretamente na barra de menus com ícone da Dock ocultável.",
+        .portugueseBrazil: "Executa discretamente na barra de menus com ícone do Dock ocultável."
+    ],
+    "Adaptive Dual-Sync Engine": [
+        .traditionalChinese: "自適應雙模同步",
+        .japanese: "デュアル同期エンジン",
+        .korean: "적응형 듀얼 동기화 엔진",
+        .spanish: "Motor de sincronización dual adaptable",
+        .german: "Adaptive Dual-Sync-Engine",
+        .french: "Moteur de double synchronisation",
+        .portuguese: "Motor de sincronização dupla adaptável",
+        .portugueseBrazil: "Motor de sincronização dupla adaptável"
+    ],
+    "Combine intelligent background polling with one-click snapshot sync.": [
+        .traditionalChinese: "智慧背景自適應輪詢與即時一鍵快照刷新",
+        .japanese: "バックグラウンド自動同期とワンクリック即時更新を両立",
+        .korean: "스마트 백그라운드 폴링과 원클릭 즉시 스냅샷 새로고침 지원",
+        .spanish: "Combina sondeo inteligente en segundo plano con sincronización inmediata.",
+        .german: "Kombiniert intelligente Hintergrundabfragen mit Sofort-Aktualisierung.",
+        .french: "Associe interrogation automatique en arrière-plan et actualisation instantanée.",
+        .portuguese: "Combina sondagem em segundo plano com sincronização imediata.",
+        .portugueseBrazil: "Combina sondagem em segundo plano com sincronização imediata."
+    ],
+    "Seamless In-App Updates": [
+        .traditionalChinese: "無縫線上熱更新",
+        .japanese: "シームレスなオンライン更新",
+        .korean: "원활한 인앱 온라인 업데이트",
+        .spanish: "Actualizaciones fluidas en la app",
+        .german: "Nahtlose In-App-Updates",
+        .french: "Mises à jour intégrées fluides",
+        .portuguese: "Atualizações integradas sem interrupções",
+        .portugueseBrazil: "Atualizações integradas sem interrupções"
+    ],
+    "High-security delta updates and smooth installations powered by Sparkle.": [
+        .traditionalChinese: "基於 Sparkle 框架的一鍵增量線上檢測與平滑升級",
+        .japanese: "Sparkle による安全な差分検出とスムーズな自動インストール",
+        .korean: "Sparkle 기반의 안전한 델타 업데이트 및 원활한 자동 설치",
+        .spanish: "Actualizaciones delta seguras e instalaciones fluidas mediante Sparkle.",
+        .german: "Sichere Delta-Updates und reibungslose Installation via Sparkle.",
+        .french: "Mises à jour delta sécurisées et installation fluide via Sparkle.",
+        .portuguese: "Atualizações delta seguras e instalação fluida com tecnologia Sparkle.",
+        .portugueseBrazil: "Atualizações delta seguras e instalação fluida com tecnologia Sparkle."
+    ],
+    "Designed for macOS · Powered by SwiftUI": [
+        .traditionalChinese: "專為 macOS 打造 · 基於 SwiftUI 構建",
+        .japanese: "macOS のために設計 · SwiftUI で構築",
+        .korean: "macOS 전용 디자인 · SwiftUI 기반 빌드",
+        .spanish: "Diseñado para macOS · Creado con SwiftUI",
+        .german: "Entwickelt für macOS · Erstellt mit SwiftUI",
+        .french: "Conçu pour macOS · Développé avec SwiftUI",
+        .portuguese: "Concebido para macOS · Criado com SwiftUI",
+        .portugueseBrazil: "Desenvolvido para macOS · Criado com SwiftUI"
+    ],
+    "Open source under Apache-2.0 License": [
+        .traditionalChinese: "遵循 Apache-2.0 開源協議",
+        .japanese: "Apache-2.0 ライセンスに基づくオープンソース",
+        .korean: "Apache-2.0 라이선스 기반 오픈 소스",
+        .spanish: "Código abierto bajo licencia Apache-2.0",
+        .german: "Open Source unter der Apache-2.0-Lizenz",
+        .french: "Open source sous licence Apache-2.0",
+        .portuguese: "Código aberto sob licença Apache-2.0",
+        .portugueseBrazil: "Código aberto sob licença Apache-2.0"
+    ],
     "%d%% downloaded": [
         .traditionalChinese: "已下載 %d%%",
         .japanese: "%d%% ダウンロード済み",
