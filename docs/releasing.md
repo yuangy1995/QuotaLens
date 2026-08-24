@@ -75,6 +75,7 @@ The `Release macOS` workflow builds and uploads:
 - Intel: `QuotaLens-vX.Y.Z-macOS-intel.dmg` and `.zip`
 - Universal: `QuotaLens-vX.Y.Z-macOS-universal.dmg` and `.zip`
 - In-app update feeds: `appcast-apple-silicon.xml` and `appcast-intel.xml`
+- Legacy in-app update feed: `appcast.xml` with both architecture items for older clients
 - `SHA256SUMS.txt`
 
 The workflow validates that the pushed tag matches `VERSION`.
@@ -85,6 +86,7 @@ QuotaLens uses Sparkle for macOS self-updates. The release workflow publishes se
 
 - `appcast-apple-silicon.xml`
 - `appcast-intel.xml`
+- `appcast.xml` remains published so older clients that still read the static `SUFeedURL` can update.
 
 The Universal package remains available on the GitHub Release page for direct downloads.
 

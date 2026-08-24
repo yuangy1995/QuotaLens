@@ -4,7 +4,7 @@ import SwiftUI
 
 public struct AboutView: View {
     @ObservedObject var state: AppState
-    @EnvironmentObject var env: AppEnvironment
+    @ObservedObject var updateManager: UpdateManager
     @Environment(\.colorScheme) var colorScheme
 
     private let featureRows: [(String, String)] = [
@@ -84,7 +84,7 @@ public struct AboutView: View {
                 Spacer()
 
                 Button(action: {
-                    env.updateManager.openProjectPage()
+                    updateManager.openProjectPage()
                 }) {
                     HStack(spacing: 6) {
                         Image(systemName: "arrow.up.forward.app.fill")
@@ -135,7 +135,6 @@ public struct AboutView: View {
 
     private var updateCard: some View {
         let cyan = AppTheme.accentCyan(for: colorScheme)
-        let updateManager = env.updateManager
 
         return VStack(alignment: .leading, spacing: 14) {
             HStack {
@@ -158,6 +157,26 @@ public struct AboutView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(updateManager.statusText)
                     .font(.system(size: 14, weight: .bold))
+
+                HStack(spacing: 6) {
+                    if updateManager.isCheckingForUpdates {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+
+                    Text(updateManager.updateStatusText ?? L10n.format("Update feed: %@", zhHans: "更新源：%@", updateManager.feedURLText))
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(updateManager.isCheckingForUpdates ? cyan : AppTheme.textSecondary(for: colorScheme))
+                        .lineLimit(2)
+                }
+
+                if let detail = updateManager.updateDetailText {
+                    Text(detail)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
             HStack(spacing: 12) {
@@ -181,7 +200,7 @@ public struct AboutView: View {
                     get: { updateManager.automaticallyDownloadsUpdates },
                     set: { updateManager.automaticallyDownloadsUpdates = $0 }
                 ))
-                .disabled(!updateManager.isConfigured || !updateManager.allowsAutomaticDownloads)
+                .disabled(!updateManager.isConfigured)
             }
             .font(.system(size: 12, weight: .semibold))
 

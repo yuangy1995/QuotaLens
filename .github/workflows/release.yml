@@ -153,6 +153,25 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if [[ -f release-assets/appcast-apple-silicon.xml && -f release-assets/appcast-intel.xml ]]; then
+            {
+              printf '%s\n' '<?xml version="1.0" encoding="utf-8"?>'
+              printf '%s\n' '<rss version="2.0"'
+              printf '%s\n' '     xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"'
+              printf '%s\n' '     xmlns:dc="http://purl.org/dc/elements/1.1/">'
+              printf '%s\n' '  <channel>'
+              printf '%s\n' '    <title>QuotaLens Updates</title>'
+              printf '%s\n' "    <link>https://github.com/${GITHUB_REPOSITORY}</link>"
+              printf '%s\n' '    <description>QuotaLens appcast</description>'
+              printf '%s\n' '    <language>en</language>'
+              for appcast in release-assets/appcast-apple-silicon.xml release-assets/appcast-intel.xml; do
+                awk '/<item>/{emit=1} emit{print} /<\/item>/{emit=0}' "${appcast}"
+              done
+              printf '%s\n' '  </channel>'
+              printf '%s\n' '</rss>'
+            } > release-assets/appcast.xml
+          fi
+
           (
             cd release-assets
             shasum -a 256 *.dmg *.zip > SHA256SUMS.txt

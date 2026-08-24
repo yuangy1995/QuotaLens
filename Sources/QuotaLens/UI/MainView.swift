@@ -106,7 +106,7 @@ public struct MainView: View {
                         case .settings:
                             SettingsView(state: state)
                         case .about:
-                            AboutView(state: state)
+                            AboutView(state: state, updateManager: env.updateManager)
                         }
                     }
                 }

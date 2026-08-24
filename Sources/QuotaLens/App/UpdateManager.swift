@@ -8,6 +8,8 @@ import Sparkle
 public final class UpdateManager: NSObject, ObservableObject, SPUUpdaterDelegate {
     private var updaterController: SPUStandardUpdaterController?
     @Published public private(set) var isCheckingForUpdates = false
+    @Published public private(set) var updateStatusText: String?
+    @Published public private(set) var updateDetailText: String?
     private var manualUpdateCheckHandled = false
     private var pendingUserInitiatedUpdatePresentation = false
     private static let projectURL = URL(string: "https://github.com/yuangy1995/QuotaLens")!
@@ -35,6 +37,10 @@ public final class UpdateManager: NSObject, ObservableObject, SPUUpdaterDelegate
         return L10n.text("在线升级不可用", "Online updates unavailable")
     }
 
+    public var feedURLText: String {
+        Self.currentArchitectureFeedURL.absoluteString
+    }
+
     public var canCheckForUpdates: Bool {
         updaterController?.updater.canCheckForUpdates ?? false
     }
@@ -57,10 +63,32 @@ public final class UpdateManager: NSObject, ObservableObject, SPUUpdaterDelegate
     public var automaticallyDownloadsUpdates: Bool {
         get { updaterController?.updater.automaticallyDownloadsUpdates ?? false }
         set {
-            if newValue, updaterController?.updater.automaticallyChecksForUpdates == false {
-                updaterController?.updater.automaticallyChecksForUpdates = true
+            guard let updater = updaterController?.updater else {
+                updateStatusText = L10n.text("在线升级不可用", "Online updates unavailable")
+                updateDetailText = L10n.text("当前构建未配置 Sparkle，无法更改自动下载设置。", "Sparkle is not configured in this build, so automatic downloads cannot be changed.")
+                objectWillChange.send()
+                return
             }
-            updaterController?.updater.automaticallyDownloadsUpdates = newValue
+
+            if newValue, updater.automaticallyChecksForUpdates == false {
+                updater.automaticallyChecksForUpdates = true
+            }
+
+            updater.automaticallyDownloadsUpdates = newValue
+            let appliedValue = updater.automaticallyDownloadsUpdates
+            if appliedValue == newValue {
+                updateStatusText = newValue
+                    ? L10n.text("自动下载已开启", "Automatic downloads enabled")
+                    : L10n.text("自动下载已关闭", "Automatic downloads disabled")
+                updateDetailText = newValue
+                    ? L10n.text("发现新版本后，Sparkle 会在后台下载更新。", "When a new version is found, Sparkle will download it in the background.")
+                    : L10n.text("发现新版本后，将只提示下载和安装。", "When a new version is found, QuotaLens will only prompt before downloading and installing.")
+            } else {
+                updateStatusText = L10n.text("自动下载未能开启", "Automatic downloads could not be enabled")
+                updateDetailText = updater.allowsAutomaticUpdates
+                    ? L10n.text("Sparkle 没有接受这次设置写入，请确认应用不是从磁盘镜像或只读位置运行。", "Sparkle did not accept this setting change. Confirm the app is not running from a disk image or read-only location.")
+                    : L10n.text("Sparkle 当前报告不允许自动下载。已为你保留手动检查和手动安装。", "Sparkle currently reports that automatic downloads are not allowed. Manual checks and installs remain available.")
+            }
             objectWillChange.send()
         }
     }
@@ -86,9 +114,13 @@ public final class UpdateManager: NSObject, ObservableObject, SPUUpdaterDelegate
             return
         }
         guard updater.canCheckForUpdates else {
+            updateStatusText = L10n.text("暂时无法检查更新", "Cannot check for updates right now")
+            updateDetailText = L10n.text("Sparkle 正在处理另一个更新会话，请稍后再试。", "Sparkle is handling another update session. Try again shortly.")
             return
         }
         isCheckingForUpdates = true
+        updateStatusText = L10n.text("正在检查更新", "Checking for updates")
+        updateDetailText = L10n.format("Update feed: %@", zhHans: "正在读取更新源：%@", feedURLText)
         manualUpdateCheckHandled = false
         pendingUserInitiatedUpdatePresentation = false
         updater.checkForUpdateInformation()
@@ -102,22 +134,36 @@ public final class UpdateManager: NSObject, ObservableObject, SPUUpdaterDelegate
         Self.currentArchitectureFeedURL.absoluteString
     }
 
+    @objc(updater:didFinishLoadingAppcast:)
+    public func updater(_ updater: SPUUpdater, didFinishLoading appcast: SUAppcast) {
+        guard isCheckingForUpdates else { return }
+        updateStatusText = L10n.text("已读取更新信息", "Update feed loaded")
+        updateDetailText = L10n.text("正在比较当前版本与可安装版本。", "Comparing the current version with installable updates.")
+    }
+
+    @objc(updater:didFindValidUpdate:)
     public func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
         guard isCheckingForUpdates else {
             return
         }
         manualUpdateCheckHandled = true
+        updateStatusText = L10n.text("发现可用更新", "Update available")
+        updateDetailText = L10n.format("QuotaLens %@ is available.", zhHans: "QuotaLens %@ 已可下载。", item.displayVersionString)
         showUpdateAvailableAlert(for: item)
     }
 
+    @objc(updaterDidNotFindUpdate:error:)
     public func updaterDidNotFindUpdate(_ updater: SPUUpdater, error: Error) {
         guard isCheckingForUpdates else {
             return
         }
         manualUpdateCheckHandled = true
+        updateStatusText = L10n.text("未发现可用更新", "No update found")
+        updateDetailText = noUpdateFoundDetail(for: error as NSError)
         showNoUpdateFoundAlert(error: error as NSError)
     }
 
+    @objc(updater:didFinishUpdateCycleForUpdateCheck:error:)
     public func updater(_ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck, error: Error?) {
         guard isCheckingForUpdates else {
             return
@@ -130,6 +176,8 @@ public final class UpdateManager: NSObject, ObservableObject, SPUUpdaterDelegate
         pendingUserInitiatedUpdatePresentation = false
 
         if shouldPresentUpdate {
+            updateStatusText = L10n.text("正在打开更新安装器", "Opening update installer")
+            updateDetailText = L10n.text("Sparkle 将继续下载并安装所选更新。", "Sparkle will continue downloading and installing the selected update.")
             DispatchQueue.main.async {
                 updater.checkForUpdates()
             }
@@ -137,6 +185,8 @@ public final class UpdateManager: NSObject, ObservableObject, SPUUpdaterDelegate
         }
 
         if !handledResult, let error {
+            updateStatusText = L10n.text("检查更新失败", "Update check failed")
+            updateDetailText = error.localizedDescription
             showUpdateCheckFailedAlert(error: error as NSError)
         }
     }
@@ -225,6 +275,7 @@ public final class UpdateManager: NSObject, ObservableObject, SPUUpdaterDelegate
     }
 
     private func noUpdateFoundDetail(for error: NSError) -> String {
+        let latestVersionText = latestAppcastDisplayVersion(for: error)
         switch noUpdateFoundReasonValue(for: error) {
         case 3, 4, 5:
             return L10n.text(
@@ -232,16 +283,29 @@ public final class UpdateManager: NSObject, ObservableObject, SPUUpdaterDelegate
                 "The available update does not match this Mac's macOS or hardware requirements."
             )
         default:
+            if let latestVersionText, latestVersionText != AppVersion.marketingVersion {
+                return L10n.format(
+                    "The update feed reports QuotaLens %@, but Sparkle did not select it for installation. Feed: %@",
+                    zhHans: "更新源报告 QuotaLens %@，但 Sparkle 未选择安装。更新源：%@",
+                    latestVersionText,
+                    feedURLText
+                )
+            }
             return L10n.format(
-                "QuotaLens %@ is currently the newest version available.",
-                zhHans: "QuotaLens %@ 是当前可用的最新版本。",
-                AppVersion.marketingVersion
+                "QuotaLens %@ is currently the newest version available. Feed: %@",
+                zhHans: "QuotaLens %@ 是当前更新源中的最新版本。更新源：%@",
+                latestVersionText ?? AppVersion.marketingVersion,
+                feedURLText
             )
         }
     }
 
     private func noUpdateFoundReasonValue(for error: NSError) -> Int? {
         (error.userInfo[SPUNoUpdateFoundReasonKey] as? NSNumber)?.intValue
+    }
+
+    private func latestAppcastDisplayVersion(for error: NSError) -> String? {
+        (error.userInfo[SPULatestAppcastItemFoundKey] as? SUAppcastItem)?.displayVersionString
     }
 
     private func showUpdatesNotConfiguredAlert() {
