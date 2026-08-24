@@ -44,16 +44,10 @@ public struct SettingsView: View {
 
     // MARK: - 顶部标题
     private var settingsHeaderHUD: some View {
-        return VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
-                Text(L10n.text("系统设置", "Settings"))
-                    .font(.system(.title, design: .rounded, weight: .black))
-                    .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
-            }
-
-            Text(L10n.text("管理外观、语言、账号、刷新和本地数据", "Manage appearance, language, account, refresh, and local data."))
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+        HStack(spacing: 8) {
+            Text(L10n.text("系统设置", "Settings"))
+                .font(.system(.title, design: .rounded, weight: .black))
+                .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

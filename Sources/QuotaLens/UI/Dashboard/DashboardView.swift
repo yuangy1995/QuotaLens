@@ -36,18 +36,9 @@ public struct DashboardView: View {
     private var headerHUDBar: some View {
         let cyan = AppTheme.accentCyan(for: colorScheme)
         return HStack(alignment: .center) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 8) {
-                    Text(L10n.text("概览", "Overview"))
-                        .font(.system(.title, design: .rounded, weight: .black))
-                        .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
-
-                }
-
-                Text(L10n.text("监测当前账号额度消耗与重置周期", "Monitor quota usage and reset windows for the current account."))
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-            }
+            Text(L10n.text("概览", "Overview"))
+                .font(.system(.title, design: .rounded, weight: .black))
+                .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
 
             Spacer()
 
@@ -68,11 +59,11 @@ public struct DashboardView: View {
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
                         .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
                 }
-                .padding(.horizontal, 8)
+                .padding(.horizontal, 9)
                 .padding(.vertical, 5)
-                .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 7))
+                .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 6))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 7)
+                    RoundedRectangle(cornerRadius: 6)
                         .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
                 )
             }
@@ -97,7 +88,7 @@ public struct DashboardView: View {
 
             CyberDivider()
 
-            HStack(spacing: 32) {
+            HStack(spacing: 28) {
                 // 全息双环表盘
                 CircularProgressView(
                     progress: state.displayedQuotaProgress,
@@ -111,29 +102,34 @@ public struct DashboardView: View {
 
                 // 结构化指标网格
                 VStack(alignment: .leading, spacing: 14) {
-                    // 主额度遥测大字卡
-                    HStack(spacing: 28) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(state.quotaDisplayMode.primaryLabel)
-                                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-                            Text(state.displayedQuotaPercentString)
-                                .font(.system(size: 30, weight: .black, design: .rounded))
-                                .foregroundStyle(cyan)
-                                .monospacedDigit()
+                    // 主额度遥测大字卡 + 建议日均消耗微卡片
+                    HStack(alignment: .top, spacing: 16) {
+                        HStack(spacing: 24) {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(state.quotaDisplayMode.primaryLabel)
+                                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                                Text(state.displayedQuotaPercentString)
+                                    .font(.system(size: 30, weight: .black, design: .rounded))
+                                    .foregroundStyle(cyan)
+                                    .monospacedDigit()
+                            }
+
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(state.quotaDisplayMode.complementLabel)
+                                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                                Text(state.complementQuotaPercentString)
+                                    .font(.system(size: 30, weight: .black, design: .rounded))
+                                    .foregroundStyle(state.quotaSeverityColor)
+                                    .monospacedDigit()
+                            }
                         }
 
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(state.quotaDisplayMode.complementLabel)
-                                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-                            Text(state.complementQuotaPercentString)
-                                .font(.system(size: 30, weight: .black, design: .rounded))
-                                .foregroundStyle(state.quotaSeverityColor)
-                                .monospacedDigit()
-                        }
+                        Spacer(minLength: 8)
 
-                        Spacer()
+                        // 建议日均可用消耗微卡片
+                        dailyBudgetPaceCard
                     }
 
                     CyberDivider()
@@ -186,6 +182,61 @@ public struct DashboardView: View {
             }
         }
         .cyberCard(cornerRadius: 16, padding: 22, isHighlighted: true, glowColor: cyan)
+    }
+
+    // MARK: - 建议日均配额消耗微卡片
+    private var dailyBudgetPaceCard: some View {
+        let isDark = colorScheme == .dark
+        let emerald = AppTheme.accentEmerald(for: colorScheme)
+
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 5) {
+                Image(systemName: "chart.line.uptrend.xyaxis")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(emerald)
+
+                Text(L10n.text("建议日均消耗", "Daily Budget Pace"))
+                    .font(.system(size: 10.5, weight: .bold))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+
+                Spacer(minLength: 4)
+
+                Text(L10n.text("匀速", "Paced"))
+                    .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                    .foregroundStyle(emerald)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1.5)
+                    .background(emerald.opacity(isDark ? 0.16 : 0.10), in: RoundedRectangle(cornerRadius: 3.5))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 3.5)
+                            .strokeBorder(emerald.opacity(0.35), lineWidth: 0.6)
+                    )
+            }
+
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Text(state.recommendedDailyQuotaPercentString)
+                    .font(.system(size: 18, weight: .black, design: .rounded))
+                    .foregroundStyle(emerald)
+                    .monospacedDigit()
+
+                Text("/" + L10n.text("天", "day"))
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+            }
+
+            Text(state.recommendedDailyQuotaSubtitle)
+                .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                .foregroundStyle(AppTheme.textSecondary(for: colorScheme).opacity(0.88))
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(minWidth: 156)
+        .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .strokeBorder(emerald.opacity(isDark ? 0.28 : 0.20), lineWidth: 0.8)
+        )
     }
 
     // MARK: - 指标矩阵

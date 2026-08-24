@@ -162,23 +162,17 @@ public struct AboutView: View {
         let isDark = colorScheme == .dark
         let cyan = AppTheme.accentCyan(for: colorScheme)
 
-        return VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
-                Text(L10n.text("关于 QuotaLens", "About QuotaLens"))
-                    .font(.system(.title, design: .rounded, weight: .black))
-                    .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+        return HStack(spacing: 8) {
+            Text(L10n.text("关于 QuotaLens", "About QuotaLens"))
+                .font(.system(.title, design: .rounded, weight: .black))
+                .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
 
-                Text("QUOTALENS")
-                    .font(.system(size: 10, weight: .heavy, design: .monospaced))
-                    .foregroundStyle(cyan)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(cyan.opacity(isDark ? 0.15 : 0.12), in: RoundedRectangle(cornerRadius: 4))
-            }
-
-            Text(L10n.text("版本信息、功能特性与在线升级", "Version info, core features, and online updates"))
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+            Text("QUOTALENS")
+                .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                .foregroundStyle(cyan)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(cyan.opacity(isDark ? 0.15 : 0.12), in: RoundedRectangle(cornerRadius: 4))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

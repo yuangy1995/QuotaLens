@@ -246,6 +246,76 @@ public enum L10n {
 }
 
 private let keyedTranslations: [String: [AppLanguage: String]] = [
+    "Daily Budget Pace": [
+        .traditionalChinese: "建議日均消耗",
+        .japanese: "推奨日別消費ペース",
+        .korean: "일일 권장 소비량",
+        .spanish: "Ritmo diario recomendado",
+        .german: "Empfohlenes Tagesbudget",
+        .french: "Rythme quotidien conseillé",
+        .portuguese: "Ritmo diário recomendado",
+        .portugueseBrazil: "Ritmo diário recomendado"
+    ],
+    "Paced": [
+        .traditionalChinese: "勻速",
+        .japanese: "均等",
+        .korean: "균등",
+        .spanish: "Pausado",
+        .german: "Gleichmäßig",
+        .french: "Régulier",
+        .portuguese: "Uniforme",
+        .portugueseBrazil: "Uniforme"
+    ],
+    "day": [
+        .traditionalChinese: "天",
+        .japanese: "日",
+        .korean: "일",
+        .spanish: "día",
+        .german: "Tag",
+        .french: "j",
+        .portuguese: "dia",
+        .portugueseBrazil: "dia"
+    ],
+    "Consume at this pace to fully utilize by reset": [
+        .traditionalChinese: "按此速率消耗至週期結束剛好用完",
+        .japanese: "このペースで消費すればリセット時に使い切れます",
+        .korean: "이 속도로 소비하면 리셋 시점에 딱 맞게 소진됩니다",
+        .spanish: "Consumir a este ritmo para agotar justo al reiniciar",
+        .german: "In diesem Tempo verbrauchen, um bis zum Reset fertig zu sein",
+        .french: "Consommer à ce rythme pour terminer pile au renouvellement",
+        .portuguese: "Consumir a este ritmo para terminar no momento do reinício",
+        .portugueseBrazil: "Consumir a este ritmo para terminar no momento do reinício"
+    ],
+    "Cycle ending soon": [
+        .traditionalChinese: "週期即將結束",
+        .japanese: "サイクル終了間近",
+        .korean: "주기 곧 종료",
+        .spanish: "Ciclo finalizando",
+        .german: "Zyklus endet bald",
+        .french: "Fin de cycle imminente",
+        .portuguese: "Ciclo a terminar",
+        .portugueseBrazil: "Ciclo terminando em breve"
+    ],
+    "Remaining %.1f days · Even pace": [
+        .traditionalChinese: "剩餘 %.1f 天 · 勻速可用",
+        .japanese: "残り %.1f 日 · 均等配分",
+        .korean: "잔여 %.1f 일 · 균등 가용",
+        .spanish: "Restan %.1f días · ritmo uniforme",
+        .german: "Noch %.1f Tage · gleichmäßig",
+        .french: "%.1f jours restants · rythme stable",
+        .portuguese: "Restam %.1f dias · ritmo uniforme",
+        .portugueseBrazil: "Restam %.1f dias · ritmo uniforme"
+    ],
+    "Remaining %d hours · Even pace": [
+        .traditionalChinese: "剩餘約 %d 小時 · 勻速可用",
+        .japanese: "残り約 %d 時間 · 均等配分",
+        .korean: "잔여 약 %d 시간 · 균등 가용",
+        .spanish: "Restan aprox. %d horas · ritmo uniforme",
+        .german: "Noch ca. %d Std. · gleichmäßig",
+        .french: "Env. %d heures restantes · rythme stable",
+        .portuguese: "Restam cerca de %d horas · ritmo uniforme",
+        .portugueseBrazil: "Restam cerca de %d horas · ritmo uniforme"
+    ],
     "Removed build count and section number tags across overview and settings": [
         .traditionalChinese: "移除組建次數顯示，並去除概覽與設定頁面的分塊序號徽章",
         .japanese: "ビルド回数の表示を削除し、概要と設定画面のセクション番号バッジを非表示化",
@@ -335,16 +405,6 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .french: "À propos de QuotaLens",
         .portuguese: "Sobre o QuotaLens",
         .portugueseBrazil: "Sobre o QuotaLens"
-    ],
-    "Version info, core features, and online updates": [
-        .traditionalChinese: "版本資訊、核心特性與線上升級",
-        .japanese: "バージョン情報、コア機能とオンライン更新",
-        .korean: "버전 정보, 핵심 기능 및 온라인 업데이트",
-        .spanish: "Información de versión, funciones clave y actualizaciones",
-        .german: "Versionsinfo, Kernfunktionen und Online-Updates",
-        .french: "Infos de version, fonctionnalités clés et mises à jour",
-        .portuguese: "Informações de versão, funcionalidades e atualizações",
-        .portugueseBrazil: "Informações de versão, recursos e atualizações"
     ],
     "A desktop dashboard for tracking Codex & AI model quotas in real time.": [
         .traditionalChinese: "即時掌控 Codex 與 AI 模型配額的桌面助手",
@@ -1126,16 +1186,6 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Dados locais",
         .portugueseBrazil: "Dados locais"
     ],
-    "Manage appearance, language, account, refresh, and local data.": [
-        .traditionalChinese: "管理外觀、語言、帳號、刷新和本機資料。",
-        .japanese: "外観、言語、アカウント、更新、ローカルデータを管理します。",
-        .korean: "외관, 언어, 계정, 새로고침 및 로컬 데이터를 관리합니다.",
-        .spanish: "Gestiona apariencia, idioma, cuenta, actualización y datos locales.",
-        .german: "Darstellung, Sprache, Konto, Aktualisierung und lokale Daten verwalten.",
-        .french: "Gérez l’apparence, la langue, le compte, l’actualisation et les données locales.",
-        .portuguese: "Gira aspeto, idioma, conta, atualização e dados locais.",
-        .portugueseBrazil: "Gerencie aparência, idioma, conta, atualização e dados locais."
-    ],
     "Menu bar mode with optional hidden Dock icon": [
         .traditionalChinese: "選單列常駐模式與隱藏 Dock 圖示",
         .japanese: "Dock アイコン非表示に対応したメニューバーモード",
@@ -1145,16 +1195,6 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .french: "Mode barre de menus avec icône Dock masquable",
         .portuguese: "Modo de barra de menus com ícone da Dock opcional",
         .portugueseBrazil: "Modo de barra de menus com ícone do Dock opcional"
-    ],
-    "Monitor quota usage and reset windows for the current account.": [
-        .traditionalChinese: "監測目前帳號的額度使用與重置週期。",
-        .japanese: "現在のアカウントのクォータ使用量とリセット周期を監視します。",
-        .korean: "현재 계정의 할당량 사용량과 리셋 주기를 모니터링합니다.",
-        .spanish: "Supervisa el uso de cuota y los periodos de reinicio de la cuenta actual.",
-        .german: "Quota-Nutzung und Reset-Zeiträume für das aktuelle Konto überwachen.",
-        .french: "Surveille l’utilisation du quota et les périodes de réinitialisation du compte actuel.",
-        .portuguese: "Monitoriza a utilização da quota e os períodos de reinício da conta atual.",
-        .portugueseBrazil: "Monitora o uso da cota e os períodos de reinício da conta atual."
     ],
     "Never checked": [
         .traditionalChinese: "尚未檢查",

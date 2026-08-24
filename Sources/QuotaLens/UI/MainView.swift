@@ -25,14 +25,6 @@ public enum NavigationTab: CaseIterable, Identifiable {
         case .about: return "info.circle.fill"
         }
     }
-
-    public var subtitle: String {
-        switch self {
-        case .dashboard: return L10n.text("额度", "Quota")
-        case .settings: return L10n.text("偏好", "Preferences")
-        case .about: return L10n.text("版本", "Version")
-        }
-    }
 }
 
 public struct MainView: View {
@@ -466,7 +458,6 @@ private struct SidebarNavigationRow: View {
         let cyan = AppTheme.accentCyan(for: colorScheme)
         let blue = AppTheme.accentBlue(for: colorScheme)
         let selectedPrimary = Color.white
-        let selectedSecondary = Color.white.opacity(0.84)
 
         Button(action: onSelect) {
             HStack(spacing: 12) {
@@ -480,16 +471,10 @@ private struct SidebarNavigationRow: View {
                         .foregroundStyle(isSelected ? selectedPrimary : AppTheme.textSecondary(for: colorScheme))
                 }
 
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(tab.title)
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .foregroundStyle(isSelected ? selectedPrimary : AppTheme.textPrimary(for: colorScheme))
-                        .shadow(color: isSelected ? Color.black.opacity(0.22) : Color.clear, radius: 1, x: 0, y: 1)
-
-                    Text(tab.subtitle)
-                        .font(.system(size: 8.5, weight: .heavy, design: .monospaced))
-                        .foregroundStyle(isSelected ? selectedSecondary : AppTheme.textSecondary(for: colorScheme))
-                }
+                Text(tab.title)
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundStyle(isSelected ? selectedPrimary : AppTheme.textPrimary(for: colorScheme))
+                    .shadow(color: isSelected ? Color.black.opacity(0.22) : Color.clear, radius: 1, x: 0, y: 1)
 
                 Spacer()
             }

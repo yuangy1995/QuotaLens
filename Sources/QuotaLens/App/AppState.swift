@@ -431,6 +431,40 @@ public final class AppState: ObservableObject {
         return formatFullDate(resetsAt)
     }
 
+    /// 当前周期剩余天数（浮点数）
+    public var currentPeriodRemainingDays: Double? {
+        guard let snap = latestRateLimit, let resetsAt = snap.resetsAt else { return nil }
+        let now = Date().timeIntervalSince1970
+        let diff = resetsAt - Int64(now)
+        guard diff > 0 else { return 0.0 }
+        return Double(diff) / 86400.0
+    }
+
+    /// 建议每日可用配额百分比（至重置刚好用完）
+    public var recommendedDailyQuotaPercent: Double? {
+        guard let days = currentPeriodRemainingDays, days > 0 else { return nil }
+        return min(100.0, max(0.0, currentRemainingPercent / days))
+    }
+
+    /// 建议每日配额消耗格式化字符串，例如 "11.0%"
+    public var recommendedDailyQuotaPercentString: String {
+        guard let daily = recommendedDailyQuotaPercent else { return "--%" }
+        return String(format: "%.1f%%", daily)
+    }
+
+    /// 建议每日配额短文案（例如 "剩余 6.7 天 · 匀速可用"）
+    public var recommendedDailyQuotaSubtitle: String {
+        guard let days = currentPeriodRemainingDays, days > 0 else {
+            return L10n.text("周期即将结束", "Cycle ending soon")
+        }
+        if days < 1.0 {
+            let hours = max(1, Int(days * 24.0))
+            return L10n.format("Remaining %d hours · Even pace", zhHans: "剩余约 %d 小时 · 匀速可用", hours)
+        } else {
+            return L10n.format("Remaining %.1f days · Even pace", zhHans: "剩余 %.1f 天 · 匀速可用", days)
+        }
+    }
+
     public var quotaWindowStartDateString: String? {
         guard let startAt = quotaWindowStartAt else { return nil }
         return formatFullDate(startAt)
