@@ -163,7 +163,12 @@ public final class AppEnvironment: ObservableObject {
         menuBarController?.refreshAppearance()
     }
 
+    public func prepareForMainWindowActivation() {
+        menuBarController?.closePopoverAndSuppressOpening()
+    }
+
     public func openOrFocusMainWindow(createWindow: () -> Void) {
+        prepareForMainWindowActivation()
         if let window = NSApp.windows.first(where: isMainWindow) {
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)

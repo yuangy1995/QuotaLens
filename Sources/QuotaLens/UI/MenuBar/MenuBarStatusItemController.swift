@@ -15,6 +15,7 @@ public final class MenuBarStatusItemController: NSObject {
     private var onRefresh: () -> Void
     private var onAcknowledgeResetCreditReminder: () -> Void
     private var onSnoozeResetCreditReminder: (Int) -> Void
+    private var suppressPopoverUntil = Date.distantPast
 
     public init(
         state: AppState,
@@ -48,7 +49,13 @@ public final class MenuBarStatusItemController: NSObject {
         self.onRefresh = onRefresh
         self.onAcknowledgeResetCreditReminder = onAcknowledgeResetCreditReminder
         self.onSnoozeResetCreditReminder = onSnoozeResetCreditReminder
-        configurePopover()
+    }
+
+    public func closePopoverAndSuppressOpening(for interval: TimeInterval = 0.55) {
+        suppressPopoverUntil = Date().addingTimeInterval(interval)
+        if popover.isShown {
+            popover.performClose(nil)
+        }
     }
 
     public func refreshAppearance() {
@@ -189,6 +196,11 @@ public final class MenuBarStatusItemController: NSObject {
     }
 
     @objc private func togglePopover(_ sender: NSStatusBarButton) {
+        guard Date() >= suppressPopoverUntil else {
+            popover.performClose(sender)
+            return
+        }
+
         if state.hasActiveResetCreditReminder {
             popover.performClose(sender)
             showResetCreditReminderAlert()

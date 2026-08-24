@@ -4,14 +4,30 @@ import Foundation
 import AppKit
 import Sparkle
 
+public enum UpdateDialogKind: Sendable, Equatable {
+    case checking
+    case available
+    case latest
+    case failure
+}
+
+public struct UpdateDialogState: Identifiable, Sendable, Equatable {
+    public let id = UUID()
+    public let kind: UpdateDialogKind
+    public let title: String
+    public let message: String
+    public let primaryButtonTitle: String
+    public let secondaryButtonTitle: String?
+}
+
 @MainActor
 public final class UpdateManager: NSObject, ObservableObject, SPUUpdaterDelegate {
     private var updaterController: SPUStandardUpdaterController?
     @Published public private(set) var isCheckingForUpdates = false
     @Published public private(set) var updateStatusText: String?
     @Published public private(set) var updateDetailText: String?
+    @Published public private(set) var updateDialog: UpdateDialogState?
     private var manualUpdateCheckHandled = false
-    private var pendingUserInitiatedUpdatePresentation = false
     private static let projectURL = URL(string: "https://github.com/yuangy1995/QuotaLens")!
     private static let releaseFeedBaseURL = "https://github.com/yuangy1995/QuotaLens/releases/latest/download"
 
@@ -35,10 +51,6 @@ public final class UpdateManager: NSObject, ObservableObject, SPUUpdaterDelegate
             return L10n.text("在线升级已启用", "Online updates enabled")
         }
         return L10n.text("在线升级不可用", "Online updates unavailable")
-    }
-
-    public var feedURLText: String {
-        Self.currentArchitectureFeedURL.absoluteString
     }
 
     public var canCheckForUpdates: Bool {
@@ -110,20 +122,48 @@ public final class UpdateManager: NSObject, ObservableObject, SPUUpdaterDelegate
 
     public func checkForUpdates() {
         guard let updater = updaterController?.updater else {
-            showUpdatesNotConfiguredAlert()
+            showUpdateDialog(
+                kind: .failure,
+                title: L10n.text("在线升级不可用", "Online updates unavailable"),
+                message: L10n.text("当前构建未配置在线升级。", "This build is not configured for online updates."),
+                primaryButtonTitle: L10n.text("知道了", "OK")
+            )
             return
         }
         guard updater.canCheckForUpdates else {
             updateStatusText = L10n.text("暂时无法检查更新", "Cannot check for updates right now")
             updateDetailText = L10n.text("Sparkle 正在处理另一个更新会话，请稍后再试。", "Sparkle is handling another update session. Try again shortly.")
+            showUpdateDialog(
+                kind: .failure,
+                title: updateStatusText ?? L10n.text("暂时无法检查更新", "Cannot check for updates right now"),
+                message: updateDetailText ?? L10n.text("请稍后再试。", "Try again shortly."),
+                primaryButtonTitle: L10n.text("知道了", "OK")
+            )
             return
         }
         isCheckingForUpdates = true
         updateStatusText = L10n.text("正在检查更新", "Checking for updates")
-        updateDetailText = L10n.format("Update feed: %@", zhHans: "正在读取更新源：%@", feedURLText)
+        updateDetailText = L10n.text("正在读取更新信息。", "Reading update information.")
+        showUpdateDialog(
+            kind: .checking,
+            title: L10n.text("正在检查更新", "Checking for updates"),
+            message: L10n.text("正在连接更新服务并比较版本。", "Connecting to the update service and comparing versions."),
+            primaryButtonTitle: L10n.text("请稍候", "Please wait")
+        )
         manualUpdateCheckHandled = false
-        pendingUserInitiatedUpdatePresentation = false
         updater.checkForUpdateInformation()
+    }
+
+    public func dismissUpdateDialog() {
+        guard updateDialog?.kind != .checking else { return }
+        updateDialog = nil
+    }
+
+    public func installAvailableUpdate() {
+        updateStatusText = L10n.text("正在打开更新安装器", "Opening update installer")
+        updateDetailText = L10n.text("请按提示完成下载与安装。", "Follow the prompts to download and install.")
+        updateDialog = nil
+        updaterController?.updater.checkForUpdates()
     }
 
     public func openProjectPage() {
@@ -137,8 +177,14 @@ public final class UpdateManager: NSObject, ObservableObject, SPUUpdaterDelegate
     @objc(updater:didFinishLoadingAppcast:)
     public func updater(_ updater: SPUUpdater, didFinishLoading appcast: SUAppcast) {
         guard isCheckingForUpdates else { return }
-        updateStatusText = L10n.text("已读取更新信息", "Update feed loaded")
+        updateStatusText = L10n.text("已读取更新信息", "Update information loaded")
         updateDetailText = L10n.text("正在比较当前版本与可安装版本。", "Comparing the current version with installable updates.")
+        showUpdateDialog(
+            kind: .checking,
+            title: L10n.text("正在比较版本", "Comparing versions"),
+            message: L10n.text("已经读取更新信息，正在确认是否可安装。", "Update information was loaded. Confirming whether an update can be installed."),
+            primaryButtonTitle: L10n.text("请稍候", "Please wait")
+        )
     }
 
     @objc(updater:didFindValidUpdate:)
@@ -149,7 +195,13 @@ public final class UpdateManager: NSObject, ObservableObject, SPUUpdaterDelegate
         manualUpdateCheckHandled = true
         updateStatusText = L10n.text("发现可用更新", "Update available")
         updateDetailText = L10n.format("QuotaLens %@ is available.", zhHans: "QuotaLens %@ 已可下载。", item.displayVersionString)
-        showUpdateAvailableAlert(for: item)
+        showUpdateDialog(
+            kind: .available,
+            title: L10n.text("发现可用更新", "Update available"),
+            message: L10n.format("QuotaLens %@ is available.", zhHans: "QuotaLens %@ 已可下载。", item.displayVersionString),
+            primaryButtonTitle: L10n.text("下载并安装", "Download and Install"),
+            secondaryButtonTitle: L10n.text("稍后", "Later")
+        )
     }
 
     @objc(updaterDidNotFindUpdate:error:)
@@ -160,7 +212,12 @@ public final class UpdateManager: NSObject, ObservableObject, SPUUpdaterDelegate
         manualUpdateCheckHandled = true
         updateStatusText = L10n.text("未发现可用更新", "No update found")
         updateDetailText = noUpdateFoundDetail(for: error as NSError)
-        showNoUpdateFoundAlert(error: error as NSError)
+        showUpdateDialog(
+            kind: noUpdateFoundDialogKind(for: error as NSError),
+            title: noUpdateFoundTitle(for: error as NSError),
+            message: updateDetailText ?? noUpdateFoundDetail(for: error as NSError),
+            primaryButtonTitle: L10n.text("知道了", "OK")
+        )
     }
 
     @objc(updater:didFinishUpdateCycleForUpdateCheck:error:)
@@ -169,25 +226,19 @@ public final class UpdateManager: NSObject, ObservableObject, SPUUpdaterDelegate
             return
         }
 
-        let shouldPresentUpdate = pendingUserInitiatedUpdatePresentation
         let handledResult = manualUpdateCheckHandled
         isCheckingForUpdates = false
         manualUpdateCheckHandled = false
-        pendingUserInitiatedUpdatePresentation = false
-
-        if shouldPresentUpdate {
-            updateStatusText = L10n.text("正在打开更新安装器", "Opening update installer")
-            updateDetailText = L10n.text("Sparkle 将继续下载并安装所选更新。", "Sparkle will continue downloading and installing the selected update.")
-            DispatchQueue.main.async {
-                updater.checkForUpdates()
-            }
-            return
-        }
 
         if !handledResult, let error {
             updateStatusText = L10n.text("检查更新失败", "Update check failed")
-            updateDetailText = error.localizedDescription
-            showUpdateCheckFailedAlert(error: error as NSError)
+            updateDetailText = cleanUpdateErrorMessage(error.localizedDescription)
+            showUpdateDialog(
+                kind: .failure,
+                title: L10n.text("无法检查更新", "Unable to Check for Updates"),
+                message: updateDetailText ?? L10n.text("QuotaLens 未能完成更新检测，请稍后再试。", "QuotaLens could not complete the update check. Try again later."),
+                primaryButtonTitle: L10n.text("知道了", "OK")
+            )
         }
     }
 
@@ -225,52 +276,21 @@ public final class UpdateManager: NSObject, ObservableObject, SPUUpdaterDelegate
         #endif
     }
 
-    private func showUpdateAvailableAlert(for item: SUAppcastItem) {
-        let alert = NSAlert()
-        alert.messageText = L10n.text("发现可用更新", "Update Available")
-        alert.informativeText = L10n.format(
-            "QuotaLens %@ is available. Continue to download and install it.",
-            zhHans: "QuotaLens %@ 已可下载。是否下载并安装？",
-            item.displayVersionString
-        )
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: L10n.text("下载并安装", "Download and Install"))
-        alert.addButton(withTitle: L10n.text("稍后", "Later"))
-        NSApp.activate(ignoringOtherApps: true)
-
-        if alert.runModal() == .alertFirstButtonReturn {
-            pendingUserInitiatedUpdatePresentation = true
-        }
-    }
-
-    private func showNoUpdateFoundAlert(error: NSError) {
-        let alert = NSAlert()
-        alert.messageText = noUpdateFoundTitle(for: error)
-        alert.informativeText = noUpdateFoundDetail(for: error)
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: L10n.text("好", "OK"))
-        NSApp.activate(ignoringOtherApps: true)
-        alert.runModal()
-    }
-
-    private func showUpdateCheckFailedAlert(error: NSError) {
-        let alert = NSAlert()
-        alert.messageText = L10n.text("无法检查更新", "Unable to Check for Updates")
-        alert.informativeText = error.localizedDescription.isEmpty
-            ? L10n.text("QuotaLens 未能完成更新检测，请稍后再试。", "QuotaLens could not complete the update check. Try again later.")
-            : error.localizedDescription
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: L10n.text("好", "OK"))
-        NSApp.activate(ignoringOtherApps: true)
-        alert.runModal()
-    }
-
     private func noUpdateFoundTitle(for error: NSError) -> String {
         switch noUpdateFoundReasonValue(for: error) {
         case 3, 4, 5:
             return L10n.text("发现新版本，但这台 Mac 无法安装", "A newer QuotaLens is available, but this Mac cannot install it.")
         default:
             return L10n.text("您使用的就是最新版本！", "You're up to date!")
+        }
+    }
+
+    private func noUpdateFoundDialogKind(for error: NSError) -> UpdateDialogKind {
+        switch noUpdateFoundReasonValue(for: error) {
+        case 3, 4, 5:
+            return .failure
+        default:
+            return .latest
         }
     }
 
@@ -285,17 +305,15 @@ public final class UpdateManager: NSObject, ObservableObject, SPUUpdaterDelegate
         default:
             if let latestVersionText, latestVersionText != AppVersion.marketingVersion {
                 return L10n.format(
-                    "The update feed reports QuotaLens %@, but Sparkle did not select it for installation. Feed: %@",
-                    zhHans: "更新源报告 QuotaLens %@，但 Sparkle 未选择安装。更新源：%@",
-                    latestVersionText,
-                    feedURLText
+                    "QuotaLens %@ was found, but it was not selected for installation on this Mac.",
+                    zhHans: "检测到 QuotaLens %@，但这台 Mac 当前无法安装。",
+                    latestVersionText
                 )
             }
             return L10n.format(
-                "QuotaLens %@ is currently the newest version available. Feed: %@",
-                zhHans: "QuotaLens %@ 是当前更新源中的最新版本。更新源：%@",
-                latestVersionText ?? AppVersion.marketingVersion,
-                feedURLText
+                "QuotaLens %@ is currently the newest version available.",
+                zhHans: "QuotaLens %@ 已是当前最新版本。",
+                latestVersionText ?? AppVersion.marketingVersion
             )
         }
     }
@@ -308,12 +326,32 @@ public final class UpdateManager: NSObject, ObservableObject, SPUUpdaterDelegate
         (error.userInfo[SPULatestAppcastItemFoundKey] as? SUAppcastItem)?.displayVersionString
     }
 
-    private func showUpdatesNotConfiguredAlert() {
-        let alert = NSAlert()
-        alert.messageText = L10n.text("当前构建未配置在线升级", "This build is not configured for online updates")
-        alert.informativeText = L10n.text("当前版本暂不支持在线升级。", "This version does not support online updates.")
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: L10n.text("知道了", "OK"))
-        alert.runModal()
+    private func cleanUpdateErrorMessage(_ message: String) -> String {
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            return L10n.text("QuotaLens 未能完成更新检测，请稍后再试。", "QuotaLens could not complete the update check. Try again later.")
+        }
+        if trimmed.localizedCaseInsensitiveContains("http://")
+            || trimmed.localizedCaseInsensitiveContains("https://")
+            || trimmed.localizedCaseInsensitiveContains("appcast") {
+            return L10n.text("无法读取更新信息，请检查网络后重试。", "Update information could not be loaded. Check the network and try again.")
+        }
+        return trimmed
+    }
+
+    private func showUpdateDialog(
+        kind: UpdateDialogKind,
+        title: String,
+        message: String,
+        primaryButtonTitle: String,
+        secondaryButtonTitle: String? = nil
+    ) {
+        updateDialog = UpdateDialogState(
+            kind: kind,
+            title: title,
+            message: message,
+            primaryButtonTitle: primaryButtonTitle,
+            secondaryButtonTitle: secondaryButtonTitle
+        )
     }
 }

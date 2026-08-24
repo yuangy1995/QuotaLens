@@ -106,7 +106,7 @@ public struct MenuBarContentView: View {
 
         return VStack(spacing: 12) {
             // 上半区：发光全息主双环量表卡片 (左图右文垂直对齐)
-            HStack(alignment: .center, spacing: 14) {
+            HStack(alignment: .top, spacing: 14) {
                 // 左侧：双环量表 (扩大展示空间)
                 Button(action: {
                     withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
@@ -129,7 +129,7 @@ public struct MenuBarContentView: View {
                 Spacer(minLength: 8)
 
                 // 右侧：2 (模式微胶囊) 与 3 (核心数据指标) 垂直排布
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 14) {
                     // 2: 紧凑模式微胶囊
                     QuotaMiniModeToggle(
                         selection: Binding(

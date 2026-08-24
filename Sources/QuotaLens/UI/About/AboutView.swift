@@ -42,9 +42,6 @@ public struct AboutView: View {
                     .padding(.vertical, 2)
                     .background(cyan.opacity(colorScheme == .dark ? 0.15 : 0.12), in: RoundedRectangle(cornerRadius: 4))
             }
-            Text(L10n.text("Codex 额度监测与菜单栏监控", "Codex quota tracking and menu bar monitoring."))
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -164,18 +161,10 @@ public struct AboutView: View {
                             .controlSize(.small)
                     }
 
-                    Text(updateManager.updateStatusText ?? L10n.format("Update feed: %@", zhHans: "更新源：%@", updateManager.feedURLText))
+                    Text(updateManager.updateStatusText ?? L10n.text("可手动检查新版本，也可以保持自动检测。", "Check manually or keep automatic checks enabled."))
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(updateManager.isCheckingForUpdates ? cyan : AppTheme.textSecondary(for: colorScheme))
                         .lineLimit(2)
-                }
-
-                if let detail = updateManager.updateDetailText {
-                    Text(detail)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-                        .lineLimit(3)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
 

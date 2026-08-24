@@ -118,6 +118,9 @@ public struct MainView: View {
         .preferredColorScheme(state.colorScheme)
         .environment(\.controlActiveState, .key)
         .background(StableWindowConfigurator())
+        .overlay {
+            UpdateCheckOverlay(updateManager: env.updateManager)
+        }
     }
 
     private var topChromeBar: some View {
@@ -270,6 +273,171 @@ public struct MainView: View {
             .padding(.horizontal, 16)
             .padding(.bottom, 12)
             .padding(.top, 4)
+        }
+    }
+}
+
+private struct UpdateCheckOverlay: View {
+    @ObservedObject var updateManager: UpdateManager
+    @Environment(\.colorScheme) var colorScheme
+
+    var body: some View {
+        if let dialog = updateManager.updateDialog {
+            ZStack {
+                Rectangle()
+                    .fill(Color.black.opacity(colorScheme == .dark ? 0.44 : 0.24))
+                    .ignoresSafeArea()
+
+                UpdateCheckDialog(
+                    dialog: dialog,
+                    colorScheme: colorScheme,
+                    onPrimary: {
+                        if dialog.kind == .available {
+                            updateManager.installAvailableUpdate()
+                        } else {
+                            updateManager.dismissUpdateDialog()
+                        }
+                    },
+                    onSecondary: {
+                        updateManager.dismissUpdateDialog()
+                    }
+                )
+                .frame(width: 340)
+            }
+            .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            .animation(.spring(response: 0.28, dampingFraction: 0.86), value: dialog.id)
+        }
+    }
+}
+
+private struct UpdateCheckDialog: View {
+    let dialog: UpdateDialogState
+    let colorScheme: ColorScheme
+    let onPrimary: () -> Void
+    let onSecondary: () -> Void
+    @State private var isAnimating = false
+
+    var body: some View {
+        let cyan = AppTheme.accentCyan(for: colorScheme)
+        let isDark = colorScheme == .dark
+
+        VStack(alignment: .leading, spacing: 18) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 17, style: .continuous)
+                    .fill(iconBackgroundColor.opacity(isDark ? 0.22 : 0.14))
+                    .frame(width: 62, height: 62)
+
+                if dialog.kind == .checking {
+                    Circle()
+                        .trim(from: 0.12, to: 0.86)
+                        .stroke(
+                            AngularGradient(
+                                colors: [cyan.opacity(0.2), cyan, AppTheme.accentBlue(for: colorScheme)],
+                                center: .center
+                            ),
+                            style: StrokeStyle(lineWidth: 5, lineCap: .round)
+                        )
+                        .frame(width: 44, height: 44)
+                        .rotationEffect(.degrees(isAnimating ? 360 : 0))
+                        .animation(.linear(duration: 1.0).repeatForever(autoreverses: false), value: isAnimating)
+
+                    Circle()
+                        .fill(cyan)
+                        .frame(width: 8, height: 8)
+                } else {
+                    Image(systemName: iconName)
+                        .font(.system(size: 26, weight: .bold))
+                        .foregroundStyle(iconBackgroundColor)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text(dialog.title)
+                    .font(.system(size: 18, weight: .black, design: .rounded))
+                    .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+
+                Text(dialog.message)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack(spacing: 10) {
+                if let secondary = dialog.secondaryButtonTitle {
+                    Button(action: onSecondary) {
+                        Text(secondary)
+                            .font(.system(size: 12, weight: .bold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 9)
+                            .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 8))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(dialog.kind == .checking)
+                }
+
+                Button(action: onPrimary) {
+                    Text(dialog.primaryButtonTitle)
+                        .font(.system(size: 12, weight: .bold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 9)
+                        .background(
+                            dialog.kind == .checking
+                                ? AnyShapeStyle(AppTheme.insetSurface(for: colorScheme))
+                                : AnyShapeStyle(LinearGradient(
+                                    colors: [cyan, AppTheme.accentBlue(for: colorScheme)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )),
+                            in: RoundedRectangle(cornerRadius: 8)
+                        )
+                        .foregroundStyle(dialog.kind == .checking ? AppTheme.textSecondary(for: colorScheme) : Color.white)
+                }
+                .buttonStyle(.plain)
+                .disabled(dialog.kind == .checking)
+            }
+        }
+        .padding(26)
+        .background(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(isDark ? Color(red: 0.075, green: 0.09, blue: 0.14) : Color(red: 0.97, green: 0.985, blue: 1.0))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .strokeBorder(cyan.opacity(isDark ? 0.30 : 0.22), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(isDark ? 0.45 : 0.18), radius: 28, x: 0, y: 18)
+        .onAppear {
+            isAnimating = true
+        }
+    }
+
+    private var iconName: String {
+        switch dialog.kind {
+        case .checking:
+            return "arrow.triangle.2.circlepath"
+        case .available:
+            return "arrow.down.circle.fill"
+        case .latest:
+            return "checkmark.seal.fill"
+        case .failure:
+            return "exclamationmark.triangle.fill"
+        }
+    }
+
+    private var iconBackgroundColor: Color {
+        switch dialog.kind {
+        case .checking:
+            return AppTheme.accentCyan(for: colorScheme)
+        case .available:
+            return AppTheme.accentBlue(for: colorScheme)
+        case .latest:
+            return AppTheme.accentEmerald(for: colorScheme)
+        case .failure:
+            return AppTheme.accentAmber(for: colorScheme)
         }
     }
 }
