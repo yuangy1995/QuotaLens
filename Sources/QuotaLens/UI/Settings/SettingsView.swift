@@ -28,7 +28,10 @@ public struct SettingsView: View {
                 // 模块 03 · 同步与刷新
                 engineDispatchHUDCard
 
-                // 模块 04 · 本地数据
+                // 模块 04 · 本地用量分析与挂件
+                codexAnalyticsHUDCard
+
+                // 模块 05 · 本地数据
                 storageCoreHUDCard
             }
             .padding(24)
@@ -538,7 +541,202 @@ public struct SettingsView: View {
         .cyberCard(cornerRadius: 16, padding: 18)
     }
 
-    // MARK: - 模块 04 · 本地数据
+    // MARK: - 模块 04 · 本地用量分析与挂件
+    private var codexAnalyticsHUDCard: some View {
+        let cyan = AppTheme.accentCyan(for: colorScheme)
+        let emerald = AppTheme.accentEmerald(for: colorScheme)
+        let isDark = colorScheme == .dark
+        let flags = UsageFeatureFlags.shared
+
+        return VStack(alignment: .leading, spacing: 14) {
+            CyberSectionHeader(
+                title: L10n.text("本地用量分析与挂件", "Local Analytics & Overlay"),
+                icon: "chart.bar.xaxis"
+            )
+
+            CyberDivider()
+
+            VStack(spacing: 10) {
+                // 1. 启用本地 Codex 分析
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(L10n.text("启用本地 Codex 用量分析", "Enable Local Codex Analytics"))
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                        Text(L10n.text("从本地 ~/.codex 解析会话日志，提供精确 Token 统计与 API 价值估算", "Parses local session logs for exact tokens and value"))
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                    }
+                    Spacer()
+                    Toggle("", isOn: Binding(
+                        get: { flags.isAnalyticsEnabled },
+                        set: { enabled in
+                            flags.isAnalyticsEnabled = enabled
+                            if enabled {
+                                Task {
+                                    await env.scanCoordinator.scanNow(forceRebuild: false)
+                                }
+                            }
+                        }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                }
+                .padding(12)
+                .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))
+
+                // 2. 扫描归档会话
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(L10n.text("包含归档会话 (~/.codex/archived_sessions)", "Scan Archived Sessions"))
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                        Text(L10n.text("扫描并汇总已归档的历史会话", "Include archived sessions in total history"))
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                    }
+                    Spacer()
+                    Toggle("", isOn: Binding(
+                        get: { flags.isScanArchivedSessionsEnabled },
+                        set: { flags.isScanArchivedSessionsEnabled = $0 }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                }
+                .padding(12)
+                .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))
+
+                // 3. 启用 ChatGPT / Codex 窗口悬浮挂件
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(L10n.text("ChatGPT / Codex 窗口悬浮挂件", "Window Floating Overlay"))
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                        Text(L10n.text("在目标应用前台窗口边缘附着小胶囊，显示实时配额", "Floating pill attached to target window"))
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                    }
+                    Spacer()
+                    Toggle("", isOn: Binding(
+                        get: { flags.isOverlayEnabled },
+                        set: { enabled in
+                            flags.isOverlayEnabled = enabled
+                            CodexUsageOverlayController.shared.setEnabled(enabled, environment: env)
+                        }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                }
+                .padding(12)
+                .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))
+
+                // 4. 智能预测引擎
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(L10n.text("智能预测引擎", "Smart Forecast Engine"))
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                        Text(L10n.text("计算服务器额度耗尽时间与未来 7 天用量趋势", "Calculates burn rate and 7-day usage trends"))
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                    }
+                    Spacer()
+                    Toggle("", isOn: Binding(
+                        get: { flags.isForecastEnabled },
+                        set: { flags.isForecastEnabled = $0 }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                }
+                .padding(12)
+                .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))
+            }
+
+            // 索引状态与操作
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text(L10n.format("价格目录版本: %@", zhHans: "价格目录版本: %@", BundledPricingCatalog.currentVersion))
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundStyle(cyan)
+
+                    Spacer()
+
+                    Text(L10n.text("官方列表价已激活", "Official rates active"))
+                        .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                        .foregroundStyle(emerald)
+                }
+
+                HStack(spacing: 10) {
+                    Button(action: {
+                        Task {
+                            await env.scanCoordinator.scanNow(forceRebuild: false)
+                        }
+                    }) {
+                        HStack(spacing: 5) {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                                .font(.system(size: 10, weight: .bold))
+                            Text(L10n.text("立即扫描", "Scan Now"))
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(cyan.opacity(isDark ? 0.16 : 0.12), in: RoundedRectangle(cornerRadius: 6))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .strokeBorder(cyan.opacity(0.4), lineWidth: 0.8)
+                        )
+                        .foregroundStyle(cyan)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(env.scanCoordinator.isScanning)
+
+                    Button(action: {
+                        Task {
+                            await env.scanCoordinator.scanNow(forceRebuild: true)
+                        }
+                    }) {
+                        HStack(spacing: 5) {
+                            Image(systemName: "arrow.counterclockwise")
+                                .font(.system(size: 10, weight: .bold))
+                            Text(L10n.text("重新建立索引", "Re-index All"))
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(AppTheme.accentAmber(for: colorScheme).opacity(isDark ? 0.16 : 0.12), in: RoundedRectangle(cornerRadius: 6))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .strokeBorder(AppTheme.accentAmber(for: colorScheme).opacity(0.4), lineWidth: 0.8)
+                        )
+                        .foregroundStyle(AppTheme.accentAmber(for: colorScheme))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(env.scanCoordinator.isScanning)
+
+                    Spacer()
+
+                    if env.scanCoordinator.isScanning {
+                        HStack(spacing: 6) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text(env.scanCoordinator.statusText)
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                        }
+                    } else if let lastTime = env.scanCoordinator.lastScanTime {
+                        Text(L10n.format("Last scan: %@", zhHans: "最后扫描: %@", UsageNumberFormatter.relativeTimeString(from: lastTime)))
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                    }
+                }
+            }
+            .padding(12)
+            .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))
+        }
+        .cyberCard(cornerRadius: 16, padding: 18)
+    }
+
+    // MARK: - 模块 05 · 本地数据
     private var storageCoreHUDCard: some View {
         let cyan = AppTheme.accentCyan(for: colorScheme)
         let isDark = colorScheme == .dark
@@ -597,7 +795,7 @@ public struct SettingsView: View {
             HStack {
                 Button(action: {
                     Task {
-                        await env.refreshData()
+                        await env.refreshAllData()
                     }
                 }) {
                     HStack(spacing: 6) {

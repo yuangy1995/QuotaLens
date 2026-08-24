@@ -17,6 +17,8 @@ public final class AppEnvironment: ObservableObject {
     public let processManager: CodexProcessManager
     public let accountProbe: AccountProbeActor
     public let updateManager: UpdateManager
+    public let usageQueryFacade: UsageQueryFacade
+    public let scanCoordinator: CodexUsageScanCoordinator
 
     private var refreshLoopTask: Task<Void, Never>?
     private var serverRecoveryTask: Task<Void, Never>?
@@ -25,6 +27,12 @@ public final class AppEnvironment: ObservableObject {
     private var notificationHandlersRegistered = false
     private var isFetchingServerSnapshot = false
     private var isFetchingSubscriptionEntitlement = false
+    private var accountDataGeneration = 0
+    private var refreshDataRequestGeneration = 0
+    private var serverSnapshotRequestGeneration = 0
+    private var subscriptionEntitlementRequestGeneration = 0
+    private var serverSnapshotInFlightAccountKey: String?
+    private var subscriptionEntitlementInFlightAccountKey: String?
     private var menuBarController: MenuBarStatusItemController?
     private var themeModeCancellable: AnyCancellable?
     private var systemAppearanceObserver: NSObjectProtocol?
@@ -60,6 +68,9 @@ public final class AppEnvironment: ObservableObject {
         self.processManager = CodexProcessManager(transport: transport)
         self.accountProbe = AccountProbeActor(transport: transport, repositories: repositories)
         self.updateManager = UpdateManager()
+        self.usageQueryFacade = UsageQueryFacade(database: database)
+        self.scanCoordinator = CodexUsageScanCoordinator.shared
+        self.scanCoordinator.configure(database: database)
         self.installThemeAppearanceObservers()
         self.applyThemeAppearance()
         self.registerRPCNotifications()
@@ -83,15 +94,27 @@ public final class AppEnvironment: ObservableObject {
             await self.backgroundBootstrap()
         }
 
-        // 4. 立即触发首帧数据刷新
+        // 4. 启动即扫描本地 Codex 记录；不要被服务连接阻塞。
+        Task(priority: .utility) { [weak self] in
+            guard let self = self else { return }
+            if UsageFeatureFlags.shared.isAnalyticsEnabled {
+                await self.scanCoordinator.scanNow()
+            }
+        }
+
+        if UsageFeatureFlags.shared.isOverlayEnabled {
+            CodexUsageOverlayController.shared.setEnabled(true, environment: self)
+        }
+
+        // 5. 立即触发首帧数据刷新
         Task { @MainActor [weak self] in
             await self?.refreshData()
         }
 
-        // 5. 启动可配置的周期性状态刷新，默认 1 分钟。
+        // 6. 启动可配置的周期性状态刷新，默认 1 分钟。
         self.scheduleRefreshTimer()
 
-        // 6. 用 Web entitlement 后台补齐订阅周期、续费/降级状态。
+        // 7. 用 Web entitlement 后台补齐订阅周期、续费/降级状态。
         Task { @MainActor [weak self] in
             _ = await self?.refreshSubscriptionEntitlementIfPossible()
         }
@@ -258,6 +281,7 @@ public final class AppEnvironment: ObservableObject {
         } else {
             menuBarController = MenuBarStatusItemController(
                 state: state,
+                usageFacade: usageQueryFacade,
                 onOpenMainWindow: onOpenMainWindow,
                 onRefresh: onRefresh,
                 onAcknowledgeResetCreditReminder: { [weak self] in
@@ -332,21 +356,30 @@ public final class AppEnvironment: ObservableObject {
 
     @discardableResult
     private func refreshSubscriptionEntitlementIfPossible(scheduleRetryOnFailure: Bool = true) async -> Bool {
-        guard !isFetchingSubscriptionEntitlement else {
+        let accountKeyAtStart = currentStateAccountKey()
+        if isFetchingSubscriptionEntitlement && subscriptionEntitlementInFlightAccountKey == accountKeyAtStart {
             return state.subscriptionRenewalState != .unknown
         }
-        let accountKeyAtStart = currentStateAccountKey()
+
+        subscriptionEntitlementRequestGeneration += 1
+        let requestGeneration = subscriptionEntitlementRequestGeneration
         isFetchingSubscriptionEntitlement = true
-        defer { isFetchingSubscriptionEntitlement = false }
+        subscriptionEntitlementInFlightAccountKey = accountKeyAtStart
+        defer {
+            if requestGeneration == subscriptionEntitlementRequestGeneration {
+                isFetchingSubscriptionEntitlement = false
+                subscriptionEntitlementInFlightAccountKey = nil
+            }
+        }
 
         let localPeriod = ChatGPTSubscriptionClient.localSubscriptionPeriodFromAuth()
-        if currentStateAccountKey() == accountKeyAtStart {
+        if isSubscriptionRequestCurrent(requestGeneration, accountKey: accountKeyAtStart) {
             state.applyLocalSubscriptionPeriodFallback(startsAt: localPeriod.startsAt, endsAt: localPeriod.endsAt)
         }
 
         do {
             let snapshot = try await ChatGPTSubscriptionClient.fetch()
-            guard currentStateAccountKey() == accountKeyAtStart else {
+            guard isSubscriptionRequestCurrent(requestGeneration, accountKey: accountKeyAtStart) else {
                 return false
             }
             state.applySubscriptionEntitlement(snapshot)
@@ -357,7 +390,7 @@ public final class AppEnvironment: ObservableObject {
             }
             return true
         } catch {
-            guard currentStateAccountKey() == accountKeyAtStart else {
+            guard isSubscriptionRequestCurrent(requestGeneration, accountKey: accountKeyAtStart) else {
                 return false
             }
             state.markSubscriptionEntitlementUnavailable(error.localizedDescription)
@@ -410,6 +443,13 @@ public final class AppEnvironment: ObservableObject {
 
     /// 兼容旧入口：当前版本不在 UI 中提供手动切换。
     public func selectAccount(accountKey: String) {
+        guard state.selectedAccountKey != accountKey else {
+            Task {
+                await refreshData()
+            }
+            return
+        }
+        beginAccountScopeChange()
         state.selectedAccountKey = accountKey
         Task {
             await refreshData()
@@ -421,6 +461,9 @@ public final class AppEnvironment: ObservableObject {
         let list = LocalAccountImporter.importLocalAccounts(into: repositories)
         state.accountDisplayNames = LocalAccountImporter.displayNamesByAccountKey()
         if let first = list.first {
+            if state.selectedAccountKey != first.accountKey {
+                beginAccountScopeChange()
+            }
             state.selectedAccountKey = first.accountKey
         }
         Task {
@@ -441,6 +484,9 @@ public final class AppEnvironment: ObservableObject {
         )
         try? repositories.upsertAccount(record)
         state.accountDisplayNames[key] = email
+        if state.selectedAccountKey != key {
+            beginAccountScopeChange()
+        }
         state.selectedAccountKey = key
         Task {
             await refreshData()
@@ -451,6 +497,7 @@ public final class AppEnvironment: ObservableObject {
     public func deleteAccount(accountKey: String) {
         try? repositories.deleteAccount(accountKey: accountKey)
         if state.selectedAccountKey == accountKey {
+            beginAccountScopeChange()
             state.selectedAccountKey = nil
         }
         Task {
@@ -481,15 +528,20 @@ public final class AppEnvironment: ObservableObject {
 
     /// 全量刷新数据视图
     public func refreshData(fetchServer: Bool = true, scheduleRetryOnFailure: Bool = true) async {
+        refreshDataRequestGeneration += 1
+        let requestGeneration = refreshDataRequestGeneration
         state.isRefreshing = true
         defer {
-            state.isRefreshing = false
-            state.lastRefreshTime = Date()
+            if requestGeneration == refreshDataRequestGeneration {
+                state.isRefreshing = false
+                state.lastRefreshTime = Date()
+            }
         }
 
         do {
             if fetchServer {
                 await fetchServerSnapshotIfPossible(scheduleRetryOnFailure: scheduleRetryOnFailure)
+                guard requestGeneration == refreshDataRequestGeneration else { return }
             }
 
             // 1. 只展示当前 Codex 账号。历史账号保留在本地库里，但不进入当前界面。
@@ -514,22 +566,26 @@ public final class AppEnvironment: ObservableObject {
 
             let accKey = state.account?.accountKey ?? "acc_local"
 
-            // 2. 读取真实主额度快照
-            state.latestRateLimit = try latestPrimaryQuotaSnapshot(accountKey: accKey)
-            if state.hasCurrentServerQuota && state.latestRateLimit == nil {
-                state.hasCurrentServerQuota = false
+            // 2. 读取同账号仍在当前窗口内的主额度快照。服务端短暂失败时继续展示最后一次成功结果。
+            if !applyCachedQuotaSnapshotIfAvailable(for: accKey) {
+                clearQuotaSnapshotState()
                 if scheduleRetryOnFailure {
                     scheduleServerRecovery()
                 }
-            }
-            if !state.hasCurrentServerQuota {
-                state.latestRateLimit = nil
             }
             restoreResetCreditState(for: accKey, snapshot: state.latestRateLimit)
             await refreshSubscriptionEntitlementIfPossible(scheduleRetryOnFailure: scheduleRetryOnFailure)
         } catch {
             // 刷新容错
         }
+    }
+
+    /// 刷新所有用户可见数据：本地 Codex 用量先完成索引，再读取服务器额度快照。
+    public func refreshAllData(fetchServer: Bool = true, scheduleRetryOnFailure: Bool = true) async {
+        if UsageFeatureFlags.shared.isAnalyticsEnabled {
+            await scanCoordinator.scanNow()
+        }
+        await refreshData(fetchServer: fetchServer, scheduleRetryOnFailure: scheduleRetryOnFailure)
     }
 
     private func currentStateAccountKey() -> String? {
@@ -545,11 +601,18 @@ public final class AppEnvironment: ObservableObject {
             return false
         }
 
+        let requestGeneration = beginServerSnapshotRequest()
+        defer { finishServerSnapshotRequest(requestGeneration) }
+
         do {
             async let accountPayload = try? rpcPayload(AccountReadResult.self, method: "account/read")
             async let rateLimitsPayload = try? rpcPayload(RateLimitsReadResult.self, method: "account/rateLimits/read")
             let account = await accountPayload
             let rateLimits = await rateLimitsPayload
+
+            guard isServerSnapshotRequestCurrent(requestGeneration) else {
+                return false
+            }
 
             guard account != nil || rateLimits != nil else {
                 throw NSError(domain: "QuotaLens.RPC", code: -1, userInfo: [NSLocalizedDescriptionKey: L10n.text("暂时没有获取到额度数据", "Quota data was not available yet")])
@@ -565,6 +628,9 @@ public final class AppEnvironment: ObservableObject {
             )
 
             try persistServerSnapshot(snapshot)
+            guard isServerSnapshotRequestCurrent(requestGeneration) else {
+                return false
+            }
             state.connectionStatus = .connected(version: version, binaryPath: binaryPath)
             if state.hasCurrentServerQuota {
                 cancelServerRecovery()
@@ -602,16 +668,27 @@ public final class AppEnvironment: ObservableObject {
 
     @discardableResult
     private func fetchServerSnapshotIfPossible(scheduleRetryOnFailure: Bool = true) async -> Bool {
-        guard !isFetchingServerSnapshot else { return state.hasCurrentServerQuota }
+        let accountKeyAtStart = currentStateAccountKey()
+        if isFetchingServerSnapshot && serverSnapshotInFlightAccountKey == accountKeyAtStart {
+            return state.hasCurrentServerQuota
+        }
+
+        let requestGeneration = beginServerSnapshotRequest()
         isFetchingServerSnapshot = true
-        defer { isFetchingServerSnapshot = false }
+        defer { finishServerSnapshotRequest(requestGeneration) }
 
         do {
             let snapshot = try await Task.detached(priority: .userInitiated) {
                 try CodexServerSnapshotClient.fetch()
             }.value
 
+            guard isServerSnapshotRequestCurrent(requestGeneration) else {
+                return false
+            }
             try persistServerSnapshot(snapshot)
+            guard isServerSnapshotRequestCurrent(requestGeneration) else {
+                return false
+            }
             state.connectionStatus = .connected(version: snapshot.version, binaryPath: snapshot.binaryPath)
             if state.hasCurrentServerQuota {
                 cancelServerRecovery()
@@ -623,10 +700,19 @@ public final class AppEnvironment: ObservableObject {
             }
             return false
         } catch {
-            state.hasCurrentServerQuota = false
-            state.latestRateLimit = nil
-            restoreResetCreditState(for: state.selectedAccountKey ?? state.account?.accountKey ?? "acc_local", snapshot: nil)
-            state.connectionStatus = .failed(L10n.format("Quota refresh failed: %@", zhHans: "额度刷新失败：%@", error.localizedDescription))
+            guard isServerSnapshotRequestCurrent(requestGeneration) else {
+                return false
+            }
+            let accountKey = state.selectedAccountKey ?? state.account?.accountKey ?? "acc_local"
+            if applyCachedQuotaSnapshotIfAvailable(for: accountKey) {
+                restoreResetCreditState(for: accountKey, snapshot: state.latestRateLimit)
+            } else {
+                clearQuotaSnapshotState()
+                restoreResetCreditState(for: accountKey, snapshot: nil)
+            }
+            if !state.connectionStatus.isConnected {
+                state.connectionStatus = .failed(L10n.format("Quota refresh failed: %@", zhHans: "额度刷新失败：%@", error.localizedDescription))
+            }
             if scheduleRetryOnFailure {
                 scheduleServerRecovery()
             }
@@ -699,6 +785,77 @@ public final class AppEnvironment: ObservableObject {
             ?? repositories.getLatestRateLimitSnapshot(accountKey: accountKey)
     }
 
+    private func latestDisplayablePrimaryQuotaSnapshot(accountKey: String) throws -> RateLimitSnapshotRecord? {
+        guard let snapshot = try latestPrimaryQuotaSnapshot(accountKey: accountKey) else {
+            return nil
+        }
+        let now = Int64(Date().timeIntervalSince1970)
+        return snapshot.isCurrentQuotaWindow(at: now) ? snapshot : nil
+    }
+
+    @discardableResult
+    private func applyCachedQuotaSnapshotIfAvailable(for accountKey: String) -> Bool {
+        guard let snapshot = try? latestDisplayablePrimaryQuotaSnapshot(accountKey: accountKey) else {
+            return false
+        }
+        state.latestRateLimit = snapshot
+        state.hasCurrentServerQuota = true
+        return true
+    }
+
+    private func clearQuotaSnapshotState() {
+        state.latestRateLimit = nil
+        state.hasCurrentServerQuota = false
+    }
+
+    @discardableResult
+    private func beginAccountScopeChange(
+        invalidateServerSnapshot: Bool = true,
+        invalidateRefreshRequests: Bool = true
+    ) -> Int {
+        accountDataGeneration += 1
+        if invalidateRefreshRequests {
+            refreshDataRequestGeneration += 1
+        }
+
+        subscriptionEntitlementRequestGeneration += 1
+        isFetchingSubscriptionEntitlement = false
+        subscriptionEntitlementInFlightAccountKey = nil
+
+        if invalidateServerSnapshot {
+            serverSnapshotRequestGeneration += 1
+            isFetchingServerSnapshot = false
+            serverSnapshotInFlightAccountKey = nil
+        }
+
+        cancelServerRecovery()
+        cancelSubscriptionEntitlementRetry()
+        resetCreditReminderTask?.cancel()
+        resetCreditReminderTask = nil
+        return accountDataGeneration
+    }
+
+    private func beginServerSnapshotRequest() -> Int {
+        serverSnapshotRequestGeneration += 1
+        isFetchingServerSnapshot = true
+        serverSnapshotInFlightAccountKey = currentStateAccountKey()
+        return serverSnapshotRequestGeneration
+    }
+
+    private func finishServerSnapshotRequest(_ requestGeneration: Int) {
+        guard requestGeneration == serverSnapshotRequestGeneration else { return }
+        isFetchingServerSnapshot = false
+        serverSnapshotInFlightAccountKey = nil
+    }
+
+    private func isServerSnapshotRequestCurrent(_ requestGeneration: Int) -> Bool {
+        requestGeneration == serverSnapshotRequestGeneration
+    }
+
+    private func isSubscriptionRequestCurrent(_ requestGeneration: Int, accountKey: String?) -> Bool {
+        requestGeneration == subscriptionEntitlementRequestGeneration && currentStateAccountKey() == accountKey
+    }
+
     private func persistServerSnapshot(_ snapshot: CodexServerSnapshot) throws {
         let now = Int64(Date().timeIntervalSince1970)
         var accountKey = state.selectedAccountKey ?? state.account?.accountKey ?? "acc_local"
@@ -706,6 +863,9 @@ public final class AppEnvironment: ObservableObject {
         if let accountInfo = snapshot.account?.account {
             let identifier = accountInfo.stableIdentifier
             accountKey = AccountIdentity.stableAccountKey(from: identifier)
+            if state.selectedAccountKey != accountKey {
+                beginAccountScopeChange(invalidateServerSnapshot: false, invalidateRefreshRequests: false)
+            }
             let record = AccountRecord(
                 accountKey: accountKey,
                 emailHash: AccountIdentity.emailHash(from: identifier),
@@ -728,16 +888,17 @@ public final class AppEnvironment: ObservableObject {
         if let rateLimits = snapshot.rateLimits {
             updateResetCreditState(from: rateLimits.rateLimitResetCredits, accountKey: accountKey)
             let insertedCount = try persistRateLimits(rateLimits, accountKey: accountKey, observedAt: now, rawJson: snapshot.rateLimitsRawJson)
-            state.hasCurrentServerQuota = insertedCount > 0
-            state.latestRateLimit = try latestPrimaryQuotaSnapshot(accountKey: accountKey)
-            if insertedCount == 0 || state.latestRateLimit == nil {
-                state.hasCurrentServerQuota = false
-                state.latestRateLimit = nil
+            if insertedCount > 0, applyCachedQuotaSnapshotIfAvailable(for: accountKey) {
+                return
+            }
+            if !applyCachedQuotaSnapshotIfAvailable(for: accountKey) {
+                clearQuotaSnapshotState()
             }
         } else {
             updateResetCreditState(from: nil, accountKey: accountKey)
-            state.hasCurrentServerQuota = false
-            state.latestRateLimit = nil
+            if !applyCachedQuotaSnapshotIfAvailable(for: accountKey) {
+                clearQuotaSnapshotState()
+            }
         }
 
     }

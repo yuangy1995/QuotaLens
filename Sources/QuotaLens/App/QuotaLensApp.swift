@@ -54,7 +54,7 @@ struct QuotaLensApp: App {
                         },
                         onRefresh: {
                             Task {
-                                await env.refreshData()
+                                await env.refreshAllData()
                             }
                         }
                     )
@@ -70,7 +70,7 @@ struct QuotaLensApp: App {
 
                 Button(L10n.text("刷新数据", "Refresh Data")) {
                     Task {
-                        await env.refreshData()
+                        await env.refreshAllData()
                     }
                 }
                 .keyboardShortcut("r", modifiers: .command)

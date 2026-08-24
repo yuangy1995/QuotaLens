@@ -97,6 +97,11 @@ public struct RateLimitSnapshotRecord: Identifiable, Codable, Sendable {
         self.planType = planType
         self.rawJson = rawJson
     }
+
+    public func isCurrentQuotaWindow(at unixTime: Int64) -> Bool {
+        guard let resetsAt else { return true }
+        return resetsAt > unixTime
+    }
 }
 
 /// 线程用量快照记录

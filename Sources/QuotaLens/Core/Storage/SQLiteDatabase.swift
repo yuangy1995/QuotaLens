@@ -50,6 +50,14 @@ public final class SQLiteDatabase: @unchecked Sendable {
         }
     }
 
+    /// 获取最后插入的行 ID
+    public var lastInsertRowID: Int64 {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let db = dbPointer else { return 0 }
+        return sqlite3_last_insert_rowid(db)
+    }
+
     /// 执行无返回值的 SQL
     public func execute(sql: String) throws {
         lock.lock()
@@ -65,6 +73,11 @@ public final class SQLiteDatabase: @unchecked Sendable {
             sqlite3_free(errorMsg)
             throw NSError(domain: "SQLiteDatabase", code: Int(status), userInfo: [NSLocalizedDescriptionKey: message])
         }
+    }
+
+    /// 执行带参数绑定的 SQL
+    public func execute(sql: String, bindings: [Any?]) throws {
+        try executeUpdate(sql: sql, bindings: bindings)
     }
 
     /// 事务封装
@@ -140,6 +153,86 @@ public final class SQLiteDatabase: @unchecked Sendable {
             throw NSError(domain: "SQLiteDatabase", code: Int(stepResult), userInfo: [NSLocalizedDescriptionKey: "查询失败: \(errorMsg)"])
         }
         return results
+    }
+
+    /// 查询 Int 标量值（如 PRAGMA user_version）
+    public func intScalar(sql: String, bindings: [Any?] = []) throws -> Int {
+        let values: [Int] = try executeQuery(sql: sql, bindings: bindings) { stmt in
+            Int(sqlite3_column_int(stmt, 0))
+        }
+        return values.first ?? 0
+    }
+
+    /// 查询 Int64 标量值
+    public func int64Scalar(sql: String, bindings: [Any?] = []) throws -> Int64? {
+        let values: [Int64] = try executeQuery(sql: sql, bindings: bindings) { stmt in
+            sqlite3_column_type(stmt, 0) == SQLITE_NULL ? nil : sqlite3_column_int64(stmt, 0)
+        }.compactMap { $0 }
+        return values.first
+    }
+
+    /// 查询 String 标量值
+    public func stringScalar(sql: String, bindings: [Any?] = []) throws -> String? {
+        let values: [String] = try executeQuery(sql: sql, bindings: bindings) { stmt in
+            guard sqlite3_column_type(stmt, 0) != SQLITE_NULL,
+                  let text = sqlite3_column_text(stmt, 0) else { return nil }
+            return String(cString: text)
+        }.compactMap { $0 }
+        return values.first
+    }
+
+    /// 预编译语句上下文
+    public func withPreparedStatement<T>(sql: String, _ body: (OpaquePointer) throws -> T) throws -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let db = dbPointer else {
+            throw NSError(domain: "SQLiteDatabase", code: -1, userInfo: [NSLocalizedDescriptionKey: "数据库未连接"])
+        }
+
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK, let stmt = statement else {
+            let errorMsg = String(cString: sqlite3_errmsg(db))
+            throw NSError(domain: "SQLiteDatabase", code: -1, userInfo: [NSLocalizedDescriptionKey: "Prepare 失败: \(errorMsg)"])
+        }
+        defer { sqlite3_finalize(stmt) }
+
+        return try body(stmt)
+    }
+
+    /// 使用 SQLite Online Backup API 备份数据库到指定目标
+    public func backup(to destinationURL: URL) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let sourceDb = dbPointer else {
+            throw NSError(domain: "SQLiteDatabase", code: -1, userInfo: [NSLocalizedDescriptionKey: "源数据库未连接"])
+        }
+
+        let fileManager = FileManager.default
+        let targetDir = destinationURL.deletingLastPathComponent()
+        if !fileManager.fileExists(atPath: targetDir.path) {
+            try fileManager.createDirectory(at: targetDir, withIntermediateDirectories: true)
+        }
+
+        var destDb: OpaquePointer?
+        let status = sqlite3_open_v2(destinationURL.path, &destDb, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nil)
+        guard status == SQLITE_OK, let target = destDb else {
+            let errorMsg = destDb != nil ? String(cString: sqlite3_errmsg(destDb)) : "无法创建备份目标数据库"
+            if let destDb { sqlite3_close(destDb) }
+            throw NSError(domain: "SQLiteDatabase", code: Int(status), userInfo: [NSLocalizedDescriptionKey: errorMsg])
+        }
+        defer { sqlite3_close(target) }
+
+        guard let backup = sqlite3_backup_init(target, "main", sourceDb, "main") else {
+            let errorMsg = String(cString: sqlite3_errmsg(target))
+            throw NSError(domain: "SQLiteDatabase", code: -1, userInfo: [NSLocalizedDescriptionKey: "初始化备份失败: \(errorMsg)"])
+        }
+        defer { sqlite3_backup_finish(backup) }
+
+        let stepResult = sqlite3_backup_step(backup, -1)
+        if stepResult != SQLITE_DONE {
+            let errorMsg = String(cString: sqlite3_errmsg(target))
+            throw NSError(domain: "SQLiteDatabase", code: Int(stepResult), userInfo: [NSLocalizedDescriptionKey: "备份复制失败: \(errorMsg)"])
+        }
     }
 
     private func bindParameters(stmt: OpaquePointer, bindings: [Any?]) throws {

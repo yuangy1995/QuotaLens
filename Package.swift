@@ -24,6 +24,11 @@ let package = Package(
                 .product(name: "Sparkle", package: "Sparkle")
             ],
             path: "Sources/QuotaLens"
+        ),
+        .testTarget(
+            name: "QuotaLensTests",
+            dependencies: ["QuotaLens"],
+            path: "Tests/QuotaLensTests"
         )
     ]
 )

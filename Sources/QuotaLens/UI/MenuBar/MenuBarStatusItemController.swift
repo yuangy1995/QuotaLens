@@ -8,6 +8,7 @@ import SwiftUI
 @MainActor
 public final class MenuBarStatusItemController: NSObject {
     private let state: AppState
+    private let usageFacade: UsageQueryFacade
     private let statusItem: NSStatusItem
     private let popover: NSPopover
     private var cancellable: AnyCancellable?
@@ -19,12 +20,14 @@ public final class MenuBarStatusItemController: NSObject {
 
     public init(
         state: AppState,
+        usageFacade: UsageQueryFacade,
         onOpenMainWindow: @escaping () -> Void,
         onRefresh: @escaping () -> Void,
         onAcknowledgeResetCreditReminder: @escaping () -> Void,
         onSnoozeResetCreditReminder: @escaping (Int) -> Void
     ) {
         self.state = state
+        self.usageFacade = usageFacade
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         self.popover = NSPopover()
         self.onOpenMainWindow = onOpenMainWindow
@@ -99,10 +102,11 @@ public final class MenuBarStatusItemController: NSObject {
     private func configurePopover() {
         popover.behavior = .transient
         updatePopoverAppearance()
-        popover.contentSize = NSSize(width: 340, height: 410)
+        popover.contentSize = NSSize(width: 340, height: 440)
         popover.contentViewController = NSHostingController(
             rootView: MenuBarContentView(
                 state: state,
+                usageFacade: usageFacade,
                 onOpenMainWindow: { [weak self] in
                     self?.popover.performClose(nil)
                     self?.onOpenMainWindow()

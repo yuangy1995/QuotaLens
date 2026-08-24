@@ -274,6 +274,14 @@ EOF
 echo -e "${GREEN}.app bundle assembled${NC}"
 
 echo -e "\n${YELLOW}[4/6] Signing app bundle...${NC}"
+if [[ -d "${APP_BUNDLE}/Contents/Frameworks/Sparkle.framework" ]]; then
+    if [[ "${SIGN_IDENTITY}" == "-" ]]; then
+        codesign --force --deep --sign - "${APP_BUNDLE}/Contents/Frameworks/Sparkle.framework"
+    else
+        codesign --force --deep --options runtime --sign "${SIGN_IDENTITY}" "${APP_BUNDLE}/Contents/Frameworks/Sparkle.framework"
+    fi
+fi
+
 if [[ "${SIGN_IDENTITY}" == "-" ]]; then
     echo -e "Using ${CYAN}ad-hoc local signing${NC}"
     codesign --force --deep --sign - "${APP_BUNDLE}"

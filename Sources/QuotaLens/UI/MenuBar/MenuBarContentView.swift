@@ -1,12 +1,69 @@
 // QuotaLens 科技风菜单栏全息浮窗视图 (Dual Theme MenuBar Popover)
 
 import SwiftUI
+import Combine
+
+@MainActor
+private final class MenuBarLocalUsageStore: ObservableObject {
+    @Published var sevenDayMetrics: DashboardMetricsDTO?
+    @Published var thirtyDayMetrics: DashboardMetricsDTO?
+    @Published var quotaForecast: QuotaForecastDTO?
+    @Published var isLoading = false
+
+    private let facade: UsageQueryFacade
+
+    init(facade: UsageQueryFacade) {
+        self.facade = facade
+    }
+
+    func load(accountKey: String?, currentUsedPercent: Double, resetsAt: Int64?) async {
+        guard UsageFeatureFlags.shared.isAnalyticsEnabled else {
+            sevenDayMetrics = nil
+            thirtyDayMetrics = nil
+            quotaForecast = nil
+            return
+        }
+        isLoading = true
+        defer { isLoading = false }
+
+        sevenDayMetrics = try? await facade.getDashboardMetrics(days: 7)
+        thirtyDayMetrics = try? await facade.getDashboardMetrics(days: 30)
+
+        let storedSnaps = (try? await facade.getRecentRateLimitSnapshots(accountKey: accountKey, limit: 50)) ?? []
+        let points = storedSnaps.map { snapshot in
+            QuotaForecastEngine.RateSnapshotPoint(
+                timestamp: Date(timeIntervalSince1970: Double(snapshot.observedAt)),
+                usedPercent: Double(snapshot.usedPercentMilli) / 1000.0
+            )
+        }
+        quotaForecast = QuotaForecastEngine.forecast(
+            currentUsedPercent: currentUsedPercent,
+            resetsAt: resetsAt,
+            snapshots: points
+        )
+    }
+}
 
 public struct MenuBarContentView: View {
     @ObservedObject var state: AppState
+    @ObservedObject private var scanCoordinator: CodexUsageScanCoordinator
+    @StateObject private var localUsageStore: MenuBarLocalUsageStore
     @Environment(\.colorScheme) var colorScheme
     var onOpenMainWindow: () -> Void
     var onRefresh: () -> Void
+
+    public init(
+        state: AppState,
+        usageFacade: UsageQueryFacade,
+        onOpenMainWindow: @escaping () -> Void,
+        onRefresh: @escaping () -> Void
+    ) {
+        self.state = state
+        self.scanCoordinator = .shared
+        self.onOpenMainWindow = onOpenMainWindow
+        self.onRefresh = onRefresh
+        _localUsageStore = StateObject(wrappedValue: MenuBarLocalUsageStore(facade: usageFacade))
+    }
 
     public var body: some View {
         let isDark = colorScheme == .dark
@@ -38,6 +95,32 @@ public struct MenuBarContentView: View {
         .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
         .tint(cyan)
         .preferredColorScheme(state.colorScheme)
+        .task {
+            await refreshLocalUsageStore()
+        }
+        .onReceive(scanCoordinator.$dataGeneration.dropFirst()) { _ in
+            Task {
+                await refreshLocalUsageStore()
+            }
+        }
+        .onReceive(state.$latestRateLimit.dropFirst()) { _ in
+            Task {
+                await refreshLocalUsageStore()
+            }
+        }
+        .onReceive(state.$selectedAccountKey.dropFirst()) { _ in
+            Task {
+                await refreshLocalUsageStore()
+            }
+        }
+    }
+
+    private func refreshLocalUsageStore() async {
+        await localUsageStore.load(
+            accountKey: state.selectedAccountKey ?? state.account?.accountKey,
+            currentUsedPercent: state.currentUsedPercent,
+            resetsAt: state.latestRateLimit?.resetsAt
+        )
     }
 
     // MARK: - 顶部品牌与状态栏
@@ -175,6 +258,10 @@ public struct MenuBarContentView: View {
             )
             .shadow(color: isDark ? Color.black.opacity(0.25) : Color.black.opacity(0.04), radius: 6, y: 2)
 
+            if let prediction = quotaPacePrediction {
+                quotaPacePredictionStrip(prediction)
+            }
+
             // 下半区：2x2 结构化微型指标卡
             Grid(horizontalSpacing: 8, verticalSpacing: 8) {
                 GridRow {
@@ -217,7 +304,143 @@ public struct MenuBarContentView: View {
                     )
                 }
             }
+
+            // 本地分析快捷卡片
+            if UsageFeatureFlags.shared.isAnalyticsEnabled {
+                localAnalyticsSnapshotCard
+            }
         }
+    }
+
+    private var localAnalyticsSnapshotCard: some View {
+        let cyan = AppTheme.accentCyan(for: colorScheme)
+        let emerald = AppTheme.accentEmerald(for: colorScheme)
+        let isDark = colorScheme == .dark
+
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "chart.bar.xaxis")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(cyan)
+
+                Text(L10n.text("本地用量分析", "Local Analytics"))
+                    .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+
+                Spacer()
+
+                if localUsageStore.isLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                } else if let thirty = localUsageStore.thirtyDayMetrics {
+                    Text(L10n.format("%d sessions", zhHans: "%d 个会话", thirty.totalSessions))
+                        .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                        .foregroundStyle(cyan)
+                }
+            }
+
+            HStack(spacing: 8) {
+                MenuBarUsagePill(
+                    title: "7D",
+                    tokens: localUsageStore.sevenDayMetrics?.totalTokens.canonicalTotalTokens ?? 0,
+                    cost: localUsageStore.sevenDayMetrics?.totalCost ?? .zero,
+                    accent: cyan
+                )
+
+                MenuBarUsagePill(
+                    title: "30D",
+                    tokens: localUsageStore.thirtyDayMetrics?.totalTokens.canonicalTotalTokens ?? 0,
+                    cost: localUsageStore.thirtyDayMetrics?.totalCost ?? .zero,
+                    accent: emerald
+                )
+            }
+
+            if scanCoordinator.isScanning {
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(cyan)
+                        Text(L10n.text("正在扫描本地记录", "Scanning local history"))
+                            .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                        Spacer()
+                        if let progress = scanCoordinator.progress {
+                            Text(UsageNumberFormatter.percent(progress * 100.0, maximumFractionDigits: 0))
+                                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                .foregroundStyle(cyan)
+                        }
+                    }
+
+                    if let progress = scanCoordinator.progress {
+                        ProgressView(value: progress)
+                            .tint(cyan)
+                    } else {
+                        ProgressView()
+                            .tint(cyan)
+                    }
+
+                    if !scanCoordinator.statusText.isEmpty {
+                        Text(scanCoordinator.statusText)
+                            .font(.system(size: 8.5, weight: .medium, design: .rounded))
+                            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                            .lineLimit(1)
+                    }
+                }
+                .padding(.top, 2)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            isDark ? Color.white.opacity(0.04) : Color.black.opacity(0.03),
+            in: RoundedRectangle(cornerRadius: 8)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.05), lineWidth: 0.8)
+        )
+    }
+
+    private func quotaPacePredictionStrip(_ prediction: (text: String, color: Color)) -> some View {
+        let isDark = colorScheme == .dark
+
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "chart.line.uptrend.xyaxis")
+                    .font(.system(size: 10.5, weight: .bold))
+                    .foregroundStyle(prediction.color)
+
+                Text(L10n.text("额度预测", "Quota Forecast"))
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+
+                Spacer()
+
+                Text(state.currentUsedPercentString)
+                    .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                    .foregroundStyle(prediction.color)
+            }
+
+            ProgressView(value: state.quotaRiskProgress)
+                .tint(prediction.color)
+
+            Text(prediction.text)
+                .font(.system(size: 10.5, weight: .heavy, design: .rounded))
+                .foregroundStyle(prediction.color)
+                .lineLimit(2)
+                .minimumScaleFactor(0.8)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            prediction.color.opacity(isDark ? 0.12 : 0.08),
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(prediction.color.opacity(isDark ? 0.34 : 0.24), lineWidth: 0.8)
+        )
     }
 
     private func renewalBadgeColor(emerald: Color, amber: Color, rose: Color, fallback: Color) -> Color {
@@ -230,6 +453,44 @@ public struct MenuBarContentView: View {
             return amber
         case .unknown:
             return fallback
+        }
+    }
+
+    private var quotaPacePrediction: (text: String, color: Color)? {
+        guard state.hasQuotaSnapshot else {
+            return nil
+        }
+
+        guard let forecast = localUsageStore.quotaForecast else {
+            return (
+                L10n.text("数据收集中", "Collecting data"),
+                AppTheme.textSecondary(for: colorScheme)
+            )
+        }
+
+        switch forecast.risk {
+        case .critical:
+            let duration = forecast.hoursUntilExhaustion.map { UsageNumberFormatter.remainingDurationString(seconds: $0 * 3600.0) }
+                ?? L10n.text("较快用尽", "Runs out soon")
+            return (
+                L10n.format("At current pace, exhausts in %@", zhHans: "按当前速度，%@ 后用尽", duration),
+                AppTheme.accentRose(for: colorScheme)
+            )
+        case .warning:
+            return (
+                L10n.text("用量偏快，预计可撑到重置", "Usage is high, still likely lasts until reset"),
+                AppTheme.accentAmber(for: colorScheme)
+            )
+        case .onTrack, .underPaced:
+            return (
+                L10n.text("按当前速度，可撑到重置", "At current pace, lasts until reset"),
+                AppTheme.accentEmerald(for: colorScheme)
+            )
+        case .insufficientData:
+            return (
+                L10n.text("数据收集中", "Collecting data"),
+                AppTheme.textSecondary(for: colorScheme)
+            )
         }
     }
 
@@ -409,6 +670,47 @@ private struct MicroHUDTile: View {
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .strokeBorder(isDark ? Color.white.opacity(0.18) : Color.black.opacity(0.10), lineWidth: 1.0)
+        )
+    }
+}
+
+private struct MenuBarUsagePill: View {
+    @Environment(\.colorScheme) var colorScheme
+    let title: String
+    let tokens: Int64
+    let cost: MoneyNanoUSD
+    let accent: Color
+
+    var body: some View {
+        let isDark = colorScheme == .dark
+
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.system(size: 9, weight: .black, design: .monospaced))
+                .foregroundStyle(accent)
+
+            Text(UsageNumberFormatter.compactTokenCount(tokens))
+                .font(.system(size: 12.5, weight: .heavy, design: .monospaced))
+                .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+
+            Text(UsageNumberFormatter.currencyUSD(cost))
+                .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+                .foregroundStyle(accent)
+                .lineLimit(1)
+                .minimumScaleFactor(0.68)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, minHeight: 66, alignment: .leading)
+        .background(
+            isDark ? Color.white.opacity(0.045) : Color.white.opacity(0.72),
+            in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .strokeBorder(accent.opacity(isDark ? 0.22 : 0.18), lineWidth: 0.8)
         )
     }
 }

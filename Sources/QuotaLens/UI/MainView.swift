@@ -5,6 +5,9 @@ import AppKit
 
 public enum NavigationTab: CaseIterable, Identifiable {
     case dashboard
+    case usageDashboard
+    case history
+    case sessions
     case resetCards
     case settings
     case about
@@ -13,7 +16,10 @@ public enum NavigationTab: CaseIterable, Identifiable {
 
     public var title: String {
         switch self {
-        case .dashboard: return L10n.text("概览", "Overview")
+        case .dashboard: return L10n.text("额度概览", "Overview")
+        case .usageDashboard: return L10n.text("用量大盘", "Usage Dashboard")
+        case .history: return L10n.text("历史记录", "History")
+        case .sessions: return L10n.text("会话明细", "Sessions")
         case .resetCards: return L10n.text("重置卡", "Reset Cards")
         case .settings: return L10n.text("设置", "Settings")
         case .about: return L10n.text("关于", "About")
@@ -23,6 +29,9 @@ public enum NavigationTab: CaseIterable, Identifiable {
     public var icon: String {
         switch self {
         case .dashboard: return "gauge.with.needle.fill"
+        case .usageDashboard: return "chart.bar.xaxis"
+        case .history: return "calendar.badge.clock"
+        case .sessions: return "bubble.left.and.bubble.right.fill"
         case .resetCards: return "ticket.fill"
         case .settings: return "gearshape.2.fill"
         case .about: return "info.circle.fill"
@@ -53,7 +62,7 @@ public struct MainView: View {
                 CyberDivider(glowColor: isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.07))
 
                 // 侧边栏导航列表
-                VStack(spacing: 8) {
+                VStack(spacing: 6) {
                     ForEach(NavigationTab.allCases) { tab in
                         SidebarNavigationRow(
                             tab: tab,
@@ -86,6 +95,11 @@ public struct MainView: View {
             VStack(spacing: 0) {
                 topChromeBar
 
+                if env.scanCoordinator.isScanning {
+                    mainScanProgressStrip
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+
                 ZStack {
                     // 环境自适应背景画布
                     AppTheme.canvasGradient(for: colorScheme)
@@ -95,6 +109,12 @@ public struct MainView: View {
                         switch selectedTab {
                         case .dashboard:
                             DashboardView(state: state)
+                        case .usageDashboard:
+                            UsageDashboardView(facade: env.usageQueryFacade)
+                        case .history:
+                            HistoryView(facade: env.usageQueryFacade)
+                        case .sessions:
+                            SessionsView(facade: env.usageQueryFacade)
                         case .resetCards:
                             ResetCardsView(state: state)
                         case .settings:
@@ -104,7 +124,7 @@ public struct MainView: View {
                         }
                     }
                 }
-                .frame(minWidth: 720, minHeight: 540)
+                .frame(minWidth: 780, minHeight: 560)
             }
         }
         .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
@@ -130,25 +150,33 @@ public struct MainView: View {
 
             Button(action: {
                 Task {
-                    await env.refreshData()
+                    await env.refreshAllData()
                 }
             }) {
-                Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 13, weight: .bold))
-                    .frame(width: 34, height: 34)
-                    .background(
-                        isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.05),
-                        in: Circle()
-                    )
-                    .overlay(
-                        Circle()
-                            .strokeBorder(isDark ? Color.white.opacity(0.14) : Color.black.opacity(0.09), lineWidth: 0.8)
-                    )
-                    .foregroundStyle(cyan)
+                ZStack {
+                    Circle()
+                        .fill(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.05))
+                        .frame(width: 34, height: 34)
+                        .overlay(
+                            Circle()
+                                .strokeBorder(isDark ? Color.white.opacity(0.14) : Color.black.opacity(0.09), lineWidth: 0.8)
+                        )
+
+                    if env.scanCoordinator.isScanning || state.isRefreshing {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(cyan)
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(cyan)
+                    }
+                }
+                .frame(width: 34, height: 34)
             }
             .buttonStyle(.plain)
             .help(L10n.text("立即刷新数据", "Refresh data now"))
-            .disabled(state.isRefreshing)
+            .disabled(state.isRefreshing || env.scanCoordinator.isScanning)
         }
         .frame(height: 64)
         .padding(.horizontal, 28)
@@ -156,6 +184,53 @@ public struct MainView: View {
             (isDark ? Color(red: 0.065, green: 0.08, blue: 0.13).opacity(0.98) : Color(red: 0.965, green: 0.98, blue: 0.995).opacity(0.96))
                 .ignoresSafeArea(edges: .top)
         )
+        .overlay(alignment: .bottom) {
+            CyberDivider(glowColor: isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.07))
+        }
+    }
+
+    private var mainScanProgressStrip: some View {
+        let cyan = AppTheme.accentCyan(for: colorScheme)
+        let isDark = colorScheme == .dark
+        let progress = env.scanCoordinator.progress
+
+        return VStack(spacing: 6) {
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(cyan)
+
+                Text(L10n.text("正在扫描本地记录", "Scanning local history"))
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+
+                Text(env.scanCoordinator.statusText)
+                    .font(.system(size: 10.5, weight: .medium, design: .rounded))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+
+                Spacer()
+
+                if let progress {
+                    Text(UsageNumberFormatter.percent(progress * 100.0, maximumFractionDigits: 0))
+                        .font(.system(size: 10.5, weight: .black, design: .monospaced))
+                        .foregroundStyle(cyan)
+                        .monospacedDigit()
+                }
+            }
+
+            if let progress {
+                ProgressView(value: progress)
+                    .tint(cyan)
+            } else {
+                ProgressView()
+                    .tint(cyan)
+            }
+        }
+        .padding(.horizontal, 28)
+        .padding(.vertical, 8)
+        .background(isDark ? Color.white.opacity(0.045) : Color.black.opacity(0.035))
         .overlay(alignment: .bottom) {
             CyberDivider(glowColor: isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.07))
         }

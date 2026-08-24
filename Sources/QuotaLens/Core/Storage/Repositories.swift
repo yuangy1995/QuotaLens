@@ -228,6 +228,39 @@ public final class Repositories: @unchecked Sendable {
         }
     }
 
+    public func getRecentRateLimitSnapshots(accountKey: String? = nil, limit: Int = 50) throws -> [RateLimitSnapshotRecord] {
+        var bindings: [Any?] = []
+        let whereClause: String
+        if let accountKey {
+            whereClause = "WHERE account_key = ?"
+            bindings.append(accountKey)
+        } else {
+            whereClause = ""
+        }
+        bindings.append(limit)
+
+        let sql = """
+        SELECT id, account_key, observed_at, limit_id, slot, used_percent_milli, window_duration_mins, resets_at, plan_type, raw_json
+        FROM rate_limit_snapshots
+        \(whereClause)
+        ORDER BY observed_at DESC
+        LIMIT ?;
+        """
+        return try db.executeQuery(sql: sql, bindings: bindings) { stmt in
+            let id = sqlite3_column_int64(stmt, 0)
+            let acc = String(cString: sqlite3_column_text(stmt, 1))
+            let obs = sqlite3_column_int64(stmt, 2)
+            let lim = String(cString: sqlite3_column_text(stmt, 3))
+            let slot = String(cString: sqlite3_column_text(stmt, 4))
+            let milli = Int(sqlite3_column_int(stmt, 5))
+            let dur = sqlite3_column_type(stmt, 6) != SQLITE_NULL ? Int(sqlite3_column_int(stmt, 6)) : nil
+            let resets = sqlite3_column_type(stmt, 7) != SQLITE_NULL ? sqlite3_column_int64(stmt, 7) : nil
+            let plan = sqlite3_column_type(stmt, 8) != SQLITE_NULL ? String(cString: sqlite3_column_text(stmt, 8)) : nil
+            let json = String(cString: sqlite3_column_text(stmt, 9))
+            return RateLimitSnapshotRecord(id: id, accountKey: acc, observedAt: obs, limitId: lim, slot: slot, usedPercentMilli: milli, windowDurationMins: dur, resetsAt: resets, planType: plan, rawJson: json)
+        }
+    }
+
     public func insertThreadUsageSnapshot(_ snapshot: ThreadUsageSnapshotRecord) throws {
         let sql = """
         INSERT INTO thread_usage_snapshots (

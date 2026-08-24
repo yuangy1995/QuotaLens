@@ -255,6 +255,796 @@ public enum L10n {
 }
 
 private let keyedTranslations: [String: [AppLanguage: String]] = [
+    "Usage Dashboard": [
+        .traditionalChinese: "用量大盤",
+        .japanese: "利用状況ダッシュボード",
+        .korean: "사용량 대시보드",
+        .spanish: "Panel de uso",
+        .german: "Nutzungs-Dashboard",
+        .french: "Tableau de bord d'usage",
+        .portuguese: "Painel de uso",
+        .portugueseBrazil: "Painel de uso"
+    ],
+    "History": [
+        .traditionalChinese: "歷史記錄",
+        .japanese: "利用履歴",
+        .korean: "사용 내역",
+        .spanish: "Historial",
+        .german: "Verlauf",
+        .french: "Historique",
+        .portuguese: "Histórico",
+        .portugueseBrazil: "Histórico"
+    ],
+    "Sessions": [
+        .traditionalChinese: "會話明細",
+        .japanese: "セッション一覧",
+        .korean: "세션 목록",
+        .spanish: "Sesiones",
+        .german: "Sitzungen",
+        .french: "Sessions",
+        .portuguese: "Sessões",
+        .portugueseBrazil: "Sessões"
+    ],
+    "Local Analytics & Overlay": [
+        .traditionalChinese: "本地用量分析與掛件",
+        .japanese: "ローカル分析とオーバーレイ",
+        .korean: "로컬 사용량 분석 및 위젯",
+        .spanish: "Analítica local y widget flotante",
+        .german: "Lokale Analysen & Overlay",
+        .french: "Analytique locale & Widget flottant",
+        .portuguese: "Análise local e widget",
+        .portugueseBrazil: "Análise local e widget"
+    ],
+    "Enable Local Codex Analytics": [
+        .traditionalChinese: "啟用本地 Codex 用量分析",
+        .japanese: "ローカル Codex 利用分析を有効化",
+        .korean: "로컬 Codex 사용량 분석 활성화",
+        .spanish: "Activar analítica local de Codex",
+        .german: "Lokale Codex-Analyse aktivieren",
+        .french: "Activer l'analytique locale Codex",
+        .portuguese: "Ativar análise local do Codex",
+        .portugueseBrazil: "Ativar análise local do Codex"
+    ],
+    "Window Floating Overlay": [
+        .traditionalChinese: "ChatGPT / Codex 視窗懸浮掛件",
+        .japanese: "ChatGPT / Codex ウィンドウフローティングウィジェット",
+        .korean: "ChatGPT / Codex 창 플로팅 위젯",
+        .spanish: "Widget flotante en ventana",
+        .german: "Schwebendes Fenster-Overlay",
+        .french: "Widget flottant de fenêtre",
+        .portuguese: "Widget flutuante de janela",
+        .portugueseBrazil: "Widget flutuante de janela"
+    ],
+    "Smart Forecast Engine": [
+        .traditionalChinese: "智慧預測引擎",
+        .japanese: "スマート予測エンジン",
+        .korean: "스마트 예측 엔진",
+        .spanish: "Motor de predicción inteligente",
+        .german: "Intelligente Prognose-Engine",
+        .french: "Moteur de prévision intelligent",
+        .portuguese: "Motor de previsão inteligente",
+        .portugueseBrazil: "Motor de previsão inteligente"
+    ],
+    "Scan Archived Sessions": [
+        .traditionalChinese: "包含歸檔會話 (~/.codex/archived_sessions)",
+        .japanese: "アーカイブされたセッションを含む",
+        .korean: "아카이브된 세션 포함",
+        .spanish: "Escanear sesiones archivadas",
+        .german: "Archivierte Sitzungen einbeziehen",
+        .french: "Inclure les sessions archivées",
+        .portuguese: "Incluir sessões arquivadas",
+        .portugueseBrazil: "Incluir sessões arquivadas"
+    ],
+    "Scan Now": [
+        .traditionalChinese: "立即掃描",
+        .japanese: "今すぐスキャン",
+        .korean: "지금 스캔",
+        .spanish: "Escanear ahora",
+        .german: "Jetzt scannen",
+        .french: "Scanner maintenant",
+        .portuguese: "Examinar agora",
+        .portugueseBrazil: "Escanear agora"
+    ],
+    "Re-index All": [
+        .traditionalChinese: "重新建立索引",
+        .japanese: "インデックスを再構築",
+        .korean: "인덱스 재구축",
+        .spanish: "Reindexar todo",
+        .german: "Neu indizieren",
+        .french: "Réindexer tout",
+        .portuguese: "Reindexar tudo",
+        .portugueseBrazil: "Reindexar tudo"
+    ],
+    "Official rates active": [
+        .traditionalChinese: "官方列表價已激活",
+        .japanese: "公式レート適用中",
+        .korean: "공식 요율 활성화됨",
+        .spanish: "Tarifas oficiales activas",
+        .german: "Offizielle Tarife aktiv",
+        .french: "Tarifs officiels actifs",
+        .portuguese: "Taxas oficiais ativas",
+        .portugueseBrazil: "Tarifas oficiais ativas"
+    ],
+    "Local Analytics": [
+        .traditionalChinese: "本地用量分析",
+        .japanese: "ローカル利用状況分析",
+        .korean: "로컬 사용량 분석",
+        .spanish: "Analítica local",
+        .german: "Lokale Analysen",
+        .french: "Analytique locale",
+        .portuguese: "Análise local",
+        .portugueseBrazil: "Análise local"
+    ],
+    "Scanning local history": [
+        .traditionalChinese: "正在掃描本地記錄",
+        .japanese: "ローカル履歴をスキャン中",
+        .korean: "로컬 기록 스캔 중",
+        .spanish: "Escaneando historial local",
+        .german: "Lokalen Verlauf scannen",
+        .french: "Analyse de l'historique local",
+        .portuguese: "A examinar histórico local",
+        .portugueseBrazil: "Escaneando histórico local"
+    ],
+    "Local analytics disabled": [
+        .traditionalChinese: "本地用量分析已停用",
+        .japanese: "ローカル分析は無効です",
+        .korean: "로컬 분석이 꺼져 있습니다",
+        .spanish: "Analítica local desactivada",
+        .german: "Lokale Analysen deaktiviert",
+        .french: "Analytique locale désactivée",
+        .portuguese: "Análise local desativada",
+        .portugueseBrazil: "Análise local desativada"
+    ],
+    "Preparing scan...": [
+        .traditionalChinese: "準備掃描…",
+        .japanese: "スキャンを準備中...",
+        .korean: "스캔 준비 중...",
+        .spanish: "Preparando escaneo...",
+        .german: "Scan wird vorbereitet...",
+        .french: "Préparation de l'analyse...",
+        .portuguese: "A preparar análise...",
+        .portugueseBrazil: "Preparando escaneamento..."
+    ],
+    "Scanning Codex session files...": [
+        .traditionalChinese: "正在掃描 Codex 會話檔案…",
+        .japanese: "Codex セッションファイルをスキャン中...",
+        .korean: "Codex 세션 파일 스캔 중...",
+        .spanish: "Escaneando archivos de sesión de Codex...",
+        .german: "Codex-Sitzungsdateien werden gescannt...",
+        .french: "Analyse des fichiers de session Codex...",
+        .portuguese: "A examinar ficheiros de sessão Codex...",
+        .portugueseBrazil: "Escaneando arquivos de sessão do Codex..."
+    ],
+    "Resolving session metadata and tree...": [
+        .traditionalChinese: "正在解析會話中繼資料與父子關係…",
+        .japanese: "セッションメタデータとツリーを解析中...",
+        .korean: "세션 메타데이터와 트리 분석 중...",
+        .spanish: "Resolviendo metadatos y árbol de sesiones...",
+        .german: "Sitzungsmetadaten und Baum werden aufgelöst...",
+        .french: "Résolution des métadonnées et de l'arborescence...",
+        .portuguese: "A resolver metadados e árvore de sessões...",
+        .portugueseBrazil: "Resolvendo metadados e árvore de sessões..."
+    ],
+    "Processing %d/%d: %@": [
+        .traditionalChinese: "正在處理 %d/%d：%@",
+        .japanese: "%d/%d を処理中: %@",
+        .korean: "%d/%d 처리 중: %@",
+        .spanish: "Procesando %d/%d: %@",
+        .german: "Verarbeite %d/%d: %@",
+        .french: "Traitement %d/%d : %@",
+        .portuguese: "A processar %d/%d: %@",
+        .portugueseBrazil: "Processando %d/%d: %@"
+    ],
+    "Import complete": [
+        .traditionalChinese: "匯入完成",
+        .japanese: "インポート完了",
+        .korean: "가져오기 완료",
+        .spanish: "Importación completa",
+        .german: "Import abgeschlossen",
+        .french: "Importation terminée",
+        .portuguese: "Importação concluída",
+        .portugueseBrazil: "Importação concluída"
+    ],
+    "Scan complete, indexed %d files, added %d records": [
+        .traditionalChinese: "掃描完成，已索引 %d 個檔案，新增 %d 條記錄",
+        .japanese: "スキャン完了: %d 件のファイルを索引化、%d 件を追加",
+        .korean: "스캔 완료: 파일 %d개 색인, 기록 %d개 추가",
+        .spanish: "Escaneo completo: %d archivos indexados, %d registros añadidos",
+        .german: "Scan abgeschlossen: %d Dateien indiziert, %d Einträge hinzugefügt",
+        .french: "Analyse terminée : %d fichiers indexés, %d enregistrements ajoutés",
+        .portuguese: "Análise concluída: %d ficheiros indexados, %d registos adicionados",
+        .portugueseBrazil: "Escaneamento concluído: %d arquivos indexados, %d registros adicionados"
+    ],
+    "Scan failed: %@": [
+        .traditionalChinese: "掃描失敗：%@",
+        .japanese: "スキャン失敗: %@",
+        .korean: "스캔 실패: %@",
+        .spanish: "Error de escaneo: %@",
+        .german: "Scan fehlgeschlagen: %@",
+        .french: "Échec de l'analyse : %@",
+        .portuguese: "Falha na análise: %@",
+        .portugueseBrazil: "Falha no escaneamento: %@"
+    ],
+    "Computing metrics...": [
+        .traditionalChinese: "正在計算全域指標與趨勢…",
+        .japanese: "全体指標とトレンドを計算中...",
+        .korean: "전체 지표와 추세 계산 중...",
+        .spanish: "Calculando métricas y tendencias...",
+        .german: "Metriken und Trends werden berechnet...",
+        .french: "Calcul des métriques et tendances...",
+        .portuguese: "A calcular métricas e tendências...",
+        .portugueseBrazil: "Calculando métricas e tendências..."
+    ],
+    "Quota Pace": [
+        .traditionalChinese: "額度節奏",
+        .japanese: "クォータペース",
+        .korean: "할당량 속도",
+        .spanish: "Ritmo de cuota",
+        .german: "Quota-Tempo",
+        .french: "Rythme du quota",
+        .portuguese: "Ritmo da quota",
+        .portugueseBrazil: "Ritmo da cota"
+    ],
+    "Quota Forecast": [
+        .traditionalChinese: "額度預測",
+        .japanese: "クォータ予測",
+        .korean: "할당량 예측",
+        .spanish: "Previsión de cuota",
+        .german: "Quota-Prognose",
+        .french: "Prévision du quota",
+        .portuguese: "Previsão da quota",
+        .portugueseBrazil: "Previsão da cota"
+    ],
+    "At current pace, lasts until reset": [
+        .traditionalChinese: "按目前速度，可撐到重置",
+        .japanese: "現在のペースならリセットまで持続",
+        .korean: "현재 속도라면 재설정까지 지속",
+        .spanish: "Al ritmo actual, dura hasta el reinicio",
+        .german: "Beim aktuellen Tempo reicht es bis zum Reset",
+        .french: "Au rythme actuel, tient jusqu'à la réinitialisation",
+        .portuguese: "Ao ritmo atual, dura até repor",
+        .portugueseBrazil: "No ritmo atual, dura até redefinir"
+    ],
+    "At current pace, exhausts in %@": [
+        .traditionalChinese: "按目前速度，約 %@ 後耗盡",
+        .japanese: "現在のペースでは約 %@ 後に消耗",
+        .korean: "현재 속도라면 약 %@ 후 소진",
+        .spanish: "Al ritmo actual, se agota en %@",
+        .german: "Beim aktuellen Tempo erschöpft in %@",
+        .french: "Au rythme actuel, épuisé dans %@",
+        .portuguese: "Ao ritmo atual, esgota em %@",
+        .portugueseBrazil: "No ritmo atual, esgota em %@"
+    ],
+    "Usage is high, still likely lasts until reset": [
+        .traditionalChinese: "用量偏快，預計可撐到重置",
+        .japanese: "使用量は多めですが、リセットまで持続見込み",
+        .korean: "사용량이 빠르지만 재설정까지 지속 예상",
+        .spanish: "Uso elevado, probablemente dura hasta el reinicio",
+        .german: "Hohe Nutzung, reicht voraussichtlich bis zum Reset",
+        .french: "Usage élevé, devrait tenir jusqu'à la réinitialisation",
+        .portuguese: "Uso elevado, deve durar até repor",
+        .portugueseBrazil: "Uso alto, deve durar até redefinir"
+    ],
+    "Today": [
+        .traditionalChinese: "今日",
+        .japanese: "今日",
+        .korean: "오늘",
+        .spanish: "Hoy",
+        .german: "Heute",
+        .french: "Aujourd'hui",
+        .portuguese: "Hoje",
+        .portugueseBrazil: "Hoje"
+    ],
+    "Last 30 Days": [
+        .traditionalChinese: "近 30 天",
+        .japanese: "過去 30 日",
+        .korean: "최근 30일",
+        .spanish: "Últimos 30 días",
+        .german: "Letzte 30 Tage",
+        .french: "30 derniers jours",
+        .portuguese: "Últimos 30 dias",
+        .portugueseBrazil: "Últimos 30 dias"
+    ],
+    "Used per Hour:": [
+        .traditionalChinese: "每小時消耗：",
+        .japanese: "1時間あたり:",
+        .korean: "시간당 사용:",
+        .spanish: "Uso por hora:",
+        .german: "Pro Stunde:",
+        .french: "Par heure :",
+        .portuguese: "Por hora:",
+        .portugueseBrazil: "Por hora:"
+    ],
+    "Current Speed:": [
+        .traditionalChinese: "目前速度：",
+        .japanese: "現在の速度:",
+        .korean: "현재 속도:",
+        .spanish: "Velocidad actual:",
+        .german: "Aktuelles Tempo:",
+        .french: "Vitesse actuelle :",
+        .portuguese: "Velocidade atual:",
+        .portugueseBrazil: "Velocidade atual:"
+    ],
+    "Will run out early": [
+        .traditionalChinese: "會提前用盡",
+        .japanese: "早めに使い切る見込み",
+        .korean: "일찍 소진 예상",
+        .spanish: "Se agotará antes",
+        .german: "Wird vorzeitig aufgebraucht",
+        .french: "S'épuisera avant",
+        .portuguese: "Vai esgotar antes",
+        .portugueseBrazil: "Vai acabar antes"
+    ],
+    "Usage is high": [
+        .traditionalChinese: "用量偏快",
+        .japanese: "使用量が多め",
+        .korean: "사용량이 빠름",
+        .spanish: "Uso elevado",
+        .german: "Hohe Nutzung",
+        .french: "Usage élevé",
+        .portuguese: "Uso elevado",
+        .portugueseBrazil: "Uso alto"
+    ],
+    "Lasts until reset": [
+        .traditionalChinese: "可撐到重置",
+        .japanese: "リセットまで持続",
+        .korean: "재설정까지 지속",
+        .spanish: "Dura hasta el reinicio",
+        .german: "Reicht bis zum Reset",
+        .french: "Tient jusqu'à la réinitialisation",
+        .portuguese: "Dura até repor",
+        .portugueseBrazil: "Dura até redefinir"
+    ],
+    "Usage is light": [
+        .traditionalChinese: "用量平穩",
+        .japanese: "使用量は軽め",
+        .korean: "사용량이 안정적",
+        .spanish: "Uso moderado",
+        .german: "Geringe Nutzung",
+        .french: "Usage modéré",
+        .portuguese: "Uso moderado",
+        .portugueseBrazil: "Uso leve"
+    ],
+    "Time Remaining:": [
+        .traditionalChinese: "預計還可用：",
+        .japanese: "残り時間:",
+        .korean: "남은 시간:",
+        .spanish: "Tiempo restante:",
+        .german: "Verbleibende Zeit:",
+        .french: "Temps restant :",
+        .portuguese: "Tempo restante:",
+        .portugueseBrazil: "Tempo restante:"
+    ],
+    "Remaining at Reset:": [
+        .traditionalChinese: "重置時預計剩餘：",
+        .japanese: "リセット時の残量:",
+        .korean: "재설정 시 예상 잔여:",
+        .spanish: "Restante al reinicio:",
+        .german: "Rest beim Reset:",
+        .french: "Restant à la réinitialisation :",
+        .portuguese: "Restante ao repor:",
+        .portugueseBrazil: "Restante ao redefinir:"
+    ],
+    "Forecast Status:": [
+        .traditionalChinese: "預測狀態：",
+        .japanese: "予測状態:",
+        .korean: "예측 상태:",
+        .spanish: "Estado previsto:",
+        .german: "Prognosestatus:",
+        .french: "État de prévision :",
+        .portuguese: "Estado da previsão:",
+        .portugueseBrazil: "Estado da previsão:"
+    ],
+    "About %d d %d h": [
+        .traditionalChinese: "約 %d 天 %d 小時",
+        .japanese: "約%d日%d時間",
+        .korean: "약 %d일 %d시간",
+        .spanish: "Unos %d d %d h",
+        .german: "Ca. %d T %d Std.",
+        .french: "Environ %d j %d h",
+        .portuguese: "Cerca de %d d %d h",
+        .portugueseBrazil: "Cerca de %d d %d h"
+    ],
+    "About %d h %d min": [
+        .traditionalChinese: "約 %d 小時 %d 分鐘",
+        .japanese: "約%d時間%d分",
+        .korean: "약 %d시간 %d분",
+        .spanish: "Unas %d h %d min",
+        .german: "Ca. %d Std. %d Min.",
+        .french: "Environ %d h %d min",
+        .portuguese: "Cerca de %d h %d min",
+        .portugueseBrazil: "Cerca de %d h %d min"
+    ],
+    "About %d min": [
+        .traditionalChinese: "約 %d 分鐘",
+        .japanese: "約%d分",
+        .korean: "약 %d분",
+        .spanish: "Unos %d min",
+        .german: "Ca. %d Min.",
+        .french: "Environ %d min",
+        .portuguese: "Cerca de %d min",
+        .portugueseBrazil: "Cerca de %d min"
+    ],
+    "%d days": [
+        .traditionalChinese: "%d 天",
+        .japanese: "%d日",
+        .korean: "%d일",
+        .spanish: "%d días",
+        .german: "%d Tage",
+        .french: "%d jours",
+        .portuguese: "%d dias",
+        .portugueseBrazil: "%d dias"
+    ],
+    "On pace 0% · lasts until reset": [
+        .traditionalChinese: "節奏正常 0% · 可撐到重置",
+        .japanese: "通常ペース 0% · リセットまで持続",
+        .korean: "정상 속도 0% · 재설정까지 지속",
+        .spanish: "Ritmo normal 0% · dura hasta el reinicio",
+        .german: "Im Plan 0 % · reicht bis zum Reset",
+        .french: "Rythme normal 0 % · tient jusqu'à la réinitialisation",
+        .portuguese: "Ritmo normal 0% · dura até repor",
+        .portugueseBrazil: "Ritmo normal 0% · dura até redefinir"
+    ],
+    "Over pace %d%% · exhausts in %@": [
+        .traditionalChinese: "超出節奏 %d%% · 預計 %@後耗盡",
+        .japanese: "ペース超過 %d%% · %@ 後に消耗予定",
+        .korean: "속도 초과 %d%% · %@ 후 소진 예상",
+        .spanish: "Sobre ritmo %d%% · se agota en %@",
+        .german: "Über Tempo %d %% · erschöpft in %@",
+        .french: "Au-dessus du rythme %d %% · épuisé dans %@",
+        .portuguese: "Acima do ritmo %d%% · esgota em %@",
+        .portugueseBrazil: "Acima do ritmo %d%% · esgota em %@"
+    ],
+    "Above pace %d%% · lasts until reset": [
+        .traditionalChinese: "高於節奏 %d%% · 可撐到重置",
+        .japanese: "やや速いペース %d%% · リセットまで持続",
+        .korean: "다소 빠른 속도 %d%% · 재설정까지 지속",
+        .spanish: "Ritmo alto %d%% · dura hasta el reinicio",
+        .german: "Über Plan %d %% · reicht bis zum Reset",
+        .french: "Rythme élevé %d %% · tient jusqu'à la réinitialisation",
+        .portuguese: "Ritmo elevado %d%% · dura até repor",
+        .portugueseBrazil: "Ritmo elevado %d%% · dura até redefinir"
+    ],
+    "On pace %d%% · lasts until reset": [
+        .traditionalChinese: "節奏正常 %d%% · 可撐到重置",
+        .japanese: "通常ペース %d%% · リセットまで持続",
+        .korean: "정상 속도 %d%% · 재설정까지 지속",
+        .spanish: "Ritmo normal %d%% · dura hasta el reinicio",
+        .german: "Im Plan %d %% · reicht bis zum Reset",
+        .french: "Rythme normal %d %% · tient jusqu'à la réinitialisation",
+        .portuguese: "Ritmo normal %d%% · dura até repor",
+        .portugueseBrazil: "Ritmo normal %d%% · dura até redefinir"
+    ],
+    "%dd %dh": [
+        .traditionalChinese: "%d天%d小時",
+        .japanese: "%d日%d時間",
+        .korean: "%d일 %d시간",
+        .spanish: "%d d %d h",
+        .german: "%d T %d Std.",
+        .french: "%d j %d h",
+        .portuguese: "%d d %d h",
+        .portugueseBrazil: "%d d %d h"
+    ],
+    "%dh %dm": [
+        .traditionalChinese: "%d小時%d分",
+        .japanese: "%d時間%d分",
+        .korean: "%d시간 %d분",
+        .spanish: "%d h %d min",
+        .german: "%d Std. %d Min.",
+        .french: "%d h %d min",
+        .portuguese: "%d h %d min",
+        .portugueseBrazil: "%d h %d min"
+    ],
+    "%dm": [
+        .traditionalChinese: "%d分鐘",
+        .japanese: "%d分",
+        .korean: "%d분",
+        .spanish: "%d min",
+        .german: "%d Min.",
+        .french: "%d min",
+        .portuguese: "%d min",
+        .portugueseBrazil: "%d min"
+    ],
+    "Ready · Open QuotaLens": [
+        .traditionalChinese: "已就緒 · 點擊主視窗查看",
+        .japanese: "準備完了 · メイン画面で確認",
+        .korean: "준비됨 · 메인 창에서 확인",
+        .spanish: "Listo · Abrir QuotaLens",
+        .german: "Bereit · QuotaLens öffnen",
+        .french: "Prêt · Ouvrir QuotaLens",
+        .portuguese: "Pronto · Abrir QuotaLens",
+        .portugueseBrazil: "Pronto · Abrir QuotaLens"
+    ],
+    "Total Tokens": [
+        .traditionalChinese: "總消耗 Token",
+        .japanese: "合計消費 Token",
+        .korean: "총 소비 Token",
+        .spanish: "Tokens totales",
+        .german: "Tokens gesamt",
+        .french: "Tokens totaux",
+        .portuguese: "Tokens totais",
+        .portugueseBrazil: "Tokens totais"
+    ],
+    "API Est. Value": [
+        .traditionalChinese: "API 估算價值",
+        .japanese: "API 換算推定額",
+        .korean: "API 추정 가치",
+        .spanish: "Valor est. API",
+        .german: "Geschätzter API-Wert",
+        .french: "Valeur est. API",
+        .portuguese: "Valor est. da API",
+        .portugueseBrazil: "Valor est. da API"
+    ],
+    "Cache Hit Rate": [
+        .traditionalChinese: "快取命中率",
+        .japanese: "キャッシュヒット率",
+        .korean: "캐시 히트율",
+        .spanish: "Tasa de aciertos de caché",
+        .german: "Cache-Trefferquote",
+        .french: "Taux de succès du cache",
+        .portuguese: "Taxa de acertos na cache",
+        .portugueseBrazil: "Taxa de acertos no cache"
+    ],
+    "Daily Usage": [
+        .traditionalChinese: "每日用量",
+        .japanese: "日別使用量",
+        .korean: "일별 사용량",
+        .spanish: "Uso diario",
+        .german: "Tägliche Nutzung",
+        .french: "Utilisation quotidienne",
+        .portuguese: "Uso diário",
+        .portugueseBrazil: "Uso diário"
+    ],
+    "Activity Details": [
+        .traditionalChinese: "活躍明細",
+        .japanese: "アクティビティ詳細",
+        .korean: "활동 상세",
+        .spanish: "Detalles de actividad",
+        .german: "Aktivitätsdetails",
+        .french: "Détails d'activité",
+        .portuguese: "Detalhes de atividade",
+        .portugueseBrazil: "Detalhes de atividade"
+    ],
+    "Cost": [
+        .traditionalChinese: "費用",
+        .japanese: "費用",
+        .korean: "비용",
+        .spanish: "Coste",
+        .german: "Kosten",
+        .french: "Coût",
+        .portuguese: "Custo",
+        .portugueseBrazil: "Custo"
+    ],
+    "Events": [
+        .traditionalChinese: "呼叫",
+        .japanese: "イベント",
+        .korean: "이벤트",
+        .spanish: "Eventos",
+        .german: "Ereignisse",
+        .french: "Événements",
+        .portuguese: "Eventos",
+        .portugueseBrazil: "Eventos"
+    ],
+    "Session Count": [
+        .traditionalChinese: "會話",
+        .japanese: "セッション",
+        .korean: "세션",
+        .spanish: "Sesiones",
+        .german: "Sitzungen",
+        .french: "Sessions",
+        .portuguese: "Sessões",
+        .portugueseBrazil: "Sessões"
+    ],
+    "Cache": [
+        .traditionalChinese: "快取",
+        .japanese: "キャッシュ",
+        .korean: "캐시",
+        .spanish: "Caché",
+        .german: "Cache",
+        .french: "Cache",
+        .portuguese: "Cache",
+        .portugueseBrazil: "Cache"
+    ],
+    "Tokens": [
+        .traditionalChinese: "Token",
+        .japanese: "Token",
+        .korean: "Token",
+        .spanish: "Tokens",
+        .german: "Tokens",
+        .french: "Tokens",
+        .portuguese: "Tokens",
+        .portugueseBrazil: "Tokens"
+    ],
+    "No usage": [
+        .traditionalChinese: "暫無用量",
+        .japanese: "使用量なし",
+        .korean: "사용량 없음",
+        .spanish: "Sin uso",
+        .german: "Keine Nutzung",
+        .french: "Aucune utilisation",
+        .portuguese: "Sem uso",
+        .portugueseBrazil: "Sem uso"
+    ],
+    "Total Events": [
+        .traditionalChinese: "互動事件總數",
+        .japanese: "総イベント数",
+        .korean: "총 이벤트 수",
+        .spanish: "Eventos totales",
+        .german: "Ereignisse gesamt",
+        .french: "Événements totaux",
+        .portuguese: "Total de eventos",
+        .portugueseBrazil: "Total de eventos"
+    ],
+    "Token Breakdown": [
+        .traditionalChinese: "Token 構成比例",
+        .japanese: "Token 内訳",
+        .korean: "Token 세부 구성",
+        .spanish: "Desglose de tokens",
+        .german: "Token-Aufschlüsselung",
+        .french: "Répartition des tokens",
+        .portuguese: "Discriminação de tokens",
+        .portugueseBrazil: "Detalhamento de tokens"
+    ],
+    "Uncached Input": [
+        .traditionalChinese: "全新輸入",
+        .japanese: "新規入力",
+        .korean: "신규 입력",
+        .spanish: "Entrada sin caché",
+        .german: "Ungecachte Eingabe",
+        .french: "Entrée non mise en cache",
+        .portuguese: "Entrada sem cache",
+        .portugueseBrazil: "Entrada sem cache"
+    ],
+    "Cached Input": [
+        .traditionalChinese: "快取命中輸入",
+        .japanese: "キャッシュ入力",
+        .korean: "캐시된 입력",
+        .spanish: "Entrada en caché",
+        .german: "Gecachte Eingabe",
+        .french: "Entrée en cache",
+        .portuguese: "Entrada em cache",
+        .portugueseBrazil: "Entrada em cache"
+    ],
+    "Standard Output": [
+        .traditionalChinese: "常規輸出",
+        .japanese: "標準出力",
+        .korean: "표준 출력",
+        .spanish: "Salida estándar",
+        .german: "Standard-Ausgabe",
+        .french: "Sortie standard",
+        .portuguese: "Saída padrão",
+        .portugueseBrazil: "Saída padrão"
+    ],
+    "Reasoning": [
+        .traditionalChinese: "深度推理",
+        .japanese: "推論処理",
+        .korean: "추론 출력",
+        .spanish: "Razonamiento",
+        .german: "Schlussfolgerung",
+        .french: "Raisonnement",
+        .portuguese: "Raciocínio",
+        .portugueseBrazil: "Raciocínio"
+    ],
+    "Model Distribution": [
+        .traditionalChinese: "模型使用構成",
+        .japanese: "モデル別利用分布",
+        .korean: "모델별 사용 분포",
+        .spanish: "Distribución por modelo",
+        .german: "Modellverteilung",
+        .french: "Distribution par modèle",
+        .portuguese: "Distribuição por modelo",
+        .portugueseBrazil: "Distribuição por modelo"
+    ],
+    "Show in Finder": [
+        .traditionalChinese: "在 Finder 中顯示",
+        .japanese: "Finder で表示",
+        .korean: "Finder에서 보기",
+        .spanish: "Mostrar en Finder",
+        .german: "Im Finder anzeigen",
+        .french: "Afficher dans le Finder",
+        .portuguese: "Mostrar no Finder",
+        .portugueseBrazil: "Mostrar no Finder"
+    ],
+    "Select a session to view details": [
+        .traditionalChinese: "請在左側選擇一個會話查看明細",
+        .japanese: "左側からセッションを選択して詳細を表示",
+        .korean: "왼쪽에서 세션을 선택하여 세부 정보를 확인하세요",
+        .spanish: "Selecciona una sesión a la izquierda para ver los detalles",
+        .german: "Wählen Sie links eine Sitzung für Details aus",
+        .french: "Sélectionnez une session à gauche pour voir les détails",
+        .portuguese: "Selecione uma sessão à esquerda para ver os detalhes",
+        .portugueseBrazil: "Selecione uma sessão à esquerda para ver os detalhes"
+    ],
+    "Loading sessions...": [
+        .traditionalChinese: "正在載入會話…",
+        .japanese: "セッションを読み込み中…",
+        .korean: "세션 불러오는 중…",
+        .spanish: "Cargando sesiones…",
+        .german: "Sitzungen werden geladen…",
+        .french: "Chargement des sessions…",
+        .portuguese: "A carregar sessões…",
+        .portugueseBrazil: "Carregando sessões…"
+    ],
+    "No sessions found": [
+        .traditionalChinese: "未發現會話記錄",
+        .japanese: "セッションが見つかりません",
+        .korean: "세션 기록을 찾을 수 없습니다",
+        .spanish: "No se encontraron sesiones",
+        .german: "Keine Sitzungen gefunden",
+        .french: "Aucune session trouvée",
+        .portuguese: "Nenhuma sessão encontrada",
+        .portugueseBrazil: "Nenhuma sessão encontrada"
+    ],
+    "Loading details...": [
+        .traditionalChinese: "正在載入會話明細…",
+        .japanese: "詳細を読み込み中…",
+        .korean: "세부 정보를 불러오는 중…",
+        .spanish: "Cargando detalles…",
+        .german: "Details werden geladen…",
+        .french: "Chargement des détails…",
+        .portuguese: "A carregar detalhes…",
+        .portugueseBrazil: "Carregando detalhes…"
+    ],
+    "Search sessions...": [
+        .traditionalChinese: "搜尋會話 / 專案 / 路徑…",
+        .japanese: "セッション / プロジェクト / パスを検索…",
+        .korean: "세션 / 프로젝트 / 경로 검색…",
+        .spanish: "Buscar sesiones / proyectos / rutas…",
+        .german: "Sitzungen / Projekte / Pfade suchen…",
+        .french: "Rechercher sessions / projets / chemins…",
+        .portuguese: "Pesquisar sessões / projetos / caminhos…",
+        .portugueseBrazil: "Buscar sessões / projetos / caminhos…"
+    ],
+    "Event Timeline (Recent 100)": [
+        .traditionalChinese: "事件明細時間線 (最新 100 條)",
+        .japanese: "イベントタイムライン (最新 100 件)",
+        .korean: "이벤트 타임라인 (최근 100건)",
+        .spanish: "Línea de tiempo de eventos (últimos 100)",
+        .german: "Ereignis-Timeline (letzte 100)",
+        .french: "Chronologie des événements (100 récents)",
+        .portuguese: "Cronologia de eventos (100 recentes)",
+        .portugueseBrazil: "Linha do tempo de eventos (100 recentes)"
+    ],
+    "Rate Limit Burn Forecast": [
+        .traditionalChinese: "伺服器額度耗盡預測",
+        .japanese: "クォータ枯渇予測",
+        .korean: "할당량 소진 예측",
+        .spanish: "Predicción de agotamiento de cuota",
+        .german: "Prognose des Quota-Verbrauchs",
+        .french: "Prévision d'épuisement du quota",
+        .portuguese: "Previsão de esgotamento da quota",
+        .portugueseBrazil: "Previsão de esgotamento da cota"
+    ],
+    "Local 7-Day Usage Projection": [
+        .traditionalChinese: "本機未來 7 天趨勢估算",
+        .japanese: "今後 7 日間のローカル利用予測",
+        .korean: "향후 7일 로컬 사용량 추세 예측",
+        .spanish: "Proyección local de uso a 7 días",
+        .german: "Lokale 7-Tage-Nutzungsprognose",
+        .french: "Projection d'usage local sur 7 jours",
+        .portuguese: "Projeção local de uso para 7 dias",
+        .portugueseBrazil: "Projeção local de uso para 7 dias"
+    ],
+    "Annual Activity Heatmap": [
+        .traditionalChinese: "年度活躍熱力圖 (Activity Heatmap)",
+        .japanese: "年間アクティビティヒートマップ",
+        .korean: "연간 활동 히트맵",
+        .spanish: "Mapa de calor de actividad anual",
+        .german: "Jahres-Aktivitäts-Heatmap",
+        .french: "Carte thermique d'activité annuelle",
+        .portuguese: "Mapa de calor de atividade anual",
+        .portugueseBrazil: "Mapa de calor de atividade anual"
+    ],
+    "Usage Trend": [
+        .traditionalChinese: "歷史消耗趨勢",
+        .japanese: "利用推移トレンド",
+        .korean: "소비 추세",
+        .spanish: "Tendencia de consumo",
+        .german: "Verbrauchstrend",
+        .french: "Tendance d'usage",
+        .portuguese: "Tendência de consumo",
+        .portugueseBrazil: "Tendência de consumo"
+    ],
     "%lldd %lldh %lldm %llds": [
         .traditionalChinese: "%lld天 %lld小時 %lld分 %lld秒",
         .japanese: "%lld日 %lld時間 %lld分 %lld秒",
