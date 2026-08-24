@@ -215,11 +215,20 @@ public enum L10n {
         return format("%d minutes %d seconds short", zhHans: "%d 分 %d 秒", minutes, seconds)
     }
 
-    public static func countdown(days: Int64, hours: Int64, minutes: Int64) -> String {
+    public static func countdown(days: Int64, hours: Int64, minutes: Int64, seconds: Int64) -> String {
         if days > 0 {
-            return format("%lld days %lld hours short", zhHans: "%lld天 %lld小时", days, hours)
+            return format("%lldd %lldh %lldm %llds", zhHans: "%lld天 %lld小时 %lld分 %lld秒", days, hours, minutes, seconds)
+        } else if hours > 0 {
+            return format("%lldh %lldm %llds", zhHans: "%lld小时 %lld分 %lld秒", hours, minutes, seconds)
+        } else if minutes > 0 {
+            return format("%lldm %llds", zhHans: "%lld分 %lld秒", minutes, seconds)
+        } else {
+            return format("%llds", zhHans: "%lld秒", seconds)
         }
-        return format("%lld hours %lld minutes short", zhHans: "%lld小时 %lld分钟", hours, minutes)
+    }
+
+    public static func countdown(days: Int64, hours: Int64, minutes: Int64) -> String {
+        countdown(days: days, hours: hours, minutes: minutes, seconds: 0)
     }
 
     public static func compactHundredMillionUnit(_ value: String, sign: String) -> String {
@@ -246,6 +255,126 @@ public enum L10n {
 }
 
 private let keyedTranslations: [String: [AppLanguage: String]] = [
+    "%lldd %lldh %lldm %llds": [
+        .traditionalChinese: "%lld天 %lld小時 %lld分 %lld秒",
+        .japanese: "%lld日 %lld時間 %lld分 %lld秒",
+        .korean: "%lld일 %lld시간 %lld분 %lld초",
+        .spanish: "%lldd %lldh %lldm %llds",
+        .german: "%lldT %lldStd. %lldMin. %lldSek.",
+        .french: "%lldj %lldh %lldmin %llds",
+        .portuguese: "%lldd %lldh %lldm %llds",
+        .portugueseBrazil: "%lldd %lldh %lldm %llds"
+    ],
+    "%lldh %lldm %llds": [
+        .traditionalChinese: "%lld小時 %lld分 %lld秒",
+        .japanese: "%lld時間 %lld分 %lld秒",
+        .korean: "%lld시간 %lld분 %lld초",
+        .spanish: "%lldh %lldm %llds",
+        .german: "%lldStd. %lldMin. %lldSek.",
+        .french: "%lldh %lldmin %llds",
+        .portuguese: "%lldh %lldm %llds",
+        .portugueseBrazil: "%lldh %lldm %llds"
+    ],
+    "%lldm %llds": [
+        .traditionalChinese: "%lld分 %lld秒",
+        .japanese: "%lld分 %lld秒",
+        .korean: "%lld분 %lld초",
+        .spanish: "%lldm %llds",
+        .german: "%lldMin. %lldSek.",
+        .french: "%lldmin %llds",
+        .portuguese: "%lldm %llds",
+        .portugueseBrazil: "%lldm %llds"
+    ],
+    "%llds": [
+        .traditionalChinese: "%lld秒",
+        .japanese: "%lld秒",
+        .korean: "%lld초",
+        .spanish: "%llds",
+        .german: "%lldSek.",
+        .french: "%llds",
+        .portuguese: "%llds",
+        .portugueseBrazil: "%llds"
+    ],
+    "Current remaining available quota is %@. Are you sure you want to use a reset card?": [
+        .traditionalChinese: "目前剩餘可用額度還有 %@，你確定要使用重置卡嗎？",
+        .japanese: "現在の利用可能クォータはまだ %@ 残っています。リセットカードを使用してもよろしいですか？",
+        .korean: "현재 사용 가능한 남은 할당량이 %@ 있습니다. 리셋 카드를 사용하시겠습니까?",
+        .spanish: "La cuota disponible restante es de %@. ¿Seguro que deseas usar una tarjeta de reinicio?",
+        .german: "Die verbleibende verfügbare Quota beträgt %@. Möchten Sie wirklich eine Reset-Karte verwenden?",
+        .french: "Le quota disponible restant est de %@. Êtes-vous sûr de vouloir utiliser un pass de réinitialisation ?",
+        .portuguese: "A quota disponível restante é de %@. Tem a certeza de que pretende utilizar um cartão de reinício?",
+        .portugueseBrazil: "A cota disponível restante é de %@. Tem certeza de que deseja usar um cartão de reinício?"
+    ],
+    "Natural reset is in %@. Continue using a reset card?": [
+        .traditionalChinese: "距離自然重置還剩餘 %@，是否繼續使用重置卡？",
+        .japanese: "自然リセットまであと %@ です。リセットカードの使用を続行しますか？",
+        .korean: "자동 초기화까지 %@ 남았습니다. 리셋 카드를 계속 사용하시겠습니까?",
+        .spanish: "El reinicio natural es en %@. ¿Continuar usando la tarjeta de reinicio?",
+        .german: "Der reguläre Reset erfolgt in %@. Möchten Sie die Reset-Karte trotzdem nutzen?",
+        .french: "La réinitialisation normale aura lieu dans %@. Continuer à utiliser le pass de réinitialisation ?",
+        .portuguese: "O reinício natural é em %@. Pretende continuar a utilizar o cartão de reinício?",
+        .portugueseBrazil: "A restauração natural ocorrerá em %@. Deseja continuar usando o cartão de reinício?"
+    ],
+    "Are you sure you want to use a reset card?": [
+        .traditionalChinese: "你確定要使用重置卡嗎？",
+        .japanese: "リセットカードを使用してもよろしいですか？",
+        .korean: "리셋 카드를 사용하시겠습니까?",
+        .spanish: "¿Seguro que deseas usar una tarjeta de reinicio?",
+        .german: "Möchten Sie wirklich eine Reset-Karte verwenden?",
+        .french: "Êtes-vous sûr de vouloir utiliser un pass de réinitialisation ?",
+        .portuguese: "Tem a certeza de que pretende utilizar um cartão de reinício?",
+        .portugueseBrazil: "Tem certeza de que deseja usar um cartão de reinício?"
+    ],
+    "Reset Card Consumption": [
+        .traditionalChinese: "重置卡核銷與額度更新",
+        .japanese: "リセットカードの適用とクォータ更新",
+        .korean: "리셋 카드 사용 및 할당량 갱신",
+        .spanish: "Consumo de tarjeta de reinicio y actualización de cuota",
+        .german: "Reset-Karten-Verbrauch und Quota-Aktualisierung",
+        .french: "Utilisation du pass de réinitialisation et mise à jour du quota",
+        .portuguese: "Consumo do cartão de reinício e atualização de quota",
+        .portugueseBrazil: "Consumo do cartão de reinício e atualização de cota"
+    ],
+    "Quota is Still Sufficient": [
+        .traditionalChinese: "目前額度仍較充足",
+        .japanese: "クォータにはまだ十分な余裕があります",
+        .korean: "할당량이 아직 충분합니다",
+        .spanish: "La cuota aún es suficiente",
+        .german: "Quota ist noch ausreichend",
+        .french: "Le quota est encore suffisant",
+        .portuguese: "A quota ainda é suficiente",
+        .portugueseBrazil: "A cota ainda é suficiente"
+    ],
+    "Recommend using when quota is low to maximize reset card value.": [
+        .traditionalChinese: "建議在額度即將耗盡時使用，以最大化利用重置卡價值。",
+        .japanese: "カードの価値を最大限に活かすため、残量が少なくなってからの使用を推奨します。",
+        .korean: "리셋 카드의 가치를 극대화하기 위해 할당량이 거의 소진되었을 때 사용하는 것을 권장합니다.",
+        .spanish: "Se recomienda usarla cuando la cuota esté baja para maximizar el valor de la tarjeta.",
+        .german: "Es wird empfohlen, die Karte bei niedrigem Kontingent zu nutzen, um den maximalen Wert zu erzielen.",
+        .french: "Il est conseillé de l'utiliser lorsque le quota est presque épuisé pour maximiser sa valeur.",
+        .portuguese: "Recomenda-se utilizar quando a quota estiver baixa para maximizar o valor do cartão.",
+        .portugueseBrazil: "Recomenda-se utilizar quando a cota estiver baixa para maximizar o valor do cartão."
+    ],
+    "Quota is Running Low": [
+        .traditionalChinese: "目前額度即將耗盡",
+        .japanese: "クォータが間もなく上限に達します",
+        .korean: "할당량이 곧 소진됩니다",
+        .spanish: "La cuota se está agotando",
+        .german: "Quota ist fast aufgebraucht",
+        .french: "Le quota est presque épuisé",
+        .portuguese: "A quota está quase esgotada",
+        .portugueseBrazil: "A cota está quase esgotada"
+    ],
+    "Using this card will instantly reset the current rate window to 100%.": [
+        .traditionalChinese: "使用此重置卡將立即重置目前限制窗口並恢復全部額度。",
+        .japanese: "このカードを使用すると、現在の制限ウィンドウが即座にリセットされ、全額利用可能になります。",
+        .korean: "이 카드를 사용하면 현재 제한 창이 즉시 초기화되어 전체 할당량이 복구됩니다.",
+        .spanish: "Usar esta tarjeta restablecerá instantáneamente la ventana actual al 100%.",
+        .german: "Durch die Nutzung dieser Karte wird das aktuelle Zeitfenster sofort auf 100 % zurückgesetzt.",
+        .french: "L'utilisation de cette carte réinitialisera instantanément la fenêtre actuelle à 100 %.",
+        .portuguese: "Utilizar este cartão irá repor instantaneamente a janela atual a 100%.",
+        .portugueseBrazil: "Usar este cartão restaurará instantaneamente a janela atual para 100%."
+    ],
     "Dynamic fetching and manual refresh for changelog & license": [
         .traditionalChinese: "更新日誌與開源協議升級為動態網路拉取，每次點開彈窗時自動獲取最新發布內容",
         .japanese: "変更ログとライセンスを動的ネットワーク取得に対応、ダイアログ表示時に最新情報を自動更新",

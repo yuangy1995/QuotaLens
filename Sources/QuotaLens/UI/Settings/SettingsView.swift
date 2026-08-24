@@ -19,9 +19,6 @@ public struct SettingsView: View {
     public var body: some View {
         ScrollView {
             VStack(spacing: 22) {
-                // 顶部标题
-                settingsHeaderHUD
-
                 // 模块 01 · 外观与语言
                 appearanceHUDCard
 
@@ -40,16 +37,6 @@ public struct SettingsView: View {
         .task {
             await refreshAutoDetectedBinaryPath()
         }
-    }
-
-    // MARK: - 顶部标题
-    private var settingsHeaderHUD: some View {
-        HStack(spacing: 8) {
-            Text(L10n.text("系统设置", "Settings"))
-                .font(.system(.title, design: .rounded, weight: .black))
-                .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - 模块 01 · 外观与语言

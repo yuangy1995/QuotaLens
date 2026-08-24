@@ -140,6 +140,43 @@ public final class AppEnvironment: ObservableObject {
         scheduleResetCreditReminderTimer()
     }
 
+    public func consumeResetCredit(_ credit: ResetCreditDisplay) async throws -> ConsumeRateLimitResetCreditOutcome {
+        guard credit.isValidAvailable() else {
+            throw NSError(
+                domain: "QuotaLens.ResetCredit",
+                code: -1,
+                userInfo: [NSLocalizedDescriptionKey: L10n.text("这张重置卡当前不可用。", "This reset card is not currently available.")]
+            )
+        }
+
+        let currentStatus = await processManager.getStatus()
+        if !currentStatus.isConnected {
+            let started = await processManager.start()
+            state.connectionStatus = await processManager.getStatus()
+            guard started else {
+                throw NSError(
+                    domain: "QuotaLens.ResetCredit",
+                    code: -2,
+                    userInfo: [NSLocalizedDescriptionKey: L10n.text("无法连接 Codex，暂时不能使用重置卡。", "Codex is not connected, so the reset card cannot be used yet.")]
+                )
+            }
+        }
+
+        let params: [String: AnyCodable] = [
+            "creditId": AnyCodable(credit.id),
+            "idempotencyKey": AnyCodable(UUID().uuidString)
+        ]
+        let payload = try await rpcPayload(
+            ConsumeRateLimitResetCreditResponse.self,
+            method: "account/rateLimitResetCredit/consume",
+            params: params,
+            timeoutSeconds: 10.0
+        )
+        let outcome = payload.value?.outcome ?? .nothingToReset
+        await refreshData()
+        return outcome
+    }
+
     public func applyDockIconVisibility() {
         guard let app = NSApp else { return }
         app.setActivationPolicy(state.hideDockIcon ? .accessory : .regular)
@@ -546,8 +583,13 @@ public final class AppEnvironment: ObservableObject {
         }
     }
 
-    private func rpcPayload<T: Decodable>(_ type: T.Type, method: String) async throws -> (value: T?, rawJson: String) {
-        let response = try await transport.sendRequest(method: method, params: [:], timeoutSeconds: 5.0)
+    private func rpcPayload<T: Decodable>(
+        _ type: T.Type,
+        method: String,
+        params: [String: AnyCodable] = [:],
+        timeoutSeconds: Double = 5.0
+    ) async throws -> (value: T?, rawJson: String) {
+        let response = try await transport.sendRequest(method: method, params: params, timeoutSeconds: timeoutSeconds)
         if let error = response.error {
             throw NSError(domain: "QuotaLens.RPC", code: error.code, userInfo: [NSLocalizedDescriptionKey: error.message])
         }

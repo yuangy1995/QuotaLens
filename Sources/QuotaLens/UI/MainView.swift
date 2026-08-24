@@ -5,6 +5,7 @@ import AppKit
 
 public enum NavigationTab: CaseIterable, Identifiable {
     case dashboard
+    case resetCards
     case settings
     case about
 
@@ -13,6 +14,7 @@ public enum NavigationTab: CaseIterable, Identifiable {
     public var title: String {
         switch self {
         case .dashboard: return L10n.text("概览", "Overview")
+        case .resetCards: return L10n.text("重置卡", "Reset Cards")
         case .settings: return L10n.text("设置", "Settings")
         case .about: return L10n.text("关于", "About")
         }
@@ -21,6 +23,7 @@ public enum NavigationTab: CaseIterable, Identifiable {
     public var icon: String {
         switch self {
         case .dashboard: return "gauge.with.needle.fill"
+        case .resetCards: return "ticket.fill"
         case .settings: return "gearshape.2.fill"
         case .about: return "info.circle.fill"
         }
@@ -43,15 +46,11 @@ public struct MainView: View {
 
         HStack(spacing: 0) {
             VStack(spacing: 0) {
-                Color.clear
+                // 顶部当前账户全息身份芯片（高度与右侧 topChromeBar 64pt 严格平齐）
+                sidebarIdentityCard
                     .frame(height: 64)
 
-                // 顶部当前账户全息身份芯片
-                sidebarIdentityCard
-
-                CyberDivider(glowColor: cyan.opacity(isDark ? 0.25 : 0.15))
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
+                CyberDivider(glowColor: isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.07))
 
                 // 侧边栏导航列表
                 VStack(spacing: 8) {
@@ -68,6 +67,7 @@ public struct MainView: View {
                     }
                 }
                 .padding(.horizontal, 14)
+                .padding(.top, 14)
 
                 Spacer()
 
@@ -95,6 +95,8 @@ public struct MainView: View {
                         switch selectedTab {
                         case .dashboard:
                             DashboardView(state: state)
+                        case .resetCards:
+                            ResetCardsView(state: state)
                         case .settings:
                             SettingsView(state: state)
                         case .about:
@@ -120,7 +122,7 @@ public struct MainView: View {
         let isDark = colorScheme == .dark
 
         return HStack(spacing: 12) {
-            Text("QuotaLens")
+            Text(selectedTab.title)
                 .font(.system(size: 16, weight: .black, design: .rounded))
                 .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
 
@@ -223,7 +225,8 @@ public struct MainView: View {
 
             Spacer()
         }
-        .padding(10)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
         .background(
             isDark ? Color(red: 0.105, green: 0.135, blue: 0.215).opacity(0.72) : Color.white.opacity(0.85),
             in: RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -233,12 +236,12 @@ public struct MainView: View {
                 .strokeBorder(isDark ? Color.white.opacity(0.14) : Color.black.opacity(0.08), lineWidth: 0.8)
         )
         .padding(.horizontal, 14)
-        .padding(.bottom, 4)
     }
 
     // MARK: - 侧边栏底座状态指示坞
     private var sidebarBottomHUDDock: some View {
         let emerald = AppTheme.accentEmerald(for: colorScheme)
+        let cyan = AppTheme.accentCyan(for: colorScheme)
         let isDark = colorScheme == .dark
 
         return VStack(spacing: 6) {
@@ -252,19 +255,24 @@ public struct MainView: View {
                         .frame(width: 5, height: 5)
 
                     Text(state.connectionStatus.isConnected ? L10n.text("已连接", "Connected") : L10n.text("未连接", "Offline"))
-                        .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                        .font(.system(size: 9.5, weight: .heavy, design: .monospaced))
                         .foregroundStyle(state.connectionStatus.isConnected ? emerald : AppTheme.textSecondary(for: colorScheme))
                 }
 
                 Spacer()
 
-                Text(AppVersion.displayString)
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                HStack(spacing: 4) {
+                    Text("QuotaLens")
+                        .font(.system(size: 10, weight: .black, design: .rounded))
+                        .foregroundStyle(AppTheme.textPrimary(for: colorScheme).opacity(0.85))
+
+                    Text(AppVersion.displayString)
+                        .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                        .foregroundStyle(cyan)
+                }
             }
             .padding(.horizontal, 16)
-            .padding(.bottom, 12)
-            .padding(.top, 4)
+            .padding(.bottom, 10)
         }
     }
 }

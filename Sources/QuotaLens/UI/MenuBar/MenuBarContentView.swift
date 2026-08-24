@@ -129,7 +129,7 @@ public struct MenuBarContentView: View {
                 Spacer(minLength: 8)
 
                 // 右侧：2 (模式微胶囊) 与 3 (核心数据指标) 垂直排布
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 18) {
                     // 2: 紧凑模式微胶囊
                     QuotaMiniModeToggle(
                         selection: Binding(
@@ -139,26 +139,28 @@ public struct MenuBarContentView: View {
                     )
 
                     // 3: 核心指标数值
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: 7) {
                         HStack(spacing: 4) {
                             Text(state.quotaDisplayMode.primaryLabel)
                                 .font(.system(size: 11, weight: .bold, design: .monospaced))
                                 .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
                             Text(state.displayedQuotaPercentString)
-                                .font(.system(size: 23, weight: .black, design: .rounded))
+                                .font(.system(size: 18, weight: .black, design: .rounded))
                                 .foregroundStyle(cyan)
                                 .monospacedDigit()
                         }
 
                         HStack(spacing: 4) {
                             Text(state.quotaDisplayMode.complementLabel)
-                                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                .font(.system(size: 11, weight: .bold, design: .monospaced))
                                 .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
                             Text(state.complementQuotaPercentString)
-                                .font(.system(size: 13, weight: .heavy, design: .monospaced))
+                                .font(.system(size: 18, weight: .black, design: .rounded))
                                 .foregroundStyle(state.quotaSeverityColor)
+                                .monospacedDigit()
                         }
                     }
+                    .padding(.top, 3)
                 }
             }
             .padding(12)
@@ -176,13 +178,15 @@ public struct MenuBarContentView: View {
             // 下半区：2x2 结构化微型指标卡
             Grid(horizontalSpacing: 8, verticalSpacing: 8) {
                 GridRow {
-                    MicroHUDTile(
-                        icon: "hourglass",
-                        iconColor: amber,
-                        title: L10n.text("重置倒计时", "Reset Countdown"),
-                        value: state.resetCountdownString,
-                        caption: state.resetExactDateString ?? L10n.text("下周期自动重置", "Auto-resets next cycle")
-                    )
+                    TimelineView(.periodic(from: .now, by: 1)) { _ in
+                        MicroHUDTile(
+                            icon: "hourglass",
+                            iconColor: amber,
+                            title: L10n.text("重置倒计时", "Reset Countdown"),
+                            value: state.resetCountdownString,
+                            caption: state.resetExactDateString ?? L10n.text("下周期自动重置", "Auto-resets next cycle")
+                        )
+                    }
 
                     MicroHUDTile(
                         icon: "ticket.fill",

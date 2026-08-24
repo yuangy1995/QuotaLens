@@ -59,6 +59,12 @@ public struct ResetCreditDisplay: Identifiable, Sendable {
         (status ?? "").lowercased() == "available"
     }
 
+    public func isValidAvailable(now: Date = Date()) -> Bool {
+        guard isAvailable else { return false }
+        guard let expiresAt else { return true }
+        return expiresAt > Int64(now.timeIntervalSince1970)
+    }
+
     public var displayTitle: String {
         if let title, !title.isEmpty { return title }
         if let resetType, !resetType.isEmpty { return resetType }
@@ -423,7 +429,29 @@ public final class AppState: ObservableObject {
         let days = diff / 86400
         let hours = (diff % 86400) / 3600
         let mins = (diff % 3600) / 60
-        return L10n.countdown(days: days, hours: hours, minutes: mins)
+        let secs = diff % 60
+        return L10n.countdown(days: days, hours: hours, minutes: mins, seconds: secs)
+    }
+
+    public func preciseCountdownString(until timestamp: Int64?, now: Date = Date()) -> String {
+        guard let timestamp else { return L10n.text("未知", "Unknown") }
+        return preciseDurationString(seconds: max(0, timestamp - Int64(now.timeIntervalSince1970)))
+    }
+
+    public func preciseDurationString(seconds: Int64) -> String {
+        let safeSeconds = max(0, seconds)
+        let days = safeSeconds / 86_400
+        let hours = (safeSeconds % 86_400) / 3_600
+        let minutes = (safeSeconds % 3_600) / 60
+        let remainderSeconds = safeSeconds % 60
+        return L10n.format(
+            "%lld days %lld hours %lld minutes %lld seconds",
+            zhHans: "%lld天 %lld时 %lld分 %lld秒",
+            days,
+            hours,
+            minutes,
+            remainderSeconds
+        )
     }
 
     public var resetExactDateString: String? {
@@ -431,30 +459,42 @@ public final class AppState: ObservableObject {
         return formatFullDate(resetsAt)
     }
 
-    /// 当前周期剩余天数（浮点数）
-    public var currentPeriodRemainingDays: Double? {
+    /// 当前周期剩余天数（浮点数，支持传入当前基准时间）
+    public func currentPeriodRemainingDays(now: Date = Date()) -> Double? {
         guard let snap = latestRateLimit, let resetsAt = snap.resetsAt else { return nil }
-        let now = Date().timeIntervalSince1970
-        let diff = resetsAt - Int64(now)
+        let nowTs = now.timeIntervalSince1970
+        let diff = resetsAt - Int64(nowTs)
         guard diff > 0 else { return 0.0 }
         return Double(diff) / 86400.0
     }
 
+    public var currentPeriodRemainingDays: Double? {
+        currentPeriodRemainingDays(now: Date())
+    }
+
     /// 建议每日可用配额百分比（至重置刚好用完）
-    public var recommendedDailyQuotaPercent: Double? {
-        guard let days = currentPeriodRemainingDays, days > 0 else { return nil }
+    public func recommendedDailyQuotaPercent(now: Date = Date()) -> Double? {
+        guard let days = currentPeriodRemainingDays(now: now), days > 0 else { return nil }
         return min(100.0, max(0.0, currentRemainingPercent / days))
     }
 
-    /// 建议每日配额消耗格式化字符串，例如 "11.0%"
-    public var recommendedDailyQuotaPercentString: String {
-        guard let daily = recommendedDailyQuotaPercent else { return "--%" }
+    public var recommendedDailyQuotaPercent: Double? {
+        recommendedDailyQuotaPercent(now: Date())
+    }
+
+    /// 建议每日配额消耗格式化字符串，例如 "10.1%"
+    public func recommendedDailyQuotaPercentString(now: Date = Date()) -> String {
+        guard let daily = recommendedDailyQuotaPercent(now: now) else { return "--%" }
         return String(format: "%.1f%%", daily)
     }
 
+    public var recommendedDailyQuotaPercentString: String {
+        recommendedDailyQuotaPercentString(now: Date())
+    }
+
     /// 建议每日配额短文案（例如 "剩余 6.7 天 · 匀速可用"）
-    public var recommendedDailyQuotaSubtitle: String {
-        guard let days = currentPeriodRemainingDays, days > 0 else {
+    public func recommendedDailyQuotaSubtitle(now: Date = Date()) -> String {
+        guard let days = currentPeriodRemainingDays(now: now), days > 0 else {
             return L10n.text("周期即将结束", "Cycle ending soon")
         }
         if days < 1.0 {
@@ -463,6 +503,10 @@ public final class AppState: ObservableObject {
         } else {
             return L10n.format("Remaining %.1f days · Even pace", zhHans: "剩余 %.1f 天 · 匀速可用", days)
         }
+    }
+
+    public var recommendedDailyQuotaSubtitle: String {
+        recommendedDailyQuotaSubtitle(now: Date())
     }
 
     public var quotaWindowStartDateString: String? {
@@ -479,8 +523,38 @@ public final class AppState: ObservableObject {
         resetCredits.filter(\.isAvailable)
     }
 
+    public var validResetCredits: [ResetCreditDisplay] {
+        sortedValidResetCredits()
+    }
+
+    public func sortedValidResetCredits(now: Date = Date()) -> [ResetCreditDisplay] {
+        resetCredits
+            .filter { $0.isValidAvailable(now: now) }
+            .sorted {
+                switch ($0.expiresAt, $1.expiresAt) {
+                case let (lhs?, rhs?):
+                    if lhs != rhs { return lhs < rhs }
+                    return ($0.grantedAt ?? 0) < ($1.grantedAt ?? 0)
+                case (_?, nil):
+                    return true
+                case (nil, _?):
+                    return false
+                case (nil, nil):
+                    return ($0.grantedAt ?? 0) < ($1.grantedAt ?? 0)
+                }
+            }
+    }
+
+    public var nearestValidResetCredit: ResetCreditDisplay? {
+        validResetCredits.first
+    }
+
+    public var dashboardResetCredits: [ResetCreditDisplay] {
+        nearestValidResetCredit.map { [$0] } ?? []
+    }
+
     public var nearestResetCredit: ResetCreditDisplay? {
-        let available = availableResetCredits
+        let available = validResetCredits
         let pool = available.isEmpty ? resetCredits : available
         return pool
             .filter { $0.expiresAt != nil }

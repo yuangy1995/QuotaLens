@@ -223,6 +223,23 @@ public struct RateLimitsReadResult: Codable, Sendable {
     }
 }
 
+public enum ConsumeRateLimitResetCreditOutcome: String, Codable, Sendable {
+    case reset
+    case nothingToReset
+    case noCredit
+    case alreadyRedeemed
+}
+
+public struct ConsumeRateLimitResetCreditResponse: Codable, Sendable {
+    public let outcome: ConsumeRateLimitResetCreditOutcome
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: FlexibleCodingKey.self)
+        self.outcome = try container.decodeIfPresent(ConsumeRateLimitResetCreditOutcome.self, forKeys: ["outcome"])
+            ?? .nothingToReset
+    }
+}
+
 public struct DailyUsageBucketDTO: Codable, Sendable {
     public let startDate: String
     public let tokens: Int64

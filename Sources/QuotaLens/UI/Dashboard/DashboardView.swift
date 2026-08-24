@@ -9,9 +9,6 @@ public struct DashboardView: View {
     public var body: some View {
         ScrollView {
             VStack(spacing: 20) {
-                // 顶部标题与状态栏
-                headerHUDBar
-
                 // 核心 Hero 主控舱：周额度全息仪表与数据流
                 Group {
                     if state.hasQuotaSnapshot {
@@ -32,25 +29,28 @@ public struct DashboardView: View {
         .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
     }
 
-    // MARK: - 顶部标题栏
-    private var headerHUDBar: some View {
+    // MARK: - 核心配额卡片
+    private var quotaHeroHUDCard: some View {
         let cyan = AppTheme.accentCyan(for: colorScheme)
-        return HStack(alignment: .center) {
-            Text(L10n.text("概览", "Overview"))
-                .font(.system(.title, design: .rounded, weight: .black))
-                .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+        return VStack(alignment: .leading, spacing: 18) {
+            // 顶部小标头与右侧操作流
+            HStack(alignment: .center, spacing: 12) {
+                CyberSectionHeader(
+                    title: L10n.text("额度概览", "Quota Overview"),
+                    icon: "gauge.with.needle.fill"
+                )
 
-            Spacer()
+                PlanPillView(plan: state.subscriptionPlanTitle)
 
-            HStack(spacing: 12) {
-                // 高对比度科技风分段控制器
+                Spacer()
+
+                // 高对比度科技风分段控制器（已用/剩余可用）
                 CyberSegmentedPicker(selection: Binding(
                     get: { state.quotaDisplayMode },
                     set: { state.setQuotaDisplayMode($0) }
                 ))
 
-                StatusBadge.forConnection(state.connectionStatus)
-
+                // 同步时间微徽章
                 HStack(spacing: 4) {
                     Image(systemName: "clock.arrow.2.circlepath")
                         .font(.system(size: 10))
@@ -60,30 +60,12 @@ public struct DashboardView: View {
                         .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
                 }
                 .padding(.horizontal, 9)
-                .padding(.vertical, 5)
+                .padding(.vertical, 4)
                 .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 6))
                 .overlay(
                     RoundedRectangle(cornerRadius: 6)
                         .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
                 )
-            }
-        }
-    }
-
-    // MARK: - 核心配额卡片
-    private var quotaHeroHUDCard: some View {
-        let cyan = AppTheme.accentCyan(for: colorScheme)
-        return VStack(alignment: .leading, spacing: 18) {
-            // 顶部小标头
-            HStack {
-                CyberSectionHeader(
-                    title: L10n.text("额度概览", "Quota Overview"),
-                    icon: "gauge.with.needle.fill"
-                )
-
-                Spacer()
-
-                PlanPillView(plan: state.subscriptionPlanTitle)
             }
 
             CyberDivider()
@@ -146,15 +128,17 @@ public struct DashboardView: View {
                                     .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
                             }
 
-                            HStack(spacing: 6) {
-                                Text(state.resetCountdownString)
-                                    .font(.system(size: 13, weight: .heavy, design: .monospaced))
-                                    .foregroundStyle(AppTheme.accentAmber(for: colorScheme))
+                            TimelineView(.periodic(from: .now, by: 1)) { _ in
+                                HStack(spacing: 6) {
+                                    Text(state.resetCountdownString)
+                                        .font(.system(size: 13, weight: .heavy, design: .monospaced))
+                                        .foregroundStyle(AppTheme.accentAmber(for: colorScheme))
 
-                                if let resetDate = state.resetExactDateString {
-                                    Text("(\(resetDate))")
-                                        .font(.system(size: 11, weight: .medium, design: .monospaced))
-                                        .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                                    if let resetDate = state.resetExactDateString {
+                                        Text("(\(resetDate))")
+                                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                                    }
                                 }
                             }
                         }
@@ -189,54 +173,56 @@ public struct DashboardView: View {
         let isDark = colorScheme == .dark
         let emerald = AppTheme.accentEmerald(for: colorScheme)
 
-        return VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 5) {
-                Image(systemName: "chart.line.uptrend.xyaxis")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(emerald)
+        return TimelineView(.periodic(from: .now, by: 1)) { context in
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 5) {
+                    Image(systemName: "chart.line.uptrend.xyaxis")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(emerald)
 
-                Text(L10n.text("建议日均消耗", "Daily Budget Pace"))
-                    .font(.system(size: 10.5, weight: .bold))
-                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                    Text(L10n.text("建议日均消耗", "Daily Budget Pace"))
+                        .font(.system(size: 10.5, weight: .bold))
+                        .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
 
-                Spacer(minLength: 4)
+                    Spacer(minLength: 4)
 
-                Text(L10n.text("匀速", "Paced"))
-                    .font(.system(size: 9, weight: .heavy, design: .monospaced))
-                    .foregroundStyle(emerald)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 1.5)
-                    .background(emerald.opacity(isDark ? 0.16 : 0.10), in: RoundedRectangle(cornerRadius: 3.5))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 3.5)
-                            .strokeBorder(emerald.opacity(0.35), lineWidth: 0.6)
-                    )
+                    Text(L10n.text("匀速", "Paced"))
+                        .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                        .foregroundStyle(emerald)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1.5)
+                        .background(emerald.opacity(isDark ? 0.16 : 0.10), in: RoundedRectangle(cornerRadius: 3.5))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 3.5)
+                                .strokeBorder(emerald.opacity(0.35), lineWidth: 0.6)
+                        )
+                }
+
+                HStack(alignment: .firstTextBaseline, spacing: 3) {
+                    Text(state.recommendedDailyQuotaPercentString(now: context.date))
+                        .font(.system(size: 18, weight: .black, design: .rounded))
+                        .foregroundStyle(emerald)
+                        .monospacedDigit()
+
+                    Text("/" + L10n.text("天", "day"))
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                }
+
+                Text(state.recommendedDailyQuotaSubtitle(now: context.date))
+                    .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme).opacity(0.88))
+                    .lineLimit(1)
             }
-
-            HStack(alignment: .firstTextBaseline, spacing: 3) {
-                Text(state.recommendedDailyQuotaPercentString)
-                    .font(.system(size: 18, weight: .black, design: .rounded))
-                    .foregroundStyle(emerald)
-                    .monospacedDigit()
-
-                Text("/" + L10n.text("天", "day"))
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-            }
-
-            Text(state.recommendedDailyQuotaSubtitle)
-                .font(.system(size: 9.5, weight: .medium, design: .monospaced))
-                .foregroundStyle(AppTheme.textSecondary(for: colorScheme).opacity(0.88))
-                .lineLimit(1)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .frame(minWidth: 156)
+            .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .strokeBorder(emerald.opacity(isDark ? 0.28 : 0.20), lineWidth: 0.8)
+            )
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .frame(minWidth: 156)
-        .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .strokeBorder(emerald.opacity(isDark ? 0.28 : 0.20), lineWidth: 0.8)
-        )
     }
 
     // MARK: - 指标矩阵
@@ -378,7 +364,7 @@ public struct DashboardView: View {
 
             CyberDivider(glowColor: amber.opacity(0.3))
 
-            if state.resetCredits.isEmpty {
+            if state.dashboardResetCredits.isEmpty {
                 HStack {
                     Spacer()
                     VStack(spacing: 8) {
@@ -394,8 +380,8 @@ public struct DashboardView: View {
                 }
             } else {
                 VStack(spacing: 10) {
-                    ForEach(state.resetCredits) { credit in
-                        ResetCreditHangarRow(credit: credit, state: state)
+                    ForEach(state.dashboardResetCredits) { credit in
+                        ResetCreditCardRowView(credit: credit, state: state, isCompact: true)
                     }
                 }
             }
@@ -417,98 +403,6 @@ public struct DashboardView: View {
 
     private func nearestDeadlineText(_ date: String) -> String {
         L10n.format("Nearest deadline: %@", zhHans: "最近截止: %@", date)
-    }
-}
-
-// MARK: - 重置卡行卡片
-private struct ResetCreditHangarRow: View {
-    @Environment(\.colorScheme) var colorScheme
-    let credit: ResetCreditDisplay
-    let state: AppState
-
-    var body: some View {
-        let amber = AppTheme.accentAmber(for: colorScheme)
-        let emerald = AppTheme.accentEmerald(for: colorScheme)
-        let iconColor = credit.isAvailable ? amber : AppTheme.textSecondary(for: colorScheme)
-
-        HStack(alignment: .center, spacing: 14) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(iconColor.opacity(colorScheme == .dark ? 0.18 : 0.12))
-                    .frame(width: 32, height: 32)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .strokeBorder(iconColor.opacity(0.35), lineWidth: 0.8)
-                    )
-
-                Image(systemName: "ticket.fill")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(iconColor)
-            }
-
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 8) {
-                    Text(credit.displayTitle)
-                        .font(.system(size: 13, weight: .bold, design: .monospaced))
-                        .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
-
-                    let statusColor = credit.isAvailable ? emerald : AppTheme.textSecondary(for: colorScheme)
-                    Text(statusText(credit))
-                        .font(.system(size: 10, weight: .heavy, design: .monospaced))
-                        .foregroundStyle(statusColor)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 1.5)
-                        .background(statusColor.opacity(colorScheme == .dark ? 0.15 : 0.10), in: Capsule())
-                        .overlay(
-                            Capsule()
-                                .strokeBorder(statusColor.opacity(0.35), lineWidth: 0.8)
-                        )
-                }
-
-                Text(L10n.format("Granted %@  ~  Expires %@", zhHans: "获取 %@  ~  截止 %@", displayDate(credit.grantedAt), displayDate(credit.expiresAt)))
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-            }
-
-            Spacer()
-
-            if credit.isAvailable, let expiresAt = credit.expiresAt {
-                let diff = expiresAt - Int64(Date().timeIntervalSince1970)
-                if diff > 0 {
-                    let days = diff / 86400
-                    Text(L10n.format("%d days left", zhHans: "剩余 %d 天", Int(days)))
-                        .font(.system(size: 11, weight: .bold, design: .monospaced))
-                        .foregroundStyle(amber)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(amber.opacity(colorScheme == .dark ? 0.15 : 0.10), in: RoundedRectangle(cornerRadius: 6))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6)
-                                .strokeBorder(amber.opacity(0.4), lineWidth: 0.8)
-                        )
-                }
-            }
-        }
-        .padding(10)
-        .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
-        )
-    }
-
-    private func displayDate(_ timestamp: Int64?) -> String {
-        guard let timestamp else { return L10n.text("未知", "Unknown") }
-        return state.formatFullDate(timestamp)
-    }
-
-    private func statusText(_ credit: ResetCreditDisplay) -> String {
-        switch (credit.status ?? "").lowercased() {
-        case "available": return L10n.text("可用", "Available")
-        case "used": return L10n.text("已用", "Used")
-        case "expired": return L10n.text("已过期", "Expired")
-        default: return L10n.text("已记录", "Recorded")
-        }
     }
 }
 

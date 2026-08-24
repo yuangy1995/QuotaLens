@@ -179,7 +179,6 @@ public struct AboutView: View {
         ZStack {
             ScrollView {
                 VStack(spacing: 20) {
-                    header
                     heroBrandCard
                     updateCenterCard
                     featureGridCard
@@ -196,26 +195,6 @@ public struct AboutView: View {
             }
         }
         .animation(.spring(response: 0.28, dampingFraction: 0.86), value: activeModal != nil)
-    }
-
-    // MARK: - 顶部标题区
-    private var header: some View {
-        let isDark = colorScheme == .dark
-        let cyan = AppTheme.accentCyan(for: colorScheme)
-
-        return HStack(spacing: 8) {
-            Text(L10n.text("关于 QuotaLens", "About QuotaLens"))
-                .font(.system(.title, design: .rounded, weight: .black))
-                .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
-
-            Text("QUOTALENS")
-                .font(.system(size: 10, weight: .heavy, design: .monospaced))
-                .foregroundStyle(cyan)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(cyan.opacity(isDark ? 0.15 : 0.12), in: RoundedRectangle(cornerRadius: 4))
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - 核心品牌与版本卡片
