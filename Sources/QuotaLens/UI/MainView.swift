@@ -292,14 +292,10 @@ private struct UpdateCheckOverlay: View {
                     dialog: dialog,
                     colorScheme: colorScheme,
                     onPrimary: {
-                        if dialog.kind == .available {
-                            updateManager.installAvailableUpdate()
-                        } else {
-                            updateManager.dismissUpdateDialog()
-                        }
+                        updateManager.performUpdateDialogPrimaryAction()
                     },
                     onSecondary: {
-                        updateManager.dismissUpdateDialog()
+                        updateManager.performUpdateDialogSecondaryAction()
                     }
                 )
                 .frame(width: 340)
@@ -360,6 +356,11 @@ private struct UpdateCheckDialog: View {
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
                     .fixedSize(horizontal: false, vertical: true)
+
+                if let progress = dialog.progress {
+                    ProgressView(value: progress)
+                        .tint(cyan)
+                }
             }
 
             HStack(spacing: 10) {
@@ -397,7 +398,7 @@ private struct UpdateCheckDialog: View {
                         .foregroundStyle(dialog.kind == .checking ? AppTheme.textSecondary(for: colorScheme) : Color.white)
                 }
                 .buttonStyle(.plain)
-                .disabled(dialog.kind == .checking)
+                .disabled(!dialog.primaryButtonEnabled)
             }
         }
         .padding(26)
@@ -425,6 +426,12 @@ private struct UpdateCheckDialog: View {
             return "checkmark.seal.fill"
         case .failure:
             return "exclamationmark.triangle.fill"
+        case .progress:
+            return "arrow.down.circle.fill"
+        case .ready:
+            return "restart.circle.fill"
+        case .installing:
+            return "shippingbox.circle.fill"
         }
     }
 
@@ -438,6 +445,12 @@ private struct UpdateCheckDialog: View {
             return AppTheme.accentEmerald(for: colorScheme)
         case .failure:
             return AppTheme.accentAmber(for: colorScheme)
+        case .progress:
+            return AppTheme.accentBlue(for: colorScheme)
+        case .ready:
+            return AppTheme.accentEmerald(for: colorScheme)
+        case .installing:
+            return AppTheme.accentCyan(for: colorScheme)
         }
     }
 }

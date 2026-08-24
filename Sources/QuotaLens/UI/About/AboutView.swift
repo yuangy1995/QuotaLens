@@ -209,7 +209,6 @@ public struct AboutView: View {
                     .foregroundStyle(cyan)
                 }
                 .buttonStyle(.plain)
-                .disabled(!updateManager.isConfigured || updateManager.isCheckingForUpdates || !updateManager.canCheckForUpdates)
 
                 Spacer()
             }

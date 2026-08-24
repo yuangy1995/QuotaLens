@@ -1,4 +1,4 @@
-// Lightweight app localization helper.
+// 应用轻量级本地化辅助工具。
 
 import Foundation
 
@@ -259,6 +259,26 @@ public enum L10n {
 }
 
 private let keyedTranslations: [String: [AppLanguage: String]] = [
+    "%d%% downloaded": [
+        .traditionalChinese: "已下載 %d%%",
+        .japanese: "%d%% ダウンロード済み",
+        .korean: "%d%% 다운로드됨",
+        .spanish: "%d%% descargado",
+        .german: "%d%% geladen",
+        .french: "%d%% téléchargé",
+        .portuguese: "%d%% transferido",
+        .portugueseBrazil: "%d%% baixado"
+    ],
+    "%d%% extracted": [
+        .traditionalChinese: "已解壓 %d%%",
+        .japanese: "%d%% 展開済み",
+        .korean: "%d%% 압축 해제됨",
+        .spanish: "%d%% extraído",
+        .german: "%d%% entpackt",
+        .french: "%d%% extrait",
+        .portuguese: "%d%% extraído",
+        .portugueseBrazil: "%d%% extraído"
+    ],
     "Account": [
         .traditionalChinese: "帳號",
         .japanese: "アカウント",
@@ -278,6 +298,16 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .french: "Une version plus récente de QuotaLens est disponible, mais ce Mac ne peut pas l’installer.",
         .portuguese: "Está disponível uma versão mais recente do QuotaLens, mas este Mac não a pode instalar.",
         .portugueseBrazil: "Há uma versão mais recente do QuotaLens, mas este Mac não pode instalá-la."
+    ],
+    "A new version is available to download and install.": [
+        .traditionalChinese: "發現新版本，可以下載並安裝。",
+        .japanese: "新しいバージョンをダウンロードしてインストールできます。",
+        .korean: "새 버전을 다운로드하여 설치할 수 있습니다.",
+        .spanish: "Hay una versión nueva para descargar e instalar.",
+        .german: "Eine neue Version kann geladen und installiert werden.",
+        .french: "Une nouvelle version peut être téléchargée et installée.",
+        .portuguese: "Está disponível uma nova versão para transferir e instalar.",
+        .portugueseBrazil: "Há uma nova versão para baixar e instalar."
     ],
     "Appearance & Language": [
         .traditionalChinese: "外觀與語言",
@@ -318,36 +348,6 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .french: "Téléchargement auto",
         .portuguese: "Transferência automática",
         .portugueseBrazil: "Download automático"
-    ],
-    "Automatic downloads enabled": [
-        .traditionalChinese: "自動下載已開啟",
-        .japanese: "自動ダウンロードを有効にしました",
-        .korean: "자동 다운로드 사용 설정됨",
-        .spanish: "Descargas automáticas activadas",
-        .german: "Automatische Downloads aktiviert",
-        .french: "Téléchargements automatiques activés",
-        .portuguese: "Transferências automáticas ativadas",
-        .portugueseBrazil: "Downloads automáticos ativados"
-    ],
-    "Automatic downloads disabled": [
-        .traditionalChinese: "自動下載已關閉",
-        .japanese: "自動ダウンロードを無効にしました",
-        .korean: "자동 다운로드 사용 해제됨",
-        .spanish: "Descargas automáticas desactivadas",
-        .german: "Automatische Downloads deaktiviert",
-        .french: "Téléchargements automatiques désactivés",
-        .portuguese: "Transferências automáticas desativadas",
-        .portugueseBrazil: "Downloads automáticos desativados"
-    ],
-    "Automatic downloads could not be enabled": [
-        .traditionalChinese: "無法啟用自動下載",
-        .japanese: "自動ダウンロードを有効にできませんでした",
-        .korean: "자동 다운로드를 켤 수 없습니다",
-        .spanish: "No se pudieron activar las descargas automáticas",
-        .german: "Automatische Downloads konnten nicht aktiviert werden",
-        .french: "Impossible d’activer les téléchargements automatiques",
-        .portuguese: "Não foi possível ativar as transferências automáticas",
-        .portugueseBrazil: "Não foi possível ativar os downloads automáticos"
     ],
     "Automatic and manual quota refresh": [
         .traditionalChinese: "自動刷新與手動同步額度",
@@ -428,16 +428,6 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .french: "Vérifiez que Codex est installé et connecté.",
         .portuguese: "Verifique se o Codex está instalado e com sessão iniciada.",
         .portugueseBrazil: "Verifique se o Codex está instalado e conectado."
-    ],
-    "Cannot check for updates right now": [
-        .traditionalChinese: "暫時無法檢查更新",
-        .japanese: "現在アップデートを確認できません",
-        .korean: "지금은 업데이트를 확인할 수 없습니다",
-        .spanish: "No se pueden buscar actualizaciones ahora",
-        .german: "Derzeit kann nicht nach Updates gesucht werden",
-        .french: "Impossible de rechercher des mises à jour pour le moment",
-        .portuguese: "Não é possível verificar atualizações agora",
-        .portugueseBrazil: "Não é possível verificar atualizações agora"
     ],
     "Choose Codex": [
         .traditionalChinese: "選擇 Codex",
@@ -559,26 +549,6 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "A ligar ao serviço de atualizações e a comparar versões.",
         .portugueseBrazil: "Conectando ao serviço de atualizações e comparando versões."
     ],
-    "Comparing the current version with installable updates.": [
-        .traditionalChinese: "正在比較目前版本與可安裝版本。",
-        .japanese: "現在のバージョンとインストール可能なアップデートを比較しています。",
-        .korean: "현재 버전과 설치 가능한 업데이트를 비교하는 중입니다.",
-        .spanish: "Comparando la versión actual con las actualizaciones instalables.",
-        .german: "Aktuelle Version wird mit installierbaren Updates verglichen.",
-        .french: "Comparaison de la version actuelle avec les mises à jour installables.",
-        .portuguese: "A comparar a versão atual com atualizações instaláveis.",
-        .portugueseBrazil: "Comparando a versão atual com atualizações instaláveis."
-    ],
-    "Comparing versions": [
-        .traditionalChinese: "正在比較版本",
-        .japanese: "バージョンを比較中",
-        .korean: "버전 비교 중",
-        .spanish: "Comparando versiones",
-        .german: "Versionen werden verglichen",
-        .french: "Comparaison des versions",
-        .portuguese: "A comparar versões",
-        .portugueseBrazil: "Comparando versões"
-    ],
     "Dark": [
         .traditionalChinese: "深色",
         .japanese: "ダーク",
@@ -619,25 +589,25 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Transferir e instalar",
         .portugueseBrazil: "Baixar e instalar"
     ],
-    "When a new version is found, Sparkle will download it in the background.": [
-        .traditionalChinese: "發現新版本後，Sparkle 會在背景下載更新。",
-        .japanese: "新しいバージョンが見つかると、Sparkle がバックグラウンドでダウンロードします。",
-        .korean: "새 버전이 발견되면 Sparkle이 백그라운드에서 다운로드합니다.",
-        .spanish: "Cuando se encuentre una nueva versión, Sparkle la descargará en segundo plano.",
-        .german: "Wenn eine neue Version gefunden wird, lädt Sparkle sie im Hintergrund herunter.",
-        .french: "Lorsqu’une nouvelle version est trouvée, Sparkle la télécharge en arrière-plan.",
-        .portuguese: "Quando for encontrada uma nova versão, o Sparkle transfere-a em segundo plano.",
-        .portugueseBrazil: "Quando uma nova versão for encontrada, o Sparkle fará o download em segundo plano."
+    "Downloading the new version. Please wait.": [
+        .traditionalChinese: "正在下載新版本，請稍候。",
+        .japanese: "新しいバージョンをダウンロードしています。お待ちください。",
+        .korean: "새 버전을 다운로드하는 중입니다. 잠시 기다려 주세요.",
+        .spanish: "Descargando la nueva versión. Espera un momento.",
+        .german: "Die neue Version wird geladen. Bitte warten.",
+        .french: "Téléchargement de la nouvelle version. Veuillez patienter.",
+        .portuguese: "A transferir a nova versão. Aguarde.",
+        .portugueseBrazil: "Baixando a nova versão. Aguarde."
     ],
-    "When a new version is found, QuotaLens will only prompt before downloading and installing.": [
-        .traditionalChinese: "發現新版本後，只會提示下載與安裝。",
-        .japanese: "新しいバージョンが見つかっても、ダウンロードとインストールの前に確認だけ行います。",
-        .korean: "새 버전이 발견되면 다운로드와 설치 전에 확인만 표시합니다.",
-        .spanish: "Cuando se encuentre una nueva versión, QuotaLens solo preguntará antes de descargar e instalar.",
-        .german: "Wenn eine neue Version gefunden wird, fragt QuotaLens nur vor dem Laden und Installieren nach.",
-        .french: "Lorsqu’une nouvelle version est trouvée, QuotaLens demande seulement avant de télécharger et d’installer.",
-        .portuguese: "Quando for encontrada uma nova versão, o QuotaLens só pergunta antes de transferir e instalar.",
-        .portugueseBrazil: "Quando uma nova versão for encontrada, o QuotaLens só perguntará antes de baixar e instalar."
+    "Downloading update": [
+        .traditionalChinese: "正在下載更新",
+        .japanese: "アップデートをダウンロード中",
+        .korean: "업데이트 다운로드 중",
+        .spanish: "Descargando actualización",
+        .german: "Update wird geladen",
+        .french: "Téléchargement de la mise à jour",
+        .portuguese: "A transferir atualização",
+        .portugueseBrazil: "Baixando atualização"
     ],
     "Enabled": [
         .traditionalChinese: "已啟用",
@@ -648,6 +618,36 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .french: "Activé",
         .portuguese: "Ativado",
         .portugueseBrazil: "Ativado"
+    ],
+    "Enable": [
+        .traditionalChinese: "啟用",
+        .japanese: "有効にする",
+        .korean: "사용",
+        .spanish: "Activar",
+        .german: "Aktivieren",
+        .french: "Activer",
+        .portuguese: "Ativar",
+        .portugueseBrazil: "Ativar"
+    ],
+    "Enable automatic updates": [
+        .traditionalChinese: "啟用自動更新",
+        .japanese: "自動アップデートを有効にする",
+        .korean: "자동 업데이트 사용",
+        .spanish: "Activar actualizaciones automáticas",
+        .german: "Automatische Updates aktivieren",
+        .french: "Activer les mises à jour automatiques",
+        .portuguese: "Ativar atualizações automáticas",
+        .portugueseBrazil: "Ativar atualizações automáticas"
+    ],
+    "Extracting update": [
+        .traditionalChinese: "正在解壓更新",
+        .japanese: "アップデートを展開中",
+        .korean: "업데이트 압축 해제 중",
+        .spanish: "Extrayendo actualización",
+        .german: "Update wird entpackt",
+        .french: "Extraction de la mise à jour",
+        .portuguese: "A extrair atualização",
+        .portugueseBrazil: "Extraindo atualização"
     ],
     "Expired": [
         .traditionalChinese: "已過期",
@@ -689,6 +689,46 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Atualizações dentro da app",
         .portugueseBrazil: "Atualizações dentro do app"
     ],
+    "Install and Relaunch": [
+        .traditionalChinese: "安裝並重新啟動",
+        .japanese: "インストールして再起動",
+        .korean: "설치 후 다시 실행",
+        .spanish: "Instalar y reiniciar",
+        .german: "Installieren und neu starten",
+        .french: "Installer et relancer",
+        .portuguese: "Instalar e reiniciar",
+        .portugueseBrazil: "Instalar e reiniciar"
+    ],
+    "Install Update": [
+        .traditionalChinese: "安裝更新",
+        .japanese: "アップデートをインストール",
+        .korean: "업데이트 설치",
+        .spanish: "Instalar actualización",
+        .german: "Update installieren",
+        .french: "Installer la mise à jour",
+        .portuguese: "Instalar atualização",
+        .portugueseBrazil: "Instalar atualização"
+    ],
+    "Installing the update. The app will relaunch if needed.": [
+        .traditionalChinese: "正在安裝更新，必要時會自動重新啟動應用程式。",
+        .japanese: "アップデートをインストールしています。必要に応じてアプリを再起動します。",
+        .korean: "업데이트를 설치하는 중입니다. 필요하면 앱이 다시 실행됩니다.",
+        .spanish: "Instalando la actualización. La app se reiniciará si es necesario.",
+        .german: "Das Update wird installiert. Die App startet bei Bedarf neu.",
+        .french: "Installation de la mise à jour. L’app se relancera si nécessaire.",
+        .portuguese: "A instalar a atualização. A app será reiniciada se necessário.",
+        .portugueseBrazil: "Instalando a atualização. O app será reiniciado se necessário."
+    ],
+    "Installing Update": [
+        .traditionalChinese: "正在安裝更新",
+        .japanese: "アップデートをインストール中",
+        .korean: "업데이트 설치 중",
+        .spanish: "Instalando actualización",
+        .german: "Update wird installiert",
+        .french: "Installation de la mise à jour",
+        .portuguese: "A instalar atualização",
+        .portugueseBrazil: "Instalando atualização"
+    ],
     "Open QuotaLens": [
         .traditionalChinese: "打開 QuotaLens",
         .japanese: "QuotaLens を開く",
@@ -698,16 +738,6 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .french: "Ouvrir QuotaLens",
         .portuguese: "Abrir QuotaLens",
         .portugueseBrazil: "Abrir QuotaLens"
-    ],
-    "Opening update installer": [
-        .traditionalChinese: "正在打開更新安裝器",
-        .japanese: "アップデートインストーラを開いています",
-        .korean: "업데이트 설치 프로그램을 여는 중",
-        .spanish: "Abriendo el instalador de actualización",
-        .german: "Update-Installer wird geöffnet",
-        .french: "Ouverture de l’installateur de mise à jour",
-        .portuguese: "A abrir o instalador de atualização",
-        .portugueseBrazil: "Abrindo o instalador de atualização"
     ],
     "Later": [
         .traditionalChinese: "稍後",
@@ -909,6 +939,16 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Utilização e quota restante",
         .portugueseBrazil: "Uso e cota restante"
     ],
+    "QuotaLens can automatically check for and download future updates.": [
+        .traditionalChinese: "QuotaLens 可以自動檢查並下載後續更新。",
+        .japanese: "QuotaLens は今後のアップデートを自動で確認してダウンロードできます。",
+        .korean: "QuotaLens가 향후 업데이트를 자동으로 확인하고 다운로드할 수 있습니다.",
+        .spanish: "QuotaLens puede buscar y descargar futuras actualizaciones automáticamente.",
+        .german: "QuotaLens kann künftige Updates automatisch suchen und laden.",
+        .french: "QuotaLens peut rechercher et télécharger automatiquement les prochaines mises à jour.",
+        .portuguese: "O QuotaLens pode verificar e transferir futuras atualizações automaticamente.",
+        .portugueseBrazil: "O QuotaLens pode verificar e baixar futuras atualizações automaticamente."
+    ],
     "QuotaLens %@ is available.": [
         .traditionalChinese: "QuotaLens %@ 已可下載。",
         .japanese: "QuotaLens %@ が利用可能です。",
@@ -918,16 +958,6 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .french: "QuotaLens %@ est disponible.",
         .portuguese: "QuotaLens %@ está disponível.",
         .portugueseBrazil: "QuotaLens %@ está disponível."
-    ],
-    "QuotaLens %@ is available. Continue to download and install it.": [
-        .traditionalChinese: "QuotaLens %@ 已可下載。是否下載並安裝？",
-        .japanese: "QuotaLens %@ が利用可能です。ダウンロードしてインストールしますか？",
-        .korean: "QuotaLens %@을 사용할 수 있습니다. 다운로드하여 설치할까요?",
-        .spanish: "QuotaLens %@ está disponible. ¿Quieres descargarlo e instalarlo?",
-        .german: "QuotaLens %@ ist verfügbar. Laden und installieren?",
-        .french: "QuotaLens %@ est disponible. Voulez-vous le télécharger et l’installer ?",
-        .portuguese: "QuotaLens %@ está disponível. Pretende transferir e instalar?",
-        .portugueseBrazil: "QuotaLens %@ está disponível. Deseja baixar e instalar?"
     ],
     "QuotaLens %@ is currently the newest version available.": [
         .traditionalChinese: "QuotaLens %@ 是目前可用的最新版本。",
@@ -949,6 +979,36 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "O QuotaLens %@ foi encontrado, mas não foi selecionado para instalação neste Mac.",
         .portugueseBrazil: "O QuotaLens %@ foi encontrado, mas não foi selecionado para instalação neste Mac."
     ],
+    "QuotaLens has finished updating.": [
+        .traditionalChinese: "QuotaLens 已完成更新。",
+        .japanese: "QuotaLens のアップデートが完了しました。",
+        .korean: "QuotaLens 업데이트가 완료되었습니다.",
+        .spanish: "QuotaLens terminó de actualizarse.",
+        .german: "QuotaLens wurde fertig aktualisiert.",
+        .french: "QuotaLens a terminé la mise à jour.",
+        .portuguese: "O QuotaLens terminou a atualização.",
+        .portugueseBrazil: "O QuotaLens terminou a atualização."
+    ],
+    "QuotaLens has quit and the update is being installed.": [
+        .traditionalChinese: "QuotaLens 已退出，正在完成安裝。",
+        .japanese: "QuotaLens は終了し、アップデートをインストールしています。",
+        .korean: "QuotaLens가 종료되었고 업데이트를 설치하는 중입니다.",
+        .spanish: "QuotaLens se cerró y la actualización se está instalando.",
+        .german: "QuotaLens wurde beendet und das Update wird installiert.",
+        .french: "QuotaLens a quitté et la mise à jour est en cours d’installation.",
+        .portuguese: "O QuotaLens foi encerrado e a atualização está a ser instalada.",
+        .portugueseBrazil: "O QuotaLens foi encerrado e a atualização está sendo instalada."
+    ],
+    "QuotaLens has updated and relaunched.": [
+        .traditionalChinese: "QuotaLens 已更新並重新啟動。",
+        .japanese: "QuotaLens は更新され、再起動しました。",
+        .korean: "QuotaLens가 업데이트되고 다시 실행되었습니다.",
+        .spanish: "QuotaLens se actualizó y se reinició.",
+        .german: "QuotaLens wurde aktualisiert und neu gestartet.",
+        .french: "QuotaLens a été mis à jour et relancé.",
+        .portuguese: "O QuotaLens foi atualizado e reiniciado.",
+        .portugueseBrazil: "O QuotaLens foi atualizado e reiniciado."
+    ],
     "Quota refresh failed: %@": [
         .traditionalChinese: "額度刷新失敗：%@",
         .japanese: "クォータの更新に失敗しました: %@",
@@ -969,15 +1029,15 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Registado",
         .portugueseBrazil: "Registrado"
     ],
-    "Reading update information.": [
-        .traditionalChinese: "正在讀取更新資訊。",
-        .japanese: "アップデート情報を読み込んでいます。",
-        .korean: "업데이트 정보를 읽는 중입니다.",
-        .spanish: "Leyendo información de actualización.",
-        .german: "Updateinformationen werden gelesen.",
-        .french: "Lecture des informations de mise à jour.",
-        .portuguese: "A ler informações de atualização.",
-        .portugueseBrazil: "Lendo informações de atualização."
+    "Preparing update": [
+        .traditionalChinese: "正在準備更新",
+        .japanese: "アップデートを準備中",
+        .korean: "업데이트 준비 중",
+        .spanish: "Preparando actualización",
+        .german: "Update wird vorbereitet",
+        .french: "Préparation de la mise à jour",
+        .portuguese: "A preparar atualização",
+        .portugueseBrazil: "Preparando atualização"
     ],
     "Refreshes quota every %@.": [
         .traditionalChinese: "每 %@ 自動刷新額度。",
@@ -1009,45 +1069,15 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Mostrar apenas na barra de menus",
         .portugueseBrazil: "Mostrar apenas na barra de menus"
     ],
-    "Sparkle is handling another update session. Try again shortly.": [
-        .traditionalChinese: "Sparkle 正在處理另一個更新工作階段，請稍後再試。",
-        .japanese: "Sparkle が別のアップデートセッションを処理中です。少し待ってから再試行してください。",
-        .korean: "Sparkle이 다른 업데이트 세션을 처리 중입니다. 잠시 후 다시 시도하세요.",
-        .spanish: "Sparkle está gestionando otra sesión de actualización. Inténtalo de nuevo en breve.",
-        .german: "Sparkle verarbeitet gerade eine andere Updatesitzung. Versuche es gleich erneut.",
-        .french: "Sparkle traite une autre session de mise à jour. Réessayez dans un instant.",
-        .portuguese: "O Sparkle está a processar outra sessão de atualização. Tente novamente em breve.",
-        .portugueseBrazil: "O Sparkle está processando outra sessão de atualização. Tente novamente em instantes."
-    ],
-    "Sparkle is not configured in this build, so automatic downloads cannot be changed.": [
-        .traditionalChinese: "目前版本未設定 Sparkle，無法變更自動下載設定。",
-        .japanese: "このビルドでは Sparkle が設定されていないため、自動ダウンロード設定を変更できません。",
-        .korean: "이 빌드에는 Sparkle이 구성되어 있지 않아 자동 다운로드 설정을 변경할 수 없습니다.",
-        .spanish: "Sparkle no está configurado en esta compilación, por lo que no se puede cambiar la descarga automática.",
-        .german: "Sparkle ist in diesem Build nicht konfiguriert, daher können automatische Downloads nicht geändert werden.",
-        .french: "Sparkle n’est pas configuré dans cette version ; les téléchargements automatiques ne peuvent pas être modifiés.",
-        .portuguese: "O Sparkle não está configurado nesta compilação, por isso as transferências automáticas não podem ser alteradas.",
-        .portugueseBrazil: "O Sparkle não está configurado nesta compilação, então os downloads automáticos não podem ser alterados."
-    ],
-    "Sparkle did not accept this setting change. Confirm the app is not running from a disk image or read-only location.": [
-        .traditionalChinese: "Sparkle 沒有接受這次設定寫入，請確認 App 不是從磁碟映像或唯讀位置執行。",
-        .japanese: "Sparkle がこの設定変更を受け付けませんでした。アプリがディスクイメージや読み取り専用の場所から実行されていないか確認してください。",
-        .korean: "Sparkle이 이 설정 변경을 적용하지 않았습니다. 앱이 디스크 이미지나 읽기 전용 위치에서 실행 중이 아닌지 확인하세요.",
-        .spanish: "Sparkle no aceptó este cambio. Comprueba que la app no se esté ejecutando desde una imagen de disco o una ubicación de solo lectura.",
-        .german: "Sparkle hat diese Einstellungsänderung nicht übernommen. Prüfe, ob die App nicht von einem Disk-Image oder schreibgeschützten Ort läuft.",
-        .french: "Sparkle n’a pas accepté ce changement. Vérifiez que l’app ne s’exécute pas depuis une image disque ou un emplacement en lecture seule.",
-        .portuguese: "O Sparkle não aceitou esta alteração. Confirme que a app não está a ser executada a partir de uma imagem de disco ou localização só de leitura.",
-        .portugueseBrazil: "O Sparkle não aceitou esta alteração. Confirme que o app não está sendo executado a partir de uma imagem de disco ou local somente leitura."
-    ],
-    "Sparkle currently reports that automatic downloads are not allowed. Manual checks and installs remain available.": [
-        .traditionalChinese: "Sparkle 目前回報不允許自動下載。仍可手動檢查與安裝。",
-        .japanese: "Sparkle は現在、自動ダウンロードを許可していないと報告しています。手動確認とインストールは引き続き利用できます。",
-        .korean: "현재 Sparkle이 자동 다운로드를 허용하지 않는다고 보고합니다. 수동 확인과 설치는 계속 사용할 수 있습니다.",
-        .spanish: "Sparkle informa que las descargas automáticas no están permitidas. Las comprobaciones e instalaciones manuales siguen disponibles.",
-        .german: "Sparkle meldet derzeit, dass automatische Downloads nicht erlaubt sind. Manuelle Suche und Installation bleiben verfügbar.",
-        .french: "Sparkle indique que les téléchargements automatiques ne sont pas autorisés. Les vérifications et installations manuelles restent disponibles.",
-        .portuguese: "O Sparkle indica que as transferências automáticas não são permitidas. As verificações e instalações manuais continuam disponíveis.",
-        .portugueseBrazil: "O Sparkle informa que downloads automáticos não são permitidos. Verificações e instalações manuais continuam disponíveis."
+    "Sparkle is preparing to download or install the update.": [
+        .traditionalChinese: "Sparkle 正在準備下載或安裝更新。",
+        .japanese: "Sparkle がアップデートのダウンロードまたはインストールを準備しています。",
+        .korean: "Sparkle이 업데이트 다운로드 또는 설치를 준비하고 있습니다.",
+        .spanish: "Sparkle está preparando la descarga o instalación de la actualización.",
+        .german: "Sparkle bereitet das Laden oder Installieren des Updates vor.",
+        .french: "Sparkle prépare le téléchargement ou l’installation de la mise à jour.",
+        .portuguese: "O Sparkle está a preparar a transferência ou instalação da atualização.",
+        .portugueseBrazil: "O Sparkle está preparando o download ou a instalação da atualização."
     ],
     "Status": [
         .traditionalChinese: "狀態",
@@ -1089,16 +1119,6 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "O ficheiro selecionado não é executável. Escolha outro ficheiro.",
         .portugueseBrazil: "O arquivo selecionado não é executável. Escolha outro arquivo."
     ],
-    "This build is not configured for online updates": [
-        .traditionalChinese: "目前版本未設定線上升級",
-        .japanese: "このビルドはオンラインアップデートに対応していません",
-        .korean: "이 빌드는 온라인 업데이트가 설정되어 있지 않습니다",
-        .spanish: "Esta compilación no está configurada para actualizaciones en línea",
-        .german: "Dieser Build ist nicht für Online-Updates konfiguriert",
-        .french: "Cette version n’est pas configurée pour les mises à jour en ligne",
-        .portuguese: "Esta compilação não está configurada para atualizações online",
-        .portugueseBrazil: "Esta compilação não está configurada para atualizações online"
-    ],
     "This build is not configured for online updates.": [
         .traditionalChinese: "目前版本未設定線上升級。",
         .japanese: "このビルドはオンラインアップデートに対応していません。",
@@ -1109,15 +1129,25 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Esta compilação não está configurada para atualizações online.",
         .portugueseBrazil: "Esta compilação não está configurada para atualizações online."
     ],
-    "This version does not support online updates.": [
-        .traditionalChinese: "目前版本暫不支援線上升級。",
-        .japanese: "このバージョンはオンラインアップデートに対応していません。",
-        .korean: "이 버전은 온라인 업데이트를 지원하지 않습니다.",
-        .spanish: "Esta versión no admite actualizaciones en línea.",
-        .german: "Diese Version unterstützt keine Online-Updates.",
-        .french: "Cette version ne prend pas en charge les mises à jour en ligne.",
-        .portuguese: "Esta versão não suporta atualizações online.",
-        .portugueseBrazil: "Esta versão não oferece suporte a atualizações online."
+    "The update has downloaded and is being extracted.": [
+        .traditionalChinese: "更新已下載完成，正在解壓。",
+        .japanese: "アップデートのダウンロードが完了し、展開しています。",
+        .korean: "업데이트 다운로드가 완료되어 압축을 해제하는 중입니다.",
+        .spanish: "La actualización se descargó y se está extrayendo.",
+        .german: "Das Update wurde geladen und wird entpackt.",
+        .french: "La mise à jour est téléchargée et en cours d’extraction.",
+        .portuguese: "A atualização foi transferida e está a ser extraída.",
+        .portugueseBrazil: "A atualização foi baixada e está sendo extraída."
+    ],
+    "The update has finished downloading and is ready to install and relaunch QuotaLens.": [
+        .traditionalChinese: "更新已下載完成，可以安裝並重新啟動 QuotaLens。",
+        .japanese: "アップデートのダウンロードが完了し、QuotaLens をインストールして再起動できます。",
+        .korean: "업데이트 다운로드가 완료되어 QuotaLens를 설치하고 다시 실행할 수 있습니다.",
+        .spanish: "La actualización terminó de descargarse y está lista para instalarse y reiniciar QuotaLens.",
+        .german: "Das Update wurde fertig geladen und kann QuotaLens installieren und neu starten.",
+        .french: "La mise à jour est téléchargée et prête à installer puis relancer QuotaLens.",
+        .portuguese: "A atualização terminou de ser transferida e está pronta para instalar e reiniciar o QuotaLens.",
+        .portugueseBrazil: "A atualização terminou de baixar e está pronta para instalar e reiniciar o QuotaLens."
     ],
     "Subscription details are temporarily unavailable": [
         .traditionalChinese: "暫時無法取得訂閱資訊",
@@ -1148,16 +1178,6 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .french: "Délai dépassé lors de la lecture du quota",
         .portuguese: "Excedeu o tempo ao ler os dados de quota",
         .portugueseBrazil: "Tempo esgotado ao ler os dados de cota"
-    ],
-    "Try again shortly.": [
-        .traditionalChinese: "請稍後再試。",
-        .japanese: "少し待ってから再試行してください。",
-        .korean: "잠시 후 다시 시도하세요.",
-        .spanish: "Inténtalo de nuevo en breve.",
-        .german: "Versuche es gleich erneut.",
-        .french: "Réessayez dans un instant.",
-        .portuguese: "Tente novamente em breve.",
-        .portugueseBrazil: "Tente novamente em instantes."
     ],
     "Using the current signed-in account": [
         .traditionalChinese: "使用目前登入帳號",
@@ -1249,16 +1269,6 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Atualização disponível",
         .portugueseBrazil: "Atualização disponível"
     ],
-    "Update Available": [
-        .traditionalChinese: "發現可用更新",
-        .japanese: "アップデートがあります",
-        .korean: "업데이트 사용 가능",
-        .spanish: "Actualización disponible",
-        .german: "Update verfügbar",
-        .french: "Mise à jour disponible",
-        .portuguese: "Atualização disponível",
-        .portugueseBrazil: "Atualização disponível"
-    ],
     "Update check failed": [
         .traditionalChinese: "檢查更新失敗",
         .japanese: "アップデート確認に失敗しました",
@@ -1269,26 +1279,6 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Falha ao verificar atualizações",
         .portugueseBrazil: "Falha ao verificar atualizações"
     ],
-    "Update information loaded": [
-        .traditionalChinese: "已讀取更新資訊",
-        .japanese: "アップデート情報を読み込みました",
-        .korean: "업데이트 정보를 불러왔습니다",
-        .spanish: "Información de actualización cargada",
-        .german: "Updateinformationen geladen",
-        .french: "Informations de mise à jour chargées",
-        .portuguese: "Informações de atualização carregadas",
-        .portugueseBrazil: "Informações de atualização carregadas"
-    ],
-    "Update information was loaded. Confirming whether an update can be installed.": [
-        .traditionalChinese: "已經讀取更新資訊，正在確認是否可安裝。",
-        .japanese: "アップデート情報を読み込みました。インストール可能か確認しています。",
-        .korean: "업데이트 정보를 읽었습니다. 설치 가능 여부를 확인하는 중입니다.",
-        .spanish: "Se cargó la información de actualización. Confirmando si se puede instalar.",
-        .german: "Updateinformationen wurden geladen. Es wird geprüft, ob ein Update installiert werden kann.",
-        .french: "Les informations de mise à jour sont chargées. Vérification de l’installation possible.",
-        .portuguese: "As informações de atualização foram carregadas. A confirmar se a atualização pode ser instalada.",
-        .portugueseBrazil: "As informações de atualização foram carregadas. Confirmando se a atualização pode ser instalada."
-    ],
     "Update information could not be loaded. Check the network and try again.": [
         .traditionalChinese: "無法讀取更新資訊，請檢查網路後重試。",
         .japanese: "アップデート情報を読み込めませんでした。ネットワークを確認して再試行してください。",
@@ -1298,6 +1288,26 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .french: "Impossible de charger les informations de mise à jour. Vérifiez le réseau et réessayez.",
         .portuguese: "Não foi possível carregar as informações de atualização. Verifique a rede e tente novamente.",
         .portugueseBrazil: "Não foi possível carregar as informações de atualização. Verifique a rede e tente novamente."
+    ],
+    "Update Installed": [
+        .traditionalChinese: "更新已安裝",
+        .japanese: "アップデートをインストールしました",
+        .korean: "업데이트 설치됨",
+        .spanish: "Actualización instalada",
+        .german: "Update installiert",
+        .french: "Mise à jour installée",
+        .portuguese: "Atualização instalada",
+        .portugueseBrazil: "Atualização instalada"
+    ],
+    "Update Ready": [
+        .traditionalChinese: "更新已準備好",
+        .japanese: "アップデートの準備完了",
+        .korean: "업데이트 준비 완료",
+        .spanish: "Actualización lista",
+        .german: "Update bereit",
+        .french: "Mise à jour prête",
+        .portuguese: "Atualização pronta",
+        .portugueseBrazil: "Atualização pronta"
     ],
     "You're up to date!": [
         .traditionalChinese: "您使用的就是最新版本！",

@@ -1,4 +1,4 @@
-// Sparkle-backed online update coordination.
+// Sparkle 在线升级协调器。
 
 import Foundation
 import AppKit
@@ -9,6 +9,9 @@ public enum UpdateDialogKind: Sendable, Equatable {
     case available
     case latest
     case failure
+    case progress
+    case ready
+    case installing
 }
 
 public struct UpdateDialogState: Identifiable, Sendable, Equatable {
@@ -18,32 +21,49 @@ public struct UpdateDialogState: Identifiable, Sendable, Equatable {
     public let message: String
     public let primaryButtonTitle: String
     public let secondaryButtonTitle: String?
+    public let progress: Double?
+    public let primaryButtonEnabled: Bool
 }
 
 @MainActor
 public final class UpdateManager: NSObject, ObservableObject, SPUUpdaterDelegate {
-    private var updaterController: SPUStandardUpdaterController?
+    private let userDriver = QuotaLensSparkleUserDriver()
+    private var updater: SPUUpdater?
     @Published public private(set) var isCheckingForUpdates = false
     @Published public private(set) var updateStatusText: String?
     @Published public private(set) var updateDetailText: String?
     @Published public private(set) var updateDialog: UpdateDialogState?
-    private var manualUpdateCheckHandled = false
+    private var dialogPrimaryAction: (() -> Void)?
+    private var dialogSecondaryAction: (() -> Void)?
     private static let projectURL = URL(string: "https://github.com/yuangy1995/QuotaLens")!
     private static let releaseFeedBaseURL = "https://github.com/yuangy1995/QuotaLens/releases/latest/download"
 
     public override init() {
         super.init()
-        if Self.hasValidSparkleConfiguration {
-            self.updaterController = SPUStandardUpdaterController(
-                startingUpdater: true,
-                updaterDelegate: self,
-                userDriverDelegate: nil
-            )
+        userDriver.updateManager = self
+
+        guard Self.hasValidSparkleConfiguration else {
+            return
+        }
+
+        let updater = SPUUpdater(
+            hostBundle: Bundle.main,
+            applicationBundle: Bundle.main,
+            userDriver: userDriver,
+            delegate: self
+        )
+        do {
+            try updater.start()
+            self.updater = updater
+            _ = updater.clearFeedURLFromUserDefaults()
+        } catch {
+            updateStatusText = L10n.text("在线升级不可用", "Online updates unavailable")
+            updateDetailText = error.localizedDescription
         }
     }
 
     public var isConfigured: Bool {
-        updaterController != nil
+        updater != nil
     }
 
     public var statusText: String {
@@ -53,117 +73,67 @@ public final class UpdateManager: NSObject, ObservableObject, SPUUpdaterDelegate
         return L10n.text("在线升级不可用", "Online updates unavailable")
     }
 
-    public var canCheckForUpdates: Bool {
-        updaterController?.updater.canCheckForUpdates ?? false
-    }
-
     public var automaticallyChecksForUpdates: Bool {
-        get { updaterController?.updater.automaticallyChecksForUpdates ?? false }
+        get { updater?.automaticallyChecksForUpdates ?? false }
         set {
-            updaterController?.updater.automaticallyChecksForUpdates = newValue
-            if !newValue {
-                updaterController?.updater.automaticallyDownloadsUpdates = false
-            }
+            updater?.automaticallyChecksForUpdates = newValue
             objectWillChange.send()
         }
     }
 
-    public var allowsAutomaticDownloads: Bool {
-        updaterController?.updater.allowsAutomaticUpdates ?? false
-    }
-
     public var automaticallyDownloadsUpdates: Bool {
-        get { updaterController?.updater.automaticallyDownloadsUpdates ?? false }
+        get { updater?.automaticallyDownloadsUpdates ?? false }
         set {
-            guard let updater = updaterController?.updater else {
-                updateStatusText = L10n.text("在线升级不可用", "Online updates unavailable")
-                updateDetailText = L10n.text("当前构建未配置 Sparkle，无法更改自动下载设置。", "Sparkle is not configured in this build, so automatic downloads cannot be changed.")
-                objectWillChange.send()
-                return
-            }
-
-            if newValue, updater.automaticallyChecksForUpdates == false {
-                updater.automaticallyChecksForUpdates = true
-            }
-
-            updater.automaticallyDownloadsUpdates = newValue
-            let appliedValue = updater.automaticallyDownloadsUpdates
-            if appliedValue == newValue {
-                updateStatusText = newValue
-                    ? L10n.text("自动下载已开启", "Automatic downloads enabled")
-                    : L10n.text("自动下载已关闭", "Automatic downloads disabled")
-                updateDetailText = newValue
-                    ? L10n.text("发现新版本后，Sparkle 会在后台下载更新。", "When a new version is found, Sparkle will download it in the background.")
-                    : L10n.text("发现新版本后，将只提示下载和安装。", "When a new version is found, QuotaLens will only prompt before downloading and installing.")
-            } else {
-                updateStatusText = L10n.text("自动下载未能开启", "Automatic downloads could not be enabled")
-                updateDetailText = updater.allowsAutomaticUpdates
-                    ? L10n.text("Sparkle 没有接受这次设置写入，请确认应用不是从磁盘镜像或只读位置运行。", "Sparkle did not accept this setting change. Confirm the app is not running from a disk image or read-only location.")
-                    : L10n.text("Sparkle 当前报告不允许自动下载。已为你保留手动检查和手动安装。", "Sparkle currently reports that automatic downloads are not allowed. Manual checks and installs remain available.")
-            }
+            updater?.automaticallyDownloadsUpdates = newValue
             objectWillChange.send()
         }
     }
 
     public var updateCheckInterval: TimeInterval {
-        get { updaterController?.updater.updateCheckInterval ?? 86_400 }
+        get { updater?.updateCheckInterval ?? 86_400 }
         set {
-            updaterController?.updater.updateCheckInterval = newValue
+            updater?.updateCheckInterval = newValue
             objectWillChange.send()
         }
     }
 
     public var lastUpdateCheckText: String {
-        guard let date = updaterController?.updater.lastUpdateCheckDate else {
+        guard let date = updater?.lastUpdateCheckDate else {
             return L10n.text("尚未检查", "Never checked")
         }
         return DateFormatter.localizedString(from: date, dateStyle: .medium, timeStyle: .short)
     }
 
     public func checkForUpdates() {
-        guard let updater = updaterController?.updater else {
+        guard let updater else {
             showUpdateDialog(
                 kind: .failure,
                 title: L10n.text("在线升级不可用", "Online updates unavailable"),
                 message: L10n.text("当前构建未配置在线升级。", "This build is not configured for online updates."),
-                primaryButtonTitle: L10n.text("知道了", "OK")
+                primaryButtonTitle: L10n.text("知道了", "OK"),
+                primaryAction: { [weak self] in self?.dismissUpdateDialog() }
             )
             return
         }
-        guard updater.canCheckForUpdates else {
-            updateStatusText = L10n.text("暂时无法检查更新", "Cannot check for updates right now")
-            updateDetailText = L10n.text("Sparkle 正在处理另一个更新会话，请稍后再试。", "Sparkle is handling another update session. Try again shortly.")
-            showUpdateDialog(
-                kind: .failure,
-                title: updateStatusText ?? L10n.text("暂时无法检查更新", "Cannot check for updates right now"),
-                message: updateDetailText ?? L10n.text("请稍后再试。", "Try again shortly."),
-                primaryButtonTitle: L10n.text("知道了", "OK")
-            )
-            return
-        }
-        isCheckingForUpdates = true
-        updateStatusText = L10n.text("正在检查更新", "Checking for updates")
-        updateDetailText = L10n.text("正在读取更新信息。", "Reading update information.")
-        showUpdateDialog(
-            kind: .checking,
-            title: L10n.text("正在检查更新", "Checking for updates"),
-            message: L10n.text("正在连接更新服务并比较版本。", "Connecting to the update service and comparing versions."),
-            primaryButtonTitle: L10n.text("请稍候", "Please wait")
-        )
-        manualUpdateCheckHandled = false
-        updater.checkForUpdateInformation()
+
+        updater.checkForUpdates()
+    }
+
+    public func performUpdateDialogPrimaryAction() {
+        let action = dialogPrimaryAction
+        clearDialogActions()
+        action?()
+    }
+
+    public func performUpdateDialogSecondaryAction() {
+        let action = dialogSecondaryAction
+        clearDialogActions()
+        action?()
     }
 
     public func dismissUpdateDialog() {
-        guard updateDialog?.kind != .checking else { return }
         updateDialog = nil
-    }
-
-    public func installAvailableUpdate() {
-        updateStatusText = L10n.text("正在打开更新安装器", "Opening update installer")
-        updateDetailText = L10n.text("请按提示完成下载与安装。", "Follow the prompts to download and install.")
-        updateDialog = nil
-        updaterController?.updater.checkForUpdates()
+        clearDialogActions()
     }
 
     public func openProjectPage() {
@@ -174,72 +144,181 @@ public final class UpdateManager: NSObject, ObservableObject, SPUUpdaterDelegate
         Self.currentArchitectureFeedURL.absoluteString
     }
 
-    @objc(updater:didFinishLoadingAppcast:)
-    public func updater(_ updater: SPUUpdater, didFinishLoading appcast: SUAppcast) {
-        guard isCheckingForUpdates else { return }
-        updateStatusText = L10n.text("已读取更新信息", "Update information loaded")
-        updateDetailText = L10n.text("正在比较当前版本与可安装版本。", "Comparing the current version with installable updates.")
+    fileprivate func showChecking(cancellation: @escaping () -> Void) {
+        isCheckingForUpdates = true
+        updateStatusText = L10n.text("正在检查更新", "Checking for updates")
+        updateDetailText = L10n.text("正在连接更新服务并比较版本。", "Connecting to the update service and comparing versions.")
         showUpdateDialog(
             kind: .checking,
-            title: L10n.text("正在比较版本", "Comparing versions"),
-            message: L10n.text("已经读取更新信息，正在确认是否可安装。", "Update information was loaded. Confirming whether an update can be installed."),
+            title: L10n.text("正在检查更新", "Checking for updates"),
+            message: L10n.text("正在连接更新服务并比较版本。", "Connecting to the update service and comparing versions."),
+            primaryButtonTitle: L10n.text("取消", "Cancel"),
+            primaryAction: { [weak self] in
+                cancellation()
+                self?.dismissUpdateDialog()
+            }
+        )
+    }
+
+    fileprivate func showPermissionRequest(reply: @escaping (SUUpdatePermissionResponse) -> Void) {
+        showUpdateDialog(
+            kind: .available,
+            title: L10n.text("启用自动更新", "Enable automatic updates"),
+            message: L10n.text("QuotaLens 可以自动检查并下载后续更新。", "QuotaLens can automatically check for and download future updates."),
+            primaryButtonTitle: L10n.text("启用", "Enable"),
+            secondaryButtonTitle: L10n.text("稍后", "Later"),
+            primaryAction: { [weak self] in
+                reply(SUUpdatePermissionResponse(automaticUpdateChecks: true, automaticUpdateDownloading: true, sendSystemProfile: false))
+                self?.dismissUpdateDialog()
+            },
+            secondaryAction: { [weak self] in
+                reply(SUUpdatePermissionResponse(automaticUpdateChecks: false, automaticUpdateDownloading: false, sendSystemProfile: false))
+                self?.dismissUpdateDialog()
+            }
+        )
+    }
+
+    fileprivate func showUpdateFound(appcastItem: SUAppcastItem, state: SPUUserUpdateState, reply: @escaping (SPUUserUpdateChoice) -> Void) {
+        isCheckingForUpdates = false
+        updateStatusText = L10n.text("发现可用更新", "Update available")
+        updateDetailText = L10n.format("QuotaLens %@ is available.", zhHans: "QuotaLens %@ 已可下载。", appcastItem.displayVersionString)
+
+        showUpdateDialog(
+            kind: .available,
+            title: L10n.text("发现可用更新", "Update available"),
+            message: updateDetailText ?? L10n.text("发现新版本，可以下载并安装。", "A new version is available to download and install."),
+            primaryButtonTitle: state.stage == .downloaded ? L10n.text("安装更新", "Install Update") : L10n.text("下载并安装", "Download and Install"),
+            secondaryButtonTitle: L10n.text("稍后", "Later"),
+            primaryAction: { [weak self] in
+                reply(.install)
+                self?.showProgress(
+                    title: L10n.text("正在准备更新", "Preparing update"),
+                    message: L10n.text("Sparkle 正在准备下载或安装更新。", "Sparkle is preparing to download or install the update."),
+                    progress: nil
+                )
+            },
+            secondaryAction: { [weak self] in
+                reply(.dismiss)
+                self?.dismissUpdateDialog()
+            }
+        )
+    }
+
+    fileprivate func showUpdateNotFound(error: NSError, acknowledgement: @escaping () -> Void) {
+        isCheckingForUpdates = false
+        updateStatusText = L10n.text("未发现可用更新", "No update found")
+        updateDetailText = noUpdateFoundDetail(for: error)
+        showUpdateDialog(
+            kind: noUpdateFoundDialogKind(for: error),
+            title: noUpdateFoundTitle(for: error),
+            message: updateDetailText ?? noUpdateFoundDetail(for: error),
+            primaryButtonTitle: L10n.text("知道了", "OK"),
+            primaryAction: { [weak self] in
+                acknowledgement()
+                self?.dismissUpdateDialog()
+            }
+        )
+    }
+
+    fileprivate func showUpdaterError(error: NSError, acknowledgement: @escaping () -> Void) {
+        isCheckingForUpdates = false
+        updateStatusText = L10n.text("检查更新失败", "Update check failed")
+        updateDetailText = cleanUpdateErrorMessage(error.localizedDescription)
+        showUpdateDialog(
+            kind: .failure,
+            title: L10n.text("无法检查更新", "Unable to Check for Updates"),
+            message: updateDetailText ?? L10n.text("QuotaLens 未能完成更新检测，请稍后再试。", "QuotaLens could not complete the update check. Try again later."),
+            primaryButtonTitle: L10n.text("知道了", "OK"),
+            primaryAction: { [weak self] in
+                acknowledgement()
+                self?.dismissUpdateDialog()
+            }
+        )
+    }
+
+    fileprivate func showDownloadStarted(cancellation: @escaping () -> Void) {
+        showUpdateDialog(
+            kind: .progress,
+            title: L10n.text("正在下载更新", "Downloading update"),
+            message: L10n.text("正在下载新版本，请稍候。", "Downloading the new version. Please wait."),
+            primaryButtonTitle: L10n.text("取消", "Cancel"),
+            primaryAction: { [weak self] in
+                cancellation()
+                self?.dismissUpdateDialog()
+            }
+        )
+    }
+
+    fileprivate func showProgress(title: String, message: String, progress: Double?) {
+        updateStatusText = title
+        updateDetailText = message
+        let isCancellable = dialogPrimaryAction != nil
+        showUpdateDialog(
+            kind: .progress,
+            title: title,
+            message: message,
+            primaryButtonTitle: isCancellable ? L10n.text("取消", "Cancel") : L10n.text("请稍候", "Please wait"),
+            progress: progress,
+            primaryButtonEnabled: isCancellable
+        )
+    }
+
+    fileprivate func showProgressWithoutCancellation(title: String, message: String, progress: Double?) {
+        clearDialogActions()
+        showProgress(title: title, message: message, progress: progress)
+    }
+
+    fileprivate func showReadyToInstall(reply: @escaping (SPUUserUpdateChoice) -> Void) {
+        showUpdateDialog(
+            kind: .ready,
+            title: L10n.text("更新已准备好", "Update Ready"),
+            message: L10n.text("更新已下载完成，可以安装并重启 QuotaLens。", "The update has finished downloading and is ready to install and relaunch QuotaLens."),
+            primaryButtonTitle: L10n.text("安装并重启", "Install and Relaunch"),
+            secondaryButtonTitle: L10n.text("稍后", "Later"),
+            primaryAction: { [weak self] in
+                reply(.install)
+                self?.showInstalling(applicationTerminated: false, retryTerminatingApplication: {})
+            },
+            secondaryAction: { [weak self] in
+                reply(.dismiss)
+                self?.dismissUpdateDialog()
+            }
+        )
+    }
+
+    fileprivate func showInstalling(applicationTerminated: Bool, retryTerminatingApplication: @escaping () -> Void) {
+        showUpdateDialog(
+            kind: .installing,
+            title: L10n.text("正在安装更新", "Installing Update"),
+            message: applicationTerminated
+                ? L10n.text("QuotaLens 已退出，正在完成安装。", "QuotaLens has quit and the update is being installed.")
+                : L10n.text("正在安装更新，必要时会自动重启应用。", "Installing the update. The app will relaunch if needed."),
             primaryButtonTitle: L10n.text("请稍候", "Please wait")
         )
     }
 
-    @objc(updater:didFindValidUpdate:)
-    public func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
-        guard isCheckingForUpdates else {
-            return
-        }
-        manualUpdateCheckHandled = true
-        updateStatusText = L10n.text("发现可用更新", "Update available")
-        updateDetailText = L10n.format("QuotaLens %@ is available.", zhHans: "QuotaLens %@ 已可下载。", item.displayVersionString)
+    fileprivate func showInstalled(relaunched: Bool, acknowledgement: @escaping () -> Void) {
         showUpdateDialog(
-            kind: .available,
-            title: L10n.text("发现可用更新", "Update available"),
-            message: L10n.format("QuotaLens %@ is available.", zhHans: "QuotaLens %@ 已可下载。", item.displayVersionString),
-            primaryButtonTitle: L10n.text("下载并安装", "Download and Install"),
-            secondaryButtonTitle: L10n.text("稍后", "Later")
+            kind: .latest,
+            title: L10n.text("更新已安装", "Update Installed"),
+            message: relaunched
+                ? L10n.text("QuotaLens 已更新并重新启动。", "QuotaLens has updated and relaunched.")
+                : L10n.text("QuotaLens 已完成更新。", "QuotaLens has finished updating."),
+            primaryButtonTitle: L10n.text("知道了", "OK"),
+            primaryAction: { [weak self] in
+                acknowledgement()
+                self?.dismissUpdateDialog()
+            }
         )
     }
 
-    @objc(updaterDidNotFindUpdate:error:)
-    public func updaterDidNotFindUpdate(_ updater: SPUUpdater, error: Error) {
-        guard isCheckingForUpdates else {
-            return
-        }
-        manualUpdateCheckHandled = true
-        updateStatusText = L10n.text("未发现可用更新", "No update found")
-        updateDetailText = noUpdateFoundDetail(for: error as NSError)
-        showUpdateDialog(
-            kind: noUpdateFoundDialogKind(for: error as NSError),
-            title: noUpdateFoundTitle(for: error as NSError),
-            message: updateDetailText ?? noUpdateFoundDetail(for: error as NSError),
-            primaryButtonTitle: L10n.text("知道了", "OK")
-        )
-    }
-
-    @objc(updater:didFinishUpdateCycleForUpdateCheck:error:)
-    public func updater(_ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck, error: Error?) {
-        guard isCheckingForUpdates else {
-            return
-        }
-
-        let handledResult = manualUpdateCheckHandled
+    fileprivate func dismissUpdateInstallation() {
         isCheckingForUpdates = false
-        manualUpdateCheckHandled = false
+        dismissUpdateDialog()
+    }
 
-        if !handledResult, let error {
-            updateStatusText = L10n.text("检查更新失败", "Update check failed")
-            updateDetailText = cleanUpdateErrorMessage(error.localizedDescription)
-            showUpdateDialog(
-                kind: .failure,
-                title: L10n.text("无法检查更新", "Unable to Check for Updates"),
-                message: updateDetailText ?? L10n.text("QuotaLens 未能完成更新检测，请稍后再试。", "QuotaLens could not complete the update check. Try again later."),
-                primaryButtonTitle: L10n.text("知道了", "OK")
-            )
-        }
+    fileprivate func focusUpdateDialog() {
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     private static var hasValidSparkleConfiguration: Bool {
@@ -344,14 +423,121 @@ public final class UpdateManager: NSObject, ObservableObject, SPUUpdaterDelegate
         title: String,
         message: String,
         primaryButtonTitle: String,
-        secondaryButtonTitle: String? = nil
+        secondaryButtonTitle: String? = nil,
+        progress: Double? = nil,
+        primaryButtonEnabled: Bool? = nil,
+        primaryAction: (() -> Void)? = nil,
+        secondaryAction: (() -> Void)? = nil
     ) {
+        if let primaryAction {
+            dialogPrimaryAction = primaryAction
+        } else if kind != .checking && kind != .progress {
+            dialogPrimaryAction = nil
+        }
+        dialogSecondaryAction = secondaryAction
         updateDialog = UpdateDialogState(
             kind: kind,
             title: title,
             message: message,
             primaryButtonTitle: primaryButtonTitle,
-            secondaryButtonTitle: secondaryButtonTitle
+            secondaryButtonTitle: secondaryButtonTitle,
+            progress: progress,
+            primaryButtonEnabled: primaryButtonEnabled ?? (primaryAction != nil || (kind == .checking || kind == .progress) && dialogPrimaryAction != nil)
         )
+    }
+
+    private func clearDialogActions() {
+        dialogPrimaryAction = nil
+        dialogSecondaryAction = nil
+    }
+}
+
+@MainActor
+private final class QuotaLensSparkleUserDriver: NSObject, SPUUserDriver {
+    weak var updateManager: UpdateManager?
+    private var expectedContentLength: UInt64 = 0
+    private var receivedContentLength: UInt64 = 0
+
+    func show(_ request: SPUUpdatePermissionRequest, reply: @escaping (SUUpdatePermissionResponse) -> Void) {
+        updateManager?.showPermissionRequest(reply: reply)
+    }
+
+    func showUserInitiatedUpdateCheck(cancellation: @escaping () -> Void) {
+        updateManager?.showChecking(cancellation: cancellation)
+    }
+
+    func showUpdateFound(with appcastItem: SUAppcastItem, state: SPUUserUpdateState, reply: @escaping (SPUUserUpdateChoice) -> Void) {
+        updateManager?.showUpdateFound(appcastItem: appcastItem, state: state, reply: reply)
+    }
+
+    func showUpdateReleaseNotes(with downloadData: SPUDownloadData) {
+    }
+
+    func showUpdateReleaseNotesFailedToDownloadWithError(_ error: Error) {
+    }
+
+    func showUpdateNotFoundWithError(_ error: Error, acknowledgement: @escaping () -> Void) {
+        updateManager?.showUpdateNotFound(error: error as NSError, acknowledgement: acknowledgement)
+    }
+
+    func showUpdaterError(_ error: Error, acknowledgement: @escaping () -> Void) {
+        updateManager?.showUpdaterError(error: error as NSError, acknowledgement: acknowledgement)
+    }
+
+    func showDownloadInitiated(cancellation: @escaping () -> Void) {
+        expectedContentLength = 0
+        receivedContentLength = 0
+        updateManager?.showDownloadStarted(cancellation: cancellation)
+    }
+
+    func showDownloadDidReceiveExpectedContentLength(_ expectedContentLength: UInt64) {
+        self.expectedContentLength = expectedContentLength
+    }
+
+    func showDownloadDidReceiveData(ofLength length: UInt64) {
+        receivedContentLength += length
+        guard expectedContentLength > 0 else { return }
+        let progress = min(1, Double(receivedContentLength) / Double(expectedContentLength))
+        updateManager?.showProgress(
+            title: L10n.text("正在下载更新", "Downloading update"),
+            message: L10n.format("%d%% downloaded", zhHans: "已下载 %d%%", Int(progress * 100)),
+            progress: progress
+        )
+    }
+
+    func showDownloadDidStartExtractingUpdate() {
+        updateManager?.showProgressWithoutCancellation(
+            title: L10n.text("正在解压更新", "Extracting update"),
+            message: L10n.text("更新已下载完成，正在解压。", "The update has downloaded and is being extracted."),
+            progress: nil
+        )
+    }
+
+    func showExtractionReceivedProgress(_ progress: Double) {
+        updateManager?.showProgressWithoutCancellation(
+            title: L10n.text("正在解压更新", "Extracting update"),
+            message: L10n.format("%d%% extracted", zhHans: "已解压 %d%%", Int(progress * 100)),
+            progress: progress
+        )
+    }
+
+    func showReady(toInstallAndRelaunch reply: @escaping (SPUUserUpdateChoice) -> Void) {
+        updateManager?.showReadyToInstall(reply: reply)
+    }
+
+    func showInstallingUpdate(withApplicationTerminated applicationTerminated: Bool, retryTerminatingApplication: @escaping () -> Void) {
+        updateManager?.showInstalling(applicationTerminated: applicationTerminated, retryTerminatingApplication: retryTerminatingApplication)
+    }
+
+    func showUpdateInstalledAndRelaunched(_ relaunched: Bool, acknowledgement: @escaping () -> Void) {
+        updateManager?.showInstalled(relaunched: relaunched, acknowledgement: acknowledgement)
+    }
+
+    func dismissUpdateInstallation() {
+        updateManager?.dismissUpdateInstallation()
+    }
+
+    func showUpdateInFocus() {
+        updateManager?.focusUpdateDialog()
     }
 }
