@@ -5,12 +5,12 @@ import SwiftUI
 // MARK: - 科技 HUD 分组标题 (CyberSectionHeader)
 public struct CyberSectionHeader: View {
     @Environment(\.colorScheme) var colorScheme
-    public let tag: String
+    public var tag: String? = nil
     public let title: String
     public var subtitle: String? = nil
     public var icon: String? = nil
 
-    public init(tag: String, title: String, subtitle: String? = nil, icon: String? = nil) {
+    public init(tag: String? = nil, title: String, subtitle: String? = nil, icon: String? = nil) {
         self.tag = tag
         self.title = title
         self.subtitle = subtitle
@@ -27,16 +27,18 @@ public struct CyberSectionHeader: View {
                         .foregroundStyle(cyan)
                 }
 
-                Text(tag)
-                    .font(.system(size: 10, weight: .heavy, design: .monospaced))
-                    .foregroundStyle(cyan)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(cyan.opacity(colorScheme == .dark ? 0.15 : 0.12), in: RoundedRectangle(cornerRadius: 4))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 4)
-                            .strokeBorder(cyan.opacity(colorScheme == .dark ? 0.4 : 0.3), lineWidth: 0.8)
-                    )
+                if let tag, !tag.isEmpty {
+                    Text(tag)
+                        .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                        .foregroundStyle(cyan)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(cyan.opacity(colorScheme == .dark ? 0.15 : 0.12), in: RoundedRectangle(cornerRadius: 4))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 4)
+                                .strokeBorder(cyan.opacity(colorScheme == .dark ? 0.4 : 0.3), lineWidth: 0.8)
+                        )
+                }
 
                 Text(title)
                     .font(.system(size: 15, weight: .bold, design: .rounded))
@@ -49,7 +51,7 @@ public struct CyberSectionHeader: View {
                 Text(sub)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-                    .padding(.leading, tag.isEmpty ? 0 : 2)
+                    .padding(.leading, (tag?.isEmpty ?? true) ? 0 : 2)
             }
         }
     }

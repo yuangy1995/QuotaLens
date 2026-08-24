@@ -65,7 +65,6 @@ public struct SettingsView: View {
 
         return VStack(alignment: .leading, spacing: 14) {
             CyberSectionHeader(
-                tag: "01",
                 title: L10n.text("外观与语言", "Appearance & Language"),
                 icon: "paintpalette.fill"
             )
@@ -153,7 +152,6 @@ public struct SettingsView: View {
         return VStack(alignment: .leading, spacing: 16) {
             HStack {
                 CyberSectionHeader(
-                    tag: "02",
                     title: L10n.text("账号", "Account"),
                     icon: "person.crop.circle.badge.checkmark"
                 )
@@ -261,7 +259,6 @@ public struct SettingsView: View {
 
         return VStack(alignment: .leading, spacing: 18) {
             CyberSectionHeader(
-                tag: "03",
                 title: L10n.text("同步与刷新", "Sync & Refresh"),
                 icon: "cpu.fill"
             )
@@ -567,7 +564,6 @@ public struct SettingsView: View {
 
         return VStack(alignment: .leading, spacing: 14) {
             CyberSectionHeader(
-                tag: "04",
                 title: L10n.text("本地数据", "Local Data"),
                 icon: "externaldrive.fill"
             )

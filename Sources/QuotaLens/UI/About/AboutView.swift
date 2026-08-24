@@ -1,11 +1,22 @@
 // QuotaLens about and update center.
 
 import SwiftUI
+import AppKit
 
 public struct AboutView: View {
     @ObservedObject var state: AppState
     @ObservedObject var updateManager: UpdateManager
     @Environment(\.colorScheme) var colorScheme
+
+    @State private var activeModal: AboutModalType? = nil
+    @State private var isLicenseCopied: Bool = false
+
+    private enum AboutModalType: Identifiable {
+        case changelog
+        case license
+
+        var id: Self { self }
+    }
 
     // 核心特性数据结构
     private struct FeatureItem: Identifiable {
@@ -14,6 +25,66 @@ public struct AboutView: View {
         let title: String
         let description: String
         let tintColor: Color
+    }
+
+    // 版本更新记录数据模型
+    private struct ChangelogEntry: Identifiable {
+        let id = UUID()
+        let version: String
+        let date: String
+        let isCurrent: Bool
+        let changes: [String]
+    }
+
+    private var changelogs: [ChangelogEntry] {
+        [
+            ChangelogEntry(
+                version: "v1.0.4",
+                date: "2026-08-24",
+                isCurrent: true,
+                changes: [
+                    L10n.text("移除构建次数显示，并去掉概览与设置页面的分块序号徽章", "Removed build count and section number tags across overview and settings"),
+                    L10n.text("更新日志与开源协议采用应用内可滚动弹窗展示，并支持一键复制", "In-app scrollable dialogs for changelog and license with one-click copy support"),
+                    L10n.text("进一步优化全息卡片间距与界面精致度", "Refined card spacing and visual aesthetics")
+                ]
+            ),
+            ChangelogEntry(
+                version: "v1.0.3",
+                date: "2026-08-24",
+                isCurrent: false,
+                changes: [
+                    L10n.text("全新关于页面 UI 排版重构，引入 Hero 品牌中心与 2x3 核心特性矩阵", "Redesigned About view layout with Hero brand center and 2x3 feature grid"),
+                    L10n.text("全面覆盖 10 种语言的多语言本地化翻译", "Complete localized translations for 10 supported languages"),
+                    L10n.text("优化在线升级交互与状态指示面板", "Polished online update interactions and status indicators")
+                ]
+            ),
+            ChangelogEntry(
+                version: "v1.0.2",
+                date: "2026-08-24",
+                isCurrent: false,
+                changes: [
+                    L10n.text("修复 Sparkle 在线增量升级检测与版本比对流程", "Fixed Sparkle in-app delta update checking and version comparison"),
+                    L10n.text("统一语言与偏好设置图标", "Unified language and preference setting icons")
+                ]
+            ),
+            ChangelogEntry(
+                version: "v1.0.1",
+                date: "2026-08-24",
+                isCurrent: false,
+                changes: [
+                    L10n.text("新增轻量菜单栏模式与 Dock 隐藏支持", "Added menu bar compact mode and optional hidden Dock icon"),
+                    L10n.text("优化 ChatGPT 与 Codex 额度快照解析器", "Improved ChatGPT and Codex quota snapshot parsers")
+                ]
+            ),
+            ChangelogEntry(
+                version: "v1.0.0",
+                date: "2026-08-24",
+                isCurrent: false,
+                changes: [
+                    L10n.text("QuotaLens 正式发布！首发支持实时配额监控、重置卡追踪与周期推算", "Initial release of QuotaLens with real-time quota tracking, reset card alerts, and cycle detection")
+                ]
+            )
+        ]
     }
 
     private var features: [FeatureItem] {
@@ -64,17 +135,26 @@ public struct AboutView: View {
     }
 
     public var body: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                header
-                heroBrandCard
-                updateCenterCard
-                featureGridCard
-                footerInfo
+        ZStack {
+            ScrollView {
+                VStack(spacing: 20) {
+                    header
+                    heroBrandCard
+                    updateCenterCard
+                    featureGridCard
+                    footerInfo
+                }
+                .padding(24)
             }
-            .padding(24)
+            .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+
+            // 弹窗遮罩层
+            if let modal = activeModal {
+                modalOverlayView(for: modal)
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            }
         }
-        .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+        .animation(.spring(response: 0.28, dampingFraction: 0.86), value: activeModal != nil)
     }
 
     // MARK: - 顶部标题区
@@ -148,11 +228,6 @@ public struct AboutView: View {
                             .padding(.vertical, 2.5)
                             .background(cyan.opacity(isDark ? 0.18 : 0.12), in: Capsule())
                             .overlay(Capsule().strokeBorder(cyan.opacity(0.35), lineWidth: 0.8))
-
-                        // 构建号
-                        Text("\(L10n.text("构建", "Build")) \(AppVersion.buildNumber)")
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
-                            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
                     }
 
                     // Slogan 定位
@@ -178,7 +253,11 @@ public struct AboutView: View {
                 quickLinkButton(
                     icon: "list.bullet.rectangle.portrait.fill",
                     title: L10n.text("更新日志", "Changelog"),
-                    action: { updateManager.openReleasesPage() }
+                    action: {
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+                            activeModal = .changelog
+                        }
+                    }
                 )
 
                 quickLinkButton(
@@ -190,7 +269,11 @@ public struct AboutView: View {
                 quickLinkButton(
                     icon: "doc.text.fill",
                     title: L10n.text("开源协议", "License"),
-                    action: { updateManager.openLicensePage() }
+                    action: {
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+                            activeModal = .license
+                        }
+                    }
                 )
 
                 Spacer()
@@ -481,5 +564,316 @@ public struct AboutView: View {
         .padding(.top, 4)
         .padding(.bottom, 8)
     }
+
+    // MARK: - 弹窗遮罩视图
+    @ViewBuilder
+    private func modalOverlayView(for modal: AboutModalType) -> some View {
+        let isDark = colorScheme == .dark
+        let cyan = AppTheme.accentCyan(for: colorScheme)
+
+        ZStack {
+            // 背景暗色遮罩
+            Color.black.opacity(isDark ? 0.58 : 0.38)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+                        activeModal = nil
+                    }
+                }
+
+            // 居中卡片容器
+            VStack(alignment: .leading, spacing: 14) {
+                // Header
+                HStack {
+                    HStack(spacing: 8) {
+                        Image(systemName: modal == .changelog ? "list.bullet.rectangle.portrait.fill" : "doc.text.fill")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(cyan)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(modal == .changelog ? L10n.text("更新日志", "Changelog") : L10n.text("开源许可证 (Apache License 2.0)", "Open Source License (Apache License 2.0)"))
+                                .font(.system(size: 15, weight: .black, design: .rounded))
+                                .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+
+                            Text(modal == .changelog ? L10n.text("版本发布历史与更新日志", "Release history and changelog") : "Apache License 2.0")
+                                .font(.system(size: 10.5, weight: .medium))
+                                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                        }
+                    }
+
+                    Spacer()
+
+                    Button(action: {
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+                            activeModal = nil
+                        }
+                    }) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                            .frame(width: 26, height: 26)
+                            .background(isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.06), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                CyberDivider()
+
+                // 内容滚动区域
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        if modal == .changelog {
+                            changelogContent
+                        } else {
+                            licenseContent
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+                .frame(maxHeight: 360)
+
+                CyberDivider()
+
+                // 底部操作栏
+                HStack {
+                    if modal == .license {
+                        Button(action: copyLicenseToClipboard) {
+                            HStack(spacing: 5) {
+                                Image(systemName: isLicenseCopied ? "checkmark" : "doc.on.doc")
+                                    .font(.system(size: 11, weight: .bold))
+                                Text(isLicenseCopied ? L10n.text("已复制", "Copied") : L10n.text("复制协议", "Copy License"))
+                                    .font(.system(size: 11, weight: .bold))
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 7)
+                            .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 7))
+                            .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8))
+                            .foregroundStyle(isLicenseCopied ? AppTheme.accentEmerald(for: colorScheme) : AppTheme.textPrimary(for: colorScheme))
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    Spacer()
+
+                    Button(action: {
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+                            activeModal = nil
+                        }
+                    }) {
+                        Text(L10n.text("关闭", "Close"))
+                            .font(.system(size: 12, weight: .bold))
+                            .padding(.horizontal, 18)
+                            .padding(.vertical, 7)
+                            .background(
+                                LinearGradient(
+                                    colors: [cyan, AppTheme.accentBlue(for: colorScheme)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                in: RoundedRectangle(cornerRadius: 7)
+                            )
+                            .foregroundStyle(.white)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(20)
+            .frame(width: 580)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(isDark ? Color(red: 0.085, green: 0.105, blue: 0.165) : Color.white)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .strokeBorder(cyan.opacity(isDark ? 0.35 : 0.25), lineWidth: 1.0)
+            )
+            .shadow(color: Color.black.opacity(isDark ? 0.55 : 0.22), radius: 26, x: 0, y: 14)
+        }
+    }
+
+    // MARK: - 更新日志内容
+    private var changelogContent: some View {
+        let cyan = AppTheme.accentCyan(for: colorScheme)
+
+        return VStack(alignment: .leading, spacing: 16) {
+            ForEach(changelogs) { entry in
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Text(entry.version)
+                            .font(.system(size: 13, weight: .bold, design: .monospaced))
+                            .foregroundStyle(entry.isCurrent ? cyan : AppTheme.textPrimary(for: colorScheme))
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 2.5)
+                            .background(
+                                (entry.isCurrent ? cyan : Color.gray).opacity(0.12),
+                                in: Capsule()
+                            )
+
+                        if entry.isCurrent {
+                            Text(L10n.text("当前版本", "Current Version"))
+                                .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                                .foregroundStyle(AppTheme.accentEmerald(for: colorScheme))
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(AppTheme.accentEmerald(for: colorScheme).opacity(0.12), in: Capsule())
+                        }
+
+                        Spacer()
+
+                        Text(entry.date)
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(entry.changes, id: \.self) { change in
+                            HStack(alignment: .top, spacing: 6) {
+                                Text("•")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundStyle(cyan)
+                                Text(change)
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                    }
+                    .padding(.leading, 4)
+                }
+                .padding(12)
+                .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
+                )
+            }
+        }
+    }
+
+    // MARK: - 开源协议内容
+    private var licenseContent: some View {
+        Text(apacheLicenseText)
+            .font(.system(size: 11, weight: .regular, design: .monospaced))
+            .foregroundStyle(AppTheme.textPrimary(for: colorScheme).opacity(0.92))
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
+            )
+            .textSelection(.enabled)
+    }
+
+    private func copyLicenseToClipboard() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(apacheLicenseText, forType: .string)
+        withAnimation(.spring(response: 0.2, dampingFraction: 0.8)) {
+            isLicenseCopied = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            withAnimation {
+                isLicenseCopied = false
+            }
+        }
+    }
+
+    private var apacheLicenseText: String {
+        """
+                                         Apache License
+                                   Version 2.0, January 2004
+                                http://www.apache.org/licenses/
+
+        TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+
+        1. Definitions.
+
+           "License" shall mean the terms and conditions for use, reproduction,
+           and distribution as defined by Sections 1 through 9 of this document.
+
+           "Licensor" shall mean the copyright owner or entity authorized by
+           the copyright owner that is granting the License.
+
+           "Entity" shall mean the union of the acting entity and all other
+           entities that control, are controlled by, or are under common control
+           with that entity. For the purposes of this definition,
+           "control" means (i) the power, direct or indirect, to cause the
+           direction or management of such entity, whether by contract or
+           otherwise, or (ii) ownership of fifty percent (50%) or more of the
+           outstanding shares, or (iii) beneficial ownership of such entity.
+
+           "You" (or "Your") shall mean an individual or Legal Entity
+           exercising permissions granted by this License.
+
+           "Source" form shall mean the preferred form for making modifications,
+           including but not limited to software source code, documentation
+           source, and configuration files.
+
+           "Object" form shall mean any form resulting from mechanical
+           transformation or translation of a Source form, including but
+           not limited to compiled object code, generated documentation,
+           and conversions to other media types.
+
+           "Work" shall mean the work of authorship, whether in Source or
+           Object form, made available under the License, as indicated by a
+           copyright notice that is included in or attached to the work.
+
+           "Derivative Works" shall mean any work, whether in Source or
+           Object form, that is based on (or derived from) the Work and for
+           which the editorial revisions, annotations, elaborations, or other
+           modifications represent, as a whole, an original work of authorship.
+
+           "Contribution" shall mean any work of authorship, including
+           the original version of the Work and any modifications or additions
+           to that Work or Derivative Works thereof, that is intentionally
+           submitted to Licensor for inclusion in the Work.
+
+           "Contributor" shall mean Licensor and any individual or Legal Entity
+           on behalf of whom a Contribution has been received by Licensor and
+           subsequently incorporated within the Work.
+
+        2. Grant of Copyright License. Subject to the terms and conditions of
+           this License, each Contributor hereby grants to You a perpetual,
+           worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+           copyright license to reproduce, prepare Derivative Works of,
+           publicly display, publicly perform, sublicense, and distribute the
+           Work and such Derivative Works in Source or Object form.
+
+        3. Grant of Patent License. Subject to the terms and conditions of
+           this License, each Contributor hereby grants to You a perpetual,
+           worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+           patent license to make, have made, use, offer to sell, sell, import,
+           and otherwise transfer the Work.
+
+        4. Redistribution. You may reproduce and distribute copies of the
+           Work or Derivative Works thereof in any medium, with or without
+           modifications, and in Source or Object form, provided that You
+           meet the conditions stated in this License.
+
+        5. Submission of Contributions. Unless You explicitly state otherwise,
+           any Contribution intentionally submitted for inclusion in the Work
+           by You to the Licensor shall be under the terms and conditions of
+           this License.
+
+        6. Trademarks. This License does not grant permission to use the trade
+           names, trademarks, service marks, or product names of the Licensor.
+
+        7. Disclaimer of Warranty. Unless required by applicable law or
+           agreed to in writing, Licensor provides the Work on an "AS IS" BASIS,
+           WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND.
+
+        8. Limitation of Liability. In no event shall any Contributor be
+           liable to You for damages arising as a result of this License or
+           out of the use or inability to use the Work.
+
+        9. Accepting Warranty or Additional Liability. You may choose to offer
+           support, warranty, indemnity, or other liability obligations and/or
+           rights consistent with this License.
+
+        END OF TERMS AND CONDITIONS
+        """
+    }
 }
+
 

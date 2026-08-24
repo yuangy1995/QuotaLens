@@ -86,7 +86,6 @@ public struct DashboardView: View {
             // 顶部小标头
             HStack {
                 CyberSectionHeader(
-                    tag: "01",
                     title: L10n.text("额度概览", "Quota Overview"),
                     icon: "gauge.with.needle.fill"
                 )
@@ -297,7 +296,6 @@ public struct DashboardView: View {
         return VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
                 CyberSectionHeader(
-                    tag: "02",
                     title: L10n.text("重置卡", "Reset Cards"),
                     icon: "ticket.fill"
                 )

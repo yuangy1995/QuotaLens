@@ -246,6 +246,86 @@ public enum L10n {
 }
 
 private let keyedTranslations: [String: [AppLanguage: String]] = [
+    "Removed build count and section number tags across overview and settings": [
+        .traditionalChinese: "移除組建次數顯示，並去除概覽與設定頁面的分塊序號徽章",
+        .japanese: "ビルド回数の表示を削除し、概要と設定画面のセクション番号バッジを非表示化",
+        .korean: "빌드 횟수 표시를 제거하고 개요 및 설정 페이지의 섹션 번호 배지 삭제",
+        .spanish: "Eliminación del número de compilación y las etiquetas numeradas de secciones.",
+        .german: "Build-Nummer und Abschnittsnummern in Übersicht und Einstellungen entfernt.",
+        .french: "Suppression du numéro de build et des badges de section dans Aperçu et Réglages.",
+        .portuguese: "Remoção do número de build e das etiquetas de secção no resumo e definições.",
+        .portugueseBrazil: "Remoção do número de build e das etiquetas de seção no resumo e ajustes."
+    ],
+    "In-app scrollable dialogs for changelog and license with one-click copy support": [
+        .traditionalChinese: "更新日誌與開源協議採用應用內可滾動彈窗展示，並支援一鍵複製",
+        .japanese: "更新履歴とライセンスをアプリ内スクロールダイアログで表示、ワンクリックコピー対応",
+        .korean: "변경 로그와 라이선스를 앱 내 스크롤 가능한 대화상자로 표시하고 원클릭 복사 지원",
+        .spanish: "Cuadros de diálogo desplazables para el registro de cambios y la licencia con copia rápida.",
+        .german: "Scrollbare In-App-Dialoge für Changelog und Lizenz mit Ein-Klick-Kopieren.",
+        .french: "Fenêtres modales défilables pour le changelog et la licence avec copie en un clic.",
+        .portuguese: "Janelas modais deslocáveis para o registo de alterações e licença com cópia rápida.",
+        .portugueseBrazil: "Janelas modais roláveis para o histórico de alterações e licença com cópia rápida."
+    ],
+    "Refined card spacing and visual aesthetics": [
+        .traditionalChinese: "進一步優化全息卡片間距與介面精緻度",
+        .japanese: "カードの余白と全体的な視覚デザインをさらに洗練",
+        .korean: "카드 간격 및 전반적인 인터페이스 디자인 완성도 개선",
+        .spanish: "Espaciado de tarjetas y estética visual mejorados.",
+        .german: "Kartenabstände und visuelle Ästhetik weiter verfeinert.",
+        .french: "Espacement des cartes et esthétique visuelle affinés.",
+        .portuguese: "Espaçamento de cartões e estética visual aprimorados.",
+        .portugueseBrazil: "Espaçamento de cartões e estética visual aprimorados."
+    ],
+    "Close": [
+        .traditionalChinese: "關閉",
+        .japanese: "閉じる",
+        .korean: "닫기",
+        .spanish: "Cerrar",
+        .german: "Schließen",
+        .french: "Fermer",
+        .portuguese: "Fechar",
+        .portugueseBrazil: "Fechar"
+    ],
+    "Copy License": [
+        .traditionalChinese: "複製協議",
+        .japanese: "ライセンスをコピー",
+        .korean: "라이선스 복사",
+        .spanish: "Copiar licencia",
+        .german: "Lizenz kopieren",
+        .french: "Copier la licence",
+        .portuguese: "Copiar licença",
+        .portugueseBrazil: "Copiar licença"
+    ],
+    "Release history and changelog": [
+        .traditionalChinese: "版本發布歷史與更新日誌",
+        .japanese: "リリース履歴と変更ログ",
+        .korean: "릴리스 내역 및 변경 로그",
+        .spanish: "Historial de versiones y registro de cambios",
+        .german: "Versionsverlauf und Änderungsprotokoll",
+        .french: "Historique des versions et notes de version",
+        .portuguese: "Histórico de versões e registo de alterações",
+        .portugueseBrazil: "Histórico de versões e histórico de alterações"
+    ],
+    "Open Source License (Apache License 2.0)": [
+        .traditionalChinese: "開源許可證 (Apache License 2.0)",
+        .japanese: "オープンソースライセンス (Apache License 2.0)",
+        .korean: "오픈 소스 라이선스 (Apache License 2.0)",
+        .spanish: "Licencia de código abierto (Apache License 2.0)",
+        .german: "Open-Source-Lizenz (Apache License 2.0)",
+        .french: "Licence open source (Apache License 2.0)",
+        .portuguese: "Licença de código aberto (Apache License 2.0)",
+        .portugueseBrazil: "Licença de código aberto (Apache License 2.0)"
+    ],
+    "Current Version": [
+        .traditionalChinese: "目前版本",
+        .japanese: "現在のバージョン",
+        .korean: "현재 버전",
+        .spanish: "Versión actual",
+        .german: "Aktuelle Version",
+        .french: "Version actuelle",
+        .portuguese: "Versão atual",
+        .portugueseBrazil: "Versão atual"
+    ],
     "About QuotaLens": [
         .traditionalChinese: "關於 QuotaLens",
         .japanese: "QuotaLens について",
