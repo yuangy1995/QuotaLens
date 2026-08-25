@@ -19,10 +19,43 @@ public struct UpdateDialogState: Identifiable, Sendable, Equatable {
     public let kind: UpdateDialogKind
     public let title: String
     public let message: String
+    public let newVersion: String?
+    public let currentVersion: String?
+    public let packageSizeBytes: UInt64?
+    public let releaseNotes: String?
+    public let releaseNotesURL: URL?
     public let primaryButtonTitle: String
     public let secondaryButtonTitle: String?
     public let progress: Double?
     public let primaryButtonEnabled: Bool
+
+    public init(
+        kind: UpdateDialogKind,
+        title: String,
+        message: String,
+        newVersion: String? = nil,
+        currentVersion: String? = nil,
+        packageSizeBytes: UInt64? = nil,
+        releaseNotes: String? = nil,
+        releaseNotesURL: URL? = nil,
+        primaryButtonTitle: String,
+        secondaryButtonTitle: String? = nil,
+        progress: Double? = nil,
+        primaryButtonEnabled: Bool = true
+    ) {
+        self.kind = kind
+        self.title = title
+        self.message = message
+        self.newVersion = newVersion
+        self.currentVersion = currentVersion
+        self.packageSizeBytes = packageSizeBytes
+        self.releaseNotes = releaseNotes
+        self.releaseNotesURL = releaseNotesURL
+        self.primaryButtonTitle = primaryButtonTitle
+        self.secondaryButtonTitle = secondaryButtonTitle
+        self.progress = progress
+        self.primaryButtonEnabled = primaryButtonEnabled
+    }
 }
 
 @MainActor
@@ -205,10 +238,22 @@ public final class UpdateManager: NSObject, ObservableObject, SPUUpdaterDelegate
         updateStatusText = L10n.text("发现可用更新", "Update available")
         updateDetailText = L10n.format("QuotaLens %@ is available.", zhHans: "QuotaLens %@ 已可下载。", appcastItem.displayVersionString)
 
+        let releaseNotesText: String? = {
+            if let desc = appcastItem.itemDescription, !desc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return desc
+            }
+            return nil
+        }()
+
         showUpdateDialog(
             kind: .available,
             title: L10n.text("发现可用更新", "Update available"),
             message: updateDetailText ?? L10n.text("发现新版本，可以下载并安装。", "A new version is available to download and install."),
+            newVersion: appcastItem.displayVersionString,
+            currentVersion: AppVersion.marketingVersion,
+            packageSizeBytes: appcastItem.contentLength > 0 ? UInt64(appcastItem.contentLength) : nil,
+            releaseNotes: releaseNotesText,
+            releaseNotesURL: appcastItem.releaseNotesURL,
             primaryButtonTitle: state.stage == .downloaded ? L10n.text("安装更新", "Install Update") : L10n.text("下载并安装", "Download and Install"),
             secondaryButtonTitle: L10n.text("稍后", "Later"),
             primaryAction: { [weak self] in
@@ -444,6 +489,11 @@ public final class UpdateManager: NSObject, ObservableObject, SPUUpdaterDelegate
         kind: UpdateDialogKind,
         title: String,
         message: String,
+        newVersion: String? = nil,
+        currentVersion: String? = nil,
+        packageSizeBytes: UInt64? = nil,
+        releaseNotes: String? = nil,
+        releaseNotesURL: URL? = nil,
         primaryButtonTitle: String,
         secondaryButtonTitle: String? = nil,
         progress: Double? = nil,
@@ -461,6 +511,11 @@ public final class UpdateManager: NSObject, ObservableObject, SPUUpdaterDelegate
             kind: kind,
             title: title,
             message: message,
+            newVersion: newVersion,
+            currentVersion: currentVersion,
+            packageSizeBytes: packageSizeBytes,
+            releaseNotes: releaseNotes,
+            releaseNotesURL: releaseNotesURL,
             primaryButtonTitle: primaryButtonTitle,
             secondaryButtonTitle: secondaryButtonTitle,
             progress: progress,

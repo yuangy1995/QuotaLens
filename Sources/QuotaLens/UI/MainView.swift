@@ -396,7 +396,7 @@ private struct UpdateCheckOverlay: View {
         if let dialog = updateManager.updateDialog {
             ZStack {
                 Rectangle()
-                    .fill(Color.black.opacity(colorScheme == .dark ? 0.44 : 0.24))
+                    .fill(Color.black.opacity(colorScheme == .dark ? 0.52 : 0.28))
                     .ignoresSafeArea()
 
                 UpdateCheckDialog(
@@ -409,10 +409,10 @@ private struct UpdateCheckOverlay: View {
                         updateManager.performUpdateDialogSecondaryAction()
                     }
                 )
-                .frame(width: 340)
+                .frame(width: dialog.newVersion != nil || dialog.releaseNotes != nil ? 460 : 360)
             }
-            .transition(.opacity.combined(with: .scale(scale: 0.98)))
-            .animation(.spring(response: 0.28, dampingFraction: 0.86), value: dialog.id)
+            .transition(.opacity.combined(with: .scale(scale: 0.96)))
+            .animation(.spring(response: 0.32, dampingFraction: 0.82), value: dialog.id)
         }
     }
 }
@@ -426,105 +426,250 @@ private struct UpdateCheckDialog: View {
 
     var body: some View {
         let cyan = AppTheme.accentCyan(for: colorScheme)
+        let blue = AppTheme.accentBlue(for: colorScheme)
+        let purple = AppTheme.accentPurple(for: colorScheme)
+        let emerald = AppTheme.accentEmerald(for: colorScheme)
         let isDark = colorScheme == .dark
 
-        VStack(alignment: .leading, spacing: 18) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 17, style: .continuous)
-                    .fill(iconBackgroundColor.opacity(isDark ? 0.22 : 0.14))
-                    .frame(width: 62, height: 62)
+        VStack(spacing: 0) {
+            // 顶部流光呼吸条
+            LinearGradient(
+                colors: [cyan, blue, purple],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            .frame(height: 3.5)
 
-                if dialog.kind == .checking {
-                    Circle()
-                        .trim(from: 0.12, to: 0.86)
-                        .stroke(
-                            AngularGradient(
-                                colors: [cyan.opacity(0.2), cyan, AppTheme.accentBlue(for: colorScheme)],
-                                center: .center
-                            ),
-                            style: StrokeStyle(lineWidth: 5, lineCap: .round)
-                        )
-                        .frame(width: 44, height: 44)
-                        .rotationEffect(.degrees(isAnimating ? 360 : 0))
-                        .animation(.linear(duration: 1.0).repeatForever(autoreverses: false), value: isAnimating)
-
-                    Circle()
-                        .fill(cyan)
-                        .frame(width: 8, height: 8)
-                } else {
-                    Image(systemName: iconName)
-                        .font(.system(size: 26, weight: .bold))
-                        .foregroundStyle(iconBackgroundColor)
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text(dialog.title)
-                    .font(.system(size: 18, weight: .black, design: .rounded))
-                    .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
-
-                Text(dialog.message)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-                    .fixedSize(horizontal: false, vertical: true)
-
-                if let progress = dialog.progress {
-                    ProgressView(value: progress)
-                        .tint(cyan)
-                }
-            }
-
-            HStack(spacing: 10) {
-                if let secondary = dialog.secondaryButtonTitle {
-                    Button(action: onSecondary) {
-                        Text(secondary)
-                            .font(.system(size: 12, weight: .bold))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 9)
-                            .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 8))
+            VStack(alignment: .leading, spacing: 16) {
+                // 头部：图标 + 标题 + 版本与包大小胶囊
+                HStack(alignment: .top, spacing: 14) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 15, style: .continuous)
+                            .fill(iconBackgroundColor.opacity(isDark ? 0.18 : 0.12))
+                            .frame(width: 52, height: 52)
                             .overlay(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
+                                RoundedRectangle(cornerRadius: 15, style: .continuous)
+                                    .strokeBorder(iconBackgroundColor.opacity(isDark ? 0.35 : 0.25), lineWidth: 0.8)
                             )
+
+                        if dialog.kind == .checking {
+                            // 科技感双层旋转光环
+                            Circle()
+                                .trim(from: 0.1, to: 0.85)
+                                .stroke(
+                                    AngularGradient(
+                                        colors: [cyan.opacity(0.2), cyan, blue],
+                                        center: .center
+                                    ),
+                                    style: StrokeStyle(lineWidth: 3.5, lineCap: .round)
+                                )
+                                .frame(width: 34, height: 34)
+                                .rotationEffect(.degrees(isAnimating ? 360 : 0))
+                                .animation(.linear(duration: 1.0).repeatForever(autoreverses: false), value: isAnimating)
+
+                            Circle()
+                                .trim(from: 0.2, to: 0.7)
+                                .stroke(
+                                    purple.opacity(0.7),
+                                    style: StrokeStyle(lineWidth: 2, lineCap: .round)
+                                )
+                                .frame(width: 22, height: 22)
+                                .rotationEffect(.degrees(isAnimating ? -360 : 0))
+                                .animation(.linear(duration: 1.5).repeatForever(autoreverses: false), value: isAnimating)
+                        } else {
+                            Image(systemName: iconName)
+                                .font(.system(size: 22, weight: .bold))
+                                .foregroundStyle(iconBackgroundColor)
+                        }
                     }
-                    .buttonStyle(.plain)
-                    .disabled(dialog.kind == .checking)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(dialog.title)
+                            .font(.system(size: 17, weight: .black, design: .rounded))
+                            .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+
+                        // 版本对比与体积徽章
+                        if let newVer = dialog.newVersion {
+                            HStack(spacing: 6) {
+                                HStack(spacing: 4) {
+                                    if let curVer = dialog.currentVersion {
+                                        Text("v\(curVer)")
+                                            .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                                            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                                        Image(systemName: "arrow.right")
+                                            .font(.system(size: 8, weight: .bold))
+                                            .foregroundStyle(cyan)
+                                    }
+                                    Text("v\(newVer)")
+                                        .font(.system(size: 11, weight: .heavy, design: .monospaced))
+                                        .foregroundStyle(cyan)
+                                }
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(cyan.opacity(isDark ? 0.16 : 0.10), in: RoundedRectangle(cornerRadius: 5))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 5)
+                                        .strokeBorder(cyan.opacity(isDark ? 0.40 : 0.25), lineWidth: 0.7)
+                                )
+
+                                if let bytes = dialog.packageSizeBytes {
+                                    HStack(spacing: 3) {
+                                        Image(systemName: "shippingbox.fill")
+                                            .font(.system(size: 9))
+                                        Text(formattedByteSize(bytes))
+                                            .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+                                    }
+                                    .foregroundStyle(emerald)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(emerald.opacity(isDark ? 0.15 : 0.10), in: RoundedRectangle(cornerRadius: 5))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 5)
+                                            .strokeBorder(emerald.opacity(isDark ? 0.40 : 0.25), lineWidth: 0.7)
+                                    )
+                                }
+                            }
+                            .padding(.top, 2)
+                        } else {
+                            Text(dialog.message)
+                                .font(.system(size: 12.5, weight: .medium))
+                                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                                .lineLimit(2)
+                        }
+                    }
+
+                    Spacer(minLength: 0)
                 }
 
-                Button(action: onPrimary) {
-                    Text(dialog.primaryButtonTitle)
-                        .font(.system(size: 12, weight: .bold))
+                // 核心内容区：更新日志或进度条
+                if dialog.kind == .available {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(cyan)
+                            Text(L10n.text("更新内容与亮点", "Release Notes & Improvements"))
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                            Spacer()
+                        }
+
+                        ScrollView(.vertical, showsIndicators: true) {
+                            VStack(alignment: .leading, spacing: 6) {
+                                if let notes = dialog.releaseNotes, !notes.isEmpty {
+                                    Text(notes)
+                                        .font(.system(size: 12, weight: .regular))
+                                        .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                                        .lineSpacing(3.5)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                } else {
+                                    Text(dialog.message)
+                                        .font(.system(size: 12, weight: .regular))
+                                        .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                            }
+                            .padding(10)
+                        }
+                        .frame(maxHeight: 140)
+                        .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 8))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
+                        )
+                    }
+                } else if let progress = dialog.progress {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text(dialog.message)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                            Spacer()
+                            Text("\(Int(progress * 100))%")
+                                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                                .foregroundStyle(cyan)
+                        }
+
+                        ProgressView(value: progress)
+                            .tint(cyan)
+                    }
+                    .padding(10)
+                    .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
+                    )
+                }
+
+                // 底部按钮栏
+                HStack(spacing: 10) {
+                    if let secondary = dialog.secondaryButtonTitle {
+                        Button(action: onSecondary) {
+                            Text(secondary)
+                                .font(.system(size: 12, weight: .semibold))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
+                                .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 8))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
+                                )
+                                .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(dialog.kind == .checking)
+                    }
+
+                    Button(action: onPrimary) {
+                        HStack(spacing: 6) {
+                            if dialog.kind == .available {
+                                Image(systemName: "arrow.down.circle.fill")
+                                    .font(.system(size: 12, weight: .bold))
+                            }
+                            Text(dialog.primaryButtonTitle)
+                                .font(.system(size: 12, weight: .bold))
+                        }
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 9)
+                        .padding(.vertical, 8)
                         .background(
                             dialog.kind == .checking
                                 ? AnyShapeStyle(AppTheme.insetSurface(for: colorScheme))
                                 : AnyShapeStyle(LinearGradient(
-                                    colors: [cyan, AppTheme.accentBlue(for: colorScheme)],
+                                    colors: [cyan, blue],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 )),
                             in: RoundedRectangle(cornerRadius: 8)
                         )
                         .foregroundStyle(dialog.kind == .checking ? AppTheme.textSecondary(for: colorScheme) : Color.white)
+                        .shadow(color: dialog.kind == .available ? cyan.opacity(0.35) : Color.clear, radius: 6, y: 2)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!dialog.primaryButtonEnabled)
                 }
-                .buttonStyle(.plain)
-                .disabled(!dialog.primaryButtonEnabled)
+                .padding(.top, 4)
             }
+            .padding(22)
         }
-        .padding(26)
         .background(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(isDark ? Color(red: 0.075, green: 0.09, blue: 0.14) : Color(red: 0.97, green: 0.985, blue: 1.0))
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(isDark ? Color(red: 0.08, green: 0.095, blue: 0.14) : Color(red: 0.98, green: 0.985, blue: 1.0))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .strokeBorder(cyan.opacity(isDark ? 0.30 : 0.22), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .strokeBorder(cyan.opacity(isDark ? 0.35 : 0.22), lineWidth: 1)
         )
-        .shadow(color: Color.black.opacity(isDark ? 0.45 : 0.18), radius: 28, x: 0, y: 18)
+        .shadow(color: Color.black.opacity(isDark ? 0.55 : 0.20), radius: 32, x: 0, y: 16)
         .onAppear {
             isAnimating = true
         }
+    }
+
+    private func formattedByteSize(_ bytes: UInt64) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = [.useMB, .useKB, .useGB]
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: Int64(bytes))
     }
 
     private var iconName: String {
@@ -551,17 +696,17 @@ private struct UpdateCheckDialog: View {
         case .checking:
             return AppTheme.accentCyan(for: colorScheme)
         case .available:
-            return AppTheme.accentBlue(for: colorScheme)
+            return AppTheme.accentCyan(for: colorScheme)
         case .latest:
             return AppTheme.accentEmerald(for: colorScheme)
         case .failure:
             return AppTheme.accentAmber(for: colorScheme)
         case .progress:
-            return AppTheme.accentBlue(for: colorScheme)
+            return AppTheme.accentCyan(for: colorScheme)
         case .ready:
             return AppTheme.accentEmerald(for: colorScheme)
         case .installing:
-            return AppTheme.accentCyan(for: colorScheme)
+            return AppTheme.accentPurple(for: colorScheme)
         }
     }
 }

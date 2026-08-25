@@ -4,11 +4,52 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
+public enum SettingsTab: String, CaseIterable, Identifiable {
+    case general
+    case account
+    case overlay
+    case codex
+    case storage
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .general:
+            return L10n.text("常规与外观", "General")
+        case .account:
+            return L10n.text("账号与同步", "Account & Sync")
+        case .overlay:
+            return L10n.text("悬浮窗挂件", "Overlay HUD")
+        case .codex:
+            return L10n.text("Codex 环境", "Codex Environment")
+        case .storage:
+            return L10n.text("存储与诊断", "Data & Diagnostics")
+        }
+    }
+
+    public var icon: String {
+        switch self {
+        case .general:
+            return "paintpalette.fill"
+        case .account:
+            return "person.crop.circle.badge.checkmark"
+        case .overlay:
+            return "macwindow.badge.plus"
+        case .codex:
+            return "cpu.fill"
+        case .storage:
+            return "externaldrive.fill"
+        }
+    }
+}
+
 public struct SettingsView: View {
     @ObservedObject var state: AppState
     @EnvironmentObject var env: AppEnvironment
     @Environment(\.colorScheme) var colorScheme
 
+    @AppStorage("settings_selected_tab_v2") private var selectedTab: SettingsTab = .general
     @State private var customPath: String = ""
     @State private var isCopiedDbPath: Bool = false
     @State private var isShowingBinaryTargetDialog: Bool = false
@@ -21,24 +62,34 @@ public struct SettingsView: View {
     private let presetIntervals: [Int] = [15, 30, 60, 300, 900]
 
     public var body: some View {
-        ScrollView {
-            VStack(spacing: 22) {
-                // 模块 01 · 外观与语言
-                appearanceHUDCard
+        VStack(spacing: 0) {
+            // 顶部分类导航切换栏
+            tabPickerHeader
+                .padding(.horizontal, 24)
+                .padding(.top, 18)
+                .padding(.bottom, 12)
 
-                // 模块 02 · 账号
-                accountIdentityHUDCard
+            CyberDivider()
+                .padding(.horizontal, 24)
 
-                // 模块 03 · 同步与刷新
-                engineDispatchHUDCard
-
-                // 模块 04 · 本地用量分析与挂件
-                codexAnalyticsHUDCard
-
-                // 模块 05 · 本地数据
-                storageCoreHUDCard
+            // 分类内容区域
+            ScrollView {
+                VStack(spacing: 18) {
+                    switch selectedTab {
+                    case .general:
+                        generalTabPane
+                    case .account:
+                        accountTabPane
+                    case .overlay:
+                        overlayTabPane
+                    case .codex:
+                        codexTabPane
+                    case .storage:
+                        storageTabPane
+                    }
+                }
+                .padding(24)
             }
-            .padding(24)
         }
         .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
         .task {
@@ -48,6 +99,312 @@ public struct SettingsView: View {
         .onReceive(env.scanCoordinator.$dataGeneration.dropFirst()) { _ in
             Task { await refreshUsageDiagnostics() }
         }
+    }
+
+    // MARK: - 顶部分类导航切换栏
+    private var tabPickerHeader: some View {
+        let cyan = AppTheme.accentCyan(for: colorScheme)
+        let blue = AppTheme.accentBlue(for: colorScheme)
+        let isDark = colorScheme == .dark
+
+        return HStack(spacing: 8) {
+            ForEach(SettingsTab.allCases) { tab in
+                let isSelected = selectedTab == tab
+                Button(action: {
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) {
+                        selectedTab = tab
+                    }
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: tab.icon)
+                            .font(.system(size: 11.5, weight: isSelected ? .bold : .semibold))
+                            .foregroundStyle(isSelected ? Color.white : (isDark ? Color.white.opacity(0.7) : Color.black.opacity(0.6)))
+
+                        Text(tab.title)
+                            .font(.system(size: 12, weight: isSelected ? .bold : .medium, design: .rounded))
+                            .foregroundStyle(isSelected ? Color.white : AppTheme.textPrimary(for: colorScheme))
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
+                    .background(
+                        ZStack {
+                            if isSelected {
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [cyan, blue],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
+                                    .shadow(color: cyan.opacity(isDark ? 0.35 : 0.20), radius: 6, y: 2)
+                            } else {
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .fill(AppTheme.insetSurface(for: colorScheme))
+                            }
+                        }
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .strokeBorder(
+                                isSelected ? cyan.opacity(0.8) : AppTheme.insetBorder(for: colorScheme),
+                                lineWidth: isSelected ? 1 : 0.7
+                            )
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+
+            Spacer()
+        }
+    }
+
+    // MARK: - Tab 1 · 常规与外观
+    private var generalTabPane: some View {
+        VStack(spacing: 18) {
+            appearanceHUDCard
+            launchBehaviorHUDCard
+        }
+    }
+
+    // MARK: - Tab 2 · 账号与同步
+    private var accountTabPane: some View {
+        VStack(spacing: 18) {
+            accountIdentityHUDCard
+            syncPolicyHUDCard
+        }
+    }
+
+    // MARK: - Tab 3 · 悬浮窗与挂件
+    private var overlayTabPane: some View {
+        VStack(spacing: 18) {
+            overlayHUDCard
+        }
+    }
+
+    // MARK: - Tab 4 · Codex 环境
+    private var codexTabPane: some View {
+        VStack(spacing: 18) {
+            codexPathHUDCard
+            codexScanHUDCard
+        }
+    }
+
+    // MARK: - Tab 5 · 存储与诊断
+    private var storageTabPane: some View {
+        VStack(spacing: 18) {
+            storageCoreHUDCard
+            if let diagnostics = usageDiagnostics {
+                diagnosticsGridHUDCard(diagnostics)
+            }
+        }
+    }
+
+    // MARK: - 全息悬浮窗与用量挂件
+    private var overlayHUDCard: some View {
+        let flags = UsageFeatureFlags.shared
+
+        return VStack(alignment: .leading, spacing: 14) {
+            CyberSectionHeader(
+                title: L10n.text("桌面全息悬浮挂件与预测", "Desktop Floating Overlay & Forecast"),
+                icon: "macwindow.badge.plus"
+            )
+
+            CyberDivider()
+
+            VStack(spacing: 10) {
+                // 1. 启用本地 Codex 分析
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(L10n.text("启用本地 Codex 用量分析", "Enable Local Codex Analytics"))
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                        Text(L10n.text("从本地 ~/.codex 解析会话日志，提供 Token 统计与 API 等价价值 · Beta", "Parses local session logs for tokens and API equivalent value · Beta"))
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                    }
+                    Spacer()
+                    Toggle("", isOn: Binding(
+                        get: { flags.isAnalyticsEnabled },
+                        set: { enabled in
+                            flags.isAnalyticsEnabled = enabled
+                            if enabled {
+                                Task {
+                                    await env.scanCoordinator.scanNow(forceRebuild: false)
+                                }
+                            }
+                        }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                }
+                .padding(12)
+                .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))
+
+                // 2. 启用 ChatGPT / Codex 窗口悬浮挂件
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(L10n.text("ChatGPT / Codex 窗口悬浮挂件", "Window Floating Overlay"))
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                        Text(L10n.text("在目标应用前台窗口边缘附着小胶囊，显示实时配额", "Floating pill attached to target window"))
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                    }
+                    Spacer()
+                    Toggle("", isOn: Binding(
+                        get: { flags.isOverlayEnabled },
+                        set: { enabled in
+                            flags.isOverlayEnabled = enabled
+                            CodexUsageOverlayController.shared.setEnabled(enabled, environment: env)
+                        }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                }
+                .padding(12)
+                .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))
+
+                if flags.isOverlayEnabled {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(L10n.text("精确窗口吸附（辅助功能）", "Precise Window Snapping (Accessibility)"))
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                            Text(overlayController.isAccessibilityTrusted
+                                ? L10n.text("只读取目标窗口的位置与尺寸，不读取窗口文本", "Reads only target window position and size; never window text")
+                                : L10n.text("由你主动授权；未授权时自动保持基础模式", "Opt-in only; basic mode remains active until authorized"))
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                        }
+                        Spacer()
+                        Toggle("", isOn: Binding(
+                            get: { flags.isAXSnappingEnabled },
+                            set: { enabled in
+                                flags.isAXSnappingEnabled = enabled
+                                overlayController.setAXSnappingEnabled(enabled)
+                            }
+                        ))
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                    }
+                    .padding(12)
+                    .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))
+                }
+
+                // 3. 智能预测引擎
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(L10n.text("智能预测引擎", "Smart Forecast Engine"))
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                        Text(L10n.text("计算服务器额度耗尽时间与未来 7 天用量趋势", "Calculates burn rate and 7-day usage trends"))
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                    }
+                    Spacer()
+                    Toggle("", isOn: Binding(
+                        get: { flags.isForecastEnabled },
+                        set: { flags.isForecastEnabled = $0 }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                }
+                .padding(12)
+                .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))
+            }
+        }
+        .cyberCard(cornerRadius: 16, padding: 18)
+    }
+
+    // MARK: - 诊断表格卡片
+    private func diagnosticsGridHUDCard(_ diagnostics: UsageDiagnosticsDTO) -> some View {
+        let cyan = AppTheme.accentCyan(for: colorScheme)
+
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                CyberSectionHeader(
+                    title: L10n.text("本地索引与数据诊断", "Local Index & Diagnostics"),
+                    icon: "stethoscope"
+                )
+
+                Spacer()
+
+                Button {
+                    exportUsageDiagnostics(diagnostics)
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.system(size: 10, weight: .bold))
+                        Text(L10n.text("导出诊断 JSON", "Export Diagnostics JSON"))
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(cyan.opacity(colorScheme == .dark ? 0.16 : 0.12), in: RoundedRectangle(cornerRadius: 6))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .strokeBorder(cyan.opacity(0.4), lineWidth: 0.8)
+                    )
+                    .foregroundStyle(cyan)
+                }
+                .buttonStyle(.plain)
+            }
+
+            CyberDivider()
+
+            VStack(alignment: .leading, spacing: 10) {
+                Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 8) {
+                    GridRow {
+                        diagnosticText(L10n.text("文件", "Files"), "\(diagnostics.sourcesIndexed)/\(diagnostics.sourcesDiscovered)")
+                        diagnosticText(L10n.text("事件", "Events"), "\(diagnostics.totalEvents)")
+                        diagnosticText(L10n.text("未计价", "Unpriced"), "\(diagnostics.unpricedEvents)")
+                    }
+                    GridRow {
+                        diagnosticText(L10n.text("未知模型", "Unknown Models"), "\(diagnostics.unknownModelEvents)")
+                        diagnosticText(L10n.text("时间兜底", "Timestamp Fallbacks"), "\(diagnostics.fallbackTimestampEvents)")
+                        diagnosticText(L10n.text("Parser", "Parser"), "v\(diagnostics.parserVersion)")
+                    }
+                    GridRow {
+                        diagnosticText(L10n.text("损坏行", "Malformed"), "\(diagnostics.malformedLineCount)")
+                        diagnosticText(L10n.text("未知事件", "Unknown Events"), "\(diagnostics.unknownEventTypeCount)")
+                        diagnosticText(L10n.text("重建源", "Rebuilt"), "\(diagnostics.rebuiltSourceCount)")
+                    }
+                    GridRow {
+                        diagnosticText(L10n.text("未解析时间", "Unresolved Time"), "\(diagnostics.unresolvedTimestampCount)")
+                        diagnosticText(
+                            L10n.text("SQLite 完整性", "SQLite Integrity"),
+                            diagnostics.integrityCheckPassed ? "OK" : L10n.text("失败", "Failed")
+                        )
+                        diagnosticText(
+                            L10n.text("一致性违规", "Invariant Issues"),
+                            "\(diagnostics.invariantViolationCount + diagnostics.foreignKeyViolationCount)"
+                        )
+                    }
+                }
+                .padding(12)
+                .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))
+
+                HStack {
+                    Text(L10n.format(
+                        "Active catalog: %@",
+                        zhHans: "当前价格目录：%@",
+                        diagnostics.activePricingCatalogVersion ?? BundledPricingCatalog.currentVersion
+                    ))
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+
+                    Spacer()
+
+                    if let diagnosticsExportStatus {
+                        Text(diagnosticsExportStatus)
+                            .font(.system(size: 10, weight: .medium, design: .rounded))
+                            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                    }
+                }
+            }
+        }
+        .cyberCard(cornerRadius: 16, padding: 18)
     }
 
     // MARK: - 模块 01 · 外观与语言
@@ -243,16 +600,89 @@ public struct SettingsView: View {
         .cyberCard(cornerRadius: 16, padding: 18)
     }
 
-    // MARK: - 模块 03 · 同步与刷新
-    private var engineDispatchHUDCard: some View {
+    // MARK: - 系统启动与常驻行为
+    private var launchBehaviorHUDCard: some View {
+        return VStack(alignment: .leading, spacing: 14) {
+            CyberSectionHeader(
+                title: L10n.text("系统与启动偏好", "System & Launch Preferences"),
+                icon: "gearshape.2.fill"
+            )
+
+            CyberDivider()
+
+            VStack(spacing: 10) {
+                // 开机自启动
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text(L10n.text("开机自动启动", "Launch at Login"))
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                        }
+                        Text(L10n.format("Status: %@", zhHans: "状态: %@", state.launchAtLoginStatusText))
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                    }
+
+                    Spacer()
+
+                    Toggle("", isOn: Binding(
+                        get: { state.launchAtLoginEnabled },
+                        set: { env.setLaunchAtLogin(enabled: $0) }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                }
+                .padding(12)
+                .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
+                )
+
+                // 隐藏 Dock 图标 / 纯菜单栏模式
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text(L10n.text("仅显示菜单栏图标", "Show in Menu Bar Only"))
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                        }
+                        Text(L10n.text("开启后，QuotaLens 只显示在菜单栏中", "When enabled, QuotaLens only appears in the menu bar."))
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                    }
+
+                    Spacer()
+
+                    Toggle("", isOn: Binding(
+                        get: { state.hideDockIcon },
+                        set: { env.setDockIconHidden($0) }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                }
+                .padding(12)
+                .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
+                )
+            }
+        }
+        .cyberCard(cornerRadius: 16, padding: 18)
+    }
+
+    // MARK: - 额度同步与提醒策略
+    private var syncPolicyHUDCard: some View {
         let cyan = AppTheme.accentCyan(for: colorScheme)
         let amber = AppTheme.accentAmber(for: colorScheme)
         let isDark = colorScheme == .dark
 
-        return VStack(alignment: .leading, spacing: 18) {
+        return VStack(alignment: .leading, spacing: 14) {
             CyberSectionHeader(
-                title: L10n.text("同步与刷新", "Sync & Refresh"),
-                icon: "cpu.fill"
+                title: L10n.text("同步频率与提醒", "Sync & Reminders"),
+                icon: "timer"
             )
 
             CyberDivider()
@@ -320,119 +750,65 @@ public struct SettingsView: View {
                     .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
             )
 
-            // 2. 后台刷新与启动行为
-            VStack(spacing: 10) {
-                // 开机自启动
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 6) {
-                            Text(L10n.text("开机自动启动", "Launch at Login"))
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
-                        }
-                        Text(L10n.format("Status: %@", zhHans: "状态: %@", state.launchAtLoginStatusText))
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+            // 重置卡到期提醒
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(L10n.text("重置卡到期提醒", "Reset Card Expiry Reminder"))
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
                     }
-
-                    Spacer()
-
-                    Toggle("", isOn: Binding(
-                        get: { state.launchAtLoginEnabled },
-                        set: { env.setLaunchAtLogin(enabled: $0) }
-                    ))
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                }
-                .padding(12)
-                .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
-                )
-
-                // 隐藏 Dock 图标 / 纯菜单栏模式
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 6) {
-                            Text(L10n.text("仅显示菜单栏图标", "Show in Menu Bar Only"))
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
-                        }
-                        Text(L10n.text("开启后，QuotaLens 只显示在菜单栏中", "When enabled, QuotaLens only appears in the menu bar."))
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-                    }
-
-                    Spacer()
-
-                    Toggle("", isOn: Binding(
-                        get: { state.hideDockIcon },
-                        set: { env.setDockIconHidden($0) }
-                    ))
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                }
-                .padding(12)
-                .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
-                )
-
-                // 重置卡到期提醒
-                HStack {
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack(spacing: 6) {
-                            Text(L10n.text("重置卡到期提醒", "Reset Card Expiry Reminder"))
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
-                        }
-                        Text(state.resetCreditReminderDetailText)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-                            .lineLimit(2)
-                    }
-
-                    Spacer()
-
-                    Text(state.resetCreditReminderStatusText)
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .foregroundStyle(state.hasActiveResetCreditReminder ? amber : AppTheme.textSecondary(for: colorScheme))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background((state.hasActiveResetCreditReminder ? amber : AppTheme.textSecondary(for: colorScheme)).opacity(colorScheme == .dark ? 0.14 : 0.10), in: Capsule())
-                        .overlay(
-                            Capsule()
-                                .strokeBorder((state.hasActiveResetCreditReminder ? amber : AppTheme.textSecondary(for: colorScheme)).opacity(0.36), lineWidth: 0.8)
-                        )
-
-                    Toggle("", isOn: Binding(
-                        get: { state.resetCreditReminderEnabled },
-                        set: { env.setResetCreditReminderEnabled($0) }
-                    ))
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                }
-                .padding(12)
-                .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder((state.hasActiveResetCreditReminder ? amber : (isDark ? Color.white : Color.black)).opacity(state.hasActiveResetCreditReminder ? 0.34 : 0.10), lineWidth: 0.8)
-                )
-            }
-
-            // 3. Codex 路径
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 6) {
-                    Image(systemName: "terminal.fill")
-                        .font(.system(size: 11))
-                        .foregroundStyle(cyan)
-                    Text(L10n.text("Codex 路径", "Codex Path"))
-                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    Text(state.resetCreditReminderDetailText)
+                        .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                        .lineLimit(2)
                 }
 
+                Spacer()
+
+                Text(state.resetCreditReminderStatusText)
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundStyle(state.hasActiveResetCreditReminder ? amber : AppTheme.textSecondary(for: colorScheme))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background((state.hasActiveResetCreditReminder ? amber : AppTheme.textSecondary(for: colorScheme)).opacity(colorScheme == .dark ? 0.14 : 0.10), in: Capsule())
+                    .overlay(
+                        Capsule()
+                            .strokeBorder((state.hasActiveResetCreditReminder ? amber : AppTheme.textSecondary(for: colorScheme)).opacity(0.36), lineWidth: 0.8)
+                    )
+
+                Toggle("", isOn: Binding(
+                    get: { state.resetCreditReminderEnabled },
+                    set: { env.setResetCreditReminderEnabled($0) }
+                ))
+                .labelsHidden()
+                .toggleStyle(.switch)
+            }
+            .padding(12)
+            .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder((state.hasActiveResetCreditReminder ? amber : (isDark ? Color.white : Color.black)).opacity(state.hasActiveResetCreditReminder ? 0.34 : 0.10), lineWidth: 0.8)
+            )
+        }
+        .cyberCard(cornerRadius: 16, padding: 18)
+    }
+
+    // MARK: - Codex 路径探测与连接
+    private var codexPathHUDCard: some View {
+        let cyan = AppTheme.accentCyan(for: colorScheme)
+        let amber = AppTheme.accentAmber(for: colorScheme)
+        let isDark = colorScheme == .dark
+
+        return VStack(alignment: .leading, spacing: 14) {
+            CyberSectionHeader(
+                title: L10n.text("Codex 可执行文件路径", "Codex Executable Path"),
+                icon: "terminal.fill"
+            )
+
+            CyberDivider()
+
+            VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 10) {
                     Button(action: {
                         isShowingBinaryTargetDialog = true
@@ -549,8 +925,8 @@ public struct SettingsView: View {
         .cyberCard(cornerRadius: 16, padding: 18)
     }
 
-    // MARK: - 模块 04 · 本地用量分析与挂件
-    private var codexAnalyticsHUDCard: some View {
+    // MARK: - Codex 扫描与索引控制
+    private var codexScanHUDCard: some View {
         let cyan = AppTheme.accentCyan(for: colorScheme)
         let emerald = AppTheme.accentEmerald(for: colorScheme)
         let isDark = colorScheme == .dark
@@ -558,42 +934,14 @@ public struct SettingsView: View {
 
         return VStack(alignment: .leading, spacing: 14) {
             CyberSectionHeader(
-                title: L10n.text("本地用量分析与挂件", "Local Analytics & Overlay"),
-                icon: "chart.bar.xaxis"
+                title: L10n.text("日志扫描与价格索引", "Log Scanning & Pricing Index"),
+                icon: "waveform.path.ecg"
             )
 
             CyberDivider()
 
             VStack(spacing: 10) {
-                // 1. 启用本地 Codex 分析
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(L10n.text("启用本地 Codex 用量分析", "Enable Local Codex Analytics"))
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
-                        Text(L10n.text("从本地 ~/.codex 解析会话日志，提供 Token 统计与 API 等价价值 · Beta", "Parses local session logs for tokens and API equivalent value · Beta"))
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-                    }
-                    Spacer()
-                    Toggle("", isOn: Binding(
-                        get: { flags.isAnalyticsEnabled },
-                        set: { enabled in
-                            flags.isAnalyticsEnabled = enabled
-                            if enabled {
-                                Task {
-                                    await env.scanCoordinator.scanNow(forceRebuild: false)
-                                }
-                            }
-                        }
-                    ))
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                }
-                .padding(12)
-                .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))
-
-                // 2. 扫描归档会话
+                // 扫描归档会话
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(L10n.text("包含归档会话 (~/.codex/archived_sessions)", "Scan Archived Sessions"))
@@ -607,78 +955,6 @@ public struct SettingsView: View {
                     Toggle("", isOn: Binding(
                         get: { flags.isScanArchivedSessionsEnabled },
                         set: { flags.isScanArchivedSessionsEnabled = $0 }
-                    ))
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                }
-                .padding(12)
-                .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))
-
-                // 3. 启用 ChatGPT / Codex 窗口悬浮挂件
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(L10n.text("ChatGPT / Codex 窗口悬浮挂件", "Window Floating Overlay"))
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
-                        Text(L10n.text("在目标应用前台窗口边缘附着小胶囊，显示实时配额", "Floating pill attached to target window"))
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-                    }
-                    Spacer()
-                    Toggle("", isOn: Binding(
-                        get: { flags.isOverlayEnabled },
-                        set: { enabled in
-                            flags.isOverlayEnabled = enabled
-                            CodexUsageOverlayController.shared.setEnabled(enabled, environment: env)
-                        }
-                    ))
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                }
-                .padding(12)
-                .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))
-
-                if flags.isOverlayEnabled {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(L10n.text("精确窗口吸附（辅助功能）", "Precise Window Snapping (Accessibility)"))
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
-                            Text(overlayController.isAccessibilityTrusted
-                                ? L10n.text("只读取目标窗口的位置与尺寸，不读取窗口文本", "Reads only target window position and size; never window text")
-                                : L10n.text("由你主动授权；未授权时自动保持基础模式", "Opt-in only; basic mode remains active until authorized"))
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-                        }
-                        Spacer()
-                        Toggle("", isOn: Binding(
-                            get: { flags.isAXSnappingEnabled },
-                            set: { enabled in
-                                flags.isAXSnappingEnabled = enabled
-                                overlayController.setAXSnappingEnabled(enabled)
-                            }
-                        ))
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                    }
-                    .padding(12)
-                    .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))
-                }
-
-                // 4. 智能预测引擎
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(L10n.text("智能预测引擎", "Smart Forecast Engine"))
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
-                        Text(L10n.text("计算服务器额度耗尽时间与未来 7 天用量趋势", "Calculates burn rate and 7-day usage trends"))
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-                    }
-                    Spacer()
-                    Toggle("", isOn: Binding(
-                        get: { flags.isForecastEnabled },
-                        set: { flags.isForecastEnabled = $0 }
                     ))
                     .labelsHidden()
                     .toggleStyle(.switch)
@@ -767,75 +1043,6 @@ public struct SettingsView: View {
             }
             .padding(12)
             .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))
-
-            if let diagnostics = usageDiagnostics {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text(L10n.text("本地索引诊断", "Local Index Diagnostics"))
-                            .font(.system(size: 12, weight: .black, design: .rounded))
-                            .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
-
-                        Spacer()
-
-                        Button {
-                            exportUsageDiagnostics(diagnostics)
-                        } label: {
-                            Label(
-                                L10n.text("导出诊断 JSON", "Export Diagnostics JSON"),
-                                systemImage: "square.and.arrow.up"
-                            )
-                            .font(.system(size: 10, weight: .bold, design: .rounded))
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(cyan)
-                    }
-
-                    Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 6) {
-                        GridRow {
-                            diagnosticText(L10n.text("文件", "Files"), "\(diagnostics.sourcesIndexed)/\(diagnostics.sourcesDiscovered)")
-                            diagnosticText(L10n.text("事件", "Events"), "\(diagnostics.totalEvents)")
-                            diagnosticText(L10n.text("未计价", "Unpriced"), "\(diagnostics.unpricedEvents)")
-                        }
-                        GridRow {
-                            diagnosticText(L10n.text("未知模型", "Unknown Models"), "\(diagnostics.unknownModelEvents)")
-                            diagnosticText(L10n.text("时间兜底", "Timestamp Fallbacks"), "\(diagnostics.fallbackTimestampEvents)")
-                            diagnosticText(L10n.text("Parser", "Parser"), "v\(diagnostics.parserVersion)")
-                        }
-                        GridRow {
-                            diagnosticText(L10n.text("损坏行", "Malformed"), "\(diagnostics.malformedLineCount)")
-                            diagnosticText(L10n.text("未知事件", "Unknown Events"), "\(diagnostics.unknownEventTypeCount)")
-                            diagnosticText(L10n.text("重建源", "Rebuilt"), "\(diagnostics.rebuiltSourceCount)")
-                        }
-                        GridRow {
-                            diagnosticText(L10n.text("未解析时间", "Unresolved Time"), "\(diagnostics.unresolvedTimestampCount)")
-                            diagnosticText(
-                                L10n.text("SQLite 完整性", "SQLite Integrity"),
-                                diagnostics.integrityCheckPassed ? "OK" : L10n.text("失败", "Failed")
-                            )
-                            diagnosticText(
-                                L10n.text("一致性违规", "Invariant Issues"),
-                                "\(diagnostics.invariantViolationCount + diagnostics.foreignKeyViolationCount)"
-                            )
-                        }
-                    }
-
-                    Text(L10n.format(
-                        "Active catalog: %@",
-                        zhHans: "当前价格目录：%@",
-                        diagnostics.activePricingCatalogVersion ?? BundledPricingCatalog.currentVersion
-                    ))
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-
-                    if let diagnosticsExportStatus {
-                        Text(diagnosticsExportStatus)
-                            .font(.system(size: 10, weight: .medium, design: .rounded))
-                            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-                    }
-                }
-                .padding(12)
-                .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))
-            }
         }
         .cyberCard(cornerRadius: 16, padding: 18)
     }

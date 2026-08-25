@@ -255,6 +255,66 @@ public enum L10n {
 }
 
 private let keyedTranslations: [String: [AppLanguage: String]] = [
+    "Release Notes & Improvements": [
+        .traditionalChinese: "更新內容與亮點",
+        .japanese: "リリースノートと改善点",
+        .korean: "릴리스 정보 및 개선 사항",
+        .spanish: "Notas de la versión y mejoras",
+        .german: "Versionshinweise und Verbesserungen",
+        .french: "Notes de version et améliorations",
+        .portuguese: "Notas de lançamento e melhorias",
+        .portugueseBrazil: "Notas de lançamento e melhorias"
+    ],
+    "General": [
+        .traditionalChinese: "常規外觀",
+        .japanese: "一般・外観",
+        .korean: "일반 및 모양",
+        .spanish: "General y apariencia",
+        .german: "Allgemein & Erscheinungsbild",
+        .french: "Général et apparence",
+        .portuguese: "Geral e aparência",
+        .portugueseBrazil: "Geral e aparência"
+    ],
+    "Account & Sync": [
+        .traditionalChinese: "帳號與同步",
+        .japanese: "アカウントと同期",
+        .korean: "계정 및 동기화",
+        .spanish: "Cuenta y sincronización",
+        .german: "Konto & Synchronisierung",
+        .french: "Compte et synchronisation",
+        .portuguese: "Conta e sincronização",
+        .portugueseBrazil: "Conta e sincronização"
+    ],
+    "Overlay HUD": [
+        .traditionalChinese: "懸浮窗掛件",
+        .japanese: "オーバーレイウィジェット",
+        .korean: "오버레이 위젯",
+        .spanish: "Widget superpuesto",
+        .german: "Overlay-Widget",
+        .french: "Widget superposé",
+        .portuguese: "Widget flutuante",
+        .portugueseBrazil: "Widget flutuante"
+    ],
+    "Codex Environment": [
+        .traditionalChinese: "Codex 環境",
+        .japanese: "Codex 環境",
+        .korean: "Codex 환경",
+        .spanish: "Entorno de Codex",
+        .german: "Codex-Umgebung",
+        .french: "Environnement Codex",
+        .portuguese: "Ambiente Codex",
+        .portugueseBrazil: "Ambiente Codex"
+    ],
+    "Data & Diagnostics": [
+        .traditionalChinese: "存儲與診斷",
+        .japanese: "データと診断",
+        .korean: "데이터 및 진단",
+        .spanish: "Datos y diagnósticos",
+        .german: "Daten & Diagnose",
+        .french: "Données et diagnostics",
+        .portuguese: "Dados e diagnósticos",
+        .portugueseBrazil: "Dados e diagnósticos"
+    ],
     "No session or activity details for this day": [
         .traditionalChinese: "當日暫無詳細會話與調用記錄",
         .japanese: "この日の詳細なセッションおよびアクティビティ履歴はありません",
