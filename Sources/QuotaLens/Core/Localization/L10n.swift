@@ -255,6 +255,66 @@ public enum L10n {
 }
 
 private let keyedTranslations: [String: [AppLanguage: String]] = [
+    "Restructured Settings view into a 5-tab layout (General, Account, Overlay, Codex, Storage) with persistent state and zero long-scrolling": [
+        .traditionalChinese: "全新重構設定介面為 5 大分類 Tab 架構（常規外觀、帳號同步、懸浮掛件、Codex 環境、存儲診斷），告別冗長滾動",
+        .japanese: "設定画面を 5 つの分類タブ（一般・アカウント・オーバーレイ・Codex・ストレージ）に再構築し、長いスクロールを解消",
+        .korean: "설정 화면을 5개 탭(일반, 계정, 오버레이, Codex, 스토리지) 구조로 전면 개편하여 긴 스크롤 제거",
+        .spanish: "Interfaz de configuración reestructurada en 5 pestañas (General, Cuenta, Superposición, Codex, Almacenamiento) sin desplazamiento largo",
+        .german: "Einstellungsansicht in ein 5-Registerkarten-Layout (Allgemein, Konto, Overlay, Codex, Speicher) mit dauerhaftem Status ohne langes Scrollen umstrukturiert",
+        .french: "Interface de réglages restructurée en 5 onglets (Général, Compte, Superposition, Codex, Stockage) sans défilement interminable",
+        .portuguese: "Interface de definições reestruturada em 5 separadores (Geral, Conta, Sobreposição, Codex, Armazenamento) sem deslocamento longo",
+        .portugueseBrazil: "Interface de configurações reestruturada em 5 abas (Geral, Conta, Sobreposição, Codex, Armazenamento) sem rolagem longa"
+    ],
+    "Redesigned software update dialog with version transition badges, download package size, and scrollable release notes panel": [
+        .traditionalChinese: "升級彈窗全新高顏值重構，支援版本躍遷對比、安裝包體積展示（如 📦 7.3 MB）與更新日誌獨立滾動面板",
+        .japanese: "ソフトウェア更新ダイアログを刷新。バージョン比較、ダウンロードサイズ表示（📦 7.3 MB）、更新履歴パネルに対応",
+        .korean: "소프트웨어 업데이트 대화상자 전면 개편: 버전 비교, 다운로드 크기(📦 7.3 MB), 스크롤 가능한 릴리스 정보 패널 지원",
+        .spanish: "Diálogo de actualización de software rediseñado con insignias de versión, tamaño de descarga y panel de notas de versión desplazable",
+        .german: "Neu gestalteter Software-Update-Dialog mit Versionsübergangs-Badges, Download-Paketgröße und scrollbarem Release-Notes-Panel",
+        .french: "Boîte de dialogue de mise à jour logicielle repensée avec badges de version, taille du paquet et panneau de notes de version défilant",
+        .portuguese: "Janela de atualização de software redesenhada com distintivos de versão, tamanho do pacote e painel de notas de versão com deslocamento",
+        .portugueseBrazil: "Janela de atualização de software redesenhada com distintivos de versão, tamanho do pacote e painel de notas de versão com rolagem"
+    ],
+    "Parsed model reasoning effort levels from Codex sessions and displayed high-contrast reasoning badges in history and session views": [
+        .traditionalChinese: "新增模型推理層級（Reasoning Effort）深度解析，並在歷史明細與會話詳情中以高對比度漸變徽章醒目展示",
+        .japanese: "Codex セッションからの推論レベル解析に対応し、履歴とセッション詳細で高コントラストのバッジを表示",
+        .korean: "Codex 세션의 추론 수준(Reasoning Effort)을 분석하여 기록 및 세션 상세에 고대비 배지로 표시",
+        .spanish: "Niveles de esfuerzo de razonamiento analizados desde las sesiones de Codex y mostrados con insignias de alto contraste",
+        .german: "Denkaufwandstufen aus Codex-Sitzungen analysiert und mit kontrastreichen Badges in Verlauf und Sitzungsdetails dargestellt",
+        .french: "Niveaux d’effort de raisonnement analysés depuis les sessions Codex et affichés avec des badges à fort contraste",
+        .portuguese: "Níveis de esforço de raciocínio analisados das sessões Codex e exibidos com distintivos de alto contraste",
+        .portugueseBrazil: "Níveis de esforço de raciocínio analisados das sessões Codex e exibidos com distintivos de alto contraste"
+    ],
+    "Added project-based session grouping, filtering chips, and expand/collapse support with aggregate tokens and cost analytics": [
+        .traditionalChinese: "會話列表支援按專案（代碼工作區）聚合分組與過濾篩選，支援一鍵折疊展開並統計專案消耗",
+        .japanese: "セッション一覧をプロジェクト（ワークスペース）別にグループ化・フィルタリング可能にし、集計トークンとコストを表示",
+        .korean: "세션 목록을 프로젝트(작업 영역)별로 그룹화 및 필터링하고 토큰 및 비용 총계를 표시하도록 지원",
+        .spanish: "Agrupación de sesiones por proyecto, filtros y soporte de plegado/desplegado con estadísticas agregadas de tokens y costos",
+        .german: "Projektbasierte Sitzungsgruppierung, Filterchips und Ein-/Ausklappunterstützung mit aggregierten Token- und Kostenanalysen hinzugefügt",
+        .french: "Regroupement de sessions par projet, filtres et pliage/dépliage avec analyse agrégée des jetons et des coûts",
+        .portuguese: "Agrupamento de sessões por projeto, filtros e suporte a recolher/expandir com análises agregadas de tokens e custos",
+        .portugueseBrazil: "Agrupamento de sessões por projeto, filtros e suporte a recolher/expandir com análises agregadas de tokens e custos"
+    ],
+    "Added prompt cache hit rate efficiency analysis and smart suggestion banners for quota exhaustion and reset cards": [
+        .traditionalChinese: "新增 Prompt 快取命中率與節約效益分析，並在主看板增加配額耗盡與重置卡智慧建議橫幅",
+        .japanese: "Prompt キャッシュヒット率の効率分析と、クォータ枯渇・リセットカードに関するスマート提案バナーを追加",
+        .korean: "프롬프트 캐시 적중률 효율 분석 및 할당량 소진과 리셋 카드에 대한 스마트 제안 배너 추가",
+        .spanish: "Análisis de eficiencia de tasa de aciertos de caché de prompts y banners de sugerencias inteligentes para cuota agotada y tarjetas de reinicio",
+        .german: "Effizienzanalyse der Prompt-Cache-Trefferquote und intelligente Vorschlagsbanner für aufgebrauchte Kontingente und Reset-Karten hinzugefügt",
+        .french: "Analyse de l’efficacité du taux de réussite du cache d’invites et bannières de suggestions intelligentes pour quota épuisé et cartes de réinitialisation",
+        .portuguese: "Análise de eficiência da taxa de acerto da cache de prompts e faixas de sugestões inteligentes para quota esgotada e cartões de reposição",
+        .portugueseBrazil: "Análise de eficiência da taxa de acerto do cache de prompts e faixas de sugestões inteligentes para cota esgotada e cartões de redefinição"
+    ],
+    "Refined empty-day activity cards with user-friendly copy and removed redundant default service tier badges": [
+        .traditionalChinese: "最佳化當日無活動時的友好空狀態展示，精簡掉預設的 DEFAULT/STANDARD 服務層級標籤",
+        .japanese: "アクティビティのない日の表示をユーザーフレンドリーに改善し、不要な DEFAULT/STANDARD バッジを整理",
+        .korean: "활동이 없는 날의 빈 상태 표시를 친화적으로 개선하고 기본 DEFAULT/STANDARD 서비스 계층 배지 제거",
+        .spanish: "Tarjetas de actividad vacías mejoradas con texto más intuitivo y eliminación de insignias de nivel de servicio predeterminadas innecesarias",
+        .german: "Verbesserte Leere-Tage-Aktivitätskarten mit benutzerfreundlichem Text und Entfernung redundanter Standard-Service-Tier-Badges",
+        .french: "Cartes d’activité vide améliorées avec un texte convivial et suppression des badges de niveau de service par défaut inutiles",
+        .portuguese: "Cartões de atividade vazia melhorados com texto amigável e remoção de distintivos de nível de serviço predefinidos redundantes",
+        .portugueseBrazil: "Cartões de atividade vazia melhorados com texto amigável e remoção de distintivos de nível de serviço padrão redundantes"
+    ],
     "Release Notes & Improvements": [
         .traditionalChinese: "更新內容與亮點",
         .japanese: "リリースノートと改善点",

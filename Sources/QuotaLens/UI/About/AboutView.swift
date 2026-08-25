@@ -59,6 +59,19 @@ public struct AboutView: View {
     private var defaultChangelogs: [ChangelogEntry] {
         [
             ChangelogEntry(
+                id: "v1.0.10",
+                version: "v1.0.10",
+                date: "2026-08-25",
+                changes: [
+                    L10n.text("全新重构设置界面为 5 大分类 Tab 架构（常规外观、账号同步、悬浮挂件、Codex 环境、存储诊断），告别冗长滚动", "Restructured Settings view into a 5-tab layout (General, Account, Overlay, Codex, Storage) with persistent state and zero long-scrolling"),
+                    L10n.text("升级弹窗全新高颜值重构，支持版本跃迁对比、安装包体积展示（如 📦 7.3 MB）与更新日志独立滚动面板", "Redesigned software update dialog with version transition badges, download package size, and scrollable release notes panel"),
+                    L10n.text("新增模型推理级别（Reasoning Effort）深度解析，并在历史明细与会话详情中以高对比度渐变徽章醒目展示", "Parsed model reasoning effort levels from Codex sessions and displayed high-contrast reasoning badges in history and session views"),
+                    L10n.text("会话列表支持按项目（代码工作区）聚合分组与过滤筛选，支持一键折叠展开并统计项目消耗", "Added project-based session grouping, filtering chips, and expand/collapse support with aggregate tokens and cost analytics"),
+                    L10n.text("新增 Prompt 缓存命中率与节约效益分析，并在主看板增加配额耗尽与重置卡智能建议横幅", "Added prompt cache hit rate efficiency analysis and smart suggestion banners for quota exhaustion and reset cards"),
+                    L10n.text("优化当日无活动时的友好空状态展示，精简掉默认的 DEFAULT/STANDARD 服务层级标签", "Refined empty-day activity cards with user-friendly copy and removed redundant default service tier badges")
+                ]
+            ),
+            ChangelogEntry(
                 id: "v1.0.9",
                 version: "v1.0.9",
                 date: "2026-08-25",

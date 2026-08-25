@@ -144,8 +144,8 @@ final class SessionDeletionAndQuotaStateTests: XCTestCase {
             }
         }
 
-        let chinese = "新增会话删除与安全清理能力，支持源文件移至废纸篓并自动级联清理本地索引与统计数据"
-        let english = "Session deletion with trash-move safety and automatic cascade cleanup of derived analytics"
+        let chinese = "全新重构设置界面为 5 大分类 Tab 架构（常规外观、账号同步、悬浮挂件、Codex 环境、存储诊断），告别冗长滚动"
+        let english = "Restructured Settings view into a 5-tab layout (General, Account, Overlay, Codex, Storage) with persistent state and zero long-scrolling"
         for mode in AppLanguageMode.allCases where mode != .system {
             defaults.set(mode.rawValue, forKey: L10n.languageModeDefaultsKey)
             let localized = L10n.text(chinese, english)
