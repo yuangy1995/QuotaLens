@@ -53,6 +53,17 @@ public struct AboutView: View {
     private var defaultChangelogs: [ChangelogEntry] {
         [
             ChangelogEntry(
+                id: "v1.0.11",
+                version: "v1.0.11",
+                date: "2026-08-25",
+                changes: [
+                    L10n.text("全新重构「本地索引与数据诊断」卡片排版为现代化自适应 4 列网格，重点突出 12 项关键诊断指标并强化健康度感知", "Redesigned local index & diagnostics layout into a modern adaptive 4-column grid highlighting 12 key health metrics"),
+                    L10n.text("优化升级弹窗视觉细节，移除弹窗顶部横条，呈现纯净圆角卡片质感", "Polished update dialog visual aesthetics by removing top gradient bar for a sleek border design"),
+                    L10n.text("修复更新日志在多语言环境下的刷新机制，所有非简体中文语言点击刷新均可拉取并自动本地化翻译", "Fixed changelog refresh for all supported non-Simplified-Chinese languages with instant localized translation"),
+                    L10n.text("加固重置卡数据解析与容错逻辑，兼容多种服务端命名格式并增加空明细智能兜底", "Hardened reset card decoding resilience against varied payload formats with smart empty-state fallbacks")
+                ]
+            ),
+            ChangelogEntry(
                 id: "v1.0.10",
                 version: "v1.0.10",
                 date: "2026-08-25",

@@ -254,6 +254,10 @@ public enum L10n {
     }
 
     public static let changelogZhToEnMap: [String: String] = [
+        "全新重构「本地索引与数据诊断」卡片排版为现代化自适应 4 列网格，重点突出 12 项关键诊断指标并强化健康度感知": "Redesigned local index & diagnostics layout into a modern adaptive 4-column grid highlighting 12 key health metrics",
+        "优化升级弹窗视觉细节，移除弹窗顶部横条，呈现纯净圆角卡片质感": "Polished update dialog visual aesthetics by removing top gradient bar for a sleek border design",
+        "修复更新日志在多语言环境下的刷新机制，所有非简体中文语言点击刷新均可拉取并自动本地化翻译": "Fixed changelog refresh for all supported non-Simplified-Chinese languages with instant localized translation",
+        "加固重置卡数据解析与容错逻辑，兼容多种服务端命名格式并增加空明细智能兜底": "Hardened reset card decoding resilience against varied payload formats with smart empty-state fallbacks",
         "全新重构设置界面为 5 大分类 Tab 架构（常规外观、账号同步、悬浮挂件、Codex 环境、存储诊断），告别冗长滚动": "Restructured Settings view into a 5-tab layout (General, Account, Overlay, Codex, Storage) with persistent state and zero long-scrolling",
         "升级弹窗全新高颜值重构，支持版本跃迁对比、安装包体积展示（如 📦 7.3 MB）与更新日志独立滚动面板": "Redesigned software update dialog with version transition badges, download package size, and scrollable release notes panel",
         "新增模型推理级别（Reasoning Effort）深度解析，并在历史明细与会话详情中以高对比度渐变徽章醒目展示": "Parsed model reasoning effort levels from Codex sessions and displayed high-contrast reasoning badges in history and session views",
@@ -311,6 +315,46 @@ public enum L10n {
 }
 
 private let keyedTranslations: [String: [AppLanguage: String]] = [
+    "Redesigned local index & diagnostics layout into a modern adaptive 4-column grid highlighting 12 key health metrics": [
+        .traditionalChinese: "全新重構「本地索引與數據診斷」卡片排版為現代化自適應 4 列網格，重點突出 12 項關鍵診斷指標並強化健康度感知",
+        .japanese: "「ローカルインデックスと診断」カードを 4 列の適応型グリッドに刷新し、12 の主要な健全性指標を強調表示",
+        .korean: "「로컬 인덱스 및 데이터 진단」 카드를 현대적인 4열 적응형 그리드로 개편하여 12가지 핵심 지표를 강조",
+        .spanish: "Diseño de diagnóstico e índice local rediseñado en una cuadrícula moderna de 4 columnas que destaca 12 métricas clave",
+        .german: "Layout für lokalen Index und Datenprüfung in ein adaptives 4-Spalten-Raster mit 12 Schlüsselmetriken neu gestaltet",
+        .french: "Mise en page de l'index local et des diagnostics repensée en une grille adaptative à 4 colonnes mettant en valeur 12 métriques",
+        .portuguese: "Disposição do índice local e diagnósticos redesenhada numa grelha adaptável de 4 colunas com 12 métricas chave",
+        .portugueseBrazil: "Layout do índice local e diagnósticos redesenhado em uma grade adaptável de 4 colunas com 12 métricas chave"
+    ],
+    "Polished update dialog visual aesthetics by removing top gradient bar for a sleek border design": [
+        .traditionalChinese: "優化升級彈窗視覺細節，移除彈窗頂部橫條，呈現純淨圓角卡片質感",
+        .japanese: "更新ダイアログ上部のグラデーションバーを削除し、洗練されたボーダーデザインに最適化",
+        .korean: "업데이트 대화상자 상단 막대를 제거하여 깔끔하고 세련된 모서리 디자인으로 개선",
+        .spanish: "Detalles visuales del diálogo de actualización optimizados al eliminar la barra superior para un diseño más limpio",
+        .german: "Feinschliff am Update-Dialog durch Entfernen des oberen Farbstreifens für ein elegantes Kartendesign",
+        .french: "Affinage visuel de la boîte de mise à jour en supprimant la barre supérieure pour un design épuré",
+        .portuguese: "Detalhes visuais da janela de atualização otimizados ao remover a barra superior para um design limpo",
+        .portugueseBrazil: "Detalhes visuais da janela de atualização otimizados ao remover a barra superior para um design limpo"
+    ],
+    "Fixed changelog refresh for all supported non-Simplified-Chinese languages with instant localized translation": [
+        .traditionalChinese: "修復更新日誌在多語言環境下的刷新機制，所有非簡體中文語言點擊刷新均可獲取並自動本地化翻譯",
+        .japanese: "多言語環境での更新履歴の更新処理を修正。簡体字以外の言語でも取得および自動翻訳に対応",
+        .korean: "다국어 환경에서 변경 이력 새로고침 문제를 해결하여 모든 언어에서 최신 로그 자동 번역 지원",
+        .spanish: "Corregida la actualización del registro de cambios en todos los idiomas con traducción automática instantánea",
+        .german: "Changelog-Aktualisierung für alle unterstützten Sprachen repariert mit sofortiger lokalisierter Übersetzung",
+        .french: "Correction de l'actualisation du journal des modifications pour toutes les langues avec traduction instantanée",
+        .portuguese: "Correção da atualização do registo de alterações para todos os idiomas com tradução instantânea",
+        .portugueseBrazil: "Correção da atualização do registro de alterações para todos os idiomas com tradução instantânea"
+    ],
+    "Hardened reset card decoding resilience against varied payload formats with smart empty-state fallbacks": [
+        .traditionalChinese: "加固重置卡數據解析與容錯邏輯，相容多種服務端命名格式並增加空明細智能兜底",
+        .japanese: "リセットカードのデコード処理を強化し、様々な命名形式に対応するとともにフォールバックを追加",
+        .korean: "리셋 카드 데이터 디코딩의 안정성을 강화하여 다양한 서버 형식 지원 및 스마트 대체 표시 제공",
+        .spanish: "Robustecida la decodificación de tarjetas de restablecimiento con compatibilidad de formatos y alternativas inteligentes",
+        .german: "Dekodierung von Reset-Karten gegen verschiedene Datenformate gehärtet mit intelligenten Fallbacks",
+        .french: "Renforcement du décodage des cartes de réinitialisation avec prise en charge de multiples formats et repli intelligent",
+        .portuguese: "Descodificação de cartões de reposição reforçada contra vários formatos com recurso inteligente de reserva",
+        .portugueseBrazil: "Decodificação de cartões de redefinição reforçada contra vários formatos com recurso inteligente de reserva"
+    ],
     "Restructured Settings view into a 5-tab layout (General, Account, Overlay, Codex, Storage) with persistent state and zero long-scrolling": [
         .traditionalChinese: "全新重構設定介面為 5 大分類 Tab 架構（常規外觀、帳號同步、懸浮掛件、Codex 環境、存儲診斷），告別冗長滾動",
         .japanese: "設定画面を 5 つの分類タブ（一般・アカウント・オーバーレイ・Codex・ストレージ）に再構築し、長いスクロールを解消",
