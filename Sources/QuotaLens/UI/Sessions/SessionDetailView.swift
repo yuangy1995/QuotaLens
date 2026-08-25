@@ -151,9 +151,11 @@ public struct SessionDetailView: View {
                 )
 
                 MetricHUDTile(
-                    title: L10n.text("API 估算价值", "API Est. Value"),
+                    title: L10n.text("API 等价价值 · Beta", "API Equivalent Value · Beta"),
                     value: UsageNumberFormatter.currencyUSD(detail.session.estimatedCost),
-                    caption: L10n.text("按 OpenAI 官方列表价", "At official list rates"),
+                    caption: detail.session.pricingStatus.isPriced
+                        ? L10n.text("不是订阅账单金额", "Not a bill")
+                        : detail.session.pricingStatus.localizedDescription,
                     icon: "dollarsign.circle.fill",
                     accentColor: emerald
                 )

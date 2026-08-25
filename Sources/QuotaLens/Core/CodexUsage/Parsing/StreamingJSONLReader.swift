@@ -29,7 +29,7 @@ public final class StreamingJSONLReader: Sendable {
         startOffset: Int64 = 0,
         endLimitOffset: Int64? = nil,
         chunkSize: Int = defaultChunkSize,
-        discardIrrelevantAfterPrefixBytes: Int = 4_096,
+        discardIrrelevantAfterPrefixBytes: Int = .max,
         shouldIncludeLineData: ((Data.SubSequence) -> Bool)? = nil,
         onLine: (JSONLLineRecord) throws -> Void
     ) throws -> (finalOffset: Int64, totalLinesRead: Int) {
@@ -125,7 +125,8 @@ public final class StreamingJSONLReader: Sendable {
 
             currentOffset += Int64(chunk.count)
 
-            // 按换行符切分完整行；如果一条超大行的前缀已判定无关，后续内容直接丢弃。
+            // 按换行符切分完整行。默认必须扫描到行尾后再判定事件类型，
+            // 因为合法 JSON 可以把 `type` 放在 4 KB 甚至 1 MB 之后。
             var chunkCursor = chunk.startIndex
             while let newlineIndex = chunk[chunkCursor..<chunk.endIndex].firstIndex(of: 0x0A) { // '\n'
                 let segment = chunk[chunkCursor..<newlineIndex]

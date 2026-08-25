@@ -100,6 +100,11 @@ public struct MainView: View {
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
 
+                if let warning = state.appInitializationWarningText {
+                    storageInitializationWarningStrip(warning)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+
                 ZStack {
                     // 环境自适应背景画布
                     AppTheme.canvasGradient(for: colorScheme)
@@ -233,6 +238,37 @@ public struct MainView: View {
         .background(isDark ? Color.white.opacity(0.045) : Color.black.opacity(0.035))
         .overlay(alignment: .bottom) {
             CyberDivider(glowColor: isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.07))
+        }
+    }
+
+    private func storageInitializationWarningStrip(_ warning: String) -> some View {
+        let amber = AppTheme.accentAmber(for: colorScheme)
+        let isDark = colorScheme == .dark
+
+        return HStack(spacing: 8) {
+            Image(systemName: "externaldrive.badge.exclamationmark")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(amber)
+
+            Text(warning)
+                .font(.system(size: 10.5, weight: .medium, design: .rounded))
+                .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                .lineLimit(2)
+
+            Spacer(minLength: 8)
+
+            Button(L10n.text("查看设置", "Open Settings")) {
+                selectedTab = .settings
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 10.5, weight: .bold, design: .rounded))
+            .foregroundStyle(amber)
+        }
+        .padding(.horizontal, 28)
+        .padding(.vertical, 8)
+        .background(amber.opacity(isDark ? 0.12 : 0.09))
+        .overlay(alignment: .bottom) {
+            CyberDivider(glowColor: amber.opacity(0.22))
         }
     }
 

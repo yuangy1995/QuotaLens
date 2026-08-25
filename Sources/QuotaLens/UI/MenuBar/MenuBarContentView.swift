@@ -16,7 +16,7 @@ private final class MenuBarLocalUsageStore: ObservableObject {
         self.facade = facade
     }
 
-    func load(accountKey: String?, currentUsedPercent: Double, resetsAt: Int64?) async {
+    func load(accountKey: String?, currentUsedPercent: Double, currentSnapshot: RateLimitSnapshotRecord?) async {
         guard UsageFeatureFlags.shared.isAnalyticsEnabled else {
             sevenDayMetrics = nil
             thirtyDayMetrics = nil
@@ -30,15 +30,32 @@ private final class MenuBarLocalUsageStore: ObservableObject {
         thirtyDayMetrics = try? await facade.getDashboardMetrics(days: 30)
 
         let storedSnaps = (try? await facade.getRecentRateLimitSnapshots(accountKey: accountKey, limit: 50)) ?? []
-        let points = storedSnaps.map { snapshot in
-            QuotaForecastEngine.RateSnapshotPoint(
+        let points = storedSnaps.compactMap { snapshot -> QuotaForecastEngine.RateSnapshotPoint? in
+            guard let resetAt = snapshot.resetsAt else { return nil }
+            return QuotaForecastEngine.RateSnapshotPoint(
                 timestamp: Date(timeIntervalSince1970: Double(snapshot.observedAt)),
-                usedPercent: Double(snapshot.usedPercentMilli) / 1000.0
+                usedPercent: Double(snapshot.usedPercentMilli) / 1000.0,
+                cycleKey: QuotaForecastEngine.QuotaCycleKey(
+                    accountID: snapshot.accountKey,
+                    limitID: snapshot.limitId,
+                    slot: snapshot.slot,
+                    resetAt: resetAt
+                )
+            )
+        }
+        let currentCycleKey = currentSnapshot.flatMap { snapshot -> QuotaForecastEngine.QuotaCycleKey? in
+            guard let resetAt = snapshot.resetsAt else { return nil }
+            return QuotaForecastEngine.QuotaCycleKey(
+                accountID: snapshot.accountKey,
+                limitID: snapshot.limitId,
+                slot: snapshot.slot,
+                resetAt: resetAt
             )
         }
         quotaForecast = QuotaForecastEngine.forecast(
             currentUsedPercent: currentUsedPercent,
-            resetsAt: resetsAt,
+            resetsAt: currentSnapshot?.resetsAt,
+            currentCycleKey: currentCycleKey,
             snapshots: points
         )
     }
@@ -119,7 +136,7 @@ public struct MenuBarContentView: View {
         await localUsageStore.load(
             accountKey: state.selectedAccountKey ?? state.account?.accountKey,
             currentUsedPercent: state.currentUsedPercent,
-            resetsAt: state.latestRateLimit?.resetsAt
+            currentSnapshot: state.latestRateLimit
         )
     }
 

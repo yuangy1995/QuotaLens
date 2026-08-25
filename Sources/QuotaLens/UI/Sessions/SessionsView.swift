@@ -126,6 +126,16 @@ public struct SessionsView: View {
                                 }
                             )
                         }
+
+                        if store.isLoadingNextPage {
+                            ProgressView()
+                                .controlSize(.small)
+                                .padding(.vertical, 10)
+                        } else if store.hasMoreSessions {
+                            Color.clear
+                                .frame(height: 1)
+                                .task { await store.loadNextPage() }
+                        }
                     }
                     .padding(8)
                 }
@@ -208,6 +218,13 @@ private struct SessionSidebarRow: View {
                                 isSelected ? Color.white.opacity(0.2) : cyan.opacity(isDark ? 0.15 : 0.10),
                                 in: RoundedRectangle(cornerRadius: 3)
                             )
+                    }
+
+                    if let agentType = session.agentType, !agentType.isEmpty {
+                        Text(agentType)
+                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                            .foregroundStyle(isSelected ? Color.white.opacity(0.9) : AppTheme.accentPurple(for: colorScheme))
+                            .lineLimit(1)
                     }
 
                     Spacer()

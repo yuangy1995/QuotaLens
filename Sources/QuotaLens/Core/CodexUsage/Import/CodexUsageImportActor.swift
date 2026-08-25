@@ -3,6 +3,7 @@
 
 import Foundation
 import Darwin
+import CryptoKit
 import SQLite3
 
 public struct ImportSummary: Sendable {
@@ -47,9 +48,11 @@ public actor CodexUsageImportActor {
         isImporting = true
         defer { isImporting = false }
 
-        let startTime = CFAbsoluteTimeGetCurrent()
+        let monotonicStart = CFAbsoluteTimeGetCurrent()
+        let startedAtMs = Self.unixMillis()
         try PricingCatalogService.shared.ensureCatalogInstalled(database: database)
         let pricingSnapshot = try PricingCatalogService.shared.loadSnapshot(database: database)
+        let scanGeneration = try nextScanGeneration()
 
         // 1. 扫描文件源
         onProgress?(0.05, L10n.text("正在扫描 Codex 会话文件…", "Scanning Codex session files..."))
@@ -91,7 +94,8 @@ public actor CodexUsageImportActor {
                     source: source,
                     resolvedSession: resolvedSessions[source.sessionId],
                     pricingSnapshot: pricingSnapshot,
-                    forceRebuild: forceRebuild
+                    forceRebuild: forceRebuild,
+                    scanGeneration: scanGeneration
                 )
             }
             ImportMemoryBudget.relieveAllocatorPressure()
@@ -104,8 +108,14 @@ public actor CodexUsageImportActor {
         }
 
         // 4. 更新全局代数与导入历史
-        let endTime = CFAbsoluteTimeGetCurrent()
-        let duration = max(0.001, endTime - startTime)
+        try tombstoneMissingSources(
+            currentSourcePaths: Set(discoveredSources.map { $0.fileURL.path }),
+            currentSessionIds: Set(discoveredSources.map(\.sessionId)),
+            scanGeneration: scanGeneration
+        )
+
+        let completedAtMs = Self.unixMillis()
+        let duration = max(0.001, CFAbsoluteTimeGetCurrent() - monotonicStart)
 
         let runId = "run_\(Int64(Date().timeIntervalSince1970 * 1000))"
         try? database.executeUpdate(
@@ -117,8 +127,8 @@ public actor CodexUsageImportActor {
             """,
             bindings: [
                 runId,
-                Int64(startTime * 1000),
-                Int64(endTime * 1000),
+                startedAtMs,
+                completedAtMs,
                 discoveredSources.count,
                 sourcesUpdated,
                 totalEventsInserted,
@@ -158,6 +168,7 @@ public actor CodexUsageImportActor {
         var tokens = TokenBreakdown.zero
         var estimatedCost = MoneyNanoUSD.zero
         var unpricedEventCount = 0
+        var firstEventAtMs: Int64?
         var lastEventAtMs: Int64?
 
         mutating func add(event: CodexParsedUsageEvent, price: PricingEvaluationResult) {
@@ -167,6 +178,11 @@ public actor CodexUsageImportActor {
             if !price.pricingStatus.isPriced {
                 unpricedEventCount += 1
             }
+            if let current = firstEventAtMs {
+                firstEventAtMs = min(current, event.timestampMs)
+            } else {
+                firstEventAtMs = event.timestampMs
+            }
             if let current = lastEventAtMs {
                 lastEventAtMs = max(current, event.timestampMs)
             } else {
@@ -175,10 +191,40 @@ public actor CodexUsageImportActor {
         }
     }
 
+    private struct PricedUsageEvent {
+        let event: CodexParsedUsageEvent
+        let price: PricingEvaluationResult
+    }
+
+    private struct SourceContentFingerprint {
+        let headSHA256: String
+        let tailSHA256: String
+    }
+
+    private struct ExistingSourceState {
+        let sourcePath: String
+        let relativePath: String
+        let lastImportedSize: Int64
+        let checkpointJSON: String?
+        let deviceID: Int64
+        let inode: Int64
+        let birthtimeNs: Int64?
+        let fileSize: Int64
+        let mtimeMs: Int64
+        let headSHA256: String?
+        let tailSHA256: String?
+        let importedTailSHA256: String?
+        let parserVersion: Int
+        let malformedLineCount: Int
+        let unresolvedTimestampCount: Int
+        let unknownEventTypeCount: Int
+    }
+
     private struct SourceAggregation {
         var session = UsageAggregate()
         var models: [String: UsageAggregate] = [:]
         var days: [DailyAggregateKey: UsageAggregate] = [:]
+        var events: [PricedUsageEvent] = []
 
         mutating func add(
             event: CodexParsedUsageEvent,
@@ -187,6 +233,7 @@ public actor CodexUsageImportActor {
         ) {
             guard !event.isChildReplay else { return }
             session.add(event: event, price: price)
+            events.append(PricedUsageEvent(event: event, price: price))
 
             var modelAgg = models[event.modelCanonical] ?? UsageAggregate()
             modelAgg.add(event: event, price: price)
@@ -206,7 +253,7 @@ public actor CodexUsageImportActor {
         }
 
         var isEmpty: Bool {
-            session.eventCount == 0 && models.isEmpty && days.isEmpty
+            session.eventCount == 0 && models.isEmpty && days.isEmpty && events.isEmpty
         }
 
         var estimatedMemoryBytes: Int {
@@ -217,12 +264,14 @@ public actor CodexUsageImportActor {
                 + days.reduce(0) { partial, item in
                     partial + 640 + item.key.dayKey.utf8.count + item.key.modelCanonical.utf8.count
                 }
+                + events.count * 640
         }
 
         mutating func removeAll(keepingCapacity: Bool = true) {
             session = UsageAggregate()
             models.removeAll(keepingCapacity: keepingCapacity)
             days.removeAll(keepingCapacity: keepingCapacity)
+            events.removeAll(keepingCapacity: keepingCapacity)
         }
     }
 
@@ -322,6 +371,9 @@ public actor CodexUsageImportActor {
             if existing.parentSessionId == nil || existing.parentSessionId?.isEmpty == true {
                 existing.parentSessionId = incoming.parentSessionId
             }
+            if existing.agentType == nil || existing.agentType?.isEmpty == true {
+                existing.agentType = incoming.agentType
+            }
             if existing.createdAt == nil {
                 existing.createdAt = incoming.createdAt
             }
@@ -338,49 +390,150 @@ public actor CodexUsageImportActor {
         source: RolloutDiscoveredSource,
         resolvedSession: CodexResolvedSessionMetadata?,
         pricingSnapshot: PricingCatalogSnapshot,
-        forceRebuild: Bool
+        forceRebuild: Bool,
+        scanGeneration: Int64
     ) throws -> SingleSourceProcessResult {
-        // 读取该源之前的检查点
-        let existingCheckpointRow = try database.executeQuery(
-            sql: "SELECT last_imported_size, checkpoint_state_json FROM codex_import_sources WHERE source_path = ?;",
-            bindings: [source.fileURL.path]
-        ) { stmt -> (Int64, String?) in
-            let size = sqlite3_column_int64(stmt, 0)
-            let json = sqlite3_column_type(stmt, 1) != SQLITE_NULL && sqlite3_column_text(stmt, 1) != nil
-                ? String(cString: sqlite3_column_text(stmt, 1)!) : nil
-            return (size, json)
+        let fingerprint = Self.fingerprint(fileURL: source.fileURL, fileSize: source.fileSize)
+
+        // 读取该源之前的检查点与内容指纹
+        let existingSourceState = try database.executeQuery(
+            sql: """
+            SELECT
+                source_path, relative_path,
+                last_imported_size, checkpoint_state_json, device_id, inode, birthtime_ns,
+                file_size, mtime_ms, head_sha256, tail_sha256, imported_tail_sha256, parser_version,
+                malformed_line_count, unresolved_timestamp_count, unknown_event_type_count
+            FROM codex_import_sources
+            WHERE source_path = ?
+               OR (device_id = ? AND inode = ? AND birthtime_ns IS ?)
+            ORDER BY CASE WHEN source_path = ? THEN 0 ELSE 1 END
+            LIMIT 1;
+            """,
+            bindings: [
+                source.fileURL.path,
+                Int64(source.identity.device),
+                Int64(source.identity.inode),
+                source.identity.birthtimeNs,
+                source.fileURL.path
+            ]
+        ) { stmt -> ExistingSourceState in
+            let json = sqlite3_column_type(stmt, 3) != SQLITE_NULL && sqlite3_column_text(stmt, 3) != nil
+                ? String(cString: sqlite3_column_text(stmt, 3)!) : nil
+            let birthtime = sqlite3_column_type(stmt, 6) != SQLITE_NULL ? sqlite3_column_int64(stmt, 6) : nil
+            let head = sqlite3_column_type(stmt, 9) != SQLITE_NULL && sqlite3_column_text(stmt, 9) != nil
+                ? String(cString: sqlite3_column_text(stmt, 9)!) : nil
+            let tail = sqlite3_column_type(stmt, 10) != SQLITE_NULL && sqlite3_column_text(stmt, 10) != nil
+                ? String(cString: sqlite3_column_text(stmt, 10)!) : nil
+            let importedTail = sqlite3_column_type(stmt, 11) != SQLITE_NULL && sqlite3_column_text(stmt, 11) != nil
+                ? String(cString: sqlite3_column_text(stmt, 11)!) : nil
+            return ExistingSourceState(
+                sourcePath: String(cString: sqlite3_column_text(stmt, 0)),
+                relativePath: String(cString: sqlite3_column_text(stmt, 1)),
+                lastImportedSize: sqlite3_column_int64(stmt, 2),
+                checkpointJSON: json,
+                deviceID: sqlite3_column_int64(stmt, 4),
+                inode: sqlite3_column_int64(stmt, 5),
+                birthtimeNs: birthtime,
+                fileSize: sqlite3_column_int64(stmt, 7),
+                mtimeMs: sqlite3_column_int64(stmt, 8),
+                headSHA256: head,
+                tailSHA256: tail,
+                importedTailSHA256: importedTail,
+                parserVersion: Int(sqlite3_column_int(stmt, 12)),
+                malformedLineCount: Int(sqlite3_column_int(stmt, 13)),
+                unresolvedTimestampCount: Int(sqlite3_column_int(stmt, 14)),
+                unknownEventTypeCount: Int(sqlite3_column_int(stmt, 15))
+            )
         }.first
+
+        if let existing = existingSourceState, existing.sourcePath != source.fileURL.path {
+            try relocatePhysicalSource(
+                existing: existing,
+                source: source,
+                scanGeneration: scanGeneration
+            )
+        }
 
         var startOffset: Int64 = 0
         var initialCheckpoint = ParserCheckpoint.initial
         var replaceExistingDerivedRows = forceRebuild
+        var rebuildReason: String? = forceRebuild ? "forced" : nil
 
-        if !forceRebuild, let existing = existingCheckpointRow {
-            if source.fileSize == existing.0 {
-                // 文件大小完全未变，无需重新读取
+        let existingSessionSourcePath = try database.stringScalar(
+            sql: "SELECT source_path FROM codex_sessions WHERE session_id = ?;",
+            bindings: [source.sessionId]
+        )
+        if let existingSessionSourcePath, existingSessionSourcePath != source.fileURL.path {
+            replaceExistingDerivedRows = true
+            rebuildReason = rebuildReason ?? "session_source_replaced"
+        }
+
+        if !forceRebuild, let existing = existingSourceState {
+            let sameIdentity = existing.deviceID == Int64(source.identity.device)
+                && existing.inode == Int64(source.identity.inode)
+                && existing.birthtimeNs == source.identity.birthtimeNs
+            let sameContentEnvelope = existing.headSHA256 == fingerprint.headSHA256
+                && existing.tailSHA256 == fingerprint.tailSHA256
+            let parserMatches = existing.parserVersion == ParserCheckpoint.currentParserVersion
+
+            if source.fileSize == existing.lastImportedSize,
+               source.fileSize == existing.fileSize,
+               source.mtimeMs == existing.mtimeMs,
+               sameIdentity,
+               sameContentEnvelope,
+               parserMatches {
+                try markSourceSeen(source: source, fingerprint: fingerprint, scanGeneration: scanGeneration)
                 return SingleSourceProcessResult(eventsInserted: 0, bytesRead: 0)
-            } else if source.fileSize > existing.0 {
-                // 文件增量追加
-                startOffset = existing.0
-                if let json = existing.1, let parsedCp = ParserCheckpoint.fromJsonString(json) {
+            } else if source.fileSize > existing.lastImportedSize,
+                      sameIdentity,
+                      parserMatches,
+                      existing.headSHA256 == Self.hashWindow(
+                        fileURL: source.fileURL,
+                        startOffset: 0,
+                        length: min(existing.fileSize, 4_096)
+                      ),
+                      let importedTail = existing.importedTailSHA256,
+                      importedTail == Self.tailHash(fileURL: source.fileURL, endOffset: existing.lastImportedSize) {
+                startOffset = existing.lastImportedSize
+                if let json = existing.checkpointJSON,
+                   let parsedCp = ParserCheckpoint.fromJsonString(json),
+                   parsedCp.parserVersion == ParserCheckpoint.currentParserVersion {
                     initialCheckpoint = parsedCp
+                } else {
+                    startOffset = 0
+                    initialCheckpoint = .initial
+                    replaceExistingDerivedRows = true
                 }
             } else {
-                // 文件发生截断，重新从头全量解析
                 startOffset = 0
                 initialCheckpoint = .initial
                 replaceExistingDerivedRows = true
+                if !parserMatches {
+                    rebuildReason = "parser_upgraded"
+                } else if !sameIdentity {
+                    rebuildReason = "physical_identity_changed"
+                } else if source.fileSize < existing.lastImportedSize {
+                    rebuildReason = "file_truncated"
+                } else if source.fileSize == existing.fileSize {
+                    rebuildReason = "same_size_rewrite"
+                } else {
+                    rebuildReason = "append_boundary_changed"
+                }
             }
         }
 
         let isChild = (resolvedSession?.depth ?? 0) > 0
         let rootSessionId = resolvedSession?.rootSessionId ?? source.sessionId
+        let timestampFallback = fallbackTimestamp(for: source, resolvedSession: resolvedSession)
 
         let reducer = CodexUsageReducer(
             sessionId: source.sessionId,
             rootSessionId: rootSessionId,
             isChildSession: isChild,
-            sourcePath: source.fileURL.path
+            sourcePath: source.fileURL.path,
+            sourceIdentityKey: source.identity.stableKey,
+            fallbackTimestampMs: timestampFallback.0,
+            fallbackTimestampQuality: timestampFallback.1
         )
 
         var reducerState = CodexUsageReducer.ReducerState(checkpoint: initialCheckpoint)
@@ -390,14 +543,24 @@ public actor CodexUsageImportActor {
         var totalInserted = 0
         var eventsSinceMemoryCheck = 0
         var hasCommittedChunks = false
+        let isResuming = startOffset > 0 && !replaceExistingDerivedRows
+        var malformedLineCount = isResuming ? (existingSourceState?.malformedLineCount ?? 0) : 0
+        var unresolvedTimestampCount = isResuming ? (existingSourceState?.unresolvedTimestampCount ?? 0) : 0
+        var unknownEventTypeCount = isResuming ? (existingSourceState?.unknownEventTypeCount ?? 0) : 0
 
         // 流式逐行读取
         let (finalOffset, _) = try StreamingJSONLReader.readLines(
             fileURL: source.fileURL,
             startOffset: startOffset,
+            endLimitOffset: source.fileSize,
             shouldIncludeLineData: RolloutLineDecoder.mayContainUsageRelevantEvent
         ) { lineRecord in
             if let wireEvent = RolloutLineDecoder.decodeLine(lineRecord.lineString) {
+                if (wireEvent.lastTokenUsage != nil || wireEvent.totalTokenUsage != nil),
+                   wireEvent.timestampMs <= 0,
+                   !timestampFallback.1.isUsableForAnalytics {
+                    unresolvedTimestampCount += 1
+                }
                 if let parsedEvent = reducer.reduce(event: wireEvent, lineRecord: lineRecord, state: &reducerState) {
                     let priceResult = pricingSnapshot.evaluate(
                         modelCanonical: parsedEvent.modelCanonical,
@@ -429,7 +592,13 @@ public actor CodexUsageImportActor {
                                 source: source,
                                 importedSize: lineRecord.startOffset + Int64(lineRecord.lineBytes),
                                 checkpoint: checkpoint,
-                                status: "partial"
+                                status: "partial",
+                                fingerprint: fingerprint,
+                                scanGeneration: scanGeneration,
+                                rebuildReason: rebuildReason,
+                                malformedLineCount: malformedLineCount,
+                                unresolvedTimestampCount: unresolvedTimestampCount,
+                                unknownEventTypeCount: unknownEventTypeCount
                             )
                         }
 
@@ -441,6 +610,10 @@ public actor CodexUsageImportActor {
                         eventsSinceMemoryCheck = 0
                     }
                 }
+            } else if Self.isSyntacticallyValidJSON(lineRecord.lineString) {
+                unknownEventTypeCount += 1
+            } else {
+                malformedLineCount += 1
             }
         }
 
@@ -453,7 +626,13 @@ public actor CodexUsageImportActor {
                 source: source,
                 importedSize: finalOffset,
                 checkpoint: finalCheckpoint,
-                status: "indexed"
+                status: "indexed",
+                fingerprint: fingerprint,
+                scanGeneration: scanGeneration,
+                rebuildReason: rebuildReason,
+                malformedLineCount: malformedLineCount,
+                unresolvedTimestampCount: unresolvedTimestampCount,
+                unknownEventTypeCount: unknownEventTypeCount
             )
 
             // 2. 写入最终聚合结果。扫描过程不落事件明细，避免大文件导致持续写盘。
@@ -489,7 +668,13 @@ public actor CodexUsageImportActor {
         source: RolloutDiscoveredSource,
         importedSize: Int64,
         checkpoint: ParserCheckpoint,
-        status: String
+        status: String,
+        fingerprint: SourceContentFingerprint,
+        scanGeneration: Int64,
+        rebuildReason: String?,
+        malformedLineCount: Int,
+        unresolvedTimestampCount: Int,
+        unknownEventTypeCount: Int
     ) throws {
         let checkpointJson = checkpoint.toJsonString() ?? "{}"
         try database.executeUpdate(
@@ -497,8 +682,11 @@ public actor CodexUsageImportActor {
             INSERT OR REPLACE INTO codex_import_sources (
                 source_path, relative_path, bucket, device_id, inode, birthtime_ns,
                 file_size, mtime_ms, last_imported_size, last_imported_line,
-                checkpoint_state_json, status, last_imported_at, error_message
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch(), NULL);
+                last_imported_sha256, checkpoint_state_json, status, last_imported_at,
+                error_message, head_sha256, tail_sha256, imported_tail_sha256,
+                parser_version, scan_generation, rebuild_reason, malformed_line_count,
+                unresolved_timestamp_count, unknown_event_type_count
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch(), NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """,
             bindings: [
                 source.fileURL.path,
@@ -511,8 +699,18 @@ public actor CodexUsageImportActor {
                 source.mtimeMs,
                 importedSize,
                 checkpoint.lineCount,
+                fingerprint.tailSHA256,
                 checkpointJson,
-                status
+                status,
+                fingerprint.headSHA256,
+                fingerprint.tailSHA256,
+                Self.tailHash(fileURL: source.fileURL, endOffset: importedSize),
+                ParserCheckpoint.currentParserVersion,
+                scanGeneration,
+                rebuildReason,
+                malformedLineCount,
+                unresolvedTimestampCount,
+                unknownEventTypeCount
             ]
         )
     }
@@ -528,12 +726,9 @@ public actor CodexUsageImportActor {
     ) throws {
         if replaceExisting {
             try deleteDerivedRowsForSession(sessionId: sessionId, sourcePath: sourcePath, relativePath: relativePath)
-        } else {
-            try database.executeUpdate(
-                sql: "DELETE FROM codex_usage_events WHERE source_path = ? OR source_path = ?;",
-                bindings: [sourcePath, relativePath]
-            )
         }
+
+        try persistUsageEvents(aggregation.events)
 
         for (model, aggregate) in aggregation.models {
             try upsertSessionModelSummary(sessionId: sessionId, modelCanonical: model, aggregate: aggregate)
@@ -551,10 +746,11 @@ public actor CodexUsageImportActor {
             sqlite3_column_type(stmt, 0) != SQLITE_NULL ? sqlite3_column_int64(stmt, 0) : nil
         }.first ?? nil
         let lastEventAt = maxOptional(existingLastEventAt, aggregation.session.lastEventAtMs)
-        let updatedAtMs = max(
-            Int64(metadata.updatedAt.timeIntervalSince1970 * 1000),
-            lastEventAt ?? 0
-        )
+        let metadataCreatedMs = Int64(metadata.createdAt.timeIntervalSince1970 * 1000)
+        let createdAtMs = metadataCreatedMs > 0
+            ? metadataCreatedMs
+            : (aggregation.session.firstEventAtMs ?? lastEventAt ?? sourceTimestampFallback(relativePath: relativePath))
+        let updatedAtMs = max(Int64(metadata.updatedAt.timeIntervalSince1970 * 1000), lastEventAt ?? createdAtMs)
         let pricingStatus: PricingStatus = totals.unpricedEventCount > 0 ? .unpricedUnknownModel : .priced
 
         try database.executeUpdate(
@@ -564,8 +760,8 @@ public actor CodexUsageImportActor {
                 relative_path, bucket, title, project_name, cwd, created_at, updated_at,
                 last_event_at, event_count, total_tokens, input_tokens, cached_input_tokens,
                 output_tokens, reasoning_output_tokens, estimated_cost_usd_nano,
-                pricing_status, metadata_fingerprint, has_subagents
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?);
+                pricing_status, metadata_fingerprint, has_subagents, agent_type
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?);
             """,
             bindings: [
                 sessionId,
@@ -578,7 +774,7 @@ public actor CodexUsageImportActor {
                 metadata.title,
                 metadata.projectName,
                 metadata.cwd,
-                Int64(metadata.createdAt.timeIntervalSince1970 * 1000),
+                createdAtMs,
                 updatedAtMs,
                 lastEventAt,
                 totals.eventCount,
@@ -589,16 +785,67 @@ public actor CodexUsageImportActor {
                 totals.tokens.reasoningOutputTokens,
                 totals.estimatedCost.rawValue,
                 pricingStatus.rawValue,
-                metadata.hasSubagents ? 1 : 0
+                metadata.hasSubagents ? 1 : 0,
+                metadata.agentType
             ]
         )
     }
 
     private func deleteDerivedRowsForSession(sessionId: String, sourcePath: String, relativePath: String) throws {
-        try database.executeUpdate(sql: "DELETE FROM codex_usage_events WHERE source_path = ? OR source_path = ?;", bindings: [sourcePath, relativePath])
+        try database.executeUpdate(sql: "DELETE FROM codex_usage_events WHERE session_id = ?;", bindings: [sessionId])
         try database.executeUpdate(sql: "DELETE FROM codex_session_summaries WHERE session_id = ?;", bindings: [sessionId])
         try database.executeUpdate(sql: "DELETE FROM codex_daily_usage_summaries WHERE session_id = ?;", bindings: [sessionId])
         try database.executeUpdate(sql: "DELETE FROM codex_sessions WHERE session_id = ?;", bindings: [sessionId])
+    }
+
+    private func persistUsageEvents(_ events: [PricedUsageEvent]) throws {
+        guard !events.isEmpty else { return }
+        for priced in events {
+            let event = priced.event
+            let price = priced.price
+            try database.executeUpdate(
+                sql: """
+                INSERT OR REPLACE INTO codex_usage_events (
+                    event_id, session_id, root_session_id, turn_index, call_index,
+                    timestamp_ms, model_raw, model_canonical, service_tier,
+                    input_tokens, cached_input_tokens, output_tokens, reasoning_output_tokens,
+                    total_tokens, uncached_input_tokens, estimated_cost_usd_nano,
+                    pricing_rule_id, pricing_status, usage_derivation, attribution_quality,
+                    is_child_replay, source_path, line_offset, line_bytes, payload_sha256,
+                    created_at, timestamp_quality, pricing_catalog_version
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?);
+                """,
+                bindings: [
+                    event.eventId,
+                    event.sessionId,
+                    event.rootSessionId,
+                    event.turnIndex,
+                    event.callIndex,
+                    event.timestampMs,
+                    event.modelRaw,
+                    event.modelCanonical,
+                    event.serviceTier,
+                    event.tokens.inputTokens,
+                    event.tokens.cachedInputTokens,
+                    event.tokens.outputTokens,
+                    event.tokens.reasoningOutputTokens,
+                    event.tokens.canonicalTotalTokens,
+                    event.tokens.uncachedInputTokens,
+                    price.estimatedCost.rawValue,
+                    price.pricingRuleId,
+                    price.pricingStatus.rawValue,
+                    event.usageDerivation.rawValue,
+                    event.attributionQuality.rawValue,
+                    event.isChildReplay ? 1 : 0,
+                    event.sourcePath,
+                    event.lineOffset,
+                    event.lineBytes,
+                    Self.unixMillis(),
+                    event.timestampQuality.rawValue,
+                    price.catalogVersion
+                ]
+            )
+        }
     }
 
     private func upsertSessionModelSummary(
@@ -717,5 +964,235 @@ public actor CodexUsageImportActor {
         case (nil, nil):
             return nil
         }
+    }
+
+    private func nextScanGeneration() throws -> Int64 {
+        let previous = try database.int64Scalar(
+            sql: "SELECT value FROM app_metadata WHERE key = 'codex_usage_scan_generation';"
+        ) ?? 0
+        let next = previous + 1
+        try database.executeUpdate(
+            sql: "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES ('codex_usage_scan_generation', ?, unixepoch());",
+            bindings: [String(next)]
+        )
+        return next
+    }
+
+    private func markSourceSeen(
+        source: RolloutDiscoveredSource,
+        fingerprint: SourceContentFingerprint,
+        scanGeneration: Int64
+    ) throws {
+        try database.executeUpdate(
+            sql: """
+            UPDATE codex_import_sources
+            SET file_size = ?, mtime_ms = ?, head_sha256 = ?, tail_sha256 = ?,
+                parser_version = ?, scan_generation = ?, status = 'indexed',
+                last_imported_at = unixepoch(), error_message = NULL
+            WHERE source_path = ?;
+            """,
+            bindings: [
+                source.fileSize,
+                source.mtimeMs,
+                fingerprint.headSHA256,
+                fingerprint.tailSHA256,
+                ParserCheckpoint.currentParserVersion,
+                scanGeneration,
+                source.fileURL.path
+            ]
+        )
+    }
+
+    private func relocatePhysicalSource(
+        existing: ExistingSourceState,
+        source: RolloutDiscoveredSource,
+        scanGeneration: Int64
+    ) throws {
+        try database.transaction {
+            try database.executeUpdate(
+                sql: """
+                UPDATE codex_import_sources
+                SET source_path = ?, relative_path = ?, bucket = ?, file_size = ?,
+                    mtime_ms = ?, scan_generation = ?, status = 'indexed', error_message = NULL
+                WHERE source_path = ?;
+                """,
+                bindings: [
+                    source.fileURL.path,
+                    source.relativePath,
+                    source.bucket.rawValue,
+                    source.fileSize,
+                    source.mtimeMs,
+                    scanGeneration,
+                    existing.sourcePath
+                ]
+            )
+            try database.executeUpdate(
+                sql: "UPDATE codex_usage_events SET source_path = ? WHERE source_path = ? OR source_path = ?;",
+                bindings: [source.fileURL.path, existing.sourcePath, existing.relativePath]
+            )
+            try database.executeUpdate(
+                sql: """
+                UPDATE codex_sessions
+                SET source_path = ?, relative_path = ?, bucket = ?
+                WHERE source_path = ? OR relative_path = ?;
+                """,
+                bindings: [
+                    source.fileURL.path,
+                    source.relativePath,
+                    source.bucket.rawValue,
+                    existing.sourcePath,
+                    existing.relativePath
+                ]
+            )
+        }
+    }
+
+    private func tombstoneMissingSources(
+        currentSourcePaths: Set<String>,
+        currentSessionIds: Set<String>,
+        scanGeneration: Int64
+    ) throws {
+        let staleSources = try database.executeQuery(
+            sql: """
+            SELECT source_path, relative_path
+            FROM codex_import_sources
+            WHERE scan_generation < ? AND status != 'tombstoned';
+            """,
+            bindings: [scanGeneration]
+        ) { stmt -> (String, String) in
+            let path = String(cString: sqlite3_column_text(stmt, 0))
+            let relative = sqlite3_column_type(stmt, 1) != SQLITE_NULL && sqlite3_column_text(stmt, 1) != nil
+                ? String(cString: sqlite3_column_text(stmt, 1)!)
+                : ""
+            return (path, relative)
+        }
+
+        for stale in staleSources {
+            guard !currentSourcePaths.contains(stale.0) else { continue }
+            let sessions = try database.executeQuery(
+                sql: "SELECT session_id FROM codex_sessions WHERE source_path = ? OR relative_path = ?;",
+                bindings: [stale.0, stale.1]
+            ) { stmt in
+                String(cString: sqlite3_column_text(stmt, 0))
+            }
+
+            let movedSessionStillPresent = sessions.contains { currentSessionIds.contains($0) }
+            if !movedSessionStillPresent {
+                try deleteDerivedRowsForSource(sourcePath: stale.0, relativePath: stale.1)
+            }
+
+            try database.executeUpdate(
+                sql: "UPDATE codex_import_sources SET status = 'tombstoned', scan_generation = ?, error_message = NULL WHERE source_path = ?;",
+                bindings: [scanGeneration, stale.0]
+            )
+        }
+    }
+
+    private func deleteDerivedRowsForSource(sourcePath: String, relativePath: String) throws {
+        let sessionIds = try database.executeQuery(
+            sql: "SELECT session_id FROM codex_sessions WHERE source_path = ? OR relative_path = ?;",
+            bindings: [sourcePath, relativePath]
+        ) { stmt in
+            String(cString: sqlite3_column_text(stmt, 0))
+        }
+        try database.executeUpdate(sql: "DELETE FROM codex_usage_events WHERE source_path = ? OR source_path = ?;", bindings: [sourcePath, relativePath])
+        for sessionId in sessionIds {
+            try database.executeUpdate(sql: "DELETE FROM codex_session_summaries WHERE session_id = ?;", bindings: [sessionId])
+            try database.executeUpdate(sql: "DELETE FROM codex_daily_usage_summaries WHERE session_id = ?;", bindings: [sessionId])
+            try database.executeUpdate(sql: "DELETE FROM codex_sessions WHERE session_id = ?;", bindings: [sessionId])
+        }
+    }
+
+    private func fallbackTimestamp(
+        for source: RolloutDiscoveredSource,
+        resolvedSession: CodexResolvedSessionMetadata?
+    ) -> (Int64, TimestampQuality) {
+        if let fromFileName = Self.timestampFromFilename(source.fileURL.lastPathComponent) {
+            return (fromFileName, .fileNameTimestamp)
+        }
+        if let resolvedSession {
+            let createdMs = Int64(resolvedSession.createdAt.timeIntervalSince1970 * 1000)
+            if createdMs > 0 {
+                return (createdMs, .sessionTimestamp)
+            }
+        }
+        if source.mtimeMs > 0 {
+            return (source.mtimeMs, .fileModificationTime)
+        }
+        return (0, .unresolved)
+    }
+
+    private func sourceTimestampFallback(relativePath: String) -> Int64 {
+        Self.timestampFromFilename((relativePath as NSString).lastPathComponent) ?? 0
+    }
+
+    static func timestampFromFilename(_ fileName: String) -> Int64? {
+        if let range = fileName.range(
+            of: #"rollout-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})"#,
+            options: .regularExpression
+        ) {
+            let matched = String(fileName[range]).dropFirst("rollout-".count)
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.calendar = Calendar(identifier: .gregorian)
+            formatter.timeZone = TimeZone(secondsFromGMT: 0)
+            formatter.dateFormat = "yyyy-MM-dd'T'HH-mm-ss"
+            if let date = formatter.date(from: String(matched)) {
+                return Int64(date.timeIntervalSince1970 * 1_000)
+            }
+        }
+        if let range = fileName.range(of: #"\d{13}"#, options: .regularExpression),
+           let value = Int64(fileName[range]),
+           value > 1_000_000_000_000 {
+            return value
+        }
+        if let range = fileName.range(of: #"\d{10}"#, options: .regularExpression),
+           let value = Int64(fileName[range]),
+           value > 1_000_000_000 {
+            return value * 1000
+        }
+        return nil
+    }
+
+    private static func isSyntacticallyValidJSON(_ line: String) -> Bool {
+        let normalized = line.hasPrefix("\u{feff}") ? String(line.dropFirst()) : line
+        guard let data = normalized.data(using: .utf8) else { return false }
+        return (try? JSONSerialization.jsonObject(with: data)) != nil
+    }
+
+    private static func fingerprint(fileURL: URL, fileSize: Int64) -> SourceContentFingerprint {
+        SourceContentFingerprint(
+            headSHA256: hashWindow(fileURL: fileURL, startOffset: 0, length: min(fileSize, 4_096)),
+            tailSHA256: tailHash(fileURL: fileURL, endOffset: fileSize)
+        )
+    }
+
+    private static func tailHash(fileURL: URL, endOffset: Int64, length: Int64 = 4_096) -> String {
+        let safeEnd = max(0, endOffset)
+        let start = max(0, safeEnd - length)
+        return hashWindow(fileURL: fileURL, startOffset: start, length: safeEnd - start)
+    }
+
+    private static func hashWindow(fileURL: URL, startOffset: Int64, length: Int64) -> String {
+        guard length > 0,
+              let handle = try? FileHandle(forReadingFrom: fileURL) else {
+            return sha256Hex(Data())
+        }
+        defer { try? handle.close() }
+        do {
+            try handle.seek(toOffset: UInt64(max(0, startOffset)))
+            let data = handle.readData(ofLength: Int(length))
+            return sha256Hex(data)
+        } catch {
+            return sha256Hex(Data())
+        }
+    }
+
+    private static func sha256Hex(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func unixMillis() -> Int64 {
+        Int64(Date().timeIntervalSince1970 * 1000)
     }
 }

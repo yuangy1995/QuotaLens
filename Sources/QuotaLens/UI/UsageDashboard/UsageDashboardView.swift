@@ -6,9 +6,7 @@ import Combine
 
 @MainActor
 public final class UsageDashboardStore: ObservableObject {
-    @Published public var selectedRangeDays: Int = 30 {
-        didSet { Task { await loadDashboardData() } }
-    }
+    @Published public var selectedRangeDays: Int = 30
     @Published public var metrics: DashboardMetricsDTO? = nil
     @Published public var todayMetrics: DashboardMetricsDTO? = nil
     @Published public var sevenDayMetrics: DashboardMetricsDTO? = nil
@@ -28,16 +26,20 @@ public final class UsageDashboardStore: ObservableObject {
     public func loadDashboardData(
         currentUsedPercent: Double = 0.0,
         resetsAt: Int64? = nil,
+        currentCycleKey: QuotaForecastEngine.QuotaCycleKey? = nil,
         rateSnapshots: [QuotaForecastEngine.RateSnapshotPoint] = []
     ) async {
         isLoading = true
         errorMessage = nil
         do {
             async let selectedMetrics = facade.getDashboardMetrics(days: selectedRangeDays)
-            async let today = facade.getDashboardMetrics(days: 1)
+            async let today = facade.getTodayMetrics()
             async let sevenDay = facade.getDashboardMetrics(days: 7)
             async let thirtyDay = facade.getDashboardMetrics(days: 30)
-            let (m, todayM, sevenM, thirtyM) = try await (selectedMetrics, today, sevenDay, thirtyDay)
+            async let projectionHistory = facade.getHistoryDays(daysCount: 90)
+            let (m, todayM, sevenM, thirtyM, history) = try await (
+                selectedMetrics, today, sevenDay, thirtyDay, projectionHistory
+            )
             self.metrics = m
             self.todayMetrics = todayM
             self.sevenDayMetrics = sevenM
@@ -50,11 +52,12 @@ public final class UsageDashboardStore: ObservableObject {
             self.quotaForecast = QuotaForecastEngine.forecast(
                 currentUsedPercent: currentUsedPercent,
                 resetsAt: resetsAt,
+                currentCycleKey: currentCycleKey,
                 snapshots: rateSnapshots
             )
 
             self.localForecast = LocalUsageProjection.project(
-                history: m.dailyBuckets,
+                history: history,
                 horizonDays: 7
             )
         } catch {
@@ -125,22 +128,41 @@ public struct UsageDashboardView: View {
                 await reloadData()
             }
         }
+        .onChange(of: store.selectedRangeDays) { _, _ in
+            Task { await reloadData() }
+        }
     }
 
     private func reloadData() async {
         let snap = env.state.latestRateLimit
         let used = env.state.currentUsedPercent
         let resetsAt = snap?.resetsAt
+        let currentCycleKey = snap.flatMap { snapshot -> QuotaForecastEngine.QuotaCycleKey? in
+            guard let resetAt = snapshot.resetsAt else { return nil }
+            return QuotaForecastEngine.QuotaCycleKey(
+                accountID: snapshot.accountKey,
+                limitID: snapshot.limitId,
+                slot: snapshot.slot,
+                resetAt: resetAt
+            )
+        }
 
         var points: [QuotaForecastEngine.RateSnapshotPoint] = []
         if let storedSnaps = try? env.repositories.getRecentRateLimitSnapshots(
             accountKey: env.state.selectedAccountKey ?? env.state.account?.accountKey,
             limit: 50
         ) {
-            points = storedSnaps.map { s in
-                QuotaForecastEngine.RateSnapshotPoint(
+            points = storedSnaps.compactMap { s in
+                guard let resetAt = s.resetsAt else { return nil }
+                return QuotaForecastEngine.RateSnapshotPoint(
                     timestamp: Date(timeIntervalSince1970: Double(s.observedAt)),
-                    usedPercent: Double(s.usedPercentMilli) / 1000.0
+                    usedPercent: Double(s.usedPercentMilli) / 1000.0,
+                    cycleKey: QuotaForecastEngine.QuotaCycleKey(
+                        accountID: s.accountKey,
+                        limitID: s.limitId,
+                        slot: s.slot,
+                        resetAt: resetAt
+                    )
                 )
             }
         }
@@ -148,6 +170,7 @@ public struct UsageDashboardView: View {
         await store.loadDashboardData(
             currentUsedPercent: used,
             resetsAt: resetsAt,
+            currentCycleKey: currentCycleKey,
             rateSnapshots: points
         )
     }
@@ -213,9 +236,9 @@ public struct UsageDashboardView: View {
             )
 
             DashboardKPICard(
-                title: L10n.text("API 等价价值估算", "API Equivalent Value"),
+                title: L10n.text("API 等价价值 · Beta", "API Equivalent Value · Beta"),
                 value: UsageNumberFormatter.currencyUSD(metrics.totalCost),
-                caption: L10n.text("按官方列表价核算", "Official list price"),
+                caption: pricingCoverageCaption(metrics.pricingCoverage),
                 icon: "dollarsign.circle.fill",
                 color: emerald
             )
@@ -284,6 +307,17 @@ public struct UsageDashboardView: View {
             return "—"
         }
         return UsageNumberFormatter.percent(metrics.cacheHitRatio * 100.0, maximumFractionDigits: 1)
+    }
+
+    private func pricingCoverageCaption(_ coverage: PricingCoverage) -> String {
+        switch coverage {
+        case .fullyPriced:
+            return L10n.text("不是订阅账单金额", "Not a bill")
+        case .partiallyPriced(let covered, let total):
+            return L10n.format("%d/%d priced events", zhHans: "%d/%d 条事件已计价", covered, total)
+        case .unpriced(let total):
+            return L10n.format("%d unpriced events", zhHans: "%d 条事件未计价", total)
+        }
     }
 
     // MARK: - 3. 双重智能预测引擎
@@ -398,7 +432,7 @@ public struct UsageDashboardView: View {
                         }
 
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(L10n.text("预计 API 等价值:", "Projected Value:"))
+                            Text(L10n.text("预计 API 等价价值:", "Projected Value:"))
                                 .font(.system(size: 10, design: .monospaced))
                                 .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
                             Text(UsageNumberFormatter.currencyUSD(lf.projectedTotalCost))
@@ -408,6 +442,15 @@ public struct UsageDashboardView: View {
 
                         Spacer()
                     }
+
+                    Text(L10n.format(
+                        "Pricing coverage %.1f%% · %lld unpriced tokens",
+                        zhHans: "价格覆盖率 %.1f%% · %lld 未计价 Token",
+                        lf.pricingCoverage.coverageRatio * 100.0,
+                        lf.unpricedTokenCount
+                    ))
+                    .font(.system(size: 9.5, design: .monospaced))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
                 }
                 .padding(14)
                 .frame(maxWidth: .infinity)

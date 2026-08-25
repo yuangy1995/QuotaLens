@@ -55,13 +55,51 @@ public final class AppEnvironment: ObservableObject {
         let dbDir = appSupport.appendingPathComponent("QuotaLens", isDirectory: true)
         let dbPath = dbDir.appendingPathComponent("quotalens.sqlite").path
 
+        var initializationWarning: String?
+        let initializedDatabase: SQLiteDatabase
         do {
             DevelopmentDatabaseReset.resetIfLegacySyntheticDataExists(databasePath: dbPath)
-            self.database = try SQLiteDatabase(path: dbPath)
-            try SchemaMigrations.migrate(database: database)
+            let primaryDatabase = try SQLiteDatabase(path: dbPath)
+            try SchemaMigrations.migrate(database: primaryDatabase)
+            initializedDatabase = primaryDatabase
         } catch {
-            fatalError("无法初始化 QuotaLens 数据库: \(error)")
+            let fallbackPath = FileManager.default.temporaryDirectory
+                .appendingPathComponent("QuotaLens-Recovery-\(UUID().uuidString).sqlite")
+                .path
+            do {
+                let recoveryDatabase = try SQLiteDatabase(path: fallbackPath)
+                try SchemaMigrations.migrate(database: recoveryDatabase)
+                initializedDatabase = recoveryDatabase
+                initializationWarning = L10n.format(
+                    "Local database initialization failed, using a temporary recovery database: %@",
+                    zhHans: "本地数据库初始化失败，已使用临时恢复数据库：%@",
+                    error.localizedDescription
+                )
+            } catch let recoveryError {
+                do {
+                    let memoryDatabase = try SQLiteDatabase(path: ":memory:")
+                    try SchemaMigrations.migrate(database: memoryDatabase)
+                    initializedDatabase = memoryDatabase
+                    initializationWarning = L10n.format(
+                        "Persistent storage is unavailable; using an in-memory recovery database for this launch. Primary: %@ · Recovery: %@",
+                        zhHans: "持久化存储不可用；本次启动已使用内存恢复数据库。主库：%@ · 恢复库：%@",
+                        error.localizedDescription,
+                        recoveryError.localizedDescription
+                    )
+                } catch let memoryError {
+                    initializedDatabase = SQLiteDatabase.disconnectedFallback()
+                    initializationWarning = L10n.format(
+                        "Local storage is unavailable; quota monitoring remains available without persistence. Primary: %@ · Recovery: %@ · Memory: %@",
+                        zhHans: "本地存储不可用；额度监控仍可继续，但本次不会持久化。主库：%@ · 恢复库：%@ · 内存库：%@",
+                        error.localizedDescription,
+                        recoveryError.localizedDescription,
+                        memoryError.localizedDescription
+                    )
+                }
+            }
         }
+        self.database = initializedDatabase
+        self.state.appInitializationWarningText = initializationWarning
 
         self.repositories = Repositories(database: database)
         self.transport = JSONRPCTransport()
@@ -873,7 +911,6 @@ public final class AppEnvironment: ObservableObject {
                 firstSeenAt: now,
                 lastSeenAt: now
             )
-            try repositories.upsertAccount(record)
             serverAccountDisplayNames[accountKey] = accountInfo.displayIdentifier
             state.accountDisplayNames[accountKey] = accountInfo.displayIdentifier
             state.selectedAccountKey = accountKey
@@ -883,15 +920,33 @@ public final class AppEnvironment: ObservableObject {
                 startsAt: accountInfo.subscriptionStartsAt,
                 endsAt: accountInfo.subscriptionEndsAt
             )
+            // The online quota UI must not depend on local persistence. A
+            // disconnected fallback keeps the live state and simply skips this
+            // best-effort write.
+            try? repositories.upsertAccount(record)
         }
 
         if let rateLimits = snapshot.rateLimits {
             updateResetCreditState(from: rateLimits.rateLimitResetCredits, accountKey: accountKey)
-            let insertedCount = try persistRateLimits(rateLimits, accountKey: accountKey, observedAt: now, rawJson: snapshot.rateLimitsRawJson)
+            let liveSnapshot = liveRateLimitSnapshot(
+                from: rateLimits,
+                accountKey: accountKey,
+                observedAt: now,
+                rawJson: snapshot.rateLimitsRawJson
+            )
+            let insertedCount = (try? persistRateLimits(
+                rateLimits,
+                accountKey: accountKey,
+                observedAt: now,
+                rawJson: snapshot.rateLimitsRawJson
+            )) ?? 0
             if insertedCount > 0, applyCachedQuotaSnapshotIfAvailable(for: accountKey) {
                 return
             }
-            if !applyCachedQuotaSnapshotIfAvailable(for: accountKey) {
+            if let liveSnapshot {
+                state.latestRateLimit = liveSnapshot
+                state.hasCurrentServerQuota = true
+            } else if !applyCachedQuotaSnapshotIfAvailable(for: accountKey) {
                 clearQuotaSnapshotState()
             }
         } else {
@@ -901,6 +956,59 @@ public final class AppEnvironment: ObservableObject {
             }
         }
 
+    }
+
+    private func liveRateLimitSnapshot(
+        from dto: RateLimitsReadResult,
+        accountKey: String,
+        observedAt: Int64,
+        rawJson: String
+    ) -> RateLimitSnapshotRecord? {
+        var candidates: [(fallbackID: String, limits: RateLimitsObject)] = []
+        if let exact = dto.rateLimitsByLimitId?[Self.primaryQuotaLimitId] {
+            candidates.append((Self.primaryQuotaLimitId, exact))
+        }
+        if let limits = dto.rateLimits {
+            candidates.append((limits.limitId ?? Self.primaryQuotaLimitId, limits))
+        }
+        if let byLimitID = dto.rateLimitsByLimitId {
+            for key in byLimitID.keys.sorted() where key != Self.primaryQuotaLimitId {
+                if let limits = byLimitID[key] {
+                    candidates.append((key, limits))
+                }
+            }
+        }
+
+        var seen = Set<String>()
+        for candidate in candidates {
+            let limitID = candidate.limits.limitId ?? candidate.fallbackID
+            guard seen.insert(limitID).inserted else { continue }
+            let detail: RateLimitWindowDetail
+            let slot: String
+            if let primary = candidate.limits.primary {
+                detail = primary
+                slot = "primary"
+            } else if let secondary = candidate.limits.secondary {
+                detail = secondary
+                slot = "secondary"
+            } else {
+                continue
+            }
+            guard let rawUsedPercent = detail.usedPercent else { continue }
+            let usedPercent = min(max(rawUsedPercent, 0), 100)
+            return RateLimitSnapshotRecord(
+                accountKey: accountKey,
+                observedAt: observedAt,
+                limitId: limitID,
+                slot: slot,
+                usedPercentMilli: Int((usedPercent * 1_000).rounded()),
+                windowDurationMins: detail.windowDurationMins,
+                resetsAt: detail.resetsAt,
+                planType: candidate.limits.planType,
+                rawJson: rawJson
+            )
+        }
+        return nil
     }
 
     private func restoreResetCreditState(for accountKey: String, snapshot: RateLimitSnapshotRecord?) {

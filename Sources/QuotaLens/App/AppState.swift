@@ -198,6 +198,7 @@ public final class AppState: ObservableObject {
     @Published public var subscriptionTargetPlanDisplayName: String?
     @Published public var subscriptionEntitlementFetchedAt: Int64?
     @Published public var subscriptionEntitlementErrorText: String?
+    @Published public var appInitializationWarningText: String?
     @Published public var activeResetCreditReminder: ResetCreditReminderAlert?
     @Published public var nextResetCreditReminderAt: Date?
 

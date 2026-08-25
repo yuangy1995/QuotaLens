@@ -16,10 +16,12 @@ public struct RawTokenUsagePayload: Sendable {
         reasoningOutputTokens: Int64 = 0,
         totalTokens: Int64? = nil
     ) {
-        self.inputTokens = max(0, inputTokens)
-        self.cachedInputTokens = min(max(0, cachedInputTokens), max(0, inputTokens))
-        self.outputTokens = max(0, outputTokens)
-        self.reasoningOutputTokens = min(max(0, reasoningOutputTokens), max(0, outputTokens))
+        let normalizedCached = max(0, cachedInputTokens)
+        let normalizedReasoning = max(0, reasoningOutputTokens)
+        self.inputTokens = max(max(0, inputTokens), normalizedCached)
+        self.cachedInputTokens = normalizedCached
+        self.outputTokens = max(max(0, outputTokens), normalizedReasoning)
+        self.reasoningOutputTokens = normalizedReasoning
         self.totalTokens = totalTokens
     }
 }
@@ -27,6 +29,7 @@ public struct RawTokenUsagePayload: Sendable {
 public struct RolloutWireEvent: Sendable {
     public let eventType: String
     public let timestampMs: Int64
+    public let timestampQuality: TimestampQuality
     public let sessionId: String?
     public let parentSessionId: String?
     public let model: String?
@@ -40,6 +43,7 @@ public struct RolloutWireEvent: Sendable {
     public init(
         eventType: String,
         timestampMs: Int64,
+        timestampQuality: TimestampQuality = .eventTimestamp,
         sessionId: String? = nil,
         parentSessionId: String? = nil,
         model: String? = nil,
@@ -52,6 +56,7 @@ public struct RolloutWireEvent: Sendable {
     ) {
         self.eventType = eventType
         self.timestampMs = timestampMs
+        self.timestampQuality = timestampQuality
         self.sessionId = sessionId
         self.parentSessionId = parentSessionId
         self.model = model
@@ -66,37 +71,45 @@ public struct RolloutWireEvent: Sendable {
 
 public enum RolloutLineDecoder {
     public static func mayContainUsageRelevantEvent(_ lineString: String) -> Bool {
-        lineString.contains(#""token_count""#)
-            || lineString.contains(#""turn_context""#)
-            || lineString.contains(#""thread_settings_applied""#)
-            || lineString.contains(#""task_started""#)
+        lineString.contains("token_count")
+            || lineString.contains("turn_context")
+            || lineString.contains("thread_settings_applied")
+            || lineString.contains("task_started")
+            || lineString.contains("user_message")
+            || lineString.contains("last_token_usage")
+            || lineString.contains("total_token_usage")
     }
 
     public static func mayContainUsageRelevantEvent(_ lineData: Data.SubSequence) -> Bool {
-        // Relevant rollout discriminators live at the top of the JSON record.
-        // Limit the scan to the prefix so multi-MB response/tool records do not
-        // get searched repeatedly before being skipped.
-        let prefixEnd = lineData.index(lineData.startIndex, offsetBy: min(lineData.count, 2_048))
-        let prefix = lineData[lineData.startIndex..<prefixEnd]
-        for needle in relevantEventNeedles where contains(needle, in: prefix) {
-            return true
+        guard !lineData.isEmpty else { return false }
+        // This predicate is only applied to a complete line. It intentionally
+        // does not assume compact JSON, key order, or a short prefix.
+        let needles = [
+            "token_count", "turn_context", "thread_settings_applied",
+            "task_started", "user_message", "last_token_usage",
+            "total_token_usage"
+        ]
+        return needles.contains { needle in
+            lineData.range(of: Data(needle.utf8)) != nil
         }
-        return false
     }
 
     /// 快速将一行 JSONL 解析为 RolloutWireEvent
     public static func decodeLine(_ lineString: String) -> RolloutWireEvent? {
-        guard mayContainUsageRelevantEvent(lineString) else {
+        let normalizedLine = lineString.hasPrefix("\u{feff}")
+            ? String(lineString.dropFirst())
+            : lineString
+        guard mayContainUsageRelevantEvent(normalizedLine) else {
             return nil
         }
 
-        guard let data = lineString.data(using: .utf8),
+        guard let data = normalizedLine.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return nil
         }
 
         let outerType = (json["type"] as? String ?? json["event"] as? String ?? "unknown").lowercased()
-        let timestampMs = extractTimestampMs(from: json)
+        let timestamp = extractTimestamp(from: json)
 
         let payload = (json["payload"] as? [String: Any]) ?? json
         let info = payload["info"] as? [String: Any]
@@ -165,9 +178,21 @@ public enum RolloutLineDecoder {
             }
         }
 
+        let isRelevantType = [
+            "token_count",
+            "turn_context",
+            "thread_settings_applied",
+            "task_started",
+            "user_message"
+        ].contains(type)
+        guard isRelevantType || lastUsage != nil || totalUsage != nil || model != nil || serviceTier != nil else {
+            return nil
+        }
+
         return RolloutWireEvent(
             eventType: type,
-            timestampMs: timestampMs,
+            timestampMs: timestamp.value,
+            timestampQuality: timestamp.quality,
             sessionId: sessionId,
             parentSessionId: parentSessionId,
             model: model,
@@ -175,30 +200,31 @@ public enum RolloutLineDecoder {
             turnIndex: turnIndex,
             callIndex: callIndex,
             lastTokenUsage: lastUsage,
-            totalTokenUsage: totalUsage
+            totalTokenUsage: totalUsage,
+            isReplayMarker: extractReplayMarker(type: type, json: json, payload: payload)
         )
     }
 
-    private static func extractTimestampMs(from json: [String: Any]) -> Int64 {
+    private static func extractTimestamp(from json: [String: Any]) -> (value: Int64, quality: TimestampQuality) {
         if let ts = json["timestamp"] as? Int64 {
             // 如果是毫秒 (> 10^11) 直接使用，否则作为秒转换
-            return ts > 100_000_000_000 ? ts : ts * 1000
+            return (ts > 100_000_000_000 ? ts : ts * 1000, .eventTimestamp)
         }
         if let tsDouble = json["timestamp"] as? Double {
-            return Int64(tsDouble > 100_000_000_000 ? tsDouble : tsDouble * 1000)
+            return (Int64(tsDouble > 100_000_000_000 ? tsDouble : tsDouble * 1000), .eventTimestamp)
         }
         if let tsStr = json["timestamp"] as? String {
             if let intVal = Int64(tsStr) {
-                return intVal > 100_000_000_000 ? intVal : intVal * 1000
+                return (intVal > 100_000_000_000 ? intVal : intVal * 1000, .eventTimestamp)
             }
             if let date = dateFromISO8601(tsStr) {
-                return Int64(date.timeIntervalSince1970 * 1000)
+                return (Int64(date.timeIntervalSince1970 * 1000), .eventTimestamp)
             }
         }
         if let createdAt = json["created_at"] as? Int64 {
-            return createdAt > 100_000_000_000 ? createdAt : createdAt * 1000
+            return (createdAt > 100_000_000_000 ? createdAt : createdAt * 1000, .eventTimestamp)
         }
-        return Int64(Date().timeIntervalSince1970 * 1000)
+        return (0, .unresolved)
     }
 
     private static func parseTokenUsageDict(_ dict: [String: Any]) -> RawTokenUsagePayload {
@@ -235,22 +261,17 @@ public enum RolloutLineDecoder {
         return nil
     }
 
-    private static let relevantEventNeedles: [[UInt8]] = [
-        Array(#""type":"token_count""#.utf8),
-        Array(#""type":"turn_context""#.utf8),
-        Array(#""type":"thread_settings_applied""#.utf8),
-        Array(#""type":"task_started""#.utf8),
-    ]
-
-    private static func contains(_ needle: [UInt8], in haystack: Data.SubSequence) -> Bool {
-        guard !needle.isEmpty, haystack.count >= needle.count else { return false }
-        var matched = 0
-        for byte in haystack {
-            if byte == needle[matched] {
-                matched += 1
-                if matched == needle.count { return true }
-            } else {
-                matched = byte == needle[0] ? 1 : 0
+    private static func extractReplayMarker(type: String, json: [String: Any], payload: [String: Any]) -> Bool {
+        if type.contains("replay") || type.contains("history") {
+            return true
+        }
+        for key in ["is_replay", "replay", "is_child_replay", "history_replay"] {
+            if let value = (payload[key] as? Bool) ?? (json[key] as? Bool), value {
+                return true
+            }
+            if let value = (payload[key] as? String) ?? (json[key] as? String),
+               ["1", "true", "yes"].contains(value.lowercased()) {
+                return true
             }
         }
         return false

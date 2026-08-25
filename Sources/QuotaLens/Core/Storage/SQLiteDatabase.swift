@@ -12,15 +12,17 @@ public final class SQLiteDatabase: @unchecked Sendable {
     public init(path: String) throws {
         self.dbPath = path
         let fileManager = FileManager.default
-        let directory = (path as NSString).deletingLastPathComponent
-        if !fileManager.fileExists(atPath: directory) {
-            try fileManager.createDirectory(
-                atPath: directory,
-                withIntermediateDirectories: true,
-                attributes: [.posixPermissions: 0o700]
-            )
-        } else {
-            try? fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory)
+        if path != ":memory:" {
+            let directory = (path as NSString).deletingLastPathComponent
+            if !fileManager.fileExists(atPath: directory) {
+                try fileManager.createDirectory(
+                    atPath: directory,
+                    withIntermediateDirectories: true,
+                    attributes: [.posixPermissions: 0o700]
+                )
+            } else {
+                try? fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory)
+            }
         }
 
         var pointer: OpaquePointer?
@@ -38,7 +40,21 @@ public final class SQLiteDatabase: @unchecked Sendable {
         try execute(sql: "PRAGMA synchronous = NORMAL;")
         try execute(sql: "PRAGMA foreign_keys = ON;")
         try execute(sql: "PRAGMA busy_timeout = 5000;")
-        try? fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)
+        if path != ":memory:" {
+            try? fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)
+        }
+    }
+
+    private init(disconnectedPath: String) {
+        self.dbPath = disconnectedPath
+        self.dbPointer = nil
+    }
+
+    /// Last-resort handle used only when both the persistent and temporary
+    /// databases fail. It keeps quota and subscription UI alive; operations on
+    /// this handle fail normally instead of terminating the process.
+    public static func disconnectedFallback() -> SQLiteDatabase {
+        SQLiteDatabase(disconnectedPath: "disconnected://QuotaLens")
     }
 
     deinit {

@@ -25,33 +25,72 @@ public final class SessionsStore: ObservableObject {
         }
     }
     @Published public var isLoading: Bool = false
+    @Published public var isLoadingNextPage: Bool = false
     @Published public var isLoadingDetail: Bool = false
     @Published public var errorMessage: String? = nil
 
     private let facade: UsageQueryFacade
     private var searchCancellable: Task<Void, Never>?
+    private var nextCursor: String?
+    private var queryGeneration = 0
+    private let pageSize = 50
+
+    public var hasMoreSessions: Bool { nextCursor != nil }
 
     public init(facade: UsageQueryFacade) {
         self.facade = facade
     }
 
     public func reloadSessions() async {
+        queryGeneration += 1
+        let generation = queryGeneration
         isLoading = true
+        isLoadingNextPage = false
+        nextCursor = nil
         errorMessage = nil
         do {
-            let list = try await facade.getSessions(
+            let page = try await facade.getSessionPage(
                 sort: sortOption,
                 search: searchText.isEmpty ? nil : searchText,
-                limit: 100
+                limit: pageSize
             )
-            self.sessions = list
-            if selectedSessionId == nil, let first = list.first {
+            guard generation == queryGeneration else { return }
+            self.sessions = page.sessions
+            self.nextCursor = page.nextCursor
+            if selectedSessionId == nil, let first = page.sessions.first {
                 self.selectedSessionId = first.sessionId
             }
         } catch {
+            guard generation == queryGeneration else { return }
             self.errorMessage = error.localizedDescription
         }
-        isLoading = false
+        if generation == queryGeneration {
+            isLoading = false
+        }
+    }
+
+    public func loadNextPage() async {
+        guard !isLoading, !isLoadingNextPage, let cursor = nextCursor else { return }
+        let generation = queryGeneration
+        isLoadingNextPage = true
+        defer {
+            if generation == queryGeneration { isLoadingNextPage = false }
+        }
+        do {
+            let page = try await facade.getSessionPage(
+                sort: sortOption,
+                search: searchText.isEmpty ? nil : searchText,
+                limit: pageSize,
+                cursor: cursor
+            )
+            guard generation == queryGeneration else { return }
+            let existingIDs = Set(sessions.map(\.sessionId))
+            sessions.append(contentsOf: page.sessions.filter { !existingIDs.contains($0.sessionId) })
+            nextCursor = page.nextCursor
+        } catch {
+            guard generation == queryGeneration else { return }
+            errorMessage = error.localizedDescription
+        }
     }
 
     public func loadSelectedSessionDetail() async {

@@ -2,6 +2,7 @@
 // 严格遵循实施计划要求：版本化、可幂等重复执行、事务保护、版本冲突防护
 
 import Foundation
+import SQLite3
 
 public protocol DatabaseMigration {
     var version: Int { get }
@@ -10,7 +11,7 @@ public protocol DatabaseMigration {
 }
 
 public struct SchemaMigrations {
-    public static let targetSchemaVersion = 5
+    public static let targetSchemaVersion = 7
 
     public static func migrate(database: SQLiteDatabase) throws {
         let currentVersion = try database.intScalar(sql: "PRAGMA user_version;")
@@ -34,7 +35,9 @@ public struct SchemaMigrations {
             V2CodexUsageCoreMigration(),
             V3PricingAndSummariesMigration(),
             V4DiagnosticsAndIndexesMigration(),
-            V5AggregateOnlyUsageMigration()
+            V5AggregateOnlyUsageMigration(),
+            V6UsageTruthAndRecoveryMigration(),
+            V7CatalogIdentityAndParserV4Migration()
         ]
 
         for migration in migrations where migration.version > currentVersion {
@@ -45,6 +48,106 @@ public struct SchemaMigrations {
         }
 
         try V5AggregateOnlyUsageMigration.compactIfNeeded(database: database)
+    }
+}
+
+// MARK: - V7: immutable catalog rows, agent search, parser v4 rebuild
+private struct V7CatalogIdentityAndParserV4Migration: DatabaseMigration {
+    let version = 7
+    let name = "V7CatalogIdentityAndParserV4"
+
+    func apply(database: SQLiteDatabase) throws {
+        // V3 used alias_pattern and rule_id as global primary keys, so installing
+        // a newer catalog could overwrite rows belonging to an older catalog.
+        // Rebuild both tables with catalog-scoped identities.
+        try database.execute(sql: """
+        DROP INDEX IF EXISTS idx_codex_aliases_target;
+        ALTER TABLE codex_model_aliases RENAME TO codex_model_aliases_v6;
+        CREATE TABLE codex_model_aliases (
+            alias_pattern TEXT NOT NULL,
+            target_model_key TEXT NOT NULL,
+            match_type TEXT NOT NULL DEFAULT 'exact',
+            catalog_version TEXT NOT NULL,
+            PRIMARY KEY(alias_pattern, catalog_version)
+        );
+        INSERT OR IGNORE INTO codex_model_aliases (
+            alias_pattern, target_model_key, match_type, catalog_version
+        )
+        SELECT alias_pattern, target_model_key, match_type, catalog_version
+        FROM codex_model_aliases_v6;
+        DROP TABLE codex_model_aliases_v6;
+        CREATE INDEX idx_codex_aliases_target
+            ON codex_model_aliases(target_model_key, catalog_version);
+
+        DROP INDEX IF EXISTS idx_codex_pricing_model_tier_time;
+        ALTER TABLE codex_pricing_rules RENAME TO codex_pricing_rules_v6;
+        CREATE TABLE codex_pricing_rules (
+            rule_id TEXT NOT NULL,
+            model_key TEXT NOT NULL,
+            service_tier TEXT,
+            effective_from_ms INTEGER NOT NULL,
+            effective_to_ms INTEGER,
+            input_usd_nano_per_token INTEGER NOT NULL,
+            cached_usd_nano_per_token INTEGER NOT NULL,
+            cache_write_usd_nano_per_token INTEGER,
+            output_usd_nano_per_token INTEGER NOT NULL,
+            long_context_threshold_tokens INTEGER,
+            long_context_input_multiplier_ppm INTEGER,
+            long_context_output_multiplier_ppm INTEGER,
+            catalog_version TEXT NOT NULL,
+            PRIMARY KEY(rule_id, catalog_version)
+        );
+        INSERT OR IGNORE INTO codex_pricing_rules (
+            rule_id, model_key, service_tier, effective_from_ms, effective_to_ms,
+            input_usd_nano_per_token, cached_usd_nano_per_token,
+            cache_write_usd_nano_per_token, output_usd_nano_per_token,
+            long_context_threshold_tokens, long_context_input_multiplier_ppm,
+            long_context_output_multiplier_ppm, catalog_version
+        )
+        SELECT
+            rule_id, model_key, service_tier, effective_from_ms, effective_to_ms,
+            input_usd_nano_per_token, cached_usd_nano_per_token,
+            cache_write_usd_nano_per_token, output_usd_nano_per_token,
+            long_context_threshold_tokens, long_context_input_multiplier_ppm,
+            long_context_output_multiplier_ppm, catalog_version
+        FROM codex_pricing_rules_v6;
+        DROP TABLE codex_pricing_rules_v6;
+        CREATE INDEX idx_codex_pricing_model_tier_time
+            ON codex_pricing_rules(catalog_version, model_key, service_tier, effective_from_ms, effective_to_ms);
+        """)
+
+        try addColumnIfMissing(database: database, table: "codex_sessions", column: "agent_type", definition: "TEXT")
+        try addColumnIfMissing(database: database, table: "codex_import_sources", column: "rebuild_reason", definition: "TEXT")
+        try addColumnIfMissing(database: database, table: "codex_import_sources", column: "malformed_line_count", definition: "INTEGER NOT NULL DEFAULT 0")
+        try addColumnIfMissing(database: database, table: "codex_import_sources", column: "unresolved_timestamp_count", definition: "INTEGER NOT NULL DEFAULT 0")
+        try addColumnIfMissing(database: database, table: "codex_import_sources", column: "unknown_event_type_count", definition: "INTEGER NOT NULL DEFAULT 0")
+
+        // Parser v4 introduces stable physical-source event IDs and
+        // component-wise cumulative counter restart handling.
+        try database.execute(sql: """
+        DELETE FROM codex_usage_events;
+        DELETE FROM codex_session_summaries;
+        DELETE FROM codex_daily_usage_summaries;
+        DELETE FROM codex_sessions;
+        DELETE FROM codex_import_sources;
+        INSERT OR REPLACE INTO app_metadata (key, value, updated_at)
+            VALUES ('codex_usage_generation', unixepoch(), unixepoch());
+        INSERT OR REPLACE INTO app_metadata (key, value, updated_at)
+            VALUES ('codex_parser_version', '4', unixepoch());
+        """)
+    }
+
+    private func addColumnIfMissing(
+        database: SQLiteDatabase,
+        table: String,
+        column: String,
+        definition: String
+    ) throws {
+        let columns = try database.executeQuery(sql: "PRAGMA table_info(\(table));") { statement in
+            String(cString: sqlite3_column_text(statement, 1))
+        }
+        guard !columns.contains(column) else { return }
+        try database.execute(sql: "ALTER TABLE \(table) ADD COLUMN \(column) \(definition);")
     }
 }
 
@@ -496,5 +599,87 @@ private struct V5AggregateOnlyUsageMigration: DatabaseMigration {
             sql: "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES (?, '1', unixepoch());",
             bindings: [completionKey]
         )
+    }
+}
+
+// MARK: - V6: 价格审计、事件账本、解析版本与文件恢复指纹
+private struct V6UsageTruthAndRecoveryMigration: DatabaseMigration {
+    let version = 6
+    let name = "V6UsageTruthAndRecovery"
+
+    func apply(database: SQLiteDatabase) throws {
+        try addColumnIfMissing(
+            database: database,
+            table: "codex_pricing_rules",
+            column: "cache_write_usd_nano_per_token",
+            definition: "INTEGER"
+        )
+        try addColumnIfMissing(
+            database: database,
+            table: "codex_pricing_rules",
+            column: "long_context_threshold_tokens",
+            definition: "INTEGER"
+        )
+        try addColumnIfMissing(
+            database: database,
+            table: "codex_pricing_rules",
+            column: "long_context_input_multiplier_ppm",
+            definition: "INTEGER"
+        )
+        try addColumnIfMissing(
+            database: database,
+            table: "codex_pricing_rules",
+            column: "long_context_output_multiplier_ppm",
+            definition: "INTEGER"
+        )
+
+        try addColumnIfMissing(database: database, table: "codex_import_sources", column: "head_sha256", definition: "TEXT")
+        try addColumnIfMissing(database: database, table: "codex_import_sources", column: "tail_sha256", definition: "TEXT")
+        try addColumnIfMissing(database: database, table: "codex_import_sources", column: "imported_tail_sha256", definition: "TEXT")
+        try addColumnIfMissing(database: database, table: "codex_import_sources", column: "parser_version", definition: "INTEGER NOT NULL DEFAULT 3")
+        try addColumnIfMissing(database: database, table: "codex_import_sources", column: "scan_generation", definition: "INTEGER NOT NULL DEFAULT 0")
+
+        try addColumnIfMissing(database: database, table: "codex_usage_events", column: "timestamp_quality", definition: "TEXT NOT NULL DEFAULT 'event_timestamp'")
+        try addColumnIfMissing(database: database, table: "codex_usage_events", column: "pricing_catalog_version", definition: "TEXT")
+
+        try database.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_codex_events_session_time_offset
+            ON codex_usage_events(session_id, timestamp_ms DESC, line_offset DESC);
+        CREATE INDEX IF NOT EXISTS idx_codex_events_range_session
+            ON codex_usage_events(is_child_replay, timestamp_ms, session_id);
+        CREATE INDEX IF NOT EXISTS idx_codex_sources_generation
+            ON codex_import_sources(scan_generation, status);
+        """)
+
+        // Parser v3 changes timestamp/model/replay semantics and pricing v2 changes value math.
+        // Preserve quota/account data, but force local Codex usage aggregates to rebuild.
+        try database.execute(sql: """
+        DELETE FROM codex_usage_events;
+        DELETE FROM codex_session_summaries;
+        DELETE FROM codex_daily_usage_summaries;
+        DELETE FROM codex_sessions;
+        DELETE FROM codex_import_sources;
+        INSERT OR REPLACE INTO app_metadata (key, value, updated_at)
+            VALUES ('codex_usage_generation', unixepoch(), unixepoch());
+        INSERT OR REPLACE INTO app_metadata (key, value, updated_at)
+            VALUES ('codex_parser_version', '3', unixepoch());
+        """)
+    }
+
+    private func addColumnIfMissing(
+        database: SQLiteDatabase,
+        table: String,
+        column: String,
+        definition: String
+    ) throws {
+        guard try !columnExists(database: database, table: table, column: column) else { return }
+        try database.execute(sql: "ALTER TABLE \(table) ADD COLUMN \(column) \(definition);")
+    }
+
+    private func columnExists(database: SQLiteDatabase, table: String, column: String) throws -> Bool {
+        try database.executeQuery(sql: "PRAGMA table_info(\(table));") { stmt in
+            String(cString: sqlite3_column_text(stmt, 1))
+        }
+        .contains(column)
     }
 }

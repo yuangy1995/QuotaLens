@@ -6,11 +6,18 @@ import Combine
 @MainActor
 public final class HistoryStore: ObservableObject {
     @Published public var days: [DayUsageSummaryDTO] = []
-    @Published public var selectedDayKey: LocalDayKey? = nil
+    @Published public var selectedDayKey: LocalDayKey? = nil {
+        didSet {
+            guard oldValue != selectedDayKey else { return }
+            Task { await loadSelectedDayDetail() }
+        }
+    }
+    @Published public var selectedDayDetail: DayDetailDTO? = nil
     @Published public var selectedRangeDays: Int = 30 {
         didSet { Task { await loadHistory() } }
     }
     @Published public var isLoading: Bool = false
+    @Published public var isLoadingDetail: Bool = false
     @Published public var errorMessage: String? = nil
 
     private let facade: UsageQueryFacade
@@ -27,6 +34,8 @@ public final class HistoryStore: ObservableObject {
             self.days = list
             if selectedDayKey == nil || !list.contains(where: { $0.dayKey == selectedDayKey }) {
                 self.selectedDayKey = list.first?.dayKey
+            } else {
+                await loadSelectedDayDetail()
             }
         } catch {
             self.errorMessage = error.localizedDescription
@@ -37,6 +46,22 @@ public final class HistoryStore: ObservableObject {
     public var selectedDaySummary: DayUsageSummaryDTO? {
         guard let key = selectedDayKey else { return days.first }
         return days.first(where: { $0.dayKey == key })
+    }
+
+    public func loadSelectedDayDetail() async {
+        guard let dayKey = selectedDayKey else {
+            selectedDayDetail = nil
+            return
+        }
+        isLoadingDetail = true
+        defer { isLoadingDetail = false }
+        do {
+            let detail = try await facade.getDayDetail(dayKey: dayKey)
+            guard selectedDayKey == dayKey else { return }
+            selectedDayDetail = detail
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 }
 
@@ -157,6 +182,14 @@ public struct HistoryView: View {
                         if !day.modelSummaries.isEmpty {
                             dayModelDistributionCard(day: day)
                         }
+
+                        if store.isLoadingDetail {
+                            ProgressView()
+                                .controlSize(.small)
+                                .padding(.vertical, 8)
+                        } else if let detail = store.selectedDayDetail {
+                            daySessionTimelineCard(detail: detail)
+                        }
                     }
                     .padding(18)
                 }
@@ -208,9 +241,11 @@ public struct HistoryView: View {
                     )
 
                     MetricHUDTile(
-                        title: L10n.text("当日估算价值", "Day Est. Value"),
+                        title: L10n.text("当日 API 等价价值 · Beta", "Day API Equivalent Value · Beta"),
                         value: UsageNumberFormatter.currencyUSD(day.estimatedCost),
-                        caption: L10n.text("按官方列表价", "List price"),
+                        caption: day.unpricedEventCount == 0
+                            ? L10n.text("不是订阅账单金额", "Not a bill")
+                            : L10n.format("%d unpriced events", zhHans: "%d 条未计价事件", day.unpricedEventCount),
                         icon: "dollarsign.circle.fill",
                         accentColor: emerald
                     )
@@ -316,6 +351,82 @@ public struct HistoryView: View {
                     }
                     .padding(.vertical, 4)
                     .padding(.horizontal, 8)
+                }
+            }
+        }
+        .padding(12)
+        .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
+        )
+    }
+
+    private func daySessionTimelineCard(detail: DayDetailDTO) -> some View {
+        let cyan = AppTheme.accentCyan(for: colorScheme)
+        let emerald = AppTheme.accentEmerald(for: colorScheme)
+
+        return VStack(alignment: .leading, spacing: 10) {
+            Text(L10n.text("当日会话与事件时间线", "Day Sessions & Event Timeline"))
+                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+
+            if detail.sessions.isEmpty {
+                Text(L10n.text("当日没有可下钻的事件事实", "No event facts are available for this day"))
+                    .font(.system(size: 10.5, design: .monospaced))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+            } else {
+                ForEach(detail.sessions) { slice in
+                    VStack(alignment: .leading, spacing: 7) {
+                        HStack(spacing: 8) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(slice.session.displayTitle)
+                                    .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                                    .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                                    .lineLimit(1)
+                                Text(L10n.format("%d events", zhHans: "%d 条事件", slice.dayEventCount))
+                                    .font(.system(size: 9.5, design: .monospaced))
+                                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                            }
+                            Spacer()
+                            Text(UsageNumberFormatter.compactTokenCount(slice.dayTokens.canonicalTotalTokens))
+                                .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+                                .foregroundStyle(cyan)
+                            Text(UsageNumberFormatter.currencyUSD(slice.dayCost))
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .foregroundStyle(emerald)
+                        }
+
+                        ForEach(slice.events.prefix(50)) { event in
+                            HStack(spacing: 8) {
+                                Text(event.timestamp.formatted(date: .omitted, time: .standard))
+                                    .font(.system(size: 9, design: .monospaced))
+                                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                                    .frame(width: 72, alignment: .leading)
+                                Text(event.modelCanonical)
+                                    .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(cyan)
+                                    .lineLimit(1)
+                                Spacer()
+                                Text(UsageNumberFormatter.compactTokenCount(event.tokens.canonicalTotalTokens))
+                                    .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                                    .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                                Text(event.pricingStatus.isPriced
+                                    ? UsageNumberFormatter.currencyUSD(event.estimatedCost)
+                                    : L10n.text("未计价", "Unpriced"))
+                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(event.pricingStatus.isPriced ? emerald : AppTheme.accentAmber(for: colorScheme))
+                                    .frame(width: 66, alignment: .trailing)
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    }
+                    .padding(10)
+                    .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.7)
+                    )
                 }
             }
         }

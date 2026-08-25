@@ -255,6 +255,106 @@ public enum L10n {
 }
 
 private let keyedTranslations: [String: [AppLanguage: String]] = [
+    "API Equivalent Value · Beta": [
+        .traditionalChinese: "API 等價價值 · Beta",
+        .japanese: "API 換算価値 · Beta",
+        .korean: "API 환산 가치 · Beta",
+        .spanish: "Valor equivalente API · Beta",
+        .german: "API-Gegenwert · Beta",
+        .french: "Valeur équivalente API · bêta",
+        .portuguese: "Valor equivalente da API · Beta",
+        .portugueseBrazil: "Valor equivalente da API · Beta"
+    ],
+    "Day API Equivalent Value · Beta": [
+        .traditionalChinese: "當日 API 等價價值 · Beta",
+        .japanese: "当日 API 換算価値 · Beta",
+        .korean: "일일 API 환산 가치 · Beta",
+        .spanish: "Valor API del día · Beta",
+        .german: "API-Tagesgegenwert · Beta",
+        .french: "Valeur API du jour · bêta",
+        .portuguese: "Valor API do dia · Beta",
+        .portugueseBrazil: "Valor API do dia · Beta"
+    ],
+    "Not a bill": [
+        .traditionalChinese: "不是訂閱帳單金額",
+        .japanese: "請求額ではありません",
+        .korean: "청구 금액이 아닙니다",
+        .spanish: "No es una factura",
+        .german: "Kein Rechnungsbetrag",
+        .french: "Ce n'est pas une facture",
+        .portuguese: "Não é uma fatura",
+        .portugueseBrazil: "Não é uma fatura"
+    ],
+    "Unknown model, no default pricing": [
+        .traditionalChinese: "未知模型，未使用預設計價",
+        .japanese: "不明なモデル、既定価格は未使用",
+        .korean: "알 수 없는 모델, 기본 가격 미사용",
+        .spanish: "Modelo desconocido, sin precio predeterminado",
+        .german: "Unbekanntes Modell, keine Standardpreise",
+        .french: "Modèle inconnu, aucun prix par défaut",
+        .portuguese: "Modelo desconhecido, sem preço padrão",
+        .portugueseBrazil: "Modelo desconhecido, sem preço padrão"
+    ],
+    "Missing timestamp": [
+        .traditionalChinese: "缺少時間戳",
+        .japanese: "タイムスタンプなし",
+        .korean: "타임스탬프 없음",
+        .spanish: "Falta marca de tiempo",
+        .german: "Zeitstempel fehlt",
+        .french: "Horodatage manquant",
+        .portuguese: "Carimbo de data/hora ausente",
+        .portugueseBrazil: "Carimbo de data/hora ausente"
+    ],
+    "Local Index Diagnostics": [
+        .traditionalChinese: "本地索引診斷",
+        .japanese: "ローカルインデックス診断",
+        .korean: "로컬 인덱스 진단",
+        .spanish: "Diagnóstico del índice local",
+        .german: "Lokale Indexdiagnose",
+        .french: "Diagnostics de l'index local",
+        .portuguese: "Diagnóstico do índice local",
+        .portugueseBrazil: "Diagnóstico do índice local"
+    ],
+    "Unpriced": [
+        .traditionalChinese: "未計價",
+        .japanese: "未価格",
+        .korean: "미가격",
+        .spanish: "Sin precio",
+        .german: "Nicht bepreist",
+        .french: "Non tarifé",
+        .portuguese: "Sem preço",
+        .portugueseBrazil: "Sem preço"
+    ],
+    "Unknown Models": [
+        .traditionalChinese: "未知模型",
+        .japanese: "不明なモデル",
+        .korean: "알 수 없는 모델",
+        .spanish: "Modelos desconocidos",
+        .german: "Unbekannte Modelle",
+        .french: "Modèles inconnus",
+        .portuguese: "Modelos desconhecidos",
+        .portugueseBrazil: "Modelos desconhecidos"
+    ],
+    "Timestamp Fallbacks": [
+        .traditionalChinese: "時間兜底",
+        .japanese: "時刻フォールバック",
+        .korean: "타임스탬프 대체",
+        .spanish: "Fechas estimadas",
+        .german: "Zeit-Fallbacks",
+        .french: "Horodatages de secours",
+        .portuguese: "Datas estimadas",
+        .portugueseBrazil: "Datas estimadas"
+    ],
+    "Active catalog: %@": [
+        .traditionalChinese: "目前價格目錄：%@",
+        .japanese: "有効な価格カタログ: %@",
+        .korean: "활성 가격 카탈로그: %@",
+        .spanish: "Catálogo activo: %@",
+        .german: "Aktiver Katalog: %@",
+        .french: "Catalogue actif : %@",
+        .portuguese: "Catálogo ativo: %@",
+        .portugueseBrazil: "Catálogo ativo: %@"
+    ],
     "Usage Dashboard": [
         .traditionalChinese: "用量大盤",
         .japanese: "利用状況ダッシュボード",

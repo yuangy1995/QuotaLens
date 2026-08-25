@@ -10,6 +10,7 @@ public struct CodexRawSessionMetadata: Sendable {
     public var cwd: String?
     public var projectName: String?
     public var parentSessionId: String?
+    public var agentType: String?
     public var createdAt: Date?
     public var updatedAt: Date?
 
@@ -19,6 +20,7 @@ public struct CodexRawSessionMetadata: Sendable {
         cwd: String? = nil,
         projectName: String? = nil,
         parentSessionId: String? = nil,
+        agentType: String? = nil,
         createdAt: Date? = nil,
         updatedAt: Date? = nil
     ) {
@@ -27,6 +29,7 @@ public struct CodexRawSessionMetadata: Sendable {
         self.cwd = cwd
         self.projectName = projectName
         self.parentSessionId = parentSessionId
+        self.agentType = agentType
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
@@ -62,6 +65,7 @@ public struct CodexResolvedSessionMetadata: Sendable {
     public let title: String?
     public let cwd: String?
     public let projectName: String?
+    public let agentType: String?
     public let createdAt: Date
     public let updatedAt: Date
     public let hasSubagents: Bool
@@ -75,6 +79,7 @@ public struct CodexResolvedSessionMetadata: Sendable {
         title: String?,
         cwd: String?,
         projectName: String?,
+        agentType: String? = nil,
         createdAt: Date,
         updatedAt: Date,
         hasSubagents: Bool,
@@ -87,6 +92,7 @@ public struct CodexResolvedSessionMetadata: Sendable {
         self.title = title
         self.cwd = cwd
         self.projectName = projectName
+        self.agentType = agentType
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.hasSubagents = hasSubagents
@@ -133,6 +139,7 @@ public enum CodexSessionMetadataStore {
                     if existing.projectName == nil { existing.projectName = meta.projectName }
                     if existing.title == nil || existing.title?.isEmpty == true { existing.title = meta.title }
                     if existing.parentSessionId == nil { existing.parentSessionId = meta.parentSessionId }
+                    if existing.agentType == nil { existing.agentType = meta.agentType }
                     if existing.createdAt == nil { existing.createdAt = meta.createdAt }
                     if existing.updatedAt == nil { existing.updatedAt = meta.updatedAt }
                     metadataMap[id] = existing
@@ -171,6 +178,7 @@ public enum CodexSessionMetadataStore {
                 ?? json["parent_session_id"] as? String
                 ?? json["parent_id"] as? String
                 ?? json["forked_from_id"] as? String
+            let agentType = nonEmptyString(json["agent_type"] ?? json["agent_role"])
             let createdDate = dateValue(from: json["created_at"] ?? json["createdAt"])
             let updatedDate = dateValue(from: json["updated_at"] ?? json["updatedAt"])
 
@@ -182,6 +190,7 @@ public enum CodexSessionMetadataStore {
                 cwd: cwd,
                 projectName: projectName,
                 parentSessionId: parentId,
+                agentType: agentType,
                 createdAt: createdDate,
                 updatedAt: updatedDate
             )
@@ -231,6 +240,7 @@ public enum CodexSessionMetadataStore {
             let sessionId = nonEmptyString(payload["id"]) ?? source.sessionId
             let cwd = nonEmptyString(payload["cwd"])
             let parentId = resolvedParentSessionId(from: payload)
+            let agentType = resolvedAgentType(from: payload)
             let timestamp = payload["timestamp"] ?? json["timestamp"]
             let createdAt = dateValue(from: timestamp)
             let projectName = cwd.map { extractProjectName(from: $0) }
@@ -239,6 +249,7 @@ public enum CodexSessionMetadataStore {
                 cwd: cwd,
                 projectName: projectName,
                 parentSessionId: parentId,
+                agentType: agentType,
                 createdAt: createdAt,
                 updatedAt: createdAt
             )
@@ -465,6 +476,20 @@ public enum CodexSessionMetadataStore {
         return nonEmptyString(threadSpawn["parent_thread_id"])
     }
 
+    private static func resolvedAgentType(from payload: [String: Any]) -> String? {
+        if let direct = nonEmptyString(payload["agent_type"] ?? payload["agent_role"]) {
+            return direct
+        }
+        guard let source = payload["source"] as? [String: Any],
+              let subagent = source["subagent"] as? [String: Any],
+              let threadSpawn = subagent["thread_spawn"] as? [String: Any] else {
+            return nil
+        }
+        return nonEmptyString(threadSpawn["agent_role"])
+            ?? nonEmptyString(threadSpawn["agent_nickname"])
+            ?? "subagent"
+    }
+
     /// 协调并构建父子会话树，计算 root_session_id 和 depth，防止循环依赖
     public static func reconcileSessionTree(
         discoveredIds: Set<String>,
@@ -512,8 +537,9 @@ public enum CodexSessionMetadataStore {
                 title: meta?.title,
                 cwd: meta?.cwd,
                 projectName: meta?.projectName,
-                createdAt: meta?.createdAt ?? Date(),
-                updatedAt: meta?.updatedAt ?? Date(),
+                agentType: meta?.agentType,
+                createdAt: meta?.createdAt ?? Date(timeIntervalSince1970: 0),
+                updatedAt: meta?.updatedAt ?? Date(timeIntervalSince1970: 0),
                 hasSubagents: !children.isEmpty,
                 subagentCount: children.count
             )

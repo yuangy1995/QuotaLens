@@ -49,6 +49,8 @@ public struct QuotaForecastDTO: Sendable {
     public let hoursUntilExhaustion: Double?
     public let projectedRemainingAtReset: Double? // 0%~100%
     public let samplePointsCount: Int
+    public let fitQuality: Double?
+    public let lastSampleAgeSeconds: TimeInterval?
 
     public init(
         risk: QuotaForecastRisk = .insufficientData,
@@ -59,7 +61,9 @@ public struct QuotaForecastDTO: Sendable {
         naturalResetDate: Date? = nil,
         hoursUntilExhaustion: Double? = nil,
         projectedRemainingAtReset: Double? = nil,
-        samplePointsCount: Int = 0
+        samplePointsCount: Int = 0,
+        fitQuality: Double? = nil,
+        lastSampleAgeSeconds: TimeInterval? = nil
     ) {
         self.risk = risk
         self.confidence = confidence
@@ -70,6 +74,8 @@ public struct QuotaForecastDTO: Sendable {
         self.hoursUntilExhaustion = hoursUntilExhaustion
         self.projectedRemainingAtReset = projectedRemainingAtReset
         self.samplePointsCount = samplePointsCount
+        self.fitQuality = fitQuality
+        self.lastSampleAgeSeconds = lastSampleAgeSeconds
     }
 }
 
@@ -80,6 +86,8 @@ public struct LocalUsageForecastDTO: Sendable {
     public let projectedTotalCost: MoneyNanoUSD
     public let confidence: ForecastConfidence
     public let dailyProjections: [DailyProjectionPoint]
+    public let pricingCoverage: PricingCoverage
+    public let unpricedTokenCount: Int64
 
     public struct DailyProjectionPoint: Identifiable, Sendable {
         public var id: String { dayKey.yyyyMMdd }
@@ -96,12 +104,16 @@ public struct LocalUsageForecastDTO: Sendable {
         projectedTotalTokens: Int64 = 0,
         projectedTotalCost: MoneyNanoUSD = .zero,
         confidence: ForecastConfidence = .insufficientData,
-        dailyProjections: [DailyProjectionPoint] = []
+        dailyProjections: [DailyProjectionPoint] = [],
+        pricingCoverage: PricingCoverage = .fullyPriced,
+        unpricedTokenCount: Int64 = 0
     ) {
         self.daysHorizon = daysHorizon
         self.projectedTotalTokens = projectedTotalTokens
         self.projectedTotalCost = projectedTotalCost
         self.confidence = confidence
         self.dailyProjections = dailyProjections
+        self.pricingCoverage = pricingCoverage
+        self.unpricedTokenCount = unpricedTokenCount
     }
 }

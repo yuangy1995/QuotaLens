@@ -19,16 +19,37 @@ public actor UsageQueryFacade {
         try repository.fetchSessions(sort: sort, search: search, limit: limit, cursor: cursor)
     }
 
+    public func getSessionPage(
+        sort: SessionSort = .lastActivityDesc,
+        search: String? = nil,
+        limit: Int = 50,
+        cursor: String? = nil
+    ) throws -> CodexSessionPageDTO {
+        try repository.fetchSessionPage(sort: sort, search: search, limit: limit, cursor: cursor)
+    }
+
     public func getSessionDetail(sessionId: String) throws -> CodexSessionDetailDTO? {
         try repository.fetchSessionDetail(sessionId: sessionId)
     }
 
-    public func getHistoryDays(daysCount: Int = 30, calendar: Calendar = .current) throws -> [DayUsageSummaryDTO] {
-        try repository.fetchHistoryDays(daysCount: daysCount, calendar: calendar)
+    public func getHistoryDays(
+        daysCount: Int = 30,
+        calendar: Calendar = .current,
+        now: Date = Date()
+    ) throws -> [DayUsageSummaryDTO] {
+        try repository.fetchHistoryDays(daysCount: daysCount, calendar: calendar, now: now)
+    }
+
+    public func getDayDetail(dayKey: LocalDayKey, calendar: Calendar = .current) throws -> DayDetailDTO {
+        try repository.fetchDayDetail(dayKey: dayKey, calendar: calendar)
     }
 
     public func getDashboardMetrics(days: Int = 30, calendar: Calendar = .current) throws -> DashboardMetricsDTO {
         try repository.fetchDashboardMetrics(days: days, calendar: calendar)
+    }
+
+    public func getTodayMetrics(calendar: Calendar = .current) throws -> DashboardMetricsDTO {
+        try repository.fetchTodayMetrics(calendar: calendar)
     }
 
     public func getActivityHeatmap(year: Int = Calendar.current.component(.year, from: Date()), calendar: Calendar = .current) throws -> [ActivityHeatmapCellDTO] {
@@ -37,5 +58,9 @@ public actor UsageQueryFacade {
 
     public func getRecentRateLimitSnapshots(accountKey: String? = nil, limit: Int = 50) throws -> [RateLimitSnapshotRecord] {
         try repository.fetchRecentRateLimitSnapshots(accountKey: accountKey, limit: limit)
+    }
+
+    public func getDiagnostics() throws -> UsageDiagnosticsDTO {
+        try repository.fetchDiagnostics()
     }
 }

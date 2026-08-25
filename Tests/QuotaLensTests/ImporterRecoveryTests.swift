@@ -1,0 +1,267 @@
+import SQLite3
+import XCTest
+@testable import QuotaLens
+
+final class ImporterRecoveryTests: XCTestCase {
+    func testFirstImportNoChangeAppendRewriteMoveAndDelete() async throws {
+        let root = try makeTemporaryDirectory(named: "QuotaLensImporter")
+        let paths = CodexHistoryPaths(rootURL: root)
+        try FileManager.default.createDirectory(at: paths.sessionsURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: paths.archivedSessionsURL, withIntermediateDirectories: true)
+        let database = try makeMigratedDatabase(in: root)
+        let importer = CodexUsageImportActor(database: database)
+        let originalFlag = UsageFeatureFlags.shared.isScanArchivedSessionsEnabled
+        UsageFeatureFlags.shared.isScanArchivedSessionsEnabled = true
+        addTeardownBlock { UsageFeatureFlags.shared.isScanArchivedSessionsEnabled = originalFlag }
+
+        let sessionID = "11111111-1111-1111-1111-111111111111"
+        let fileName = "rollout-2026-08-20T12-00-00-\(sessionID).jsonl"
+        let activeFile = paths.sessionsURL.appendingPathComponent(fileName)
+        let initialDate = Date(timeIntervalSince1970: 1_787_227_200)
+        try overwriteFile(
+            activeFile,
+            with: rolloutText(sessionId: sessionID, input: 10, output: 5),
+            modificationDate: initialDate
+        )
+
+        let first = try await importer.importCodexHistory(paths: paths)
+        XCTAssertEqual(first.sourcesScanned, 1)
+        XCTAssertEqual(first.eventsInserted, 1)
+        XCTAssertEqual(try sessionTotal(database, sessionID: sessionID), 15)
+        XCTAssertEqual(try database.intScalar(sql: "SELECT COUNT(*) FROM codex_usage_events;"), 1)
+        _ = try XCTUnwrap(database.stringScalar(sql: "SELECT event_id FROM codex_usage_events LIMIT 1;"))
+
+        let unchanged = try await importer.importCodexHistory(paths: paths)
+        XCTAssertEqual(unchanged.eventsInserted, 0)
+        XCTAssertEqual(unchanged.bytesRead, 0)
+        XCTAssertEqual(try sessionTotal(database, sessionID: sessionID), 15)
+
+        // 10 -> 20 keeps the fixture byte length identical and forces a same-size rewrite.
+        let rewritten = rolloutText(sessionId: sessionID, input: 20, output: 5)
+        try overwriteFile(activeFile, with: rewritten, modificationDate: initialDate.addingTimeInterval(2))
+        _ = try await importer.importCodexHistory(paths: paths)
+        XCTAssertEqual(try sessionTotal(database, sessionID: sessionID), 25)
+        XCTAssertEqual(try database.intScalar(sql: "SELECT COUNT(*) FROM codex_usage_events;"), 1)
+        XCTAssertEqual(
+            try database.stringScalar(sql: "SELECT rebuild_reason FROM codex_import_sources LIMIT 1;"),
+            "same_size_rewrite"
+        )
+
+        let appended = usageLine(timestamp: "2026-08-20T12:05:00Z", input: 5, output: 2, totalInput: 25, totalOutput: 7)
+        try appendFile(activeFile, with: appended, modificationDate: initialDate.addingTimeInterval(4))
+        let appendResult = try await importer.importCodexHistory(paths: paths)
+        XCTAssertEqual(appendResult.eventsInserted, 1)
+        XCTAssertEqual(try sessionTotal(database, sessionID: sessionID), 32)
+        XCTAssertEqual(try database.intScalar(sql: "SELECT COUNT(*) FROM codex_usage_events;"), 2)
+
+        let truncatedReplacement = rolloutText(sessionId: sessionID, input: 3, output: 1)
+        try overwriteFile(activeFile, with: truncatedReplacement, modificationDate: initialDate.addingTimeInterval(5))
+        _ = try await importer.importCodexHistory(paths: paths)
+        XCTAssertEqual(try sessionTotal(database, sessionID: sessionID), 4)
+        XCTAssertEqual(
+            try database.stringScalar(sql: "SELECT rebuild_reason FROM codex_import_sources LIMIT 1;"),
+            "file_truncated"
+        )
+
+        let largerReplacement = rolloutText(sessionId: sessionID, input: 200, output: 50)
+            + "{\"padding\":\"\(String(repeating: "x", count: 2_000))\"}\n"
+        try overwriteFile(activeFile, with: largerReplacement, modificationDate: initialDate.addingTimeInterval(6))
+        _ = try await importer.importCodexHistory(paths: paths)
+        XCTAssertEqual(try sessionTotal(database, sessionID: sessionID), 250)
+        XCTAssertEqual(try database.intScalar(sql: "SELECT COUNT(*) FROM codex_usage_events;"), 1)
+
+        let eventBeforeMove = try XCTUnwrap(database.stringScalar(sql: "SELECT event_id FROM codex_usage_events LIMIT 1;"))
+        let archivedFile = paths.archivedSessionsURL.appendingPathComponent(fileName)
+        try FileManager.default.moveItem(at: activeFile, to: archivedFile)
+        let moveResult = try await importer.importCodexHistory(paths: paths)
+        XCTAssertEqual(moveResult.eventsInserted, 0)
+        XCTAssertEqual(try sessionTotal(database, sessionID: sessionID), 250)
+        XCTAssertEqual(try database.stringScalar(
+            sql: "SELECT bucket FROM codex_sessions WHERE session_id = ?;",
+            bindings: [sessionID]
+        ), SessionBucket.archived.rawValue)
+        XCTAssertEqual(try database.stringScalar(sql: "SELECT event_id FROM codex_usage_events LIMIT 1;"), eventBeforeMove)
+        XCTAssertEqual(try database.intScalar(sql: "SELECT COUNT(*) FROM codex_import_sources;"), 1)
+
+        try FileManager.default.removeItem(at: archivedFile)
+        _ = try await importer.importCodexHistory(paths: paths)
+        XCTAssertEqual(try database.intScalar(sql: "SELECT COUNT(*) FROM codex_sessions;"), 0)
+        XCTAssertEqual(try database.intScalar(sql: "SELECT COUNT(*) FROM codex_usage_events;"), 0)
+        XCTAssertEqual(try database.intScalar(sql: "SELECT COUNT(*) FROM codex_import_sources WHERE status = 'tombstoned';"), 1)
+    }
+
+    func testIncrementalAndForcedFullRebuildProduceIdenticalTotals() async throws {
+        let root = try makeTemporaryDirectory(named: "QuotaLensImporterParity")
+        let paths = CodexHistoryPaths(rootURL: root)
+        try FileManager.default.createDirectory(at: paths.sessionsURL, withIntermediateDirectories: true)
+        let database = try makeMigratedDatabase(in: root)
+        let importer = CodexUsageImportActor(database: database)
+        let sessionID = "22222222-2222-2222-2222-222222222222"
+        let file = paths.sessionsURL.appendingPathComponent("rollout-2026-08-20T12-00-00-\(sessionID).jsonl")
+        try overwriteFile(file, with: rolloutText(sessionId: sessionID, input: 10, cached: 2, output: 5))
+        _ = try await importer.importCodexHistory(paths: paths)
+        try appendFile(file, with: usageLine(
+            timestamp: "2026-08-20T13:00:00Z",
+            input: 7,
+            cached: 3,
+            output: 4,
+            totalInput: 17,
+            totalCached: 5,
+            totalOutput: 9
+        ))
+        _ = try await importer.importCodexHistory(paths: paths)
+        let incremental = try sessionFacts(database, sessionID: sessionID)
+
+        _ = try await importer.importCodexHistory(paths: paths, forceRebuild: true)
+        let rebuilt = try sessionFacts(database, sessionID: sessionID)
+        XCTAssertEqual(incremental.tokens, rebuilt.tokens)
+        XCTAssertEqual(incremental.events, rebuilt.events)
+        XCTAssertEqual(incremental.cost, rebuilt.cost)
+    }
+
+    func testPartialEOFIsResumedWithoutReplayingCommittedEvent() async throws {
+        let root = try makeTemporaryDirectory(named: "QuotaLensImporterPartial")
+        let paths = CodexHistoryPaths(rootURL: root)
+        try FileManager.default.createDirectory(at: paths.sessionsURL, withIntermediateDirectories: true)
+        let database = try makeMigratedDatabase(in: root)
+        let importer = CodexUsageImportActor(database: database)
+        let sessionID = "33333333-3333-3333-3333-333333333333"
+        let file = paths.sessionsURL.appendingPathComponent("rollout-2026-08-20T12-00-00-\(sessionID).jsonl")
+        let first = rolloutText(sessionId: sessionID, input: 10, output: 5)
+        let second = usageLine(timestamp: "2026-08-20T14:00:00Z", input: 3, output: 2, totalInput: 13, totalOutput: 7)
+        let split = second.index(second.startIndex, offsetBy: second.count / 2)
+        try overwriteFile(file, with: first + second[..<split])
+        _ = try await importer.importCodexHistory(paths: paths)
+        XCTAssertEqual(try database.intScalar(sql: "SELECT COUNT(*) FROM codex_usage_events;"), 1)
+
+        try appendFile(file, with: String(second[split...]))
+        _ = try await importer.importCodexHistory(paths: paths)
+        XCTAssertEqual(try database.intScalar(sql: "SELECT COUNT(*) FROM codex_usage_events;"), 2)
+        XCTAssertEqual(try sessionTotal(database, sessionID: sessionID), 20)
+    }
+
+    func testChildReplayIsExcludedAndFreshTurnIsCountedAfterResume() async throws {
+        let root = try makeTemporaryDirectory(named: "QuotaLensImporterReplay")
+        let paths = CodexHistoryPaths(rootURL: root)
+        try FileManager.default.createDirectory(at: paths.sessionsURL, withIntermediateDirectories: true)
+        let database = try makeMigratedDatabase(in: root)
+        let importer = CodexUsageImportActor(database: database)
+        let parentID = "44444444-4444-4444-4444-444444444444"
+        let childID = "55555555-5555-5555-5555-555555555555"
+        let parentFile = paths.sessionsURL.appendingPathComponent("rollout-2026-08-20T12-00-00-\(parentID).jsonl")
+        let childFile = paths.sessionsURL.appendingPathComponent("rollout-2026-08-20T12-10-00-\(childID).jsonl")
+        try overwriteFile(parentFile, with: rolloutText(sessionId: parentID, input: 10, output: 5))
+
+        let childHeader = rolloutText(
+            sessionId: childID,
+            input: 4,
+            output: 1,
+            parentSessionId: parentID,
+            agentRole: "reviewer"
+        )
+        try overwriteFile(childFile, with: childHeader)
+        _ = try await importer.importCodexHistory(paths: paths)
+        XCTAssertEqual(try sessionTotal(database, sessionID: childID), 0)
+
+        let freshMarker = "{\"timestamp\":\"2026-08-20T12:20:00Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"user_message\"}}\n"
+        try appendFile(childFile, with: freshMarker + usageLine(
+            timestamp: "2026-08-20T12:21:00Z",
+            input: 6,
+            output: 2,
+            totalInput: 10,
+            totalOutput: 3
+        ))
+        _ = try await importer.importCodexHistory(paths: paths)
+        XCTAssertEqual(try sessionTotal(database, sessionID: childID), 8)
+        XCTAssertEqual(try database.stringScalar(
+            sql: "SELECT agent_type FROM codex_sessions WHERE session_id = ?;",
+            bindings: [childID]
+        ), "reviewer")
+    }
+
+    func testImportedLedgerMaintainsCrossPageTokenCostAndEventInvariants() async throws {
+        let root = try makeTemporaryDirectory(named: "QuotaLensImporterInvariant")
+        let paths = CodexHistoryPaths(rootURL: root)
+        try FileManager.default.createDirectory(at: paths.sessionsURL, withIntermediateDirectories: true)
+        let database = try makeMigratedDatabase(in: root)
+        let importer = CodexUsageImportActor(database: database)
+        let sessionID = "66666666-6666-6666-6666-666666666666"
+        let file = paths.sessionsURL.appendingPathComponent(
+            "rollout-2026-08-20T12-00-00-\(sessionID).jsonl"
+        )
+        try overwriteFile(file, with: rolloutText(
+            sessionId: sessionID,
+            model: "gpt-5.4",
+            input: 10,
+            cached: 2,
+            output: 5
+        ))
+        _ = try await importer.importCodexHistory(paths: paths)
+
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        let rangeStart = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026,
+            month: 8,
+            day: 20
+        )))
+        let rangeEnd = try XCTUnwrap(calendar.date(byAdding: .day, value: 1, to: rangeStart))
+        let repository = UsageAnalyticsRepository(database: database)
+        let session = try XCTUnwrap(repository.fetchSessionDetail(sessionId: sessionID))
+        let history = try repository.fetchHistoryDays(
+            daysCount: 2,
+            calendar: calendar,
+            now: rangeEnd
+        )
+        let dashboard = try repository.fetchDashboardMetrics(
+            rangeStart: rangeStart,
+            endExclusive: rangeEnd,
+            calendar: calendar
+        )
+        let historyTokens = history.reduce(Int64(0)) { $0 + $1.tokens.canonicalTotalTokens }
+        let historyCost = history.reduce(Int64(0)) { $0 + $1.estimatedCost.rawValue }
+        let historyEvents = history.reduce(0) { $0 + $1.eventCount }
+
+        XCTAssertEqual(session.session.tokens.canonicalTotalTokens, historyTokens)
+        XCTAssertEqual(historyTokens, dashboard.totalTokens.canonicalTotalTokens)
+        XCTAssertEqual(session.session.estimatedCost.rawValue, historyCost)
+        XCTAssertEqual(historyCost, dashboard.totalCost.rawValue)
+        XCTAssertEqual(session.session.eventCount, historyEvents)
+        XCTAssertEqual(historyEvents, dashboard.totalEvents)
+    }
+
+    private func usageLine(
+        timestamp: String,
+        input: Int64,
+        cached: Int64 = 0,
+        output: Int64,
+        totalInput: Int64,
+        totalCached: Int64 = 0,
+        totalOutput: Int64
+    ) -> String {
+        "{\"timestamp\":\"\(timestamp)\",\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"last_token_usage\":{\"input_tokens\":\(input),\"cached_input_tokens\":\(cached),\"output_tokens\":\(output)},\"total_token_usage\":{\"input_tokens\":\(totalInput),\"cached_input_tokens\":\(totalCached),\"output_tokens\":\(totalOutput)}}}}\n"
+    }
+
+    private func sessionTotal(_ database: SQLiteDatabase, sessionID: String) throws -> Int64 {
+        try database.int64Scalar(
+            sql: "SELECT total_tokens FROM codex_sessions WHERE session_id = ?;",
+            bindings: [sessionID]
+        ) ?? 0
+    }
+
+    private func sessionFacts(
+        _ database: SQLiteDatabase,
+        sessionID: String
+    ) throws -> (tokens: Int64, events: Int, cost: Int64) {
+        try XCTUnwrap(database.executeQuery(
+            sql: "SELECT total_tokens, event_count, estimated_cost_usd_nano FROM codex_sessions WHERE session_id = ?;",
+            bindings: [sessionID]
+        ) { statement in
+            (
+                tokens: sqlite3_column_int64(statement, 0),
+                events: Int(sqlite3_column_int(statement, 1)),
+                cost: sqlite3_column_int64(statement, 2)
+            )
+        }.first)
+    }
+}

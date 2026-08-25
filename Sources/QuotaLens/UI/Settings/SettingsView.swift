@@ -2,6 +2,7 @@
 
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 public struct SettingsView: View {
     @ObservedObject var state: AppState
@@ -13,6 +14,9 @@ public struct SettingsView: View {
     @State private var isShowingBinaryTargetDialog: Bool = false
     @State private var binaryTargetAlertMessage: String?
     @State private var autoDetectedBinaryResult: CodexBinaryLookupResult?
+    @State private var usageDiagnostics: UsageDiagnosticsDTO?
+    @State private var diagnosticsExportStatus: String?
+    @ObservedObject private var overlayController = CodexUsageOverlayController.shared
 
     private let presetIntervals: [Int] = [15, 30, 60, 300, 900]
 
@@ -39,6 +43,10 @@ public struct SettingsView: View {
         .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
         .task {
             await refreshAutoDetectedBinaryPath()
+            await refreshUsageDiagnostics()
+        }
+        .onReceive(env.scanCoordinator.$dataGeneration.dropFirst()) { _ in
+            Task { await refreshUsageDiagnostics() }
         }
     }
 
@@ -563,7 +571,7 @@ public struct SettingsView: View {
                         Text(L10n.text("启用本地 Codex 用量分析", "Enable Local Codex Analytics"))
                             .font(.system(size: 13, weight: .bold))
                             .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
-                        Text(L10n.text("从本地 ~/.codex 解析会话日志，提供精确 Token 统计与 API 价值估算", "Parses local session logs for exact tokens and value"))
+                        Text(L10n.text("从本地 ~/.codex 解析会话日志，提供 Token 统计与 API 等价价值 · Beta", "Parses local session logs for tokens and API equivalent value · Beta"))
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
                     }
@@ -629,6 +637,33 @@ public struct SettingsView: View {
                 }
                 .padding(12)
                 .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))
+
+                if flags.isOverlayEnabled {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(L10n.text("精确窗口吸附（辅助功能）", "Precise Window Snapping (Accessibility)"))
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                            Text(overlayController.isAccessibilityTrusted
+                                ? L10n.text("只读取目标窗口的位置与尺寸，不读取窗口文本", "Reads only target window position and size; never window text")
+                                : L10n.text("由你主动授权；未授权时自动保持基础模式", "Opt-in only; basic mode remains active until authorized"))
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                        }
+                        Spacer()
+                        Toggle("", isOn: Binding(
+                            get: { flags.isAXSnappingEnabled },
+                            set: { enabled in
+                                flags.isAXSnappingEnabled = enabled
+                                overlayController.setAXSnappingEnabled(enabled)
+                            }
+                        ))
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                    }
+                    .padding(12)
+                    .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))
+                }
 
                 // 4. 智能预测引擎
                 HStack {
@@ -732,6 +767,75 @@ public struct SettingsView: View {
             }
             .padding(12)
             .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))
+
+            if let diagnostics = usageDiagnostics {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text(L10n.text("本地索引诊断", "Local Index Diagnostics"))
+                            .font(.system(size: 12, weight: .black, design: .rounded))
+                            .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+
+                        Spacer()
+
+                        Button {
+                            exportUsageDiagnostics(diagnostics)
+                        } label: {
+                            Label(
+                                L10n.text("导出诊断 JSON", "Export Diagnostics JSON"),
+                                systemImage: "square.and.arrow.up"
+                            )
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(cyan)
+                    }
+
+                    Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 6) {
+                        GridRow {
+                            diagnosticText(L10n.text("文件", "Files"), "\(diagnostics.sourcesIndexed)/\(diagnostics.sourcesDiscovered)")
+                            diagnosticText(L10n.text("事件", "Events"), "\(diagnostics.totalEvents)")
+                            diagnosticText(L10n.text("未计价", "Unpriced"), "\(diagnostics.unpricedEvents)")
+                        }
+                        GridRow {
+                            diagnosticText(L10n.text("未知模型", "Unknown Models"), "\(diagnostics.unknownModelEvents)")
+                            diagnosticText(L10n.text("时间兜底", "Timestamp Fallbacks"), "\(diagnostics.fallbackTimestampEvents)")
+                            diagnosticText(L10n.text("Parser", "Parser"), "v\(diagnostics.parserVersion)")
+                        }
+                        GridRow {
+                            diagnosticText(L10n.text("损坏行", "Malformed"), "\(diagnostics.malformedLineCount)")
+                            diagnosticText(L10n.text("未知事件", "Unknown Events"), "\(diagnostics.unknownEventTypeCount)")
+                            diagnosticText(L10n.text("重建源", "Rebuilt"), "\(diagnostics.rebuiltSourceCount)")
+                        }
+                        GridRow {
+                            diagnosticText(L10n.text("未解析时间", "Unresolved Time"), "\(diagnostics.unresolvedTimestampCount)")
+                            diagnosticText(
+                                L10n.text("SQLite 完整性", "SQLite Integrity"),
+                                diagnostics.integrityCheckPassed ? "OK" : L10n.text("失败", "Failed")
+                            )
+                            diagnosticText(
+                                L10n.text("一致性违规", "Invariant Issues"),
+                                "\(diagnostics.invariantViolationCount + diagnostics.foreignKeyViolationCount)"
+                            )
+                        }
+                    }
+
+                    Text(L10n.format(
+                        "Active catalog: %@",
+                        zhHans: "当前价格目录：%@",
+                        diagnostics.activePricingCatalogVersion ?? BundledPricingCatalog.currentVersion
+                    ))
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+
+                    if let diagnosticsExportStatus {
+                        Text(diagnosticsExportStatus)
+                            .font(.system(size: 10, weight: .medium, design: .rounded))
+                            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                    }
+                }
+                .padding(12)
+                .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))
+            }
         }
         .cyberCard(cornerRadius: 16, padding: 18)
     }
@@ -936,6 +1040,54 @@ public struct SettingsView: View {
             CodexBinaryLocator.inspectBinary()
         }.value
         autoDetectedBinaryResult = result
+    }
+
+    private func refreshUsageDiagnostics() async {
+        usageDiagnostics = try? await env.usageQueryFacade.getDiagnostics()
+    }
+
+    @MainActor
+    private func exportUsageDiagnostics(_ diagnostics: UsageDiagnosticsDTO) {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = "QuotaLens-diagnostics-\(Self.diagnosticFileTimestamp()).json"
+        panel.title = L10n.text("导出本地用量诊断", "Export Local Usage Diagnostics")
+
+        guard panel.runModal() == .OK, let destination = panel.url else { return }
+        do {
+            let report = UsageDiagnosticsExport(diagnostics: diagnostics)
+            try report.jsonData().write(to: destination, options: .atomic)
+            diagnosticsExportStatus = L10n.text(
+                "已导出聚合诊断；不包含对话内容或源文件路径。",
+                "Aggregate diagnostics exported without conversation content or source file paths."
+            )
+        } catch {
+            diagnosticsExportStatus = L10n.format(
+                "Export failed: %@",
+                zhHans: "导出失败：%@",
+                error.localizedDescription
+            )
+        }
+    }
+
+    private static func diagnosticFileTimestamp() -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        return formatter.string(from: Date())
+    }
+
+    private func diagnosticText(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(title)
+                .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+            Text(value)
+                .font(.system(size: 11, weight: .heavy, design: .monospaced))
+                .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+        }
     }
 }
 

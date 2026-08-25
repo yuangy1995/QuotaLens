@@ -58,10 +58,12 @@ public struct TokenBreakdown: Hashable, Sendable, Codable {
         reasoningOutputTokens: Int64 = 0,
         sourceTotalTokens: Int64? = nil
     ) {
-        self.inputTokens = max(0, inputTokens)
-        self.cachedInputTokens = min(max(0, cachedInputTokens), max(0, inputTokens))
-        self.outputTokens = max(0, outputTokens)
-        self.reasoningOutputTokens = min(max(0, reasoningOutputTokens), max(0, outputTokens))
+        let normalizedCached = max(0, cachedInputTokens)
+        let normalizedReasoning = max(0, reasoningOutputTokens)
+        self.inputTokens = max(max(0, inputTokens), normalizedCached)
+        self.cachedInputTokens = normalizedCached
+        self.outputTokens = max(max(0, outputTokens), normalizedReasoning)
+        self.reasoningOutputTokens = normalizedReasoning
         self.sourceTotalTokens = sourceTotalTokens
     }
 
@@ -134,7 +136,35 @@ public enum AttributionQuality: String, Hashable, Sendable, Codable {
         case .sessionFallback:
             return L10n.text("会话级回退", "Session fallback")
         case .unknownDefault:
-            return L10n.text("默认兜底", "Default fallback")
+            return L10n.text("未知模型，未使用默认计价", "Unknown model, no default pricing")
+        }
+    }
+}
+
+// MARK: - 时间戳质量
+public enum TimestampQuality: String, Hashable, Sendable, Codable {
+    case eventTimestamp = "event_timestamp"
+    case fileNameTimestamp = "file_name_timestamp"
+    case sessionTimestamp = "session_timestamp"
+    case fileModificationTime = "file_modification_time"
+    case unresolved = "unresolved"
+
+    public var isUsableForAnalytics: Bool {
+        self != .unresolved
+    }
+
+    public var localizedDescription: String {
+        switch self {
+        case .eventTimestamp:
+            return L10n.text("事件时间戳", "Event timestamp")
+        case .fileNameTimestamp:
+            return L10n.text("文件名时间", "Filename timestamp")
+        case .sessionTimestamp:
+            return L10n.text("会话元数据时间", "Session metadata timestamp")
+        case .fileModificationTime:
+            return L10n.text("文件修改时间", "File modification time")
+        case .unresolved:
+            return L10n.text("缺失时间戳", "Missing timestamp")
         }
     }
 }
@@ -144,6 +174,8 @@ public enum PricingStatus: String, Hashable, Sendable, Codable {
     case priced = "priced"
     case unpricedUnknownModel = "unpricedUnknownModel"
     case unpricedHistoricalRuleMissing = "unpricedHistoricalRuleMissing"
+    case unpricedUnsupportedServiceMode = "unpricedUnsupportedServiceMode"
+    case unpricedInvalidTokenRecord = "unpricedInvalidTokenRecord"
     case unpricedCalculationOverflow = "unpricedCalculationOverflow"
 
     public var isPriced: Bool { self == .priced }
@@ -156,6 +188,10 @@ public enum PricingStatus: String, Hashable, Sendable, Codable {
             return L10n.text("未识别模型", "Unrecognized model")
         case .unpricedHistoricalRuleMissing:
             return L10n.text("缺少历史费率规则", "Missing historical rate rule")
+        case .unpricedUnsupportedServiceMode:
+            return L10n.text("不支持的服务模式，未计价", "Unsupported service mode, not priced")
+        case .unpricedInvalidTokenRecord:
+            return L10n.text("无效 Token 记录，未计价", "Invalid token record, not priced")
         case .unpricedCalculationOverflow:
             return L10n.text("数值溢出", "Calculation overflow")
         }

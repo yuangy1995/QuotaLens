@@ -14,6 +14,7 @@ public struct CodexSessionDTO: Identifiable, Hashable, Sendable {
     public let title: String?
     public let projectName: String?
     public let cwd: String?
+    public let agentType: String?
     public let createdAt: Date
     public let updatedAt: Date
     public let lastEventAt: Date?
@@ -33,6 +34,7 @@ public struct CodexSessionDTO: Identifiable, Hashable, Sendable {
         title: String? = nil,
         projectName: String? = nil,
         cwd: String? = nil,
+        agentType: String? = nil,
         createdAt: Date,
         updatedAt: Date,
         lastEventAt: Date? = nil,
@@ -51,6 +53,7 @@ public struct CodexSessionDTO: Identifiable, Hashable, Sendable {
         self.title = title
         self.projectName = projectName
         self.cwd = cwd
+        self.agentType = agentType
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.lastEventAt = lastEventAt
@@ -75,6 +78,17 @@ public struct CodexSessionDTO: Identifiable, Hashable, Sendable {
 
     public var isSubagent: Bool {
         parentSessionId != nil && depth > 0
+    }
+}
+
+// MARK: - 会话 Keyset 分页 DTO
+public struct CodexSessionPageDTO: Sendable {
+    public let sessions: [CodexSessionDTO]
+    public let nextCursor: String?
+
+    public init(sessions: [CodexSessionDTO], nextCursor: String?) {
+        self.sessions = sessions
+        self.nextCursor = nextCursor
     }
 }
 
@@ -127,8 +141,10 @@ public struct CodexUsageEventDTO: Identifiable, Hashable, Sendable {
     public let estimatedCost: MoneyNanoUSD
     public let pricingRuleId: String?
     public let pricingStatus: PricingStatus
+    public let pricingCatalogVersion: String?
     public let usageDerivation: UsageDerivation
     public let attributionQuality: AttributionQuality
+    public let timestampQuality: TimestampQuality
     public let isChildReplay: Bool
     public let sourcePath: String
     public let lineOffset: Int64
@@ -147,8 +163,10 @@ public struct CodexUsageEventDTO: Identifiable, Hashable, Sendable {
         estimatedCost: MoneyNanoUSD,
         pricingRuleId: String? = nil,
         pricingStatus: PricingStatus,
+        pricingCatalogVersion: String? = nil,
         usageDerivation: UsageDerivation,
         attributionQuality: AttributionQuality,
+        timestampQuality: TimestampQuality = .eventTimestamp,
         isChildReplay: Bool = false,
         sourcePath: String = "",
         lineOffset: Int64 = 0
@@ -166,8 +184,10 @@ public struct CodexUsageEventDTO: Identifiable, Hashable, Sendable {
         self.estimatedCost = estimatedCost
         self.pricingRuleId = pricingRuleId
         self.pricingStatus = pricingStatus
+        self.pricingCatalogVersion = pricingCatalogVersion
         self.usageDerivation = usageDerivation
         self.attributionQuality = attributionQuality
+        self.timestampQuality = timestampQuality
         self.isChildReplay = isChildReplay
         self.sourcePath = sourcePath
         self.lineOffset = lineOffset
@@ -211,6 +231,7 @@ public struct DayUsageSummaryDTO: Identifiable, Hashable, Sendable {
     public let sessionCount: Int
     public let modelSummaries: [ModelUsageSummaryDTO]
     public let unpricedEventCount: Int
+    public let unpricedTokenCount: Int64
 
     public init(
         dayKey: LocalDayKey,
@@ -220,7 +241,8 @@ public struct DayUsageSummaryDTO: Identifiable, Hashable, Sendable {
         eventCount: Int = 0,
         sessionCount: Int = 0,
         modelSummaries: [ModelUsageSummaryDTO] = [],
-        unpricedEventCount: Int = 0
+        unpricedEventCount: Int = 0,
+        unpricedTokenCount: Int64 = 0
     ) {
         self.dayKey = dayKey
         self.date = date
@@ -230,6 +252,7 @@ public struct DayUsageSummaryDTO: Identifiable, Hashable, Sendable {
         self.sessionCount = sessionCount
         self.modelSummaries = modelSummaries
         self.unpricedEventCount = unpricedEventCount
+        self.unpricedTokenCount = unpricedTokenCount
     }
 }
 
@@ -358,5 +381,91 @@ public struct ActivityStatsDTO: Sendable {
         self.peakDayKey = peakDayKey
         self.peakTokens = peakTokens
         self.mostUsedModel = mostUsedModel
+    }
+}
+
+// MARK: - 本地用量诊断 DTO
+public struct UsageDiagnosticsDTO: Codable, Sendable {
+    public let sourcesDiscovered: Int
+    public let sourcesIndexed: Int
+    public let sourcesTombstoned: Int
+    public let unknownModelEvents: Int
+    public let unpricedEvents: Int
+    public let fallbackTimestampEvents: Int
+    public let totalEvents: Int
+    public let activePricingCatalogVersion: String?
+    public let parserVersion: Int
+    public let lastSuccessfulScanAt: Date?
+    public let malformedLineCount: Int
+    public let unresolvedTimestampCount: Int
+    public let unknownEventTypeCount: Int
+    public let rebuiltSourceCount: Int
+    public let integrityCheckPassed: Bool
+    public let foreignKeyViolationCount: Int
+    public let invariantViolationCount: Int
+
+    public init(
+        sourcesDiscovered: Int = 0,
+        sourcesIndexed: Int = 0,
+        sourcesTombstoned: Int = 0,
+        unknownModelEvents: Int = 0,
+        unpricedEvents: Int = 0,
+        fallbackTimestampEvents: Int = 0,
+        totalEvents: Int = 0,
+        activePricingCatalogVersion: String? = nil,
+        parserVersion: Int = ParserCheckpoint.currentParserVersion,
+        lastSuccessfulScanAt: Date? = nil,
+        malformedLineCount: Int = 0,
+        unresolvedTimestampCount: Int = 0,
+        unknownEventTypeCount: Int = 0,
+        rebuiltSourceCount: Int = 0,
+        integrityCheckPassed: Bool = true,
+        foreignKeyViolationCount: Int = 0,
+        invariantViolationCount: Int = 0
+    ) {
+        self.sourcesDiscovered = sourcesDiscovered
+        self.sourcesIndexed = sourcesIndexed
+        self.sourcesTombstoned = sourcesTombstoned
+        self.unknownModelEvents = unknownModelEvents
+        self.unpricedEvents = unpricedEvents
+        self.fallbackTimestampEvents = fallbackTimestampEvents
+        self.totalEvents = totalEvents
+        self.activePricingCatalogVersion = activePricingCatalogVersion
+        self.parserVersion = parserVersion
+        self.lastSuccessfulScanAt = lastSuccessfulScanAt
+        self.malformedLineCount = malformedLineCount
+        self.unresolvedTimestampCount = unresolvedTimestampCount
+        self.unknownEventTypeCount = unknownEventTypeCount
+        self.rebuiltSourceCount = rebuiltSourceCount
+        self.integrityCheckPassed = integrityCheckPassed
+        self.foreignKeyViolationCount = foreignKeyViolationCount
+        self.invariantViolationCount = invariantViolationCount
+    }
+}
+
+/// Privacy-safe aggregate diagnostics export. It intentionally contains no
+/// prompts, responses, tool output, event payloads, or source file paths.
+public struct UsageDiagnosticsExport: Codable, Sendable {
+    public let schemaVersion: Int
+    public let generatedAt: Date
+    public let containsConversationContent: Bool
+    public let diagnostics: UsageDiagnosticsDTO
+
+    public init(
+        schemaVersion: Int = 1,
+        generatedAt: Date = Date(),
+        diagnostics: UsageDiagnosticsDTO
+    ) {
+        self.schemaVersion = schemaVersion
+        self.generatedAt = generatedAt
+        self.containsConversationContent = false
+        self.diagnostics = diagnostics
+    }
+
+    public func jsonData(prettyPrinted: Bool = true) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = prettyPrinted ? [.prettyPrinted, .sortedKeys] : [.sortedKeys]
+        return try encoder.encode(self)
     }
 }

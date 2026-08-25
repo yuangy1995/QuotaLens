@@ -10,6 +10,7 @@ public struct CodexParsedUsageEvent: Sendable {
     public let turnIndex: Int
     public let callIndex: Int
     public let timestampMs: Int64
+    public let timestampQuality: TimestampQuality
     public let modelRaw: String
     public let modelCanonical: String
     public let serviceTier: String?
@@ -28,6 +29,7 @@ public struct CodexParsedUsageEvent: Sendable {
         turnIndex: Int,
         callIndex: Int,
         timestampMs: Int64,
+        timestampQuality: TimestampQuality,
         modelRaw: String,
         modelCanonical: String,
         serviceTier: String?,
@@ -45,6 +47,7 @@ public struct CodexParsedUsageEvent: Sendable {
         self.turnIndex = turnIndex
         self.callIndex = callIndex
         self.timestampMs = timestampMs
+        self.timestampQuality = timestampQuality
         self.modelRaw = modelRaw
         self.modelCanonical = modelCanonical
         self.serviceTier = serviceTier
@@ -64,18 +67,28 @@ public final class CodexUsageReducer: Sendable {
     private let isChildSession: Bool
     private let sourcePath: String
     private let sourceEventKey: String
+    private let fallbackTimestampMs: Int64
+    private let fallbackTimestampQuality: TimestampQuality
 
     public init(
         sessionId: String,
         rootSessionId: String,
         isChildSession: Bool,
-        sourcePath: String
+        sourcePath: String,
+        sourceIdentityKey: String? = nil,
+        fallbackTimestampMs: Int64 = 0,
+        fallbackTimestampQuality: TimestampQuality = .unresolved
     ) {
         self.sessionId = sessionId
         self.rootSessionId = rootSessionId
         self.isChildSession = isChildSession
         self.sourcePath = sourcePath
-        self.sourceEventKey = Self.stableSourceKey(sourcePath)
+        // Physical identity keeps event IDs stable when Codex moves a rollout
+        // between active and archived folders. Tests and callers without an
+        // identity retain the path-based deterministic fallback.
+        self.sourceEventKey = Self.stableSourceKey(sourceIdentityKey ?? sourcePath)
+        self.fallbackTimestampMs = fallbackTimestampMs
+        self.fallbackTimestampQuality = fallbackTimestampQuality
     }
 
     /// 归约状态容器
@@ -95,14 +108,14 @@ public final class CodexUsageReducer: Sendable {
             self.activeModel = checkpoint.currentModel
             self.activeServiceTier = checkpoint.currentServiceTier
             self.currentTurnIndex = checkpoint.currentTurnIndex
-            self.currentCallIndex = 0
+            self.currentCallIndex = checkpoint.currentCallIndex
             self.cumulativeBaseline = checkpoint.lastCumulativeTokens
             self.totalLinesConsumed = checkpoint.lineCount
             self.lastOffset = checkpoint.lineOffset
-            self.hasEncounteredChildFreshTurn = false
+            self.hasEncounteredChildFreshTurn = checkpoint.hasSeenFreshTurn
         }
 
-        public func makeCheckpoint(parserVersion: Int = 2) -> ParserCheckpoint {
+        public func makeCheckpoint(parserVersion: Int = ParserCheckpoint.currentParserVersion) -> ParserCheckpoint {
             ParserCheckpoint(
                 lineOffset: lastOffset,
                 lineCount: totalLinesConsumed,
@@ -113,6 +126,8 @@ public final class CodexUsageReducer: Sendable {
                 currentModel: activeModel,
                 currentServiceTier: activeServiceTier,
                 currentTurnIndex: currentTurnIndex,
+                currentCallIndex: currentCallIndex,
+                hasSeenFreshTurn: hasEncounteredChildFreshTurn,
                 parserVersion: parserVersion
             )
         }
@@ -128,7 +143,7 @@ public final class CodexUsageReducer: Sendable {
         state.totalLinesConsumed += 1
 
         // 1. 更新上下文模型与状态机
-        var eventQuality: AttributionQuality = .sessionFallback
+        var eventQuality: AttributionQuality = state.activeModel == nil ? .unknownDefault : .sessionFallback
         if let explicitModel = event.model, !explicitModel.isEmpty {
             state.activeModel = explicitModel
             eventQuality = .directTurnContext
@@ -154,20 +169,29 @@ public final class CodexUsageReducer: Sendable {
         // 子会话 Replay 判定：如果是子会话且包含重放的历史前缀
         var isReplay = false
         if isChildSession {
-            if event.isReplayMarker {
+            let isFreshTurnMarker = event.eventType == "task_started" || event.eventType == "user_message"
+            if isFreshTurnMarker {
+                state.hasEncounteredChildFreshTurn = true
+            } else if event.isReplayMarker {
                 isReplay = true
             } else if !state.hasEncounteredChildFreshTurn {
-                // 如果是 task_started / user prompt 产生的新轮次，解除 replay 状态
-                if event.eventType == "task_started" || event.eventType == "user_message" {
-                    state.hasEncounteredChildFreshTurn = true
-                }
+                isReplay = true
             }
         }
 
         // 2. Token 增量计算
-        let resolvedModelRaw = state.activeModel ?? "gpt-5"
+        let resolvedModelRaw = state.activeModel ?? "unknown"
         let resolvedModelCanonical = ModelAliasResolver.resolve(rawModel: resolvedModelRaw)
-        let timestamp = event.timestampMs > 0 ? event.timestampMs : Int64(Date().timeIntervalSince1970 * 1000)
+        let timestamp: Int64
+        let timestampQuality: TimestampQuality
+        if event.timestampMs > 0 {
+            timestamp = event.timestampMs
+            timestampQuality = event.timestampQuality
+        } else {
+            timestamp = fallbackTimestampMs
+            timestampQuality = fallbackTimestampQuality
+        }
+        let canEmitAnalyticsEvent = timestamp > 0 && timestampQuality.isUsableForAnalytics
 
         // 策略 A: 优先使用 last_token_usage (单步精确增量)
         if let last = event.lastTokenUsage {
@@ -205,6 +229,11 @@ public final class CodexUsageReducer: Sendable {
                 state.cumulativeBaseline = state.cumulativeBaseline + deltaBreakdown
             }
 
+            // An unresolved timestamp must not enter user-facing analytics, but
+            // it still advances the cumulative baseline so a later valid event
+            // does not absorb the skipped record and inflate its delta.
+            guard canEmitAnalyticsEvent else { return nil }
+
             let eventId = makeEventId(lineRecord: lineRecord, timestampMs: timestamp)
             return CodexParsedUsageEvent(
                 eventId: eventId,
@@ -213,6 +242,7 @@ public final class CodexUsageReducer: Sendable {
                 turnIndex: state.currentTurnIndex,
                 callIndex: state.currentCallIndex,
                 timestampMs: timestamp,
+                timestampQuality: timestampQuality,
                 modelRaw: resolvedModelRaw,
                 modelCanonical: resolvedModelCanonical,
                 serviceTier: state.activeServiceTier,
@@ -238,18 +268,27 @@ public final class CodexUsageReducer: Sendable {
             let prevOutput = state.cumulativeBaseline.outputTokens
             let prevReasoning = state.cumulativeBaseline.reasoningOutputTokens
 
-            let deltaInput = curInput - prevInput
-            let deltaCached = curCached - prevCached
-            let deltaOutput = curOutput - prevOutput
-            let deltaReasoning = curReasoning - prevReasoning
+            let inputRestarted = curInput < prevInput
+            let cachedRestarted = curCached < prevCached
+            let outputRestarted = curOutput < prevOutput
+            let reasoningRestarted = curReasoning < prevReasoning
+            let anyCounterRestarted = inputRestarted || cachedRestarted || outputRestarted || reasoningRestarted
 
-            // 情况 1: 正常增量增长
-            if deltaInput >= 0 && deltaOutput >= 0 && (deltaInput > 0 || deltaOutput > 0) {
+            // Each counter may restart independently. Treat a decreasing bucket
+            // as a new baseline for that bucket instead of either dropping it or
+            // replaying every other cumulative bucket in full.
+            let deltaInput = inputRestarted ? curInput : curInput - prevInput
+            let deltaCached = cachedRestarted ? curCached : curCached - prevCached
+            let deltaOutput = outputRestarted ? curOutput : curOutput - prevOutput
+            let deltaReasoning = reasoningRestarted ? curReasoning : curReasoning - prevReasoning
+            let hasDelta = deltaInput > 0 || deltaCached > 0 || deltaOutput > 0 || deltaReasoning > 0
+
+            if hasDelta {
                 let deltaTokens = TokenBreakdown(
-                    inputTokens: deltaInput,
-                    cachedInputTokens: max(0, deltaCached),
-                    outputTokens: deltaOutput,
-                    reasoningOutputTokens: max(0, deltaReasoning)
+                    inputTokens: max(deltaInput, deltaCached),
+                    cachedInputTokens: deltaCached,
+                    outputTokens: max(deltaOutput, deltaReasoning),
+                    reasoningOutputTokens: deltaReasoning
                 )
                 state.cumulativeBaseline = TokenBreakdown(
                     inputTokens: curInput,
@@ -259,6 +298,8 @@ public final class CodexUsageReducer: Sendable {
                     sourceTotalTokens: total.totalTokens
                 )
 
+                guard canEmitAnalyticsEvent else { return nil }
+
                 let eventId = makeEventId(lineRecord: lineRecord, timestampMs: timestamp)
                 return CodexParsedUsageEvent(
                     eventId: eventId,
@@ -267,11 +308,12 @@ public final class CodexUsageReducer: Sendable {
                     turnIndex: state.currentTurnIndex,
                     callIndex: state.currentCallIndex,
                     timestampMs: timestamp,
+                    timestampQuality: timestampQuality,
                     modelRaw: resolvedModelRaw,
                     modelCanonical: resolvedModelCanonical,
                     serviceTier: state.activeServiceTier,
                     tokens: deltaTokens,
-                    usageDerivation: .totalUsageDelta,
+                    usageDerivation: anyCounterRestarted ? .totalUsageRestart : .totalUsageDelta,
                     attributionQuality: eventQuality,
                     isChildReplay: isReplay,
                     sourcePath: sourcePath,
@@ -280,39 +322,15 @@ public final class CodexUsageReducer: Sendable {
                 )
             }
 
-            // 情况 2: 计数器重置 (Counter Restart)
-            if deltaInput < 0 || deltaOutput < 0 {
-                let restartTokens = TokenBreakdown(
-                    inputTokens: curInput,
-                    cachedInputTokens: curCached,
-                    outputTokens: curOutput,
-                    reasoningOutputTokens: curReasoning,
-                    sourceTotalTokens: total.totalTokens
-                )
-                state.cumulativeBaseline = restartTokens
-
-                let eventId = makeEventId(lineRecord: lineRecord, timestampMs: timestamp)
-                return CodexParsedUsageEvent(
-                    eventId: eventId,
-                    sessionId: sessionId,
-                    rootSessionId: rootSessionId,
-                    turnIndex: state.currentTurnIndex,
-                    callIndex: state.currentCallIndex,
-                    timestampMs: timestamp,
-                    modelRaw: resolvedModelRaw,
-                    modelCanonical: resolvedModelCanonical,
-                    serviceTier: state.activeServiceTier,
-                    tokens: restartTokens,
-                    usageDerivation: .totalUsageRestart,
-                    attributionQuality: eventQuality,
-                    isChildReplay: isReplay,
-                    sourcePath: sourcePath,
-                    lineOffset: lineRecord.startOffset,
-                    lineBytes: lineRecord.lineBytes
-                )
-            }
-
-            // 情况 3: 计数器未发生变化（重复快照），不产生空事件
+            // Counters did not change; keep the latest baseline but do not emit
+            // a zero-token event.
+            state.cumulativeBaseline = TokenBreakdown(
+                inputTokens: curInput,
+                cachedInputTokens: curCached,
+                outputTokens: curOutput,
+                reasoningOutputTokens: curReasoning,
+                sourceTotalTokens: total.totalTokens
+            )
             return nil
         }
 
