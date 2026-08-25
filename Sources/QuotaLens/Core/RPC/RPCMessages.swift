@@ -197,6 +197,35 @@ public struct RateLimitResetCredit: Codable, Sendable {
     public let expiresAt: Int64?
     public let title: String?
     public let description: String?
+
+    public init(
+        id: String? = nil,
+        resetType: String? = nil,
+        status: String? = nil,
+        grantedAt: Int64? = nil,
+        expiresAt: Int64? = nil,
+        title: String? = nil,
+        description: String? = nil
+    ) {
+        self.id = id
+        self.resetType = resetType
+        self.status = status
+        self.grantedAt = grantedAt
+        self.expiresAt = expiresAt
+        self.title = title
+        self.description = description
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: FlexibleCodingKey.self)
+        self.id = try container.decodeIfPresent(String.self, forKeys: ["id", "creditId", "credit_id"])
+        self.resetType = try container.decodeIfPresent(String.self, forKeys: ["resetType", "reset_type", "type"])
+        self.status = try container.decodeIfPresent(String.self, forKeys: ["status", "state"])
+        self.grantedAt = try container.decodeFlexibleInt64(forKeys: ["grantedAt", "granted_at", "createdAt", "created_at"])
+        self.expiresAt = try container.decodeFlexibleInt64(forKeys: ["expiresAt", "expires_at", "deadline", "resetsAt", "resets_at"])
+        self.title = try container.decodeIfPresent(String.self, forKeys: ["title", "name"])
+        self.description = try container.decodeIfPresent(String.self, forKeys: ["description", "detail", "summary"])
+    }
 }
 
 public struct RateLimitResetCreditsObject: Codable, Sendable {

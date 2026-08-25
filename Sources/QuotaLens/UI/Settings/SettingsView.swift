@@ -320,6 +320,23 @@ public struct SettingsView: View {
     // MARK: - 诊断表格卡片
     private func diagnosticsGridHUDCard(_ diagnostics: UsageDiagnosticsDTO) -> some View {
         let cyan = AppTheme.accentCyan(for: colorScheme)
+        let emerald = AppTheme.accentEmerald(for: colorScheme)
+        let amber = AppTheme.accentAmber(for: colorScheme)
+        let purple = AppTheme.accentPurple(for: colorScheme)
+        let blue = AppTheme.accentBlue(for: colorScheme)
+
+        let numberFormatter = NumberFormatter()
+        numberFormatter.numberStyle = .decimal
+
+        let totalEventsFormatted = numberFormatter.string(from: NSNumber(value: diagnostics.totalEvents)) ?? "\(diagnostics.totalEvents)"
+        let violations = diagnostics.invariantViolationCount + diagnostics.foreignKeyViolationCount
+
+        let columns = [
+            GridItem(.flexible(), spacing: 10),
+            GridItem(.flexible(), spacing: 10),
+            GridItem(.flexible(), spacing: 10),
+            GridItem(.flexible(), spacing: 10)
+        ]
 
         return VStack(alignment: .leading, spacing: 14) {
             HStack {
@@ -353,55 +370,131 @@ public struct SettingsView: View {
 
             CyberDivider()
 
-            VStack(alignment: .leading, spacing: 10) {
-                Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 8) {
-                    GridRow {
-                        diagnosticText(L10n.text("文件", "Files"), "\(diagnostics.sourcesIndexed)/\(diagnostics.sourcesDiscovered)")
-                        diagnosticText(L10n.text("事件", "Events"), "\(diagnostics.totalEvents)")
-                        diagnosticText(L10n.text("未计价", "Unpriced"), "\(diagnostics.unpricedEvents)")
-                    }
-                    GridRow {
-                        diagnosticText(L10n.text("未知模型", "Unknown Models"), "\(diagnostics.unknownModelEvents)")
-                        diagnosticText(L10n.text("时间兜底", "Timestamp Fallbacks"), "\(diagnostics.fallbackTimestampEvents)")
-                        diagnosticText(L10n.text("Parser", "Parser"), "v\(diagnostics.parserVersion)")
-                    }
-                    GridRow {
-                        diagnosticText(L10n.text("损坏行", "Malformed"), "\(diagnostics.malformedLineCount)")
-                        diagnosticText(L10n.text("未知事件", "Unknown Events"), "\(diagnostics.unknownEventTypeCount)")
-                        diagnosticText(L10n.text("重建源", "Rebuilt"), "\(diagnostics.rebuiltSourceCount)")
-                    }
-                    GridRow {
-                        diagnosticText(L10n.text("未解析时间", "Unresolved Time"), "\(diagnostics.unresolvedTimestampCount)")
-                        diagnosticText(
-                            L10n.text("SQLite 完整性", "SQLite Integrity"),
-                            diagnostics.integrityCheckPassed ? "OK" : L10n.text("失败", "Failed")
-                        )
-                        diagnosticText(
-                            L10n.text("一致性违规", "Invariant Issues"),
-                            "\(diagnostics.invariantViolationCount + diagnostics.foreignKeyViolationCount)"
-                        )
-                    }
+            LazyVGrid(columns: columns, spacing: 10) {
+                // Row 1: 索引与引擎
+                DiagnosticMetricTile(
+                    title: L10n.text("文件索引", "Indexed Files"),
+                    value: "\(diagnostics.sourcesIndexed) / \(diagnostics.sourcesDiscovered)",
+                    icon: "folder.fill",
+                    accentColor: cyan,
+                    statusBadge: diagnostics.sourcesIndexed == diagnostics.sourcesDiscovered ? L10n.text("就绪", "Ready") : nil,
+                    isSuccess: true,
+                    colorScheme: colorScheme
+                )
+
+                DiagnosticMetricTile(
+                    title: L10n.text("解析事件", "Total Events"),
+                    value: totalEventsFormatted,
+                    icon: "bolt.fill",
+                    accentColor: blue,
+                    colorScheme: colorScheme
+                )
+
+                DiagnosticMetricTile(
+                    title: L10n.text("解析器版本", "Parser Version"),
+                    value: "v\(diagnostics.parserVersion)",
+                    icon: "gearshape.2.fill",
+                    accentColor: purple,
+                    statusBadge: "ACTIVE",
+                    colorScheme: colorScheme
+                )
+
+                DiagnosticMetricTile(
+                    title: L10n.text("价格目录", "Pricing Catalog"),
+                    value: diagnostics.activePricingCatalogVersion ?? BundledPricingCatalog.currentVersion,
+                    icon: "tag.fill",
+                    accentColor: amber,
+                    colorScheme: colorScheme
+                )
+
+                // Row 2: 完整性与健康
+                DiagnosticMetricTile(
+                    title: L10n.text("SQLite 完整性", "SQLite Integrity"),
+                    value: diagnostics.integrityCheckPassed ? "OK" : L10n.text("异常", "Failed"),
+                    icon: "checkmark.shield.fill",
+                    accentColor: emerald,
+                    statusBadge: diagnostics.integrityCheckPassed ? "PASSED" : "FAILED",
+                    isSuccess: diagnostics.integrityCheckPassed,
+                    isWarning: !diagnostics.integrityCheckPassed,
+                    colorScheme: colorScheme
+                )
+
+                DiagnosticMetricTile(
+                    title: L10n.text("一致性违规", "Invariant Issues"),
+                    value: "\(violations)",
+                    icon: "scalemass.fill",
+                    accentColor: violations == 0 ? emerald : amber,
+                    statusBadge: violations == 0 ? L10n.text("正常", "Pass") : L10n.text("警告", "Warn"),
+                    isSuccess: violations == 0,
+                    isWarning: violations > 0,
+                    colorScheme: colorScheme
+                )
+
+                DiagnosticMetricTile(
+                    title: L10n.text("重建源文件", "Rebuilt Sources"),
+                    value: "\(diagnostics.rebuiltSourceCount)",
+                    icon: "arrow.triangle.2.circlepath",
+                    accentColor: cyan,
+                    colorScheme: colorScheme
+                )
+
+                DiagnosticMetricTile(
+                    title: L10n.text("未计价事件", "Unpriced Events"),
+                    value: "\(diagnostics.unpricedEvents)",
+                    icon: "dollarsign.circle",
+                    accentColor: diagnostics.unpricedEvents == 0 ? emerald : amber,
+                    isWarning: diagnostics.unpricedEvents > 0,
+                    colorScheme: colorScheme
+                )
+
+                // Row 3: 异常追踪与兜底
+                DiagnosticMetricTile(
+                    title: L10n.text("未知模型", "Unknown Models"),
+                    value: "\(diagnostics.unknownModelEvents)",
+                    icon: "questionmark.app.fill",
+                    accentColor: diagnostics.unknownModelEvents == 0 ? blue : amber,
+                    isWarning: diagnostics.unknownModelEvents > 0,
+                    colorScheme: colorScheme
+                )
+
+                DiagnosticMetricTile(
+                    title: L10n.text("时间戳兜底", "Timestamp Fallbacks"),
+                    value: "\(diagnostics.fallbackTimestampEvents)",
+                    icon: "clock.badge.questionmark",
+                    accentColor: diagnostics.fallbackTimestampEvents == 0 ? blue : amber,
+                    isWarning: diagnostics.fallbackTimestampEvents > 0,
+                    colorScheme: colorScheme
+                )
+
+                DiagnosticMetricTile(
+                    title: L10n.text("损坏行记录", "Malformed Lines"),
+                    value: "\(diagnostics.malformedLineCount)",
+                    icon: "exclamationmark.triangle.fill",
+                    accentColor: diagnostics.malformedLineCount == 0 ? emerald : amber,
+                    isWarning: diagnostics.malformedLineCount > 0,
+                    colorScheme: colorScheme
+                )
+
+                DiagnosticMetricTile(
+                    title: L10n.text("未解析时间", "Unresolved Time"),
+                    value: "\(diagnostics.unresolvedTimestampCount)",
+                    icon: "hourglass.badge.plus",
+                    accentColor: diagnostics.unresolvedTimestampCount == 0 ? blue : amber,
+                    isWarning: diagnostics.unresolvedTimestampCount > 0,
+                    colorScheme: colorScheme
+                )
+            }
+
+            if let diagnosticsExportStatus {
+                HStack(spacing: 4) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(emerald)
+                    Text(diagnosticsExportStatus)
+                        .font(.system(size: 10.5, weight: .medium, design: .rounded))
+                        .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
                 }
-                .padding(12)
-                .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))
-
-                HStack {
-                    Text(L10n.format(
-                        "Active catalog: %@",
-                        zhHans: "当前价格目录：%@",
-                        diagnostics.activePricingCatalogVersion ?? BundledPricingCatalog.currentVersion
-                    ))
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-
-                    Spacer()
-
-                    if let diagnosticsExportStatus {
-                        Text(diagnosticsExportStatus)
-                            .font(.system(size: 10, weight: .medium, design: .rounded))
-                            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-                    }
-                }
+                .padding(.top, 2)
             }
         }
         .cyberCard(cornerRadius: 16, padding: 18)
@@ -1285,16 +1378,69 @@ public struct SettingsView: View {
         formatter.dateFormat = "yyyyMMdd-HHmmss"
         return formatter.string(from: Date())
     }
+}
 
-    private func diagnosticText(_ title: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(title)
-                .font(.system(size: 9.5, weight: .bold, design: .rounded))
-                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+// MARK: - 诊断微型指标卡片组件
+private struct DiagnosticMetricTile: View {
+    let title: String
+    let value: String
+    let icon: String
+    let accentColor: Color
+    var statusBadge: String? = nil
+    var isSuccess: Bool? = nil
+    var isWarning: Bool = false
+    let colorScheme: ColorScheme
+
+    var body: some View {
+        let isDark = colorScheme == .dark
+
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 5) {
+                Image(systemName: icon)
+                    .font(.system(size: 9.5, weight: .bold))
+                    .foregroundStyle(accentColor)
+
+                Text(title)
+                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                    .lineLimit(1)
+
+                Spacer(minLength: 0)
+
+                if let badge = statusBadge {
+                    Text(badge)
+                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                        .foregroundStyle(isSuccess == true ? AppTheme.accentEmerald(for: colorScheme) : (isWarning ? AppTheme.accentAmber(for: colorScheme) : accentColor))
+                        .padding(.horizontal, 4.5)
+                        .padding(.vertical, 1.5)
+                        .background(
+                            (isSuccess == true ? AppTheme.accentEmerald(for: colorScheme) : (isWarning ? AppTheme.accentAmber(for: colorScheme) : accentColor))
+                                .opacity(isDark ? 0.18 : 0.12),
+                            in: Capsule()
+                        )
+                }
+            }
+
             Text(value)
-                .font(.system(size: 11, weight: .heavy, design: .monospaced))
-                .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                .font(.system(size: 12.5, weight: .heavy, design: .monospaced))
+                .foregroundStyle(isWarning ? AppTheme.accentAmber(for: colorScheme) : AppTheme.textPrimary(for: colorScheme))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
         }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(AppTheme.insetSurface(for: colorScheme))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(
+                    isWarning ? AppTheme.accentAmber(for: colorScheme).opacity(0.35) : AppTheme.insetBorder(for: colorScheme),
+                    lineWidth: 0.8
+                )
+        )
     }
 }
 
