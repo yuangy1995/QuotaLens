@@ -59,6 +59,18 @@ public struct AboutView: View {
     private var defaultChangelogs: [ChangelogEntry] {
         [
             ChangelogEntry(
+                id: "v1.0.9",
+                version: "v1.0.9",
+                date: "2026-08-25",
+                changes: [
+                    L10n.text("新增会话删除与安全清理能力，支持源文件移至废纸篓并自动级联清理本地索引与统计数据", "Session deletion with trash-move safety and automatic cascade cleanup of derived analytics"),
+                    L10n.text("新增配额耗尽（0% 配额）预警与专属状态展示，并在配额耗尽时智能静默预测", "Dedicated quota exhausted state handling and intelligent forecast suppression"),
+                    L10n.text("全面升级全息悬浮窗交互，支持磁吸贴边、自由拖拽定位与置顶固定状态记忆", "Enhanced floating HUD overlay with magnetic edge snapping, dragging, and pin persistence"),
+                    L10n.text("用量分析看板与年度热力图新增鼠标跟随悬浮详情卡片，并大幅优化历史全天汇总查询性能", "Pointer-following detail cards for usage charts and heatmap with faster compact summary queries"),
+                    L10n.text("优化 Dock 图标聚焦与菜单栏弹窗交互行为，关于页更新日志支持多语言自适应显示", "Refined Dock and menu bar activation behaviors, with localized changelog rendering")
+                ]
+            ),
+            ChangelogEntry(
                 id: "v1.0.8",
                 version: "v1.0.8",
                 date: "2026-08-25",

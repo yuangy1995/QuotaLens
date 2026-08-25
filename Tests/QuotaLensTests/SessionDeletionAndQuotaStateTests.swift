@@ -144,8 +144,8 @@ final class SessionDeletionAndQuotaStateTests: XCTestCase {
             }
         }
 
-        let chinese = "新增 Codex 本地历史用量与 Rollout 审计日志实时追踪解析引擎，支持秒级流式索引"
-        let english = "Real-time parsing and streaming index for Codex local history & rollout audit logs"
+        let chinese = "新增会话删除与安全清理能力，支持源文件移至废纸篓并自动级联清理本地索引与统计数据"
+        let english = "Session deletion with trash-move safety and automatic cascade cleanup of derived analytics"
         for mode in AppLanguageMode.allCases where mode != .system {
             defaults.set(mode.rawValue, forKey: L10n.languageModeDefaultsKey)
             let localized = L10n.text(chinese, english)

@@ -435,6 +435,56 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Não resta quota neste ciclo, por isso não é necessária uma previsão",
         .portugueseBrazil: "Não resta cota neste ciclo, portanto não é necessária uma previsão"
     ],
+    "Session deletion with trash-move safety and automatic cascade cleanup of derived analytics": [
+        .traditionalChinese: "新增會話刪除與安全清理能力，支援原始檔移至垃圾桶並自動串聯清理本機索引與統計資料",
+        .japanese: "セッションの安全なゴミ箱移動削除と派生解析データの自動カスケードクリーンアップ",
+        .korean: "휴지통 이동을 통한 안전한 세션 삭제 및 파생 분석 데이터 자동 연쇄 정리",
+        .spanish: "Eliminación segura de sesiones con envío a la papelera y limpieza automática en cascada de analíticas",
+        .german: "Sicheres Löschen von Sitzungen mit Papierkorb-Verschiebung und automatischer Bereinigung abgeleiteter Analysen",
+        .french: "Suppression sécurisée des sessions vers la corbeille et nettoyage automatique en cascade des analyses",
+        .portuguese: "Eliminação segura de sessões com envio para o lixo e limpeza automática em cascata de análises",
+        .portugueseBrazil: "Exclusão segura de sessões com envio para a lixeira e limpeza automática em cascata de análises"
+    ],
+    "Dedicated quota exhausted state handling and intelligent forecast suppression": [
+        .traditionalChinese: "配額耗盡專屬狀態展示，並在配額耗盡時智慧靜默預測",
+        .japanese: "クォータ枯渇専用ステータス表示と枯渇時のスマートな予測抑制",
+        .korean: "할당량 소진 전용 상태 표시 및 소진 시 스마트 예측 억제",
+        .spanish: "Gestión de estado dedicado para cuota agotada y supresión inteligente de predicciones",
+        .german: "Spezielle Statusbehandlung für aufgebrauchte Kontingente und intelligente Prognoseunterdrückung",
+        .french: "Gestion d’état dédiée pour quota épuisé et suppression intelligente des prévisions",
+        .portuguese: "Tratamento de estado dedicado para quota esgotada e supressão inteligente de previsões",
+        .portugueseBrazil: "Tratamento de estado dedicado para cota esgotada e supressão inteligente de previsões"
+    ],
+    "Enhanced floating HUD overlay with magnetic edge snapping, dragging, and pin persistence": [
+        .traditionalChinese: "全面升級全像懸浮窗互動，支援磁吸貼邊、自由拖曳與置頂固定狀態記憶",
+        .japanese: "吸着エッジスナップ、ドラッグ移動、固定状態の永続化に対応したフローティング HUD の強化",
+        .korean: "자석 가장자리 스냅, 드래그 이동 및 고정 상태 유지를 지원하는 플로팅 HUD 개선",
+        .spanish: "Superposición HUD flotante mejorada con ajuste magnético a los bordes, arrastre y persistencia de fijación",
+        .german: "Verbessertes schwebendes HUD-Overlay mit magnetischem Randeinrasten, Ziehen und fixer Zustandsbeibehaltung",
+        .french: "Superposition HUD flottante améliorée avec alignement magnétique aux bords, déplacement et maintien de fixation",
+        .portuguese: "Sobreposição HUD flutuante melhorada com fixação magnética aos limites, arrasto e persistência de fixação",
+        .portugueseBrazil: "Sobreposição HUD flutuante aprimorada com encaixe magnético nas bordas, arrasto e persistência de fixação"
+    ],
+    "Pointer-following detail cards for usage charts and heatmap with faster compact summary queries": [
+        .traditionalChinese: "用量圖表與年度熱力圖支援滑鼠跟隨懸浮卡片，大幅最佳化歷史全天彙總查詢效能",
+        .japanese: "利用状況グラフとヒートマップでのポインター追従詳細カードと日次集計クエリの高速化",
+        .korean: "사용량 차트 및 히트맵 포인터 추적 상세 카드 추가와 일별 요약 쿼리 성능 대폭 개선",
+        .spanish: "Tarjetas de detalle que siguen al puntero para gráficos de uso y mapa de calor con consultas de resumen más rápidas",
+        .german: "Zeigerfolgende Detailkarten für Nutzungsdiagramme und Heatmap mit schnelleren Abfragen für Tageszusammenfassungen",
+        .french: "Cartes de détail suivant le curseur pour les graphiques d’usage et la carte thermique avec requêtes de synthèse accélérées",
+        .portuguese: "Cartões de detalhe com seguimento do cursor para gráficos de utilização e mapa térmico com consultas de resumo mais rápidas",
+        .portugueseBrazil: "Cartões de detalhe com rastreamento do cursor para gráficos de uso e mapa de calor com consultas de resumo mais rápidas"
+    ],
+    "Refined Dock and menu bar activation behaviors, with localized changelog rendering": [
+        .traditionalChinese: "最佳化 Dock 圖示聚焦與選單列彈窗互動，關於頁更新日誌支援多語言自適應顯示",
+        .japanese: "Dock アイコンのアクティブ化とメニューバー操作の洗練、更新履歴の多言語表示対応",
+        .korean: "Dock 아이콘 활성화 및 메뉴 막대 동작 개선, 업데이트 로그 다국어 렌더링 지원",
+        .spanish: "Comportamiento refinado de activación de Dock y barra de menús, con registro de cambios localizado",
+        .german: "Verfeinertes Verhalten beim Aktivieren von Dock und Menüleiste mit lokalisierter Changelog-Darstellung",
+        .french: "Comportements d’activation affinés pour le Dock et la barre des menus, avec affichage localisé du journal des modifications",
+        .portuguese: "Comportamentos de ativação refinados para o Dock e barra de menus, com apresentação localizada do registo de alterações",
+        .portugueseBrazil: "Comportamentos de ativação aprimorados para o Dock e barra de menus, com exibição localizada do histórico de alterações"
+    ],
     "Real-time parsing and streaming index for Codex local history & rollout audit logs": [
         .traditionalChinese: "即時解析 Codex 本機歷史用量與 Rollout 稽核日誌，並支援串流索引",
         .japanese: "Codex のローカル履歴と Rollout 監査ログをリアルタイム解析・ストリーミング索引",
