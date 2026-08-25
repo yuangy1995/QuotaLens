@@ -137,6 +137,7 @@ public final class AppState: ObservableObject {
     private static let resetCreditReminderSnoozedCreditIdDefaultsKey = "QuotaLens.resetCreditReminder.snoozedCreditId"
     private static let resetCreditReminderSnoozeUntilDefaultsKey = "QuotaLens.resetCreditReminder.snoozeUntil"
     private static let resetCreditReminderLastDeliveredKeyDefaultsKey = "QuotaLens.resetCreditReminder.lastDeliveredKey"
+    private static let dismissedSuggestionCycleKeysDefaultsKey = "QuotaLens.dismissedSuggestionCycleKeys"
     nonisolated public static let defaultRefreshIntervalSeconds = 60
 
     // 当前账户与外观主题
@@ -185,6 +186,7 @@ public final class AppState: ObservableObject {
     }
     @Published public var launchAtLoginEnabled: Bool = false
     @Published public var launchAtLoginStatusText: String = L10n.text("未开启", "Off")
+    @Published public private(set) var dismissedSuggestionCycleKeys: [String: String] = [:]
 
     // 当前额度
     @Published public var latestRateLimit: RateLimitSnapshotRecord?
@@ -225,6 +227,9 @@ public final class AppState: ObservableObject {
             self.resetCreditReminderEnabled = true
         } else {
             self.resetCreditReminderEnabled = UserDefaults.standard.bool(forKey: Self.resetCreditReminderEnabledDefaultsKey)
+        }
+        if let storedSuggestions = UserDefaults.standard.dictionary(forKey: Self.dismissedSuggestionCycleKeysDefaultsKey) as? [String: String] {
+            self.dismissedSuggestionCycleKeys = storedSuggestions
         }
         self.loadResetCreditReminderState(accountKey: nil)
     }
@@ -1070,5 +1075,63 @@ public final class AppState: ObservableObject {
         resetCreditReminderSnoozeUntil = nil
         UserDefaults.standard.removeObject(forKey: resetCreditReminderScopedDefaultsKey(Self.resetCreditReminderSnoozedCreditIdDefaultsKey, accountKey: accountKey))
         UserDefaults.standard.removeObject(forKey: resetCreditReminderScopedDefaultsKey(Self.resetCreditReminderSnoozeUntilDefaultsKey, accountKey: accountKey))
+    }
+
+    // MARK: - 首页智能建议引擎 (Dashboard Smart Suggestions)
+    public var currentCycleKey: String? {
+        guard let snap = latestRateLimit, let resetsAt = snap.resetsAt else { return nil }
+        let accountKey = selectedAccountKey ?? account?.accountKey ?? "default"
+        return "\(accountKey):\(resetsAt)"
+    }
+
+    public func dismissSuggestion(_ id: DashboardSuggestionID) {
+        guard let cycleKey = currentCycleKey else { return }
+        dismissedSuggestionCycleKeys[id.rawValue] = cycleKey
+        UserDefaults.standard.set(dismissedSuggestionCycleKeys, forKey: Self.dismissedSuggestionCycleKeysDefaultsKey)
+    }
+
+    public func isSuggestionDismissedForCurrentCycle(_ id: DashboardSuggestionID) -> Bool {
+        guard let currentCycleKey else { return false }
+        return dismissedSuggestionCycleKeys[id.rawValue] == currentCycleKey
+    }
+
+    public var activeDashboardSuggestion: DashboardSuggestion? {
+        // 规则 1: 额度耗尽且存在有效重置卡时，提示使用重置卡恢复额度
+        if hasQuotaSnapshot,
+           isQuotaExhausted,
+           resetCreditAvailableCount > 0,
+           let credit = nearestValidResetCredit,
+           !isSuggestionDismissedForCurrentCycle(.useResetCardWhenExhausted) {
+
+            let title = L10n.text("建议使用重置卡恢复额度", "Restore Quota with Reset Card")
+            let expiryText = credit.expiresAt != nil ? formatFullDate(credit.expiresAt!) : nil
+            let message: String
+            if let expiryText {
+                message = L10n.format(
+                    "Current quota is exhausted. You have %d valid reset card (expires %@). Use it now to restore your quota.",
+                    zhHans: "本周期可用额度已耗尽。检测到您持有 %d 张有效重置卡（最近截止 %@），建议立即使用恢复可用额度。",
+                    resetCreditAvailableCount,
+                    expiryText
+                )
+            } else {
+                message = L10n.format(
+                    "Current quota is exhausted. You have %d valid reset card. Use it now to restore your quota.",
+                    zhHans: "本周期可用额度已耗尽。检测到您持有 %d 张有效重置卡，建议立即使用恢复可用额度。",
+                    resetCreditAvailableCount
+                )
+            }
+
+            return DashboardSuggestion(
+                id: .useResetCardWhenExhausted,
+                title: title,
+                message: message,
+                icon: "sparkles",
+                primaryActionTitle: L10n.text("立即使用", "Use Now"),
+                dismissActionTitle: L10n.text("本周期内忽略", "Dismiss for this cycle"),
+                payload: .resetCredit(credit)
+            )
+        }
+
+        return nil
     }
 }

@@ -67,19 +67,36 @@ public final class UsageAnalyticsRepository: Sendable {
         self.trashSourceFile = trashSourceFile
     }
 
-    // MARK: - 1. 会话列表查询 (支持 Keyset 分页与搜索)
+    // MARK: - 1. 会话列表查询 (支持 Keyset 分页、项目过滤与搜索)
+    public func fetchProjectNames() throws -> [String] {
+        let sql = """
+        SELECT DISTINCT project_name
+        FROM codex_sessions
+        WHERE project_name IS NOT NULL AND TRIM(project_name) != ''
+        ORDER BY project_name COLLATE NOCASE ASC;
+        """
+        return try database.executeQuery(sql: sql, bindings: []) { stmt in
+            if sqlite3_column_type(stmt, 0) != SQLITE_NULL, let text = sqlite3_column_text(stmt, 0) {
+                return String(cString: text)
+            }
+            return nil
+        }.compactMap { $0 }
+    }
+
     public func fetchSessions(
         sort: SessionSort = .lastActivityDesc,
         search: String? = nil,
+        project: String? = nil,
         limit: Int = 50,
         cursor: String? = nil
     ) throws -> [CodexSessionDTO] {
-        try fetchSessionPage(sort: sort, search: search, limit: limit, cursor: cursor).sessions
+        try fetchSessionPage(sort: sort, search: search, project: project, limit: limit, cursor: cursor).sessions
     }
 
     public func fetchSessionPage(
         sort: SessionSort = .lastActivityDesc,
         search: String? = nil,
+        project: String? = nil,
         limit: Int = 50,
         cursor: String? = nil
     ) throws -> CodexSessionPageDTO {
@@ -89,6 +106,11 @@ public final class UsageAnalyticsRepository: Sendable {
 
         // 只查询主会话（或顶层会话），深度为 0
         conditions.append("(depth = 0 OR parent_session_id IS NULL)")
+
+        if let project = project?.trimmingCharacters(in: .whitespacesAndNewlines), !project.isEmpty {
+            conditions.append("project_name = ?")
+            bindings.append(project)
+        }
 
         if let search = search?.trimmingCharacters(in: .whitespacesAndNewlines), !search.isEmpty {
             let pattern = "%\(Self.escapeLike(search))%"

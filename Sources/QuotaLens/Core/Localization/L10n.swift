@@ -435,6 +435,236 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Não resta quota neste ciclo, por isso não é necessária uma previsão",
         .portugueseBrazil: "Não resta cota neste ciclo, portanto não é necessária uma previsão"
     ],
+    "Quota exhausted for this cycle, waiting for reset": [
+        .traditionalChinese: "本週期額度已用盡，等待重置後恢復",
+        .japanese: "今サイクルのクォータを使い切りました。リセットをお待ちください",
+        .korean: "이번 주기 할당량을 모두 소진했습니다. 재설정을 기다려주세요",
+        .spanish: "Se ha agotado la cuota de este ciclo, esperando el reinicio",
+        .german: "Kontingent für diesen Zyklus aufgebraucht, Warten auf Reset",
+        .french: "Quota épuisé pour ce cycle, en attente de réinitialisation",
+        .portuguese: "Quota deste ciclo esgotada, a aguardar reposição",
+        .portugueseBrazil: "Cota deste ciclo esgotada, aguardando redefinição"
+    ],
+    "Will restore on next reset": [
+        .traditionalChinese: "等待下週期重置恢復",
+        .japanese: "次回のリセット後に回復します",
+        .korean: "다음 주기 재설정 후 복구됩니다",
+        .spanish: "Se restablecerá en el próximo ciclo",
+        .german: "Wird im nächsten Zyklus zurückgesetzt",
+        .french: "Sera restauré au prochain cycle",
+        .portuguese: "Será restaurada no próximo ciclo",
+        .portugueseBrazil: "Será restaurada no próximo ciclo"
+    ],
+    "Restore Quota with Reset Card": [
+        .traditionalChinese: "建議使用重置卡恢復額度",
+        .japanese: "リセットカードでクォータを回復することをお勧めします",
+        .korean: "재설정 카드를 사용하여 할당량을 복구하는 것을 권장합니다",
+        .spanish: "Se recomienda usar una tarjeta de reinicio para restaurar la cuota",
+        .german: "Verwenden Sie eine Reset-Karte, um das Kontingent wiederherzustellen",
+        .french: "Il est recommandé d'utiliser une carte de réinitialisation pour restaurer le quota",
+        .portuguese: "Recomenda-se a utilização de um cartão de reset para restaurar a quota",
+        .portugueseBrazil: "Recomenda-se o uso de um cartão de reset para restaurar a cota"
+    ],
+    "Current quota is exhausted. You have %d valid reset card (expires %@). Use it now to restore your quota.": [
+        .traditionalChinese: "本週期可用額度已耗盡。偵測到您持有 %d 張有效重置卡（最近截止 %@），建議立即使用恢復可用額度。",
+        .japanese: "今サイクルの利用可能クォータを使い切りました。有効なリセットカードが %d 枚あります（最短期限 %@）。今すぐ使用して回復することをお勧めします。",
+        .korean: "이번 주기 사용 가능한 할당량이 소진되었습니다. 유효한 재설정 카드가 %d장 있습니다(가장 빠른 만료일: %@). 지금 사용하여 할당량을 복구해 보세요.",
+        .spanish: "La cuota del ciclo actual se ha agotado. Tiene %d tarjeta de reinicio válida (vence el %@). Úsela ahora para restaurar su cuota.",
+        .german: "Das Kontingent für den aktuellen Zyklus ist aufgebraucht. Sie haben %d gültige Reset-Karte (läuft ab am %@). Verwenden Sie sie jetzt, um Ihr Kontingent wiederherzustellen.",
+        .french: "Le quota du cycle actuel est épuisé. Vous disposez de %d carte de réinitialisation valide (expire le %@). Utilisez-la dès maintenant pour restaurer votre quota.",
+        .portuguese: "A quota do ciclo atual está esgotada. Tem %d cartão de reset válido (expira em %@). Utilize-o agora para restaurar a sua quota.",
+        .portugueseBrazil: "A cota do ciclo atual está esgotada. Você tem %d cartão de reset válido (expira em %@). Use-o agora para restaurar sua cota."
+    ],
+    "Current quota is exhausted. You have %d valid reset card. Use it now to restore your quota.": [
+        .traditionalChinese: "本週期可用額度已耗盡。偵測到您持有 %d 張有效重置卡，建議立即使用恢復可用額度。",
+        .japanese: "今サイクルの利用可能クォータを使い切りました。有効なリセットカードが %d 枚あります。今すぐ使用して回復することをお勧めします。",
+        .korean: "이번 주기 사용 가능한 할당량이 소진되었습니다. 유효한 재설정 카드가 %d장 있습니다. 지금 사용하여 할당량을 복구해 보세요.",
+        .spanish: "La cuota del ciclo actual se ha agotado. Tiene %d tarjeta de reinicio válida. Úsela ahora para restaurar su cuota.",
+        .german: "Das Kontingent für den aktuellen Zyklus ist aufgebraucht. Sie haben %d gültige Reset-Karte. Verwenden Sie sie jetzt, um Ihr Kontingent wiederherzustellen.",
+        .french: "Le quota du cycle actuel est épuisé. Vous disposez de %d carte de réinitialisation valide. Utilisez-la dès maintenant pour restaurer votre quota.",
+        .portuguese: "A quota do ciclo atual está esgotada. Tem %d cartão de reset válido. Utilize-o agora para restaurar a sua quota.",
+        .portugueseBrazil: "A cota do ciclo atual está esgotada. Você tem %d cartão de reset válido. Use-o agora para restaurar sua cota."
+    ],
+    "Dismiss for this cycle": [
+        .traditionalChinese: "本週期內忽略",
+        .japanese: "今サイクルでは無視",
+        .korean: "이번 주기 동안 닫기",
+        .spanish: "Descartar en este ciclo",
+        .german: "In diesem Zyklus ignorieren",
+        .french: "Ignorer pour ce cycle",
+        .portuguese: "Ignorar neste ciclo",
+        .portugueseBrazil: "Ignorar neste ciclo"
+    ],
+    "Smart Suggestion": [
+        .traditionalChinese: "智慧建議",
+        .japanese: "スマートな提案",
+        .korean: "스마트 제안",
+        .spanish: "Sugerencia inteligente",
+        .german: "Intelligenter Vorschlag",
+        .french: "Suggestion intelligente",
+        .portuguese: "Sugestão inteligente",
+        .portugueseBrazil: "Sugestão inteligente"
+    ],
+    "Use Now": [
+        .traditionalChinese: "立即使用",
+        .japanese: "今すぐ使用",
+        .korean: "지금 사용",
+        .spanish: "Usar ahora",
+        .german: "Jetzt verwenden",
+        .french: "Utiliser maintenant",
+        .portuguese: "Utilizar agora",
+        .portugueseBrazil: "Usar agora"
+    ],
+    "View Mode": [
+        .traditionalChinese: "檢視模式",
+        .japanese: "表示モード",
+        .korean: "보기 모드",
+        .spanish: "Modo de vista",
+        .german: "Ansichtsmodus",
+        .french: "Mode d'affichage",
+        .portuguese: "Modo de visualização",
+        .portugueseBrazil: "Modo de exibição"
+    ],
+    "Timeline List": [
+        .traditionalChinese: "時間流平鋪",
+        .japanese: "タイムライン一覧",
+        .korean: "타임라인 목록",
+        .spanish: "Lista de cronología",
+        .german: "Zeitleistenliste",
+        .french: "Liste chronologique",
+        .portuguese: "Lista cronológica",
+        .portugueseBrazil: "Lista cronológica"
+    ],
+    "Group by Project": [
+        .traditionalChinese: "按專案分組折疊",
+        .japanese: "プロジェクト別に折りたたみ",
+        .korean: "프로젝트별 그룹화 및 접기",
+        .spanish: "Agrupar por proyecto",
+        .german: "Nach Projekt gruppieren",
+        .french: "Grouper par projet",
+        .portuguese: "Agrupar por projeto",
+        .portugueseBrazil: "Agrupar por projeto"
+    ],
+    "Project Filter": [
+        .traditionalChinese: "專案篩選",
+        .japanese: "プロジェクト絞り込み",
+        .korean: "프로젝트 필터",
+        .spanish: "Filtro de proyecto",
+        .german: "Projektfilter",
+        .french: "Filtre de projet",
+        .portuguese: "Filtro de projeto",
+        .portugueseBrazil: "Filtro de projeto"
+    ],
+    "All Projects": [
+        .traditionalChinese: "全部專案",
+        .japanese: "すべてのプロジェクト",
+        .korean: "모든 프로젝트",
+        .spanish: "Todos los proyectos",
+        .german: "Alle Projekte",
+        .french: "Tous les projets",
+        .portuguese: "Todos os projetos",
+        .portugueseBrazil: "Todos os projetos"
+    ],
+    "Default / Unnamed": [
+        .traditionalChinese: "預設未命名專案",
+        .japanese: "未分類プロジェクト",
+        .korean: "기본 미분류 프로젝트",
+        .spanish: "Sin proyecto / Predeterminado",
+        .german: "Standard / Ohne Projekt",
+        .french: "Sans projet / Par défaut",
+        .portuguese: "Sem projeto / Predefinido",
+        .portugueseBrazil: "Sem projeto / Padrão"
+    ],
+    "Collapse All": [
+        .traditionalChinese: "全部折疊",
+        .japanese: "すべて折りたたむ",
+        .korean: "모두 접기",
+        .spanish: "Contraer todo",
+        .german: "Alle einklappen",
+        .french: "Tout réduire",
+        .portuguese: "Recolher tudo",
+        .portugueseBrazil: "Recolher tudo"
+    ],
+    "Expand All": [
+        .traditionalChinese: "全部展開",
+        .japanese: "すべて展開",
+        .korean: "모두 펼치기",
+        .spanish: "Expandir todo",
+        .german: "Alle ausklappen",
+        .french: "Tout développer",
+        .portuguese: "Expandir tudo",
+        .portugueseBrazil: "Expandir tudo"
+    ],
+    "%d sessions": [
+        .traditionalChinese: "%d 個會話",
+        .japanese: "%d 件のセッション",
+        .korean: "%d개 세션",
+        .spanish: "%d sesiones",
+        .german: "%d Sitzungen",
+        .french: "%d sessions",
+        .portuguese: "%d sessões",
+        .portugueseBrazil: "%d sessões"
+    ],
+    "Project: %@": [
+        .traditionalChinese: "專案: %@",
+        .japanese: "プロジェクト: %@",
+        .korean: "프로젝트: %@",
+        .spanish: "Proyecto: %@",
+        .german: "Projekt: %@",
+        .french: "Projet : %@",
+        .portuguese: "Projeto: %@",
+        .portugueseBrazil: "Projeto: %@"
+    ],
+    "Cache Hit Rate Analysis": [
+        .traditionalChinese: "快取命中率分析",
+        .japanese: "キャッシュヒット率分析",
+        .korean: "캐시 적중률 분석",
+        .spanish: "Análisis de tasa de aciertos de caché",
+        .german: "Cache-Trefferquoten-Analyse",
+        .french: "Analyse du taux d'accès au cache",
+        .portuguese: "Análise da taxa de acertos de cache",
+        .portugueseBrazil: "Análise da taxa de acertos de cache"
+    ],
+    "Prompt Caching Efficiency": [
+        .traditionalChinese: "Prompt 快取效率",
+        .japanese: "Prompt キャッシュ効率",
+        .korean: "프롬프트 캐싱 효율",
+        .spanish: "Eficiencia de caché de prompt",
+        .german: "Prompt-Caching-Effizienz",
+        .french: "Efficacité de mise en cache des prompts",
+        .portuguese: "Eficiência de cache de prompt",
+        .portugueseBrazil: "Eficiência de cache de prompt"
+    ],
+    "%@ cached": [
+        .traditionalChinese: "%@ 已快取",
+        .japanese: "%@ キャッシュ済",
+        .korean: "%@ 캐시됨",
+        .spanish: "%@ en caché",
+        .german: "%@ zwischengespeichert",
+        .french: "%@ en cache",
+        .portuguese: "%@ em cache",
+        .portugueseBrazil: "%@ em cache"
+    ],
+    "No requests": [
+        .traditionalChinese: "暫無請求",
+        .japanese: "リクエストなし",
+        .korean: "요청 없음",
+        .spanish: "Sin solicitudes",
+        .german: "Keine Anfragen",
+        .french: "Aucune requête",
+        .portuguese: "Sem pedidos",
+        .portugueseBrazil: "Sem requisições"
+    ],
+    "Efficiency Comparison": [
+        .traditionalChinese: "效率對比",
+        .japanese: "効率比較",
+        .korean: "효율 비교",
+        .spanish: "Comparación de eficiencia",
+        .german: "Effizienzvergleich",
+        .french: "Comparaison d'efficacité",
+        .portuguese: "Comparação de eficiência",
+        .portugueseBrazil: "Comparação de eficiência"
+    ],
     "Session deletion with trash-move safety and automatic cascade cleanup of derived analytics": [
         .traditionalChinese: "新增會話刪除與安全清理能力，支援原始檔移至垃圾桶並自動串聯清理本機索引與統計資料",
         .japanese: "セッションの安全なゴミ箱移動削除と派生解析データの自動カスケードクリーンアップ",

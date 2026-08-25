@@ -10,22 +10,28 @@ public actor UsageQueryFacade {
         self.repository = UsageAnalyticsRepository(database: database)
     }
 
+    public func getProjectNames() throws -> [String] {
+        try repository.fetchProjectNames()
+    }
+
     public func getSessions(
         sort: SessionSort = .lastActivityDesc,
         search: String? = nil,
+        project: String? = nil,
         limit: Int = 50,
         cursor: String? = nil
     ) throws -> [CodexSessionDTO] {
-        try repository.fetchSessions(sort: sort, search: search, limit: limit, cursor: cursor)
+        try repository.fetchSessions(sort: sort, search: search, project: project, limit: limit, cursor: cursor)
     }
 
     public func getSessionPage(
         sort: SessionSort = .lastActivityDesc,
         search: String? = nil,
+        project: String? = nil,
         limit: Int = 50,
         cursor: String? = nil
     ) throws -> CodexSessionPageDTO {
-        try repository.fetchSessionPage(sort: sort, search: search, limit: limit, cursor: cursor)
+        try repository.fetchSessionPage(sort: sort, search: search, project: project, limit: limit, cursor: cursor)
     }
 
     public func getSessionDetail(sessionId: String) throws -> CodexSessionDetailDTO? {

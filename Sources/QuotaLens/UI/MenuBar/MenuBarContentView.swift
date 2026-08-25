@@ -471,44 +471,38 @@ public struct MenuBarContentView: View {
         let rose = AppTheme.accentRose(for: colorScheme)
         let isDark = colorScheme == .dark
 
-        return TimelineView(.periodic(from: .now, by: 1)) { _ in
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
-                    Image(systemName: "exclamationmark.octagon.fill")
-                        .font(.system(size: 10.5, weight: .bold))
-                        .foregroundStyle(rose)
-
-                    Text(L10n.text("额度状态", "Quota Status"))
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
-                        .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-
-                    Spacer()
-
-                    Text(L10n.text("已用尽", "Exhausted"))
-                        .font(.system(size: 9.5, weight: .heavy, design: .monospaced))
-                        .foregroundStyle(rose)
-                }
-
-                Text(L10n.text("本周期没有可用额度，无需继续预测", "No quota remains in this cycle, so no forecast is needed"))
-                    .font(.system(size: 10.5, weight: .heavy, design: .rounded))
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.octagon.fill")
+                    .font(.system(size: 10.5, weight: .bold))
                     .foregroundStyle(rose)
-                    .lineLimit(2)
 
-                Text(L10n.format("Resets in %@", zhHans: "%@ 后重置", state.resetCountdownString))
-                    .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                Text(L10n.text("额度状态", "Quota Status"))
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
                     .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+
+                Spacer()
+
+                Text(L10n.text("已用尽", "Exhausted"))
+                    .font(.system(size: 9.5, weight: .heavy, design: .monospaced))
+                    .foregroundStyle(rose)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(
-                rose.opacity(isDark ? 0.12 : 0.08),
-                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(rose.opacity(isDark ? 0.34 : 0.24), lineWidth: 0.8)
-            )
+
+            Text(L10n.text("本周期额度已用完，等待重置后恢复", "Quota exhausted for this cycle, waiting for reset"))
+                .font(.system(size: 10.5, weight: .heavy, design: .rounded))
+                .foregroundStyle(rose)
+                .lineLimit(2)
         }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            rose.opacity(isDark ? 0.12 : 0.08),
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(rose.opacity(isDark ? 0.34 : 0.24), lineWidth: 0.8)
+        )
     }
 
     private func renewalBadgeColor(emerald: Color, amber: Color, rose: Color, fallback: Color) -> Color {

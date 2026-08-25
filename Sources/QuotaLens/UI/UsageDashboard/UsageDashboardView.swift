@@ -170,7 +170,7 @@ public struct UsageDashboardView: View {
                     kpiSection(metrics: metrics)
 
                     // 3. 缓存命中率独立概览
-                    cacheHitRateStrip
+                    cacheHitRateCard
 
                     // 4. 双重智能预测引擎 (服务器额度耗尽 + 本机未来 7 天趋势)
                     if UsageFeatureFlags.shared.isForecastEnabled {
@@ -249,7 +249,7 @@ public struct UsageDashboardView: View {
         )
     }
 
-    // MARK: - 1. 顶部控制栏
+    // MARK: - 子视图组件划分
     private var headerControlBar: some View {
         let cyan = AppTheme.accentCyan(for: colorScheme)
         let isDark = colorScheme == .dark
@@ -292,7 +292,6 @@ public struct UsageDashboardView: View {
         }
     }
 
-    // MARK: - 2. 核心 KPI 卡片
     private func kpiSection(metrics: DashboardMetricsDTO) -> some View {
         let cyan = AppTheme.accentCyan(for: colorScheme)
         let emerald = AppTheme.accentEmerald(for: colorScheme)
@@ -327,48 +326,88 @@ public struct UsageDashboardView: View {
         }
     }
 
-    private var cacheHitRateStrip: some View {
+    private var cacheHitRateCard: some View {
         let purple = AppTheme.accentPurple(for: colorScheme)
+        let cyan = AppTheme.accentCyan(for: colorScheme)
         let isDark = colorScheme == .dark
 
-        return HStack(spacing: 12) {
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(purple)
-                    .frame(width: 7, height: 7)
+        return VStack(alignment: .leading, spacing: 12) {
+            // 卡片头部
+            HStack(spacing: 9) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [purple.opacity(isDark ? 0.30 : 0.18), cyan.opacity(isDark ? 0.20 : 0.10)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                    Image(systemName: "bolt.badge.clock.fill")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(purple)
+                }
+                .frame(width: 26, height: 26)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .strokeBorder(purple.opacity(isDark ? 0.35 : 0.25), lineWidth: 0.8)
+                )
 
-                Text(L10n.text("缓存命中率", "Cache Hit Rate"))
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
-                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(L10n.text("缓存命中率分析", "Cache Hit Rate Analysis"))
+                        .font(.system(size: 12.5, weight: .bold, design: .rounded))
+                        .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+
+                    Text(L10n.text("Prompt 缓存效率", "Prompt Caching Efficiency"))
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                }
+
+                Spacer(minLength: 12)
+
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(purple)
+                        .frame(width: 5, height: 5)
+
+                    Text(L10n.text("效率对比", "Efficiency Comparison"))
+                        .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                        .foregroundStyle(purple)
+                }
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(purple.opacity(isDark ? 0.14 : 0.08), in: Capsule())
+                .overlay(
+                    Capsule()
+                        .strokeBorder(purple.opacity(isDark ? 0.28 : 0.18), lineWidth: 0.8)
+                )
             }
 
-            Spacer(minLength: 12)
+            // 三列周期指标卡片
+            HStack(spacing: 10) {
+                CacheHitMetricTile(
+                    periodTitle: L10n.text("今日", "Today"),
+                    metrics: store.todayMetrics,
+                    themeColor: purple
+                )
 
-            CacheHitPeriodView(
-                label: L10n.text("今日", "Today"),
-                value: cacheHitDisplayText(store.todayMetrics)
-            )
+                CacheHitMetricTile(
+                    periodTitle: L10n.text("近 7 天", "Last 7 Days"),
+                    metrics: store.sevenDayMetrics,
+                    themeColor: cyan
+                )
 
-            CacheHitDivider()
-
-            CacheHitPeriodView(
-                label: L10n.text("近 7 天", "Last 7 Days"),
-                value: cacheHitDisplayText(store.sevenDayMetrics)
-            )
-
-            CacheHitDivider()
-
-            CacheHitPeriodView(
-                label: L10n.text("近 30 天", "Last 30 Days"),
-                value: cacheHitDisplayText(store.thirtyDayMetrics)
-            )
+                CacheHitMetricTile(
+                    periodTitle: L10n.text("近 30 天", "Last 30 Days"),
+                    metrics: store.thirtyDayMetrics,
+                    themeColor: AppTheme.accentEmerald(for: colorScheme)
+                )
+            }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
         .background(
-            purple.opacity(isDark ? 0.12 : 0.08),
-            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+            AppTheme.insetSurface(for: colorScheme),
+            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
@@ -1036,34 +1075,100 @@ public struct UsageDashboardView: View {
     }
 }
 
-private struct CacheHitPeriodView: View {
+private struct CacheHitMetricTile: View {
     @Environment(\.colorScheme) var colorScheme
-    let label: String
-    let value: String
+    let periodTitle: String
+    let metrics: DashboardMetricsDTO?
+    let themeColor: Color
 
-    var body: some View {
-        HStack(spacing: 6) {
-            Text(label)
-                .font(.system(size: 11, weight: .medium, design: .rounded))
-                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-                .lineLimit(1)
-
-            Text(value)
-                .font(.system(size: 11.5, weight: .black, design: .rounded))
-                .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
-                .lineLimit(1)
-                .minimumScaleFactor(0.82)
-        }
+    private var hasData: Bool {
+        guard let metrics else { return false }
+        return metrics.totalTokens.inputTokens > 0
     }
-}
 
-private struct CacheHitDivider: View {
-    @Environment(\.colorScheme) var colorScheme
+    private var ratio: Double {
+        guard let metrics, hasData else { return 0.0 }
+        return min(max(metrics.cacheHitRatio, 0.0), 1.0)
+    }
+
+    private var formattedPercentage: String {
+        guard hasData else { return "—" }
+        return UsageNumberFormatter.percent(ratio * 100.0, maximumFractionDigits: 1)
+    }
+
+    private var cachedTokensText: String {
+        guard let metrics, hasData else {
+            return L10n.text("暂无请求", "No requests")
+        }
+        let cached = UsageNumberFormatter.compactTokenCount(metrics.totalTokens.cachedInputTokens)
+        return L10n.format("%@ cached", zhHans: "%@ 已缓存", cached)
+    }
 
     var body: some View {
-        Rectangle()
-            .fill(AppTheme.insetBorder(for: colorScheme))
-            .frame(width: 1, height: 18)
+        let isDark = colorScheme == .dark
+
+        VStack(alignment: .leading, spacing: 7) {
+            // 顶部标签
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(hasData ? themeColor : AppTheme.textSecondary(for: colorScheme).opacity(0.4))
+                    .frame(width: 5, height: 5)
+
+                Text(periodTitle)
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+
+                Spacer()
+            }
+
+            // 核心命中率大字
+            Text(formattedPercentage)
+                .font(.system(size: 18, weight: .black, design: .monospaced))
+                .foregroundStyle(hasData ? AppTheme.textPrimary(for: colorScheme) : AppTheme.textSecondary(for: colorScheme))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+
+            // 微进度条
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    // 底轨
+                    Capsule()
+                        .fill(isDark ? Color.white.opacity(0.06) : Color.black.opacity(0.05))
+                        .frame(height: 4.5)
+
+                    // 进度填充
+                    if hasData && ratio > 0 {
+                        Capsule()
+                            .fill(
+                                LinearGradient(
+                                    colors: [themeColor.opacity(0.85), themeColor],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .frame(width: max(4.5, geo.size.width * CGFloat(ratio)), height: 4.5)
+                    }
+                }
+            }
+            .frame(height: 4.5)
+
+            // 底部缓存 Token 数量说明
+            Text(cachedTokensText)
+                .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                .foregroundStyle(hasData ? themeColor : AppTheme.textSecondary(for: colorScheme).opacity(0.6))
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            (isDark ? Color.white.opacity(0.02) : Color.black.opacity(0.015)),
+            in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .strokeBorder(isDark ? Color.white.opacity(0.06) : Color.black.opacity(0.05), lineWidth: 0.7)
+        )
     }
 }
 

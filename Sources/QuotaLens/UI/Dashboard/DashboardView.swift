@@ -5,6 +5,8 @@ import SwiftUI
 public struct DashboardView: View {
     @ObservedObject var state: AppState
     @Environment(\.colorScheme) var colorScheme
+    @State private var pendingCredit: ResetCreditDisplay?
+    @State private var consumingCreditId: String?
 
     public var body: some View {
         ScrollView {
@@ -18,6 +20,11 @@ public struct DashboardView: View {
                     }
                 }
 
+                // 智能建议模块 (有活跃建议时展示，无建议时自动隐藏)
+                if let suggestion = state.activeDashboardSuggestion {
+                    suggestionBannerCard(suggestion)
+                }
+
                 // 指标矩阵
                 telemetryMetricsMatrix
 
@@ -27,6 +34,11 @@ public struct DashboardView: View {
             .padding(24)
         }
         .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+        .resetCreditUseAlerts(
+            state: state,
+            pendingCredit: $pendingCredit,
+            consumingCreditId: $consumingCreditId
+        )
     }
 
     // MARK: - 核心配额卡片
@@ -206,7 +218,7 @@ public struct DashboardView: View {
                 }
 
                 if isExhausted {
-                    Text(L10n.text("无需预测", "No forecast"))
+                    Text(L10n.text("已用尽", "Exhausted"))
                         .font(.system(size: 18, weight: .black, design: .rounded))
                         .foregroundStyle(accent)
                 } else {
@@ -223,7 +235,7 @@ public struct DashboardView: View {
                 }
 
                 Text(isExhausted
-                    ? L10n.format("Resets in %@", zhHans: "%@ 后重置", state.resetCountdownString)
+                    ? L10n.text("等待下周期重置恢复", "Will restore on next reset")
                     : state.recommendedDailyQuotaSubtitle(now: context.date))
                     .font(.system(size: 9.5, weight: .medium, design: .monospaced))
                     .foregroundStyle(AppTheme.textSecondary(for: colorScheme).opacity(0.88))
@@ -238,6 +250,130 @@ public struct DashboardView: View {
                     .strokeBorder(accent.opacity(isDark ? 0.28 : 0.20), lineWidth: 0.8)
             )
         }
+    }
+
+    // MARK: - 智能建议横幅
+    private func suggestionBannerCard(_ suggestion: DashboardSuggestion) -> some View {
+        let amber = AppTheme.accentAmber(for: colorScheme)
+        let orange = Color(red: 0.94, green: 0.44, blue: 0.05)
+        let isDark = colorScheme == .dark
+
+        return HStack(alignment: .center, spacing: 16) {
+            // 左侧立体图标徽章
+            ZStack {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [amber, orange],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 38, height: 38)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.4), lineWidth: 0.8)
+                    )
+                    .shadow(color: amber.opacity(isDark ? 0.4 : 0.2), radius: 6, x: 0, y: 2)
+
+                Image(systemName: suggestion.icon)
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(.white)
+            }
+
+            // 中间文本内容
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 8) {
+                    Text(L10n.text("智能建议", "Smart Suggestion"))
+                        .font(.system(size: 9.5, weight: .heavy, design: .monospaced))
+                        .foregroundStyle(amber)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(amber.opacity(isDark ? 0.16 : 0.10), in: RoundedRectangle(cornerRadius: 4))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 4)
+                                .strokeBorder(amber.opacity(0.35), lineWidth: 0.6)
+                        )
+
+                    Text(suggestion.title)
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                }
+
+                Text(suggestion.message)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 12)
+
+            // 右侧操作流
+            HStack(spacing: 10) {
+                Button {
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+                        state.dismissSuggestion(suggestion.id)
+                    }
+                } label: {
+                    Text(suggestion.dismissActionTitle)
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(
+                            AppTheme.insetSurface(for: colorScheme),
+                            in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
+                        )
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    if case .resetCredit(let credit) = suggestion.payload {
+                        pendingCredit = credit
+                    }
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "bolt.fill")
+                            .font(.system(size: 10, weight: .bold))
+                        Text(suggestion.primaryActionTitle)
+                            .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                    }
+                    .foregroundStyle(Color.white)
+                    .padding(.horizontal, 13)
+                    .padding(.vertical, 6.5)
+                    .background(
+                        LinearGradient(
+                            colors: [amber, orange],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    )
+                    .shadow(color: amber.opacity(isDark ? 0.35 : 0.2), radius: 5, x: 0, y: 2)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            AppTheme.insetSurface(for: colorScheme),
+            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(amber.opacity(isDark ? 0.38 : 0.28), lineWidth: 1.0)
+        )
+        .transition(.asymmetric(
+            insertion: .opacity.combined(with: .scale(scale: 0.98)).combined(with: .move(edge: .top)),
+            removal: .opacity.combined(with: .scale(scale: 0.98)).combined(with: .move(edge: .top))
+        ))
     }
 
     // MARK: - 指标矩阵

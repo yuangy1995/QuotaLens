@@ -4,6 +4,16 @@ import Foundation
 import SwiftUI
 import Combine
 
+public struct ProjectSessionGroup: Identifiable, Sendable {
+    public var id: String { project }
+    public let project: String
+    public let displayName: String
+    public let sessions: [CodexSessionDTO]
+    public let totalTokens: Int64
+    public let totalCost: MoneyNanoUSD
+    public let sessionCount: Int
+}
+
 @MainActor
 public final class SessionsStore: ObservableObject {
     @Published public var sessions: [CodexSessionDTO] = []
@@ -24,6 +34,16 @@ public final class SessionsStore: ObservableObject {
             Task { await reloadSessions() }
         }
     }
+    @Published public var availableProjects: [String] = []
+    @Published public var selectedProject: String? = nil {
+        didSet {
+            guard oldValue != selectedProject else { return }
+            Task { await reloadSessions() }
+        }
+    }
+    @Published public var isGroupedByProject: Bool = false
+    @Published public var collapsedProjects: Set<String> = []
+
     @Published public var isLoading: Bool = false
     @Published public var isLoadingNextPage: Bool = false
     @Published public var isLoadingDetail: Bool = false
@@ -42,6 +62,62 @@ public final class SessionsStore: ObservableObject {
         self.facade = facade
     }
 
+    public var groupedSessions: [ProjectSessionGroup] {
+        var order: [String] = []
+        var map: [String: [CodexSessionDTO]] = [:]
+
+        for session in sessions {
+            let proj = session.projectName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let key = proj.isEmpty ? "__unnamed__" : proj
+            if map[key] == nil {
+                order.append(key)
+                map[key] = []
+            }
+            map[key]?.append(session)
+        }
+
+        return order.compactMap { key -> ProjectSessionGroup? in
+            guard let list = map[key], !list.isEmpty else { return nil }
+            let isUnnamed = key == "__unnamed__"
+            let displayName = isUnnamed ? L10n.text("默认未命名项目", "Default / Unnamed") : key
+            let totalTokens = list.reduce(Int64(0)) { $0 + $1.tokens.canonicalTotalTokens }
+            let totalCost = list.reduce(MoneyNanoUSD.zero) { $0 + $1.estimatedCost }
+            return ProjectSessionGroup(
+                project: key,
+                displayName: displayName,
+                sessions: list,
+                totalTokens: totalTokens,
+                totalCost: totalCost,
+                sessionCount: list.count
+            )
+        }
+    }
+
+    public func isProjectCollapsed(_ project: String) -> Bool {
+        collapsedProjects.contains(project)
+    }
+
+    public func toggleProjectCollapse(_ project: String) {
+        if collapsedProjects.contains(project) {
+            collapsedProjects.remove(project)
+        } else {
+            collapsedProjects.insert(project)
+        }
+    }
+
+    public func expandAllProjects() {
+        collapsedProjects.removeAll()
+    }
+
+    public func collapseAllProjects() {
+        let allKeys = groupedSessions.map(\.project)
+        collapsedProjects = Set(allKeys)
+    }
+
+    public func clearProjectFilter() {
+        selectedProject = nil
+    }
+
     public func reloadSessions() async {
         queryGeneration += 1
         let generation = queryGeneration
@@ -50,9 +126,14 @@ public final class SessionsStore: ObservableObject {
         nextCursor = nil
         errorMessage = nil
         do {
+            if let projects = try? await facade.getProjectNames() {
+                self.availableProjects = projects
+            }
+
             let page = try await facade.getSessionPage(
                 sort: sortOption,
                 search: searchText.isEmpty ? nil : searchText,
+                project: selectedProject,
                 limit: pageSize
             )
             guard generation == queryGeneration else { return }
@@ -81,6 +162,7 @@ public final class SessionsStore: ObservableObject {
             let page = try await facade.getSessionPage(
                 sort: sortOption,
                 search: searchText.isEmpty ? nil : searchText,
+                project: selectedProject,
                 limit: pageSize,
                 cursor: cursor
             )

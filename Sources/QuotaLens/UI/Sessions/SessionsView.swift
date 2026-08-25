@@ -109,18 +109,80 @@ public struct SessionsView: View {
                 )
 
                 Menu {
-                    ForEach(SessionSort.allCases) { sort in
-                        Button(action: { store.sortOption = sort }) {
+                    Section(L10n.text("视图模式", "View Mode")) {
+                        Button {
+                            withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+                                store.isGroupedByProject = false
+                            }
+                        } label: {
                             HStack {
-                                Text(sort.localizedTitle)
-                                if store.sortOption == sort {
+                                Text(L10n.text("时间流平铺", "Timeline List"))
+                                if !store.isGroupedByProject {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+
+                        Button {
+                            withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+                                store.isGroupedByProject = true
+                            }
+                        } label: {
+                            HStack {
+                                Text(L10n.text("按项目分组折叠", "Group by Project"))
+                                if store.isGroupedByProject {
                                     Image(systemName: "checkmark")
                                 }
                             }
                         }
                     }
+
+                    if !store.availableProjects.isEmpty {
+                        Section(L10n.text("项目筛选", "Project Filter")) {
+                            Button {
+                                withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+                                    store.selectedProject = nil
+                                }
+                            } label: {
+                                HStack {
+                                    Text(L10n.text("全部项目", "All Projects"))
+                                    if store.selectedProject == nil {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+
+                            ForEach(store.availableProjects, id: \.self) { proj in
+                                Button {
+                                    withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+                                        store.selectedProject = proj
+                                    }
+                                } label: {
+                                    HStack {
+                                        Text(proj)
+                                        if store.selectedProject == proj {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Section(L10n.text("排序规则", "Sort Order")) {
+                        ForEach(SessionSort.allCases) { sort in
+                            Button(action: { store.sortOption = sort }) {
+                                HStack {
+                                    Text(sort.localizedTitle)
+                                    if store.sortOption == sort {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    }
                 } label: {
-                    Image(systemName: "line.3.horizontal.decrease")
+                    Image(systemName: store.selectedProject != nil || store.isGroupedByProject ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease")
                         .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(cyan)
                         .frame(width: 24, height: 24)
@@ -133,6 +195,43 @@ public struct SessionsView: View {
                 .accessibilityIdentifier("sessions.filterAndSort")
             }
             .padding(10)
+
+            // 活动过滤指示条
+            if let currentProject = store.selectedProject {
+                HStack(spacing: 6) {
+                    Image(systemName: "folder.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(cyan)
+
+                    Text(L10n.format("Project: %@", zhHans: "项目: %@", currentProject))
+                        .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+                        .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                        .lineLimit(1)
+
+                    Spacer(minLength: 4)
+
+                    Button {
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+                            store.clearProjectFilter()
+                        }
+                    } label: {
+                        HStack(spacing: 2) {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 8.5, weight: .bold))
+                            Text(L10n.text("清除", "Clear"))
+                                .font(.system(size: 9.5, weight: .semibold))
+                        }
+                        .foregroundStyle(AppTheme.accentRose(for: colorScheme))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(AppTheme.accentRose(for: colorScheme).opacity(colorScheme == .dark ? 0.16 : 0.10), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(cyan.opacity(colorScheme == .dark ? 0.08 : 0.05))
+            }
 
             CyberDivider()
 
@@ -156,7 +255,102 @@ public struct SessionsView: View {
                         .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if store.isGroupedByProject || store.selectedProject != nil {
+                // 按项目分组与折叠视图
+                ScrollView {
+                    LazyVStack(spacing: 8) {
+                        ForEach(store.groupedSessions) { group in
+                            let isCollapsed = store.isProjectCollapsed(group.project)
+
+                            VStack(spacing: 4) {
+                                // 项目分组卡片头
+                                Button {
+                                    withAnimation(.easeInOut(duration: 0.2)) {
+                                        store.toggleProjectCollapse(group.project)
+                                    }
+                                } label: {
+                                    HStack(spacing: 7) {
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 9.5, weight: .bold))
+                                            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                                            .rotationEffect(.degrees(isCollapsed ? 0 : 90))
+
+                                        Image(systemName: "folder.fill")
+                                            .font(.system(size: 11, weight: .bold))
+                                            .foregroundStyle(cyan)
+
+                                        Text(group.displayName)
+                                            .font(.system(size: 11.5, weight: .heavy, design: .rounded))
+                                            .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                                            .lineLimit(1)
+
+                                        Spacer(minLength: 4)
+
+                                        Text(L10n.format("%d sessions", zhHans: "%d 个会话", group.sessionCount))
+                                            .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                                            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                                            .padding(.horizontal, 5)
+                                            .padding(.vertical, 1.5)
+                                            .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 3.5))
+
+                                        Text(UsageNumberFormatter.compactTokenCount(group.totalTokens))
+                                            .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                                            .foregroundStyle(cyan)
+                                    }
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 6)
+                                    .background(
+                                        AppTheme.insetSurface(for: colorScheme).opacity(0.8),
+                                        in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                    )
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                            .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
+                                    )
+                                }
+                                .buttonStyle(.plain)
+
+                                // 展开的会话列表
+                                if !isCollapsed {
+                                    VStack(spacing: 4) {
+                                        ForEach(group.sessions) { session in
+                                            SessionSidebarRow(
+                                                session: session,
+                                                isSelected: store.selectedSessionId == session.sessionId,
+                                                colorScheme: colorScheme,
+                                                onSelect: {
+                                                    store.selectedSessionId = session.sessionId
+                                                },
+                                                onDelete: {
+                                                    sessionPendingDeletion = session
+                                                },
+                                                onFilterProject: { proj in
+                                                    withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+                                                        store.selectedProject = proj
+                                                    }
+                                                }
+                                            )
+                                        }
+                                    }
+                                    .padding(.leading, 6)
+                                }
+                            }
+                        }
+
+                        if store.isLoadingNextPage {
+                            ProgressView()
+                                .controlSize(.small)
+                                .padding(.vertical, 10)
+                        } else if store.hasMoreSessions {
+                            Color.clear
+                                .frame(height: 1)
+                                .task { await store.loadNextPage() }
+                        }
+                    }
+                    .padding(8)
+                }
             } else {
+                // 平铺时间流列表
                 ScrollView {
                     LazyVStack(spacing: 4) {
                         ForEach(store.sessions) { session in
@@ -169,6 +363,11 @@ public struct SessionsView: View {
                                 },
                                 onDelete: {
                                     sessionPendingDeletion = session
+                                },
+                                onFilterProject: { proj in
+                                    withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+                                        store.selectedProject = proj
+                                    }
                                 }
                             )
                         }
@@ -233,6 +432,7 @@ private struct SessionSidebarRow: View {
     let colorScheme: ColorScheme
     let onSelect: () -> Void
     let onDelete: () -> Void
+    var onFilterProject: ((String) -> Void)? = nil
 
     var body: some View {
         let isDark = colorScheme == .dark
@@ -262,15 +462,20 @@ private struct SessionSidebarRow: View {
 
                 HStack(spacing: 6) {
                     if let project = session.projectName {
-                        Text(project)
-                            .font(.system(size: 9.5, weight: .heavy, design: .monospaced))
-                            .foregroundStyle(isSelected ? Color.white.opacity(0.9) : cyan)
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1)
-                            .background(
-                                isSelected ? Color.white.opacity(0.2) : cyan.opacity(isDark ? 0.15 : 0.10),
-                                in: RoundedRectangle(cornerRadius: 3)
-                            )
+                        Button {
+                            onFilterProject?(project)
+                        } label: {
+                            Text(project)
+                                .font(.system(size: 9.5, weight: .heavy, design: .monospaced))
+                                .foregroundStyle(isSelected ? Color.white.opacity(0.9) : cyan)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(
+                                    isSelected ? Color.white.opacity(0.2) : cyan.opacity(isDark ? 0.15 : 0.10),
+                                    in: RoundedRectangle(cornerRadius: 3)
+                                )
+                        }
+                        .buttonStyle(.plain)
                     }
 
                     if let agentType = session.agentType, !agentType.isEmpty {
@@ -311,6 +516,14 @@ private struct SessionSidebarRow: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
+            if let project = session.projectName {
+                Button {
+                    onFilterProject?(project)
+                } label: {
+                    Label(L10n.format("Project: %@", zhHans: "仅看项目: %@", project), systemImage: "folder")
+                }
+            }
+
             Button(role: .destructive, action: onDelete) {
                 Label(L10n.text("删除", "Delete"), systemImage: "trash")
             }
