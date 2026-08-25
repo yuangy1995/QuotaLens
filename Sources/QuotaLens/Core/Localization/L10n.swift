@@ -254,6 +254,10 @@ public enum L10n {
     }
 
     public static let changelogZhToEnMap: [String: String] = [
+        "新增下载更新时实时显示下载进度条与百分比（从 0% 起始终保持滚动条展示）": "Enhanced in-app update downloading with persistent progress bar and percentage tracker from 0% onwards",
+        "在设置「存储与诊断」新增「一键重置 App 与出厂设置」功能，支持安全清除本地数据、还原默认配置并自动重新索引": "Added one-click Factory Reset & Rescan in Settings storage pane with safety confirmation dialog",
+        "彻底解决升级弹窗更新日志显示 HTML 标签乱码问题，并支持条目全语言多维度本地化翻译": "Fixed update dialog changelog HTML tag artifacts with automated multi-language localization",
+        "全面完善 10 种语言的多语言本地化翻译字典": "Comprehensive localized translation coverage across 10 supported languages",
         "全新重构「本地索引与数据诊断」卡片排版为现代化自适应 4 列网格，重点突出 12 项关键诊断指标并强化健康度感知": "Redesigned local index & diagnostics layout into a modern adaptive 4-column grid highlighting 12 key health metrics",
         "优化升级弹窗视觉细节，移除弹窗顶部横条，呈现纯净圆角卡片质感": "Polished update dialog visual aesthetics by removing top gradient bar for a sleek border design",
         "修复更新日志在多语言环境下的刷新机制，所有非简体中文语言点击刷新均可拉取并自动本地化翻译": "Fixed changelog refresh for all supported non-Simplified-Chinese languages with instant localized translation",
@@ -281,7 +285,6 @@ public enum L10n {
         "全面覆盖 10 种语言的多语言本地化翻译": "Complete localized translations for 10 supported languages",
         "更新日志与开源协议升级为动态网络拉取，每次点开弹窗时自动获取最新发布内容": "Dynamic fetching and manual refresh for changelog & license",
         "修复当前版本高亮匹配逻辑，与当前运行应用版本实时保持一致": "Fixed current version matching algorithm to accurately highlight active release",
-        "新增建议日均消耗微卡片，根据当前周期的剩余时间与剩余配额智能推算均摊用量": "Added daily budget pace module based on cycle remaining time and quota",
         "全局清理页面与侧边栏次级说明小字，提升界面清爽与精致度": "Cleaned up auxiliary subtitles and tags across pages and sidebar",
         "全面覆盖 10 种语言的多语言本地化翻译并清理冗余词条": "Complete 10-language localized translations and code cleanup",
         "移除构建次数显示，并去掉概览与设置页面的分块序号徽章": "Removed build count and section number tags across overview and settings",
@@ -297,15 +300,32 @@ public enum L10n {
     ]
 
     public static func localizeChangelogText(_ rawText: String) -> String {
+        var prefix = ""
+        var content = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if content.hasPrefix("- ") {
+            prefix = "- "
+            content = String(content.dropFirst(2)).trimmingCharacters(in: .whitespacesAndNewlines)
+        } else if content.hasPrefix("* ") {
+            prefix = "* "
+            content = String(content.dropFirst(2)).trimmingCharacters(in: .whitespacesAndNewlines)
+        } else if content.hasPrefix("• ") {
+            prefix = "• "
+            content = String(content.dropFirst(2)).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
         if language == .simplifiedChinese {
             return rawText
+        }
+        if let englishKey = changelogZhToEnMap[content] {
+            let translated = localized(englishKey, zhHans: content)
+            return prefix.isEmpty ? translated : "\(prefix)\(translated)"
         }
         if let englishKey = changelogZhToEnMap[rawText] {
             return localized(englishKey, zhHans: rawText)
         }
-        let trimmed = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let englishKey = changelogZhToEnMap[trimmed] {
-            return localized(englishKey, zhHans: trimmed)
+        if keyedTranslations[content] != nil {
+            let translated = localized(content)
+            return prefix.isEmpty ? translated : "\(prefix)\(translated)"
         }
         if keyedTranslations[rawText] != nil {
             return localized(rawText)
@@ -315,6 +335,116 @@ public enum L10n {
 }
 
 private let keyedTranslations: [String: [AppLanguage: String]] = [
+    "Enhanced in-app update downloading with persistent progress bar and percentage tracker from 0% onwards": [
+        .traditionalChinese: "新增下載更新時即時顯示下載進度條與百分比（從 0% 起始終保持滾動條展示）",
+        .japanese: "アップデートダウンロード時に進捗バーとパーセンテージを常時表示（0% から表示）",
+        .korean: "업데이트 다운로드 시 진행률 표시줄과 백분율을 0%부터 지속적으로 표시",
+        .spanish: "Mejorada la descarga de actualizaciones con barra de progreso persistente y porcentaje desde el 0%",
+        .german: "Download von Updates mit dauerhaftem Fortschrittsbalken und Prozentanzeige ab 0% verbessert",
+        .french: "Amélioration du téléchargement des mises à jour avec barre de progression continue et pourcentage dès 0%",
+        .portuguese: "Transferência de atualizações melhorada com barra de progresso persistente e percentagem a partir de 0%",
+        .portugueseBrazil: "Download de atualizações aprimorado com barra de progresso persistente e porcentagem a partir de 0%"
+    ],
+    "Added one-click Factory Reset & Rescan in Settings storage pane with safety confirmation dialog": [
+        .traditionalChinese: "在設定「存儲與診斷」新增「一鍵重設 App 與出廠設定」功能，支援安全清除本地資料、還原預設配置並自動重新索引",
+        .japanese: "設定の「ストレージと診断」に「App 初期化と工場出荷時リセット」を追加。データの安全消去と再インデックスに対応",
+        .korean: "설정 「스토리지 및 진단」에 「앱 초기화 및 기본값 복원」 기능을 추가하여 데이터 초기화 및 자동 재색인 지원",
+        .spanish: "Añadido restablecimiento de fábrica y reindexación en el panel de almacenamiento con diálogo de confirmación",
+        .german: "Werkseinstellungen und Neuindizierung im Speicher-Tab mit Sicherheitsabfrage hinzugefügt",
+        .french: "Ajout de la réinitialisation d'usine et de la réindexation dans l'onglet stockage avec dialogue de confirmation",
+        .portuguese: "Adicionada reposição de fábrica e reindexação no painel de armazenamento com diálogo de confirmação",
+        .portugueseBrazil: "Adicionada redefinição de fábrica e reindexação no painel de armazenamento com diálogo de confirmação"
+    ],
+    "Fixed update dialog changelog HTML tag artifacts with automated multi-language localization": [
+        .traditionalChinese: "徹底解決升級彈窗更新日誌顯示 HTML 標籤亂碼問題，並支援條目全語言多維度本地化翻譯",
+        .japanese: "更新ダイアログにおける HTML タグ混入問題を修正し、各言語への自動翻訳をサポート",
+        .korean: "업데이트 대화상자의 HTML 태그 오류를 완전히 해결하고 전 언어 자동 번역 지원",
+        .spanish: "Solucionados los problemas de etiquetas HTML en el registro de cambios con localización multilingüe",
+        .german: "HTML-Tag-Artefakte im Update-Changelog behoben mit automatisierter lokalisierter Übersetzung",
+        .french: "Correction des balises HTML dans le journal des modifications avec localisation multilingue automatique",
+        .portuguese: "Correção de etiquetas HTML no registo de alterações com localização multilingue automática",
+        .portugueseBrazil: "Correção de tags HTML no registro de alterações com localização multilíngue automática"
+    ],
+    "Comprehensive localized translation coverage across 10 supported languages": [
+        .traditionalChinese: "全面完善 10 種語言的多語言本地化翻譯字典",
+        .japanese: "サポートされる全 10 言語の翻訳辞書を大幅に充実",
+        .korean: "10개 지원 언어에 대한 현지화 번역 사전 완벽 보강",
+        .spanish: "Diccionario de traducciones localizado mejorado para los 10 idiomas compatibles",
+        .german: "Vollständiges lokalisierungslexikon für alle 10 unterstützten Sprachen",
+        .french: "Dictionnaire de traductions localisées enrichi pour les 10 langues prises en charge",
+        .portuguese: "Dicionário de traduções localizadas aperfeiçoado para os 10 idiomas suportados",
+        .portugueseBrazil: "Dicionário de traduções localizadas aprimorado para os 10 idiomas suportados"
+    ],
+    "Reset App & Factory Defaults": [
+        .traditionalChinese: "重設 App 與出廠設定",
+        .japanese: "App を初期化して工場出荷時の設定に戻す",
+        .korean: "앱 초기화 및 기본 설정 복원",
+        .spanish: "Restablecer aplicación y valores de fábrica",
+        .german: "App zurücksetzen und Werkseinstellungen",
+        .french: "Réinitialiser l'application et les paramètres par défaut",
+        .portuguese: "Repor aplicação e predefinições de fábrica",
+        .portugueseBrazil: "Redefinir aplicativo e padrões de fábrica"
+    ],
+    "Clears local SQLite database index, resets all preferences, and rescans local data": [
+        .traditionalChinese: "清除本地 SQLite 資料庫索引、重設偏好配置並重新開始掃描",
+        .japanese: "ローカル SQLite データベースのインデックスを消去し、環境設定を初期化して再スキャンを開始します",
+        .korean: "로컬 SQLite 데이터베이스 인덱스를 지우고 모든 환경설정을 초기화한 후 다시 스캔합니다",
+        .spanish: "Borra el índice local de SQLite, restablece las preferencias y vuelve a escanear los datos locales",
+        .german: "Löscht den lokalen SQLite-Index, setzt alle Einstellungen zurück und scannt lokale Daten neu",
+        .french: "Efface l'index de la base SQLite locale, réinitialise les préférences et relance l'indexation",
+        .portuguese: "Limpa o índice da base de dados SQLite local, repõe as preferências e volta a analisar os dados",
+        .portugueseBrazil: "Limpa o índice do banco de dados SQLite local, redefine as preferências e volta a escanear os dados"
+    ],
+    "Reset All Data": [
+        .traditionalChinese: "一鍵重設所有資料",
+        .japanese: "すべてのデータを一括初期化",
+        .korean: "모든 데이터 초기화",
+        .spanish: "Restablecer todos los datos",
+        .german: "Alle Daten zurücksetzen",
+        .french: "Tout réinitialiser",
+        .portuguese: "Repor todos os dados",
+        .portugueseBrazil: "Redefinir todos os dados"
+    ],
+    "Resetting...": [
+        .traditionalChinese: "正在重設...",
+        .japanese: "初期化中...",
+        .korean: "초기화 중...",
+        .spanish: "Restableciendo...",
+        .german: "Wird zurückgesetzt...",
+        .french: "Réinitialisation...",
+        .portuguese: "A repor...",
+        .portugueseBrazil: "Redefinindo..."
+    ],
+    "Reset all data and preferences?": [
+        .traditionalChinese: "確認重設所有資料與配置？",
+        .japanese: "すべてのデータと設定を初期化しますか？",
+        .korean: "모든 데이터와 설정을 초기화하시겠습니까?",
+        .spanish: "¿Restablecer todos los datos y preferencias?",
+        .german: "Alle Daten und Einstellungen zurücksetzen?",
+        .french: "Réinitialiser toutes les données et préférences ?",
+        .portuguese: "Repor todos os dados e preferências?",
+        .portugueseBrazil: "Redefinir todos os dados e preferências?"
+    ],
+    "Reset and Rescan": [
+        .traditionalChinese: "確認重設並重新索引",
+        .japanese: "初期化して再インデックス",
+        .korean: "초기화 및 다시 색인",
+        .spanish: "Restablecer y volver a indexar",
+        .german: "Zurücksetzen und neu indizieren",
+        .french: "Réinitialiser et réindexer",
+        .portuguese: "Repor e reindexar",
+        .portugueseBrazil: "Redefinir e reindexar"
+    ],
+    "This will clear all local index data and personalized settings, and rescan local Codex history. This cannot be undone.": [
+        .traditionalChinese: "此操作將清除所有本地索引與個性化設定，並重新掃描本地 Codex 資料。此操作不可撤銷。",
+        .japanese: "この操作により、すべてのローカルインデックスデータと個別設定が消去され、ローカル Codex 履歴が再スキャンされます。この操作は取り消せません。",
+        .korean: "이 작업은 모든 로컬 인덱스 데이터와 개인 설정을 삭제하고 로컬 Codex 기록을 다시 스캔합니다. 이 작업은 취소할 수 없습니다.",
+        .spanish: "Esto borrará todos los datos de índice local y la configuración personalizada, y volverá a escanear el historial local. Esta acción no se puede deshacer.",
+        .german: "Dadurch werden alle lokalen Indexdaten und individuellen Einstellungen gelöscht und der lokale Verlauf neu gescannt. Dies kann nicht rückgängig gemacht werden.",
+        .french: "Cette action effacera toutes les données d'index local et les paramètres personnalisés, puis réindexera l'historique local. Cette action est irréversible.",
+        .portuguese: "Esta ação limpará todos os dados de índice local e definições personalizadas, voltando a analisar o histórico local. Não pode ser anulada.",
+        .portugueseBrazil: "Esta ação limpará todos os dados de índice local e configurações personalizadas, voltando a escanear o histórico local. Não pode ser desfeita."
+    ],
     "Redesigned local index & diagnostics layout into a modern adaptive 4-column grid highlighting 12 key health metrics": [
         .traditionalChinese: "全新重構「本地索引與數據診斷」卡片排版為現代化自適應 4 列網格，重點突出 12 項關鍵診斷指標並強化健康度感知",
         .japanese: "「ローカルインデックスと診断」カードを 4 列の適応型グリッドに刷新し、12 の主要な健全性指標を強調表示",

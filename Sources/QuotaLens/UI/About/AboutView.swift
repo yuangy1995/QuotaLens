@@ -53,6 +53,17 @@ public struct AboutView: View {
     private var defaultChangelogs: [ChangelogEntry] {
         [
             ChangelogEntry(
+                id: "v1.0.12",
+                version: "v1.0.12",
+                date: "2026-08-25",
+                changes: [
+                    L10n.text("新增下载更新时实时显示下载进度条与百分比（从 0% 起始终保持滚动条展示）", "Enhanced in-app update downloading with persistent progress bar and percentage tracker from 0% onwards"),
+                    L10n.text("在设置「存储与诊断」新增「一键重置 App 与出厂设置」功能，支持安全清除本地数据、还原默认配置并自动重新索引", "Added one-click Factory Reset & Rescan in Settings storage pane with safety confirmation dialog"),
+                    L10n.text("彻底解决升级弹窗更新日志显示 HTML 标签乱码问题，并支持条目全语言多维度本地化翻译", "Fixed update dialog changelog HTML tag artifacts with automated multi-language localization"),
+                    L10n.text("全面完善 10 种语言的多语言本地化翻译字典", "Comprehensive localized translation coverage across 10 supported languages")
+                ]
+            ),
+            ChangelogEntry(
                 id: "v1.0.11",
                 version: "v1.0.11",
                 date: "2026-08-25",

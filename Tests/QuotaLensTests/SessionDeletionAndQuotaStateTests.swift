@@ -144,8 +144,8 @@ final class SessionDeletionAndQuotaStateTests: XCTestCase {
             }
         }
 
-        let chinese = "全新重构「本地索引与数据诊断」卡片排版为现代化自适应 4 列网格，重点突出 12 项关键诊断指标并强化健康度感知"
-        let english = "Redesigned local index & diagnostics layout into a modern adaptive 4-column grid highlighting 12 key health metrics"
+        let chinese = "新增下载更新时实时显示下载进度条与百分比（从 0% 起始终保持滚动条展示）"
+        let english = "Enhanced in-app update downloading with persistent progress bar and percentage tracker from 0% onwards"
         for mode in AppLanguageMode.allCases where mode != .system {
             defaults.set(mode.rawValue, forKey: L10n.languageModeDefaultsKey)
             let localized = L10n.text(chinese, english)
@@ -172,7 +172,7 @@ final class SessionDeletionAndQuotaStateTests: XCTestCase {
             }
         }
 
-        let chinese = "全新重构「本地索引与数据诊断」卡片排版为现代化自适应 4 列网格，重点突出 12 项关键诊断指标并强化健康度感知"
+        let chinese = "新增下载更新时实时显示下载进度条与百分比（从 0% 起始终保持滚动条展示）"
         for mode in AppLanguageMode.allCases where mode != .system {
             defaults.set(mode.rawValue, forKey: L10n.languageModeDefaultsKey)
             let localized = L10n.localizeChangelogText(chinese)
@@ -183,6 +183,32 @@ final class SessionDeletionAndQuotaStateTests: XCTestCase {
                 XCTAssertNotEqual(localized, chinese, mode.rawValue)
             }
         }
+    }
+
+    func testReleaseNotesHtmlStrippingAndLocalization() {
+        let rawHtml = """
+        <p>QuotaLens v1.0.11</p>
+        <p>This in-app update feed is architecture-specific and downloads the Apple Silicon build automatically.</p>
+        - 全新重构「本地索引与数据诊断」卡片排版为现代化自适应 4 列网格，重点突出 12 项关键诊断指标并强化健康度感知
+        """
+        let cleaned = UpdateManager.cleanReleaseNotes(rawHtml, version: "1.0.11")
+        XCTAssertFalse(cleaned.contains("<p>"))
+        XCTAssertFalse(cleaned.contains("architecture-specific"))
+        XCTAssertTrue(cleaned.contains("全新重构「本地索引与数据诊断」卡片排版为现代化自适应 4 列网格，重点突出 12 项关键诊断指标并强化健康度感知"))
+
+        let defaults = UserDefaults.standard
+        let previousLanguage = defaults.string(forKey: L10n.languageModeDefaultsKey)
+        defer {
+            if let previousLanguage {
+                defaults.set(previousLanguage, forKey: L10n.languageModeDefaultsKey)
+            } else {
+                defaults.removeObject(forKey: L10n.languageModeDefaultsKey)
+            }
+        }
+
+        defaults.set(AppLanguageMode.english.rawValue, forKey: L10n.languageModeDefaultsKey)
+        let englishLocalized = L10n.localizeChangelogText(cleaned)
+        XCTAssertTrue(englishLocalized.contains("Redesigned local index & diagnostics layout"))
     }
 
     func testHeatmapHoverUsesOneGridCoordinateSpaceAndRejectsGaps() {
@@ -220,10 +246,46 @@ final class SessionDeletionAndQuotaStateTests: XCTestCase {
             containerSize: container,
             cardSize: card
         )
-
         XCTAssertGreaterThan(second.x, first.x)
         XCTAssertGreaterThanOrEqual(first.x - card.width / 2, 6)
         XCTAssertLessThanOrEqual(second.x + card.width / 2, container.width - 6)
+    }
+
+    func testFactoryResetDatabaseAndDefaults() async throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let dbPath = tempDir.appendingPathComponent("test_reset.sqlite").path
+        let db = try SQLiteDatabase(path: dbPath)
+        try SchemaMigrations.migrate(database: db)
+
+        // 插入一些测试数据
+        try db.executeUpdate(
+            sql: "INSERT INTO accounts (account_key, email_hash, plan_type, first_seen_at, last_seen_at) VALUES ('acc_test', 'hash_test', 'plus', 1000, 2000);",
+            bindings: []
+        )
+
+        // 执行重置逻辑
+        try db.execute(sql: "PRAGMA foreign_keys = OFF;")
+        let allTables = try db.executeQuery(
+            sql: "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';"
+        ) { stmt in
+            String(cString: sqlite3_column_text(stmt, 0))
+        }
+        for table in allTables {
+            try? db.execute(sql: "DROP TABLE IF EXISTS \(table);")
+        }
+        try db.execute(sql: "PRAGMA user_version = 0;")
+        try db.execute(sql: "PRAGMA foreign_keys = ON;")
+        try db.execute(sql: "VACUUM;")
+        try SchemaMigrations.migrate(database: db)
+
+        // 验证表已清空并重新初始化成功
+        let count = try db.executeQuery(sql: "SELECT COUNT(*) FROM accounts;") { stmt in
+            sqlite3_column_int64(stmt, 0)
+        }.first ?? -1
+        XCTAssertEqual(count, 0)
     }
 
     private func insertSession(

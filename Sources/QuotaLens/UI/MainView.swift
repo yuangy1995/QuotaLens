@@ -547,17 +547,18 @@ private struct UpdateCheckDialog: View {
 
                         ScrollView(.vertical, showsIndicators: true) {
                             VStack(alignment: .leading, spacing: 6) {
-                                if let notes = dialog.releaseNotes, !notes.isEmpty {
-                                    Text(notes)
-                                        .font(.system(size: 12, weight: .regular))
-                                        .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
-                                        .lineSpacing(3.5)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                } else {
-                                    Text(dialog.message)
-                                        .font(.system(size: 12, weight: .regular))
-                                        .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                let lines = parsedReleaseNotes(dialog.releaseNotes ?? dialog.message)
+                                ForEach(lines, id: \.self) { line in
+                                    HStack(alignment: .top, spacing: 6) {
+                                        Text("•")
+                                            .font(.system(size: 11, weight: .bold))
+                                            .foregroundStyle(cyan)
+                                        Text(L10n.localizeChangelogText(line))
+                                            .font(.system(size: 11.5, weight: .medium))
+                                            .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                                            .fixedSize(horizontal: false, vertical: true)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                    }
                                 }
                             }
                             .padding(10)
@@ -569,19 +570,20 @@ private struct UpdateCheckDialog: View {
                                 .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
                         )
                     }
-                } else if let progress = dialog.progress {
+                } else if dialog.kind == .progress || dialog.kind == .installing || dialog.progress != nil {
+                    let currentProgress = dialog.progress ?? 0.0
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
                             Text(dialog.message)
                                 .font(.system(size: 12, weight: .medium))
                                 .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
                             Spacer()
-                            Text("\(Int(progress * 100))%")
+                            Text("\(Int(currentProgress * 100))%")
                                 .font(.system(size: 12, weight: .bold, design: .monospaced))
                                 .foregroundStyle(cyan)
                         }
 
-                        ProgressView(value: progress)
+                        ProgressView(value: max(0.0, min(1.0, currentProgress)))
                             .tint(cyan)
                     }
                     .padding(10)
@@ -660,6 +662,22 @@ private struct UpdateCheckDialog: View {
         formatter.allowedUnits = [.useMB, .useKB, .useGB]
         formatter.countStyle = .file
         return formatter.string(fromByteCount: Int64(bytes))
+    }
+
+    private func parsedReleaseNotes(_ text: String) -> [String] {
+        let rawLines = text.components(separatedBy: .newlines)
+        var result: [String] = []
+        for line in rawLines {
+            var trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty { continue }
+            if trimmed.hasPrefix("- ") || trimmed.hasPrefix("* ") || trimmed.hasPrefix("• ") {
+                trimmed = String(trimmed.dropFirst(2)).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            if !trimmed.isEmpty {
+                result.append(trimmed)
+            }
+        }
+        return result.isEmpty ? [text] : result
     }
 
     private var iconName: String {

@@ -57,6 +57,8 @@ public struct SettingsView: View {
     @State private var autoDetectedBinaryResult: CodexBinaryLookupResult?
     @State private var usageDiagnostics: UsageDiagnosticsDTO?
     @State private var diagnosticsExportStatus: String?
+    @State private var showResetConfirmDialog: Bool = false
+    @State private var isResettingApp: Bool = false
     @ObservedObject private var overlayController = CodexUsageOverlayController.shared
 
     private let presetIntervals: [Int] = [15, 30, 60, 300, 900]
@@ -98,6 +100,22 @@ public struct SettingsView: View {
         }
         .onReceive(env.scanCoordinator.$dataGeneration.dropFirst()) { _ in
             Task { await refreshUsageDiagnostics() }
+        }
+        .confirmationDialog(
+            L10n.text("确认重置所有数据与配置？", "Reset all data and preferences?"),
+            isPresented: $showResetConfirmDialog,
+            titleVisibility: .visible
+        ) {
+            Button(L10n.text("确认重置并重新索引", "Reset and Rescan"), role: .destructive) {
+                isResettingApp = true
+                Task {
+                    await env.resetAllDataAndFactoryDefaults()
+                    isResettingApp = false
+                }
+            }
+            Button(L10n.text("取消", "Cancel"), role: .cancel) {}
+        } message: {
+            Text(L10n.text("此操作将清除所有本地索引与个性化设置，并重新扫描本地 Codex 数据。此操作不可撤销。", "This will clear all local index data and personalized settings, and rescan local Codex history. This cannot be undone."))
         }
     }
 
@@ -1218,10 +1236,65 @@ public struct SettingsView: View {
                     .foregroundStyle(cyan)
                 }
                 .buttonStyle(.plain)
-                .disabled(state.isRefreshing)
+                .disabled(state.isRefreshing || isResettingApp)
 
                 Spacer()
             }
+
+            CyberDivider()
+
+            // 危险区：一键重置 App 与出厂设置
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(AppTheme.accentAmber(for: colorScheme))
+                            Text(L10n.text("重置 App 与出厂设置", "Reset App & Factory Defaults"))
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                        }
+                        Text(L10n.text("清除本地 SQLite 数据库索引、重置偏好配置并重新开始扫描", "Clears local SQLite database index, resets all preferences, and rescans local data"))
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                    }
+
+                    Spacer()
+
+                    Button(action: {
+                        showResetConfirmDialog = true
+                    }) {
+                        HStack(spacing: 6) {
+                            if isResettingApp {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Image(systemName: "trash.fill")
+                                    .font(.system(size: 11, weight: .bold))
+                            }
+                            Text(isResettingApp ? L10n.text("正在重置...", "Resetting...") : L10n.text("一键重置所有数据", "Reset All Data"))
+                                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(Color.red.opacity(colorScheme == .dark ? 0.20 : 0.12), in: RoundedRectangle(cornerRadius: 8))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .strokeBorder(Color.red.opacity(0.45), lineWidth: 0.8)
+                        )
+                        .foregroundStyle(Color.red)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isResettingApp || state.isRefreshing)
+                }
+            }
+            .padding(12)
+            .background(Color.red.opacity(colorScheme == .dark ? 0.06 : 0.03), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(Color.red.opacity(0.20), lineWidth: 0.8)
+            )
         }
         .cyberCard(cornerRadius: 16, padding: 18)
     }

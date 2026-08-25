@@ -238,12 +238,7 @@ public final class UpdateManager: NSObject, ObservableObject, SPUUpdaterDelegate
         updateStatusText = L10n.text("发现可用更新", "Update available")
         updateDetailText = L10n.format("QuotaLens %@ is available.", zhHans: "QuotaLens %@ 已可下载。", appcastItem.displayVersionString)
 
-        let releaseNotesText: String? = {
-            if let desc = appcastItem.itemDescription, !desc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                return desc
-            }
-            return nil
-        }()
+        let releaseNotesText = Self.cleanReleaseNotes(appcastItem.itemDescription, version: appcastItem.displayVersionString)
 
         showUpdateDialog(
             kind: .available,
@@ -307,8 +302,9 @@ public final class UpdateManager: NSObject, ObservableObject, SPUUpdaterDelegate
         showUpdateDialog(
             kind: .progress,
             title: L10n.text("正在下载更新", "Downloading update"),
-            message: L10n.text("正在下载新版本，请稍候。", "Downloading the new version. Please wait."),
+            message: L10n.format("%d%% downloaded", zhHans: "已下载 %d%%", 0),
             primaryButtonTitle: L10n.text("取消", "Cancel"),
+            progress: 0.0,
             primaryAction: { [weak self] in
                 cancellation()
                 self?.dismissUpdateDialog()
@@ -483,6 +479,49 @@ public final class UpdateManager: NSObject, ObservableObject, SPUUpdaterDelegate
             return L10n.text("无法读取更新信息，请检查网络后重试。", "Update information could not be loaded. Check the network and try again.")
         }
         return trimmed
+    }
+
+    nonisolated static func cleanReleaseNotes(_ raw: String?, version: String) -> String {
+        guard let raw, !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return L10n.text("全新版本发布与多项性能优化。", "New version release with performance and stability improvements.")
+        }
+
+        var cleaned = raw
+            .replacingOccurrences(of: "<![CDATA[", with: "")
+            .replacingOccurrences(of: "]]>", with: "")
+            .replacingOccurrences(of: "<br>", with: "\n", options: .caseInsensitive)
+            .replacingOccurrences(of: "<br/>", with: "\n", options: .caseInsensitive)
+            .replacingOccurrences(of: "<br />", with: "\n", options: .caseInsensitive)
+            .replacingOccurrences(of: "</p>", with: "\n", options: .caseInsensitive)
+            .replacingOccurrences(of: "</li>", with: "\n", options: .caseInsensitive)
+
+        while let start = cleaned.range(of: "<"), let end = cleaned.range(of: ">", range: start.lowerBound..<cleaned.endIndex) {
+            cleaned.removeSubrange(start.lowerBound...end.lowerBound)
+        }
+
+        let lines = cleaned.components(separatedBy: .newlines)
+        var meaningfulLines: [String] = []
+
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty { continue }
+            if trimmed.localizedCaseInsensitiveContains("architecture-specific")
+                || trimmed.localizedCaseInsensitiveContains("in-app update feed")
+                || trimmed.localizedCaseInsensitiveContains("appcast")
+                || trimmed.lowercased() == "quotalens v\(version.lowercased())"
+                || trimmed.lowercased() == "quotalens \(version.lowercased())"
+                || trimmed.lowercased() == "v\(version.lowercased())"
+                || trimmed.lowercased() == version.lowercased() {
+                continue
+            }
+            meaningfulLines.append(trimmed)
+        }
+
+        if meaningfulLines.isEmpty {
+            return L10n.text("全新版本发布与多项性能优化。", "New version release with performance and stability improvements.")
+        }
+
+        return meaningfulLines.joined(separator: "\n")
     }
 
     private func showUpdateDialog(

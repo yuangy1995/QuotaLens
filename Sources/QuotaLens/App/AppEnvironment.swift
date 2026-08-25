@@ -4,6 +4,7 @@ import Foundation
 import SwiftUI
 import AppKit
 import Combine
+import SQLite3
 
 @MainActor
 public final class AppEnvironment: ObservableObject {
@@ -1226,4 +1227,64 @@ public final class AppEnvironment: ObservableObject {
             .replacingOccurrences(of: "\"", with: "\\\"")
             .replacingOccurrences(of: "\n", with: "\\n")
     }
+
+    /// 一键重置所有数据与偏好配置，并重新开始数据索引与同步
+    public func resetAllDataAndFactoryDefaults() async {
+        state.isRefreshing = true
+        defer { state.isRefreshing = false }
+
+        // 1. 重置偏好设置 (UserDefaults)
+        if let bundleID = Bundle.main.bundleIdentifier {
+            UserDefaults.standard.removePersistentDomain(forName: bundleID)
+        }
+        UserDefaults.standard.synchronize()
+
+        // 2. 恢复 Feature Flags 默认配置
+        UsageFeatureFlags.shared.isAnalyticsEnabled = true
+        UsageFeatureFlags.shared.isOverlayEnabled = false
+        UsageFeatureFlags.shared.isAXSnappingEnabled = false
+        UsageFeatureFlags.shared.isForecastEnabled = true
+
+        // 3. 清空 SQLite 数据库所有表数据并重新初始化 Schema
+        do {
+            try database.execute(sql: "PRAGMA foreign_keys = OFF;")
+            let allTables = try database.executeQuery(
+                sql: "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';"
+            ) { stmt in
+                String(cString: sqlite3_column_text(stmt, 0))
+            }
+            for table in allTables {
+                try? database.execute(sql: "DROP TABLE IF EXISTS \(table);")
+            }
+            try database.execute(sql: "PRAGMA user_version = 0;")
+            try database.execute(sql: "PRAGMA foreign_keys = ON;")
+            try database.execute(sql: "VACUUM;")
+            try SchemaMigrations.migrate(database: database)
+        } catch {
+            print("Database reset warning: \(error)")
+        }
+
+        // 4. 重置内存 AppState
+        state.account = nil
+        state.allAccounts = []
+        state.selectedAccountKey = nil
+        state.connectionStatus = .disconnected
+        state.latestRateLimit = nil
+        state.hasCurrentServerQuota = false
+        state.resetCreditAvailableCount = 0
+        state.resetCredits = []
+        state.subscriptionStartsAt = nil
+        state.subscriptionEndsAt = nil
+        state.subscriptionPlanDisplayName = nil
+        state.subscriptionRenewalState = .unknown
+        state.subscriptionTargetPlanDisplayName = nil
+        state.themeMode = .system
+        state.quotaDisplayMode = .used
+        state.refreshIntervalSeconds = AppState.defaultRefreshIntervalSeconds
+
+        // 5. 重新触发全量数据扫描与重构
+        await scanCoordinator.scanNow(forceRebuild: true)
+        await refreshAllData(fetchServer: true, scheduleRetryOnFailure: true)
+    }
 }
+

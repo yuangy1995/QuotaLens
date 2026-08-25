@@ -98,6 +98,20 @@ case "${ARCH_KEY}" in
         ;;
 esac
 
+CHANGELOG_FILE="$(dirname "$0")/../CHANGELOG.md"
+CHANGELOG_NOTES=""
+if [[ -f "${CHANGELOG_FILE}" ]]; then
+    CHANGELOG_NOTES="$(awk -v ver="${VERSION}" '
+        $0 ~ "^## \\[" ver "\\]" || $0 ~ "^## \\[v" ver "\\]" { emit=1; next }
+        emit && /^## / { emit=0 }
+        emit && /^[ \t]*[-*•]/ { print }
+    ' "${CHANGELOG_FILE}")"
+fi
+
+if [[ -z "${CHANGELOG_NOTES}" ]]; then
+    CHANGELOG_NOTES="- QuotaLens v${VERSION} 版本发布与性能优化"
+fi
+
 cat > "${OUTPUT_PATH}" <<EOF
 <?xml version="1.0" encoding="utf-8"?>
 <rss version="2.0"
@@ -116,8 +130,7 @@ cat > "${OUTPUT_PATH}" <<EOF
       <sparkle:minimumSystemVersion>14.0.0</sparkle:minimumSystemVersion>
       <sparkle:hardwareRequirements>${HARDWARE_REQUIREMENTS}</sparkle:hardwareRequirements>
       <description><![CDATA[
-        <p>QuotaLens v${VERSION}</p>
-        <p>This in-app update feed is architecture-specific and downloads the ${ARCH_TITLE} build automatically.</p>
+${CHANGELOG_NOTES}
       ]]></description>
       <pubDate>${PUB_DATE}</pubDate>
       <enclosure url="${DOWNLOAD_URL}"
