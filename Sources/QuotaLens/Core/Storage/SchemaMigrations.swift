@@ -10,8 +10,21 @@ public protocol DatabaseMigration {
     func apply(database: SQLiteDatabase) throws
 }
 
+private func addColumnIfMissing(
+    database: SQLiteDatabase,
+    table: String,
+    column: String,
+    definition: String
+) throws {
+    let columns = try database.executeQuery(sql: "PRAGMA table_info(\(table));") { statement in
+        String(cString: sqlite3_column_text(statement, 1))
+    }
+    guard !columns.contains(column) else { return }
+    try database.execute(sql: "ALTER TABLE \(table) ADD COLUMN \(column) \(definition);")
+}
+
 public struct SchemaMigrations {
-    public static let targetSchemaVersion = 7
+    public static let targetSchemaVersion = 8
 
     public static func migrate(database: SQLiteDatabase) throws {
         let currentVersion = try database.intScalar(sql: "PRAGMA user_version;")
@@ -37,7 +50,8 @@ public struct SchemaMigrations {
             V4DiagnosticsAndIndexesMigration(),
             V5AggregateOnlyUsageMigration(),
             V6UsageTruthAndRecoveryMigration(),
-            V7CatalogIdentityAndParserV4Migration()
+            V7CatalogIdentityAndParserV4Migration(),
+            V8ReasoningEffortMigration()
         ]
 
         for migration in migrations where migration.version > currentVersion {
@@ -48,6 +62,16 @@ public struct SchemaMigrations {
         }
 
         try V5AggregateOnlyUsageMigration.compactIfNeeded(database: database)
+    }
+}
+
+// MARK: - V8: event reasoning effort support
+private struct V8ReasoningEffortMigration: DatabaseMigration {
+    let version = 8
+    let name = "V8ReasoningEffort"
+
+    func apply(database: SQLiteDatabase) throws {
+        try addColumnIfMissing(database: database, table: "codex_usage_events", column: "reasoning_effort", definition: "TEXT")
     }
 }
 
@@ -135,19 +159,6 @@ private struct V7CatalogIdentityAndParserV4Migration: DatabaseMigration {
         INSERT OR REPLACE INTO app_metadata (key, value, updated_at)
             VALUES ('codex_parser_version', '4', unixepoch());
         """)
-    }
-
-    private func addColumnIfMissing(
-        database: SQLiteDatabase,
-        table: String,
-        column: String,
-        definition: String
-    ) throws {
-        let columns = try database.executeQuery(sql: "PRAGMA table_info(\(table));") { statement in
-            String(cString: sqlite3_column_text(statement, 1))
-        }
-        guard !columns.contains(column) else { return }
-        try database.execute(sql: "ALTER TABLE \(table) ADD COLUMN \(column) \(definition);")
     }
 }
 
@@ -665,21 +676,5 @@ private struct V6UsageTruthAndRecoveryMigration: DatabaseMigration {
             VALUES ('codex_parser_version', '3', unixepoch());
         """)
     }
-
-    private func addColumnIfMissing(
-        database: SQLiteDatabase,
-        table: String,
-        column: String,
-        definition: String
-    ) throws {
-        guard try !columnExists(database: database, table: table, column: column) else { return }
-        try database.execute(sql: "ALTER TABLE \(table) ADD COLUMN \(column) \(definition);")
-    }
-
-    private func columnExists(database: SQLiteDatabase, table: String, column: String) throws -> Bool {
-        try database.executeQuery(sql: "PRAGMA table_info(\(table));") { stmt in
-            String(cString: sqlite3_column_text(stmt, 1))
-        }
-        .contains(column)
-    }
 }
+

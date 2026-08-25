@@ -261,3 +261,109 @@ public struct CyberContainerCard<Content: View>: View {
             )
     }
 }
+
+// MARK: - 推理级别徽章 (ReasoningEffortBadge)
+public struct ReasoningEffortDisplay {
+    public static func localizedName(for effort: String) -> String {
+        let normalized = effort.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch normalized {
+        case "low":
+            return L10n.text("低推理", "Low Reasoning")
+        case "medium", "middle", "med":
+            return L10n.text("中推理", "Medium Reasoning")
+        case "high":
+            return L10n.text("高推理", "High Reasoning")
+        case "xhigh", "extra_high", "extra-high":
+            return L10n.text("极高推理", "Extra High Reasoning")
+        case "max":
+            return L10n.text("最大推理", "Max Reasoning")
+        case "ultra":
+            return L10n.text("超级推理", "Ultra Reasoning")
+        default:
+            return effort
+        }
+    }
+
+    public static func badgeText(for effort: String) -> String {
+        let normalized = effort.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch normalized {
+        case "medium", "middle":
+            return "medium"
+        case "extra_high", "extra-high":
+            return "xhigh"
+        default:
+            return normalized
+        }
+    }
+}
+
+public struct ReasoningEffortBadge: View {
+    @Environment(\.colorScheme) var colorScheme
+    public let effort: String
+
+    public init(effort: String) {
+        self.effort = effort
+    }
+
+    public var body: some View {
+        let isDark = colorScheme == .dark
+        let normalized = effort.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let badgeColor: Color = {
+            switch normalized {
+            case "xhigh", "extra_high", "extra-high", "ultra", "max":
+                return AppTheme.accentPurple(for: colorScheme)
+            case "high":
+                return Color.indigo
+            case "medium", "middle", "med":
+                return AppTheme.accentCyan(for: colorScheme)
+            default:
+                return AppTheme.textSecondary(for: colorScheme)
+            }
+        }()
+
+        Text(ReasoningEffortDisplay.badgeText(for: effort))
+            .font(.system(size: 8.5, weight: .heavy, design: .monospaced))
+            .foregroundStyle(badgeColor)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 1)
+            .background(badgeColor.opacity(isDark ? 0.18 : 0.10), in: RoundedRectangle(cornerRadius: 3))
+            .overlay(
+                RoundedRectangle(cornerRadius: 3)
+                    .strokeBorder(badgeColor.opacity(isDark ? 0.45 : 0.30), lineWidth: 0.6)
+            )
+            .help(L10n.format("Reasoning Effort: %@", zhHans: "推理级别：%@", ReasoningEffortDisplay.localizedName(for: effort)))
+    }
+}
+
+// MARK: - 服务层级徽章 (ServiceTierBadge)
+public struct ServiceTierBadge: View {
+    @Environment(\.colorScheme) var colorScheme
+    public let tier: String
+
+    public init(tier: String) {
+        self.tier = tier
+    }
+
+    public static func shouldDisplay(_ tier: String?) -> Bool {
+        guard let tier else { return false }
+        let lower = tier.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return !lower.isEmpty && lower != "default" && lower != "standard"
+    }
+
+    public var body: some View {
+        let isDark = colorScheme == .dark
+        let amber = AppTheme.accentAmber(for: colorScheme)
+        Text(tier.uppercased())
+            .font(.system(size: 8.5, weight: .black, design: .monospaced))
+            .foregroundStyle(amber)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 1)
+            .background(amber.opacity(isDark ? 0.16 : 0.10), in: RoundedRectangle(cornerRadius: 3))
+            .overlay(
+                RoundedRectangle(cornerRadius: 3)
+                    .strokeBorder(amber.opacity(isDark ? 0.40 : 0.25), lineWidth: 0.6)
+            )
+    }
+}
+
+

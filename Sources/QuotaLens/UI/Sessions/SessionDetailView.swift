@@ -395,10 +395,12 @@ public struct UsageEventRow: View {
                         .font(.system(size: 10.5, weight: .bold, design: .monospaced))
                         .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
 
-                    if let tier = event.serviceTier {
-                        Text(tier.uppercased())
-                            .font(.system(size: 8.5, weight: .black, design: .monospaced))
-                            .foregroundStyle(AppTheme.accentAmber(for: colorScheme))
+                    if let tier = event.serviceTier, ServiceTierBadge.shouldDisplay(tier) {
+                        ServiceTierBadge(tier: tier)
+                    }
+
+                    if let effort = event.reasoningEffort, !effort.isEmpty {
+                        ReasoningEffortBadge(effort: effort)
                     }
                 }
 

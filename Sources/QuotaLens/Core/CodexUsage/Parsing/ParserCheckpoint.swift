@@ -5,7 +5,7 @@ import Foundation
 public struct ParserCheckpoint: Codable, Sendable {
     /// Bump whenever parsing or attribution semantics change. Import checkpoints
     /// from older versions are deliberately rebuilt instead of being resumed.
-    public static let currentParserVersion = 4
+    public static let currentParserVersion = 5
 
     public let lineOffset: Int64
     public let lineCount: Int
@@ -15,6 +15,7 @@ public struct ParserCheckpoint: Codable, Sendable {
     public let lastCumulativeReasoning: Int64
     public let currentModel: String?
     public let currentServiceTier: String?
+    public let currentReasoningEffort: String?
     public let currentTurnIndex: Int
     public let currentCallIndex: Int
     public let hasSeenFreshTurn: Bool
@@ -29,6 +30,7 @@ public struct ParserCheckpoint: Codable, Sendable {
         lastCumulativeReasoning: Int64 = 0,
         currentModel: String? = nil,
         currentServiceTier: String? = nil,
+        currentReasoningEffort: String? = nil,
         currentTurnIndex: Int = 0,
         currentCallIndex: Int = 0,
         hasSeenFreshTurn: Bool = false,
@@ -42,6 +44,7 @@ public struct ParserCheckpoint: Codable, Sendable {
         self.lastCumulativeReasoning = lastCumulativeReasoning
         self.currentModel = currentModel
         self.currentServiceTier = currentServiceTier
+        self.currentReasoningEffort = currentReasoningEffort
         self.currentTurnIndex = currentTurnIndex
         self.currentCallIndex = currentCallIndex
         self.hasSeenFreshTurn = hasSeenFreshTurn
@@ -57,6 +60,7 @@ public struct ParserCheckpoint: Codable, Sendable {
         case lastCumulativeReasoning
         case currentModel
         case currentServiceTier
+        case currentReasoningEffort
         case currentTurnIndex
         case currentCallIndex
         case hasSeenFreshTurn
@@ -73,6 +77,7 @@ public struct ParserCheckpoint: Codable, Sendable {
         self.lastCumulativeReasoning = try container.decodeIfPresent(Int64.self, forKey: .lastCumulativeReasoning) ?? 0
         self.currentModel = try container.decodeIfPresent(String.self, forKey: .currentModel)
         self.currentServiceTier = try container.decodeIfPresent(String.self, forKey: .currentServiceTier)
+        self.currentReasoningEffort = try container.decodeIfPresent(String.self, forKey: .currentReasoningEffort)
         self.currentTurnIndex = try container.decodeIfPresent(Int.self, forKey: .currentTurnIndex) ?? 0
         self.currentCallIndex = try container.decodeIfPresent(Int.self, forKey: .currentCallIndex) ?? 0
         self.hasSeenFreshTurn = try container.decodeIfPresent(Bool.self, forKey: .hasSeenFreshTurn) ?? false

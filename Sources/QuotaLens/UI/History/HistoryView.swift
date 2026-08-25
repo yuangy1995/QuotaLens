@@ -187,7 +187,7 @@ public struct HistoryView: View {
                             ProgressView()
                                 .controlSize(.small)
                                 .padding(.vertical, 8)
-                        } else if let detail = store.selectedDayDetail {
+                        } else if let detail = store.selectedDayDetail, !detail.sessions.isEmpty {
                             daySessionTimelineCard(detail: detail)
                         }
                     }
@@ -372,7 +372,7 @@ public struct HistoryView: View {
                 .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
 
             if detail.sessions.isEmpty {
-                Text(L10n.text("当日没有可下钻的事件事实", "No event facts are available for this day"))
+                Text(L10n.text("当日暂无详细会话与调用记录", "No session or activity details for this day"))
                     .font(.system(size: 10.5, design: .monospaced))
                     .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
             } else {
@@ -408,6 +408,11 @@ public struct HistoryView: View {
                                         .font(.system(size: 9.5, weight: .bold, design: .monospaced))
                                         .foregroundStyle(cyan)
                                         .lineLimit(1)
+
+                                    if let effort = event.reasoningEffort, !effort.isEmpty {
+                                        ReasoningEffortBadge(effort: effort)
+                                    }
+
                                     Spacer()
                                     Text(UsageNumberFormatter.compactTokenCount(event.tokens.canonicalTotalTokens))
                                         .font(.system(size: 9.5, weight: .medium, design: .monospaced))

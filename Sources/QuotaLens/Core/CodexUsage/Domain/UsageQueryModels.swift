@@ -137,6 +137,7 @@ public struct CodexUsageEventDTO: Identifiable, Hashable, Sendable {
     public let modelRaw: String
     public let modelCanonical: String
     public let serviceTier: String?
+    public let reasoningEffort: String?
     public let tokens: TokenBreakdown
     public let estimatedCost: MoneyNanoUSD
     public let pricingRuleId: String?
@@ -159,6 +160,7 @@ public struct CodexUsageEventDTO: Identifiable, Hashable, Sendable {
         modelRaw: String,
         modelCanonical: String,
         serviceTier: String? = nil,
+        reasoningEffort: String? = nil,
         tokens: TokenBreakdown,
         estimatedCost: MoneyNanoUSD,
         pricingRuleId: String? = nil,
@@ -180,6 +182,7 @@ public struct CodexUsageEventDTO: Identifiable, Hashable, Sendable {
         self.modelRaw = modelRaw
         self.modelCanonical = modelCanonical
         self.serviceTier = serviceTier
+        self.reasoningEffort = reasoningEffort
         self.tokens = tokens
         self.estimatedCost = estimatedCost
         self.pricingRuleId = pricingRuleId

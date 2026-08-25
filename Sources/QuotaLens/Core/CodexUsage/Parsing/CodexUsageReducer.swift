@@ -14,6 +14,7 @@ public struct CodexParsedUsageEvent: Sendable {
     public let modelRaw: String
     public let modelCanonical: String
     public let serviceTier: String?
+    public let reasoningEffort: String?
     public let tokens: TokenBreakdown
     public let usageDerivation: UsageDerivation
     public let attributionQuality: AttributionQuality
@@ -33,6 +34,7 @@ public struct CodexParsedUsageEvent: Sendable {
         modelRaw: String,
         modelCanonical: String,
         serviceTier: String?,
+        reasoningEffort: String? = nil,
         tokens: TokenBreakdown,
         usageDerivation: UsageDerivation,
         attributionQuality: AttributionQuality,
@@ -51,6 +53,7 @@ public struct CodexParsedUsageEvent: Sendable {
         self.modelRaw = modelRaw
         self.modelCanonical = modelCanonical
         self.serviceTier = serviceTier
+        self.reasoningEffort = reasoningEffort
         self.tokens = tokens
         self.usageDerivation = usageDerivation
         self.attributionQuality = attributionQuality
@@ -95,6 +98,7 @@ public final class CodexUsageReducer: Sendable {
     public struct ReducerState: Sendable {
         public var activeModel: String?
         public var activeServiceTier: String?
+        public var activeReasoningEffort: String?
         public var currentTurnIndex: Int
         public var currentCallIndex: Int
         public var cumulativeBaseline: TokenBreakdown
@@ -107,6 +111,7 @@ public final class CodexUsageReducer: Sendable {
         ) {
             self.activeModel = checkpoint.currentModel
             self.activeServiceTier = checkpoint.currentServiceTier
+            self.activeReasoningEffort = checkpoint.currentReasoningEffort
             self.currentTurnIndex = checkpoint.currentTurnIndex
             self.currentCallIndex = checkpoint.currentCallIndex
             self.cumulativeBaseline = checkpoint.lastCumulativeTokens
@@ -125,6 +130,7 @@ public final class CodexUsageReducer: Sendable {
                 lastCumulativeReasoning: cumulativeBaseline.reasoningOutputTokens,
                 currentModel: activeModel,
                 currentServiceTier: activeServiceTier,
+                currentReasoningEffort: activeReasoningEffort,
                 currentTurnIndex: currentTurnIndex,
                 currentCallIndex: currentCallIndex,
                 hasSeenFreshTurn: hasEncounteredChildFreshTurn,
@@ -151,6 +157,10 @@ public final class CodexUsageReducer: Sendable {
 
         if let explicitTier = event.serviceTier, !explicitTier.isEmpty {
             state.activeServiceTier = explicitTier
+        }
+
+        if let explicitEffort = event.reasoningEffort, !explicitEffort.isEmpty {
+            state.activeReasoningEffort = explicitEffort
         }
 
         if let turnIdx = event.turnIndex {
@@ -246,6 +256,7 @@ public final class CodexUsageReducer: Sendable {
                 modelRaw: resolvedModelRaw,
                 modelCanonical: resolvedModelCanonical,
                 serviceTier: state.activeServiceTier,
+                reasoningEffort: state.activeReasoningEffort,
                 tokens: deltaBreakdown,
                 usageDerivation: .explicitLastUsage,
                 attributionQuality: eventQuality,
@@ -312,6 +323,7 @@ public final class CodexUsageReducer: Sendable {
                     modelRaw: resolvedModelRaw,
                     modelCanonical: resolvedModelCanonical,
                     serviceTier: state.activeServiceTier,
+                    reasoningEffort: state.activeReasoningEffort,
                     tokens: deltaTokens,
                     usageDerivation: anyCounterRestarted ? .totalUsageRestart : .totalUsageDelta,
                     attributionQuality: eventQuality,

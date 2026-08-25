@@ -278,6 +278,54 @@ final class ParserRecoveryTests: XCTestCase {
         XCTAssertEqual(header.metadata?.agentType, "reviewer")
     }
 
+    func testDecoderExtractsReasoningEffortFromTurnContextAndSettings() throws {
+        let turnContextLine = "{\"timestamp\":\"2026-08-24T00:57:59.035Z\",\"type\":\"turn_context\",\"payload\":{\"model\":\"gpt-5.5\",\"effort\":\"xhigh\",\"collaboration_mode\":{\"mode\":\"default\",\"settings\":{\"model\":\"gpt-5.5\",\"reasoning_effort\":\"xhigh\"}}}}"
+        let event1 = try XCTUnwrap(RolloutLineDecoder.decodeLine(turnContextLine))
+        XCTAssertEqual(event1.model, "gpt-5.5")
+        XCTAssertEqual(event1.reasoningEffort, "xhigh")
+
+        let settingsLine = "{\"type\":\"thread_settings_applied\",\"payload\":{\"thread_settings\":{\"reasoning_effort\":\"high\"}}}"
+        let event2 = try XCTUnwrap(RolloutLineDecoder.decodeLine(settingsLine))
+        XCTAssertEqual(event2.reasoningEffort, "high")
+    }
+
+    func testReducerPropagatesReasoningEffortToParsedUsageEvents() throws {
+        let reducer = CodexUsageReducer(
+            sessionId: "test-session",
+            rootSessionId: "test-session",
+            isChildSession: false,
+            sourcePath: "/tmp/test.jsonl"
+        )
+        var state = CodexUsageReducer.ReducerState()
+
+        let turnContext = RolloutWireEvent(
+            eventType: "turn_context",
+            timestampMs: 1_787_550_000_000,
+            model: "gpt-5.6-terra",
+            reasoningEffort: "ultra"
+        )
+        _ = reducer.reduce(event: turnContext, lineRecord: lineRecord(index: 0), state: &state)
+        XCTAssertEqual(state.activeReasoningEffort, "ultra")
+        XCTAssertEqual(state.activeModel, "gpt-5.6-terra")
+
+        let usageEvent = RolloutWireEvent(
+            eventType: "token_count",
+            timestampMs: 1_787_550_001_000,
+            lastTokenUsage: RawTokenUsagePayload(inputTokens: 100, cachedInputTokens: 20, outputTokens: 50, reasoningOutputTokens: 30)
+        )
+        let parsed = try XCTUnwrap(reducer.reduce(event: usageEvent, lineRecord: lineRecord(index: 1), state: &state))
+        XCTAssertEqual(parsed.modelRaw, "gpt-5.6-terra")
+        XCTAssertEqual(parsed.reasoningEffort, "ultra")
+        XCTAssertEqual(parsed.tokens.inputTokens, 100)
+    }
+
+    func testReasoningEffortDisplayAndBadging() {
+        XCTAssertEqual(ReasoningEffortDisplay.badgeText(for: "extra_high"), "xhigh")
+        XCTAssertEqual(ReasoningEffortDisplay.badgeText(for: "middle"), "medium")
+        XCTAssertEqual(ReasoningEffortDisplay.badgeText(for: "HIGH"), "high")
+        XCTAssertEqual(ReasoningEffortDisplay.localizedName(for: "low"), L10n.text("低推理", "Low Reasoning"))
+    }
+
     private func lineRecord(index: Int) -> JSONLLineRecord {
         JSONLLineRecord(
             lineIndex: index,

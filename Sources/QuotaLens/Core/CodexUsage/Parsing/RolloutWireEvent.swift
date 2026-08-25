@@ -34,6 +34,7 @@ public struct RolloutWireEvent: Sendable {
     public let parentSessionId: String?
     public let model: String?
     public let serviceTier: String?
+    public let reasoningEffort: String?
     public let turnIndex: Int?
     public let callIndex: Int?
     public let lastTokenUsage: RawTokenUsagePayload?
@@ -48,6 +49,7 @@ public struct RolloutWireEvent: Sendable {
         parentSessionId: String? = nil,
         model: String? = nil,
         serviceTier: String? = nil,
+        reasoningEffort: String? = nil,
         turnIndex: Int? = nil,
         callIndex: Int? = nil,
         lastTokenUsage: RawTokenUsagePayload? = nil,
@@ -61,6 +63,7 @@ public struct RolloutWireEvent: Sendable {
         self.parentSessionId = parentSessionId
         self.model = model
         self.serviceTier = serviceTier
+        self.reasoningEffort = reasoningEffort
         self.turnIndex = turnIndex
         self.callIndex = callIndex
         self.lastTokenUsage = lastTokenUsage
@@ -78,6 +81,8 @@ public enum RolloutLineDecoder {
             || lineString.contains("user_message")
             || lineString.contains("last_token_usage")
             || lineString.contains("total_token_usage")
+            || lineString.contains("reasoning_effort")
+            || lineString.contains("effort")
     }
 
     public static func mayContainUsageRelevantEvent(_ lineData: Data.SubSequence) -> Bool {
@@ -87,7 +92,7 @@ public enum RolloutLineDecoder {
         let needles = [
             "token_count", "turn_context", "thread_settings_applied",
             "task_started", "user_message", "last_token_usage",
-            "total_token_usage"
+            "total_token_usage", "reasoning_effort", "effort"
         ]
         return needles.contains { needle in
             lineData.range(of: Data(needle.utf8)) != nil
@@ -134,6 +139,24 @@ public enum RolloutLineDecoder {
             threadSettings?["service_tier"],
             payload["service_tier"],
             json["service_tier"]
+        ])
+        let collabMode = payload["collaboration_mode"] as? [String: Any] ?? json["collaboration_mode"] as? [String: Any]
+        let collabSettings = collabMode?["settings"] as? [String: Any]
+        let reasoningEffort = firstString([
+            payload["reasoning_effort"],
+            payload["effort"],
+            collabSettings?["reasoning_effort"],
+            collabSettings?["effort"],
+            threadSettings?["reasoning_effort"],
+            threadSettings?["effort"],
+            info?["reasoning_effort"],
+            info?["effort"],
+            metadata?["reasoning_effort"],
+            metadata?["effort"],
+            infoMetadata?["reasoning_effort"],
+            infoMetadata?["effort"],
+            json["reasoning_effort"],
+            json["effort"]
         ])
         let turnIndex = payload["turn_index"] as? Int ?? json["turn_index"] as? Int
         let callIndex = payload["call_index"] as? Int ?? json["call_index"] as? Int
@@ -185,7 +208,7 @@ public enum RolloutLineDecoder {
             "task_started",
             "user_message"
         ].contains(type)
-        guard isRelevantType || lastUsage != nil || totalUsage != nil || model != nil || serviceTier != nil else {
+        guard isRelevantType || lastUsage != nil || totalUsage != nil || model != nil || serviceTier != nil || reasoningEffort != nil else {
             return nil
         }
 
@@ -197,6 +220,7 @@ public enum RolloutLineDecoder {
             parentSessionId: parentSessionId,
             model: model,
             serviceTier: serviceTier,
+            reasoningEffort: reasoningEffort,
             turnIndex: turnIndex,
             callIndex: callIndex,
             lastTokenUsage: lastUsage,

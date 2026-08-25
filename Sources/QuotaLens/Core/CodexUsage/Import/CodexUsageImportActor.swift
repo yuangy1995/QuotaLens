@@ -807,13 +807,13 @@ public actor CodexUsageImportActor {
                 sql: """
                 INSERT OR REPLACE INTO codex_usage_events (
                     event_id, session_id, root_session_id, turn_index, call_index,
-                    timestamp_ms, model_raw, model_canonical, service_tier,
+                    timestamp_ms, model_raw, model_canonical, service_tier, reasoning_effort,
                     input_tokens, cached_input_tokens, output_tokens, reasoning_output_tokens,
                     total_tokens, uncached_input_tokens, estimated_cost_usd_nano,
                     pricing_rule_id, pricing_status, usage_derivation, attribution_quality,
                     is_child_replay, source_path, line_offset, line_bytes, payload_sha256,
                     created_at, timestamp_quality, pricing_catalog_version
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?);
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?);
                 """,
                 bindings: [
                     event.eventId,
@@ -825,6 +825,7 @@ public actor CodexUsageImportActor {
                     event.modelRaw,
                     event.modelCanonical,
                     event.serviceTier,
+                    event.reasoningEffort,
                     event.tokens.inputTokens,
                     event.tokens.cachedInputTokens,
                     event.tokens.outputTokens,

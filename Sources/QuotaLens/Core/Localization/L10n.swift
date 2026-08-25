@@ -255,6 +255,86 @@ public enum L10n {
 }
 
 private let keyedTranslations: [String: [AppLanguage: String]] = [
+    "No session or activity details for this day": [
+        .traditionalChinese: "當日暫無詳細會話與調用記錄",
+        .japanese: "この日の詳細なセッションおよびアクティビティ履歴はありません",
+        .korean: "해당 날짜에 대한 상세 세션 및 활동 기록이 없습니다",
+        .spanish: "No hay detalles de sesión ni actividad para este día",
+        .german: "Keine Sitzungs- oder Aktivitätsdetails für diesen Tag verfügbar",
+        .french: "Aucun détail de session ou d’activité pour cette journée",
+        .portuguese: "Sem detalhes de sessão ou atividade para este dia",
+        .portugueseBrazil: "Sem detalhes de sessão ou atividade para este dia"
+    ],
+    "Reasoning Effort: %@": [
+        .traditionalChinese: "推理層級：%@",
+        .japanese: "推論レベル: %@",
+        .korean: "추론 수준: %@",
+        .spanish: "Nivel de razonamiento: %@",
+        .german: "Denkaufwand: %@",
+        .french: "Niveau de raisonnement : %@",
+        .portuguese: "Nível de raciocínio: %@",
+        .portugueseBrazil: "Nível de raciocínio: %@"
+    ],
+    "Low Reasoning": [
+        .traditionalChinese: "低推理",
+        .japanese: "低",
+        .korean: "낮음",
+        .spanish: "Bajo",
+        .german: "Niedrig",
+        .french: "Faible",
+        .portuguese: "Baixo",
+        .portugueseBrazil: "Baixo"
+    ],
+    "Medium Reasoning": [
+        .traditionalChinese: "中推理",
+        .japanese: "中",
+        .korean: "중간",
+        .spanish: "Medio",
+        .german: "Mittel",
+        .french: "Moyen",
+        .portuguese: "Médio",
+        .portugueseBrazil: "Médio"
+    ],
+    "High Reasoning": [
+        .traditionalChinese: "高推理",
+        .japanese: "高",
+        .korean: "높음",
+        .spanish: "Alto",
+        .german: "Hoch",
+        .french: "Élevé",
+        .portuguese: "Alto",
+        .portugueseBrazil: "Alto"
+    ],
+    "Extra High Reasoning": [
+        .traditionalChinese: "極高推理",
+        .japanese: "超高",
+        .korean: "매우 높음",
+        .spanish: "Muy alto",
+        .german: "Sehr hoch",
+        .french: "Très élevé",
+        .portuguese: "Muito alto",
+        .portugueseBrazil: "Muito alto"
+    ],
+    "Max Reasoning": [
+        .traditionalChinese: "最大推理",
+        .japanese: "最大",
+        .korean: "최대",
+        .spanish: "Máximo",
+        .german: "Maximal",
+        .french: "Maximal",
+        .portuguese: "Máximo",
+        .portugueseBrazil: "Máximo"
+    ],
+    "Ultra Reasoning": [
+        .traditionalChinese: "超級推理",
+        .japanese: "最高",
+        .korean: "울트라",
+        .spanish: "Ultra",
+        .german: "Ultra",
+        .french: "Ultra",
+        .portuguese: "Ultra",
+        .portugueseBrazil: "Ultra"
+    ],
     "Back to Main Session": [
         .traditionalChinese: "返回主會話",
         .japanese: "メインセッションに戻る",

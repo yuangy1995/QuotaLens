@@ -273,7 +273,7 @@ public final class UsageAnalyticsRepository: Sendable {
         let recentEventsSql = """
         SELECT
             event_id, session_id, root_session_id, turn_index, call_index, timestamp_ms,
-            model_raw, model_canonical, service_tier, input_tokens, cached_input_tokens,
+            model_raw, model_canonical, service_tier, reasoning_effort, input_tokens, cached_input_tokens,
             output_tokens, reasoning_output_tokens, total_tokens, estimated_cost_usd_nano,
             pricing_rule_id, pricing_status, usage_derivation, attribution_quality,
             is_child_replay, source_path, line_offset, timestamp_quality, pricing_catalog_version
@@ -579,7 +579,7 @@ public final class UsageAnalyticsRepository: Sendable {
             sql: """
             SELECT
                 event_id, session_id, root_session_id, turn_index, call_index, timestamp_ms,
-                model_raw, model_canonical, service_tier, input_tokens, cached_input_tokens,
+                model_raw, model_canonical, service_tier, reasoning_effort, input_tokens, cached_input_tokens,
                 output_tokens, reasoning_output_tokens, total_tokens, estimated_cost_usd_nano,
                 pricing_rule_id, pricing_status, usage_derivation, attribution_quality,
                 is_child_replay, source_path, line_offset, timestamp_quality, pricing_catalog_version
@@ -1337,25 +1337,27 @@ public final class UsageAnalyticsRepository: Sendable {
         let modelCanonical = String(cString: sqlite3_column_text(stmt, 7))
         let tier = sqlite3_column_type(stmt, 8) != SQLITE_NULL && sqlite3_column_text(stmt, 8) != nil
             ? String(cString: sqlite3_column_text(stmt, 8)!) : nil
-        let inTok = sqlite3_column_int64(stmt, 9)
-        let cachedTok = sqlite3_column_int64(stmt, 10)
-        let outTok = sqlite3_column_int64(stmt, 11)
-        let reasonTok = sqlite3_column_int64(stmt, 12)
-        let totTok = sqlite3_column_int64(stmt, 13)
-        let costNano = sqlite3_column_int64(stmt, 14)
-        let ruleId = sqlite3_column_type(stmt, 15) != SQLITE_NULL && sqlite3_column_text(stmt, 15) != nil
-            ? String(cString: sqlite3_column_text(stmt, 15)!) : nil
-        let pStatus = String(cString: sqlite3_column_text(stmt, 16))
-        let deriv = String(cString: sqlite3_column_text(stmt, 17))
-        let attrib = String(cString: sqlite3_column_text(stmt, 18))
-        let isReplay = sqlite3_column_int(stmt, 19) != 0
-        let src = String(cString: sqlite3_column_text(stmt, 20))
-        let offset = sqlite3_column_int64(stmt, 21)
-        let timestampQualityRaw = sqlite3_column_type(stmt, 22) != SQLITE_NULL && sqlite3_column_text(stmt, 22) != nil
-            ? String(cString: sqlite3_column_text(stmt, 22)!)
-            : TimestampQuality.eventTimestamp.rawValue
-        let catalogVersion = sqlite3_column_type(stmt, 23) != SQLITE_NULL && sqlite3_column_text(stmt, 23) != nil
+        let effort = sqlite3_column_type(stmt, 9) != SQLITE_NULL && sqlite3_column_text(stmt, 9) != nil
+            ? String(cString: sqlite3_column_text(stmt, 9)!) : nil
+        let inTok = sqlite3_column_int64(stmt, 10)
+        let cachedTok = sqlite3_column_int64(stmt, 11)
+        let outTok = sqlite3_column_int64(stmt, 12)
+        let reasonTok = sqlite3_column_int64(stmt, 13)
+        let totTok = sqlite3_column_int64(stmt, 14)
+        let costNano = sqlite3_column_int64(stmt, 15)
+        let ruleId = sqlite3_column_type(stmt, 16) != SQLITE_NULL && sqlite3_column_text(stmt, 16) != nil
+            ? String(cString: sqlite3_column_text(stmt, 16)!) : nil
+        let pStatus = String(cString: sqlite3_column_text(stmt, 17))
+        let deriv = String(cString: sqlite3_column_text(stmt, 18))
+        let attrib = String(cString: sqlite3_column_text(stmt, 19))
+        let isReplay = sqlite3_column_int(stmt, 20) != 0
+        let src = String(cString: sqlite3_column_text(stmt, 21))
+        let offset = sqlite3_column_int64(stmt, 22)
+        let timestampQualityRaw = sqlite3_column_type(stmt, 23) != SQLITE_NULL && sqlite3_column_text(stmt, 23) != nil
             ? String(cString: sqlite3_column_text(stmt, 23)!)
+            : TimestampQuality.eventTimestamp.rawValue
+        let catalogVersion = sqlite3_column_type(stmt, 24) != SQLITE_NULL && sqlite3_column_text(stmt, 24) != nil
+            ? String(cString: sqlite3_column_text(stmt, 24)!)
             : nil
 
         return CodexUsageEventDTO(
@@ -1368,6 +1370,7 @@ public final class UsageAnalyticsRepository: Sendable {
             modelRaw: modelRaw,
             modelCanonical: modelCanonical,
             serviceTier: tier,
+            reasoningEffort: effort,
             tokens: TokenBreakdown(
                 inputTokens: inTok,
                 cachedInputTokens: cachedTok,

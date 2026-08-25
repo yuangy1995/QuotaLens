@@ -50,7 +50,7 @@ final class StorageResilienceTests: XCTestCase {
         try database.execute(sql: "PRAGMA user_version = 6;")
         try SchemaMigrations.migrate(database: database)
 
-        XCTAssertEqual(try database.intScalar(sql: "PRAGMA user_version;"), 7)
+        XCTAssertEqual(try database.intScalar(sql: "PRAGMA user_version;"), SchemaMigrations.targetSchemaVersion)
         XCTAssertEqual(try database.intScalar(sql: "SELECT COUNT(*) FROM accounts;"), 1)
         XCTAssertEqual(try database.intScalar(sql: "SELECT COUNT(*) FROM rate_limit_snapshots;"), 1)
         XCTAssertEqual(try database.intScalar(sql: "SELECT COUNT(*) FROM codex_import_sources;"), 0)
