@@ -254,6 +254,8 @@ public enum L10n {
     }
 
     public static let changelogZhToEnMap: [String: String] = [
+        "优化 App 启动阶段菜单栏控制器初始化生命周期，确保冷启动时即刻可靠挂载菜单栏图标并响应交互": "Optimized menu bar controller initialization during app startup ensuring instant and reliable menu bar presence",
+        "完善主窗口唤醒与数据刷新回调联动，提升菜单栏常驻模式下的响应速度与稳定性": "Refined main window focus and refresh callback bindings for enhanced menu bar responsiveness",
         "新增下载更新时实时显示下载进度条与百分比（从 0% 起始终保持滚动条展示）": "Enhanced in-app update downloading with persistent progress bar and percentage tracker from 0% onwards",
         "在设置「存储与诊断」新增「一键重置 App 与出厂设置」功能，支持安全清除本地数据、还原默认配置并自动重新索引": "Added one-click Factory Reset & Rescan in Settings storage pane with safety confirmation dialog",
         "彻底解决升级弹窗更新日志显示 HTML 标签乱码问题，并支持条目全语言多维度本地化翻译": "Fixed update dialog changelog HTML tag artifacts with automated multi-language localization",
@@ -335,6 +337,26 @@ public enum L10n {
 }
 
 private let keyedTranslations: [String: [AppLanguage: String]] = [
+    "Optimized menu bar controller initialization during app startup ensuring instant and reliable menu bar presence": [
+        .traditionalChinese: "優化 App 啟動階段選單列控制器初始化生命週期，確保冷啟動時即刻可靠掛載選單列圖示並響應互動",
+        .japanese: "App 起動時のメニューバーコントローラー初期化ライフサイクルを最適化し、コールドスタート時の即時かつ確実なメニューバーアイコン常駐と操作応答を確保",
+        .korean: "앱 시작 시 메뉴 바 컨트롤러 초기화 수명 주기를 최적화하여 콜드 스타트 시 메뉴 바 아이콘의 즉각적인 상주 및 상호작용 보장",
+        .spanish: "Optimizada la inicialización del controlador de la barra de menús en el inicio para una presencia inmediata y confiable",
+        .german: "Initialisierung des Menüleisten-Controllers beim App-Start optimiert für sofortige und zuverlässige Menüleisten-Präsenz",
+        .french: "Optimisation de l'initialisation du contrôleur de barre de menus au démarrage assurant une présence instantanée et fiable",
+        .portuguese: "Otimizada a inicialização do controlador da barra de menus no arranque, garantindo presença imediata e fiável",
+        .portugueseBrazil: "Otimizada a inicialização do controlador da barra de menus na inicialização, garantindo presença imediata e confiável"
+    ],
+    "Refined main window focus and refresh callback bindings for enhanced menu bar responsiveness": [
+        .traditionalChinese: "完善主視窗喚醒與資料重新整理回調連動，提升選單列常駐模式下的響應速度與穩定性",
+        .japanese: "メインウィンドウの復帰およびデータ更新コールの連携を改善し、メニューバー常駐モード時の応答性と安定性を向上",
+        .korean: "메인 창 활성화 및 데이터 새로고침 콜백 연동을 개선하여 메뉴 바 상주 모드의 응답성과 안정성 향상",
+        .spanish: "Perfeccionada la reactivación de la ventana principal y las llamadas de actualización para mayor capacidad de respuesta",
+        .german: "Aktivierung des Hauptfensters und Aktualisierungs-Callbacks verbessert für höhere Reaktionsfähigkeit der Menüleiste",
+        .french: "Amélioration du focus de la fenêtre principale et des rappels d'actualisation pour une meilleure réactivité de la barre de menus",
+        .portuguese: "Aperfeiçoada a reativação da janela principal e as chamadas de atualização para maior rapidez de resposta",
+        .portugueseBrazil: "Aprimorada a reativação da janela principal e as chamadas de atualização para maior rapidez de resposta"
+    ],
     "Enhanced in-app update downloading with persistent progress bar and percentage tracker from 0% onwards": [
         .traditionalChinese: "新增下載更新時即時顯示下載進度條與百分比（從 0% 起始終保持滾動條展示）",
         .japanese: "アップデートダウンロード時に進捗バーとパーセンテージを常時表示（0% から表示）",
