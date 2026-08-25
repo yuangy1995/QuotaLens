@@ -30,10 +30,17 @@ public struct ImportSummary: Sendable {
 
 public actor CodexUsageImportActor {
     private let database: SQLiteDatabase
+    private let scanHistory: @Sendable (CodexHistoryPaths, Bool) -> ScanOutcome
     private var isImporting = false
 
-    public init(database: SQLiteDatabase) {
+    public init(
+        database: SQLiteDatabase,
+        scanHistory: @escaping @Sendable (CodexHistoryPaths, Bool) -> ScanOutcome = { paths, scanArchived in
+            CodexRolloutScanner.scan(paths: paths, scanArchived: scanArchived)
+        }
+    ) {
         self.database = database
+        self.scanHistory = scanHistory
     }
 
     /// 执行全量或增量导入流水线
@@ -56,10 +63,8 @@ public actor CodexUsageImportActor {
 
         // 1. 扫描文件源
         onProgress?(0.05, L10n.text("正在扫描 Codex 会话文件…", "Scanning Codex session files..."))
-        let scannedSources = CodexRolloutScanner.scan(
-            paths: paths,
-            scanArchived: UsageFeatureFlags.shared.isScanArchivedSessionsEnabled
-        )
+        let scanOutcome = scanHistory(paths, UsageFeatureFlags.shared.isScanArchivedSessionsEnabled)
+        let scannedSources = scanOutcome.sources
         let rolloutHeaders = CodexSessionMetadataStore.loadFromRolloutHeaders(sources: scannedSources)
         let discoveredSources = scannedSources.map { source in
             canonicalizedSource(source, header: rolloutHeaders[source.fileURL.path])
@@ -111,7 +116,8 @@ public actor CodexUsageImportActor {
         try tombstoneMissingSources(
             currentSourcePaths: Set(discoveredSources.map { $0.fileURL.path }),
             currentSessionIds: Set(discoveredSources.map(\.sessionId)),
-            scanGeneration: scanGeneration
+            scanGeneration: scanGeneration,
+            scanOutcome: scanOutcome
         )
 
         let completedAtMs = Self.unixMillis()
@@ -759,9 +765,9 @@ public actor CodexUsageImportActor {
                 session_id, root_session_id, parent_session_id, depth, source_path,
                 relative_path, bucket, title, project_name, cwd, created_at, updated_at,
                 last_event_at, event_count, total_tokens, input_tokens, cached_input_tokens,
-                output_tokens, reasoning_output_tokens, estimated_cost_usd_nano,
+                cache_write_input_tokens, output_tokens, reasoning_output_tokens, estimated_cost_usd_nano,
                 pricing_status, metadata_fingerprint, has_subagents, agent_type
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?);
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?);
             """,
             bindings: [
                 sessionId,
@@ -781,6 +787,7 @@ public actor CodexUsageImportActor {
                 totals.tokens.canonicalTotalTokens,
                 totals.tokens.inputTokens,
                 totals.tokens.cachedInputTokens,
+                totals.tokens.cacheWriteInputTokens,
                 totals.tokens.outputTokens,
                 totals.tokens.reasoningOutputTokens,
                 totals.estimatedCost.rawValue,
@@ -808,12 +815,13 @@ public actor CodexUsageImportActor {
                 INSERT OR REPLACE INTO codex_usage_events (
                     event_id, session_id, root_session_id, turn_index, call_index,
                     timestamp_ms, model_raw, model_canonical, service_tier, reasoning_effort,
-                    input_tokens, cached_input_tokens, output_tokens, reasoning_output_tokens,
+                    input_tokens, cached_input_tokens, cache_write_input_tokens,
+                    output_tokens, reasoning_output_tokens,
                     total_tokens, uncached_input_tokens, estimated_cost_usd_nano,
                     pricing_rule_id, pricing_status, usage_derivation, attribution_quality,
                     is_child_replay, source_path, line_offset, line_bytes, payload_sha256,
                     created_at, timestamp_quality, pricing_catalog_version
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?);
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?);
                 """,
                 bindings: [
                     event.eventId,
@@ -828,6 +836,7 @@ public actor CodexUsageImportActor {
                     event.reasoningEffort,
                     event.tokens.inputTokens,
                     event.tokens.cachedInputTokens,
+                    event.tokens.cacheWriteInputTokens,
                     event.tokens.outputTokens,
                     event.tokens.reasoningOutputTokens,
                     event.tokens.canonicalTotalTokens,
@@ -858,14 +867,16 @@ public actor CodexUsageImportActor {
             sql: """
             INSERT INTO codex_session_summaries (
                 session_id, model_canonical, event_count, total_tokens,
-                uncached_input_tokens, cached_input_tokens, output_tokens,
-                reasoning_output_tokens, estimated_cost_usd_nano, unpriced_event_count
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                uncached_input_tokens, cached_input_tokens, cache_write_input_tokens,
+                output_tokens, reasoning_output_tokens,
+                estimated_cost_usd_nano, unpriced_event_count
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(session_id, model_canonical) DO UPDATE SET
                 event_count = event_count + excluded.event_count,
                 total_tokens = total_tokens + excluded.total_tokens,
                 uncached_input_tokens = uncached_input_tokens + excluded.uncached_input_tokens,
                 cached_input_tokens = cached_input_tokens + excluded.cached_input_tokens,
+                cache_write_input_tokens = cache_write_input_tokens + excluded.cache_write_input_tokens,
                 output_tokens = output_tokens + excluded.output_tokens,
                 reasoning_output_tokens = reasoning_output_tokens + excluded.reasoning_output_tokens,
                 estimated_cost_usd_nano = estimated_cost_usd_nano + excluded.estimated_cost_usd_nano,
@@ -884,15 +895,17 @@ public actor CodexUsageImportActor {
             sql: """
             INSERT INTO codex_daily_usage_summaries (
                 session_id, day_key, day_start_ms, model_canonical, event_count,
-                total_tokens, uncached_input_tokens, cached_input_tokens, output_tokens,
-                reasoning_output_tokens, estimated_cost_usd_nano, unpriced_event_count
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                total_tokens, uncached_input_tokens, cached_input_tokens, cache_write_input_tokens,
+                output_tokens, reasoning_output_tokens,
+                estimated_cost_usd_nano, unpriced_event_count
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(session_id, day_key, model_canonical) DO UPDATE SET
                 day_start_ms = excluded.day_start_ms,
                 event_count = event_count + excluded.event_count,
                 total_tokens = total_tokens + excluded.total_tokens,
                 uncached_input_tokens = uncached_input_tokens + excluded.uncached_input_tokens,
                 cached_input_tokens = cached_input_tokens + excluded.cached_input_tokens,
+                cache_write_input_tokens = cache_write_input_tokens + excluded.cache_write_input_tokens,
                 output_tokens = output_tokens + excluded.output_tokens,
                 reasoning_output_tokens = reasoning_output_tokens + excluded.reasoning_output_tokens,
                 estimated_cost_usd_nano = estimated_cost_usd_nano + excluded.estimated_cost_usd_nano,
@@ -911,6 +924,7 @@ public actor CodexUsageImportActor {
             aggregate.tokens.canonicalTotalTokens,
             aggregate.tokens.uncachedInputTokens,
             aggregate.tokens.cachedInputTokens,
+            aggregate.tokens.cacheWriteInputTokens,
             aggregate.tokens.outputTokens,
             aggregate.tokens.reasoningOutputTokens,
             aggregate.estimatedCost.rawValue,
@@ -928,6 +942,7 @@ public actor CodexUsageImportActor {
                 COALESCE(SUM(total_tokens), 0),
                 COALESCE(SUM(uncached_input_tokens), 0),
                 COALESCE(SUM(cached_input_tokens), 0),
+                COALESCE(SUM(cache_write_input_tokens), 0),
                 COALESCE(SUM(output_tokens), 0),
                 COALESCE(SUM(reasoning_output_tokens), 0),
                 COALESCE(SUM(estimated_cost_usd_nano), 0),
@@ -939,17 +954,19 @@ public actor CodexUsageImportActor {
         ) { stmt in
             let uncached = sqlite3_column_int64(stmt, 2)
             let cached = sqlite3_column_int64(stmt, 3)
+            let cacheWrite = sqlite3_column_int64(stmt, 4)
             return (
                 eventCount: Int(sqlite3_column_int(stmt, 0)),
                 tokens: TokenBreakdown(
-                    inputTokens: uncached + cached,
+                    inputTokens: uncached + cached + cacheWrite,
                     cachedInputTokens: cached,
-                    outputTokens: sqlite3_column_int64(stmt, 4),
-                    reasoningOutputTokens: sqlite3_column_int64(stmt, 5),
+                    cacheWriteInputTokens: cacheWrite,
+                    outputTokens: sqlite3_column_int64(stmt, 5),
+                    reasoningOutputTokens: sqlite3_column_int64(stmt, 6),
                     sourceTotalTokens: sqlite3_column_int64(stmt, 1)
                 ),
-                estimatedCost: MoneyNanoUSD(sqlite3_column_int64(stmt, 6)),
-                unpricedEventCount: Int(sqlite3_column_int(stmt, 7))
+                estimatedCost: MoneyNanoUSD(sqlite3_column_int64(stmt, 7)),
+                unpricedEventCount: Int(sqlite3_column_int(stmt, 8))
             )
         }.first ?? (0, .zero, .zero, 0)
     }
@@ -1051,25 +1068,30 @@ public actor CodexUsageImportActor {
     private func tombstoneMissingSources(
         currentSourcePaths: Set<String>,
         currentSessionIds: Set<String>,
-        scanGeneration: Int64
+        scanGeneration: Int64,
+        scanOutcome: ScanOutcome
     ) throws {
         let staleSources = try database.executeQuery(
             sql: """
-            SELECT source_path, relative_path
+            SELECT source_path, relative_path, bucket
             FROM codex_import_sources
             WHERE scan_generation < ? AND status != 'tombstoned';
             """,
             bindings: [scanGeneration]
-        ) { stmt -> (String, String) in
+        ) { stmt -> (String, String, SessionBucket) in
             let path = String(cString: sqlite3_column_text(stmt, 0))
             let relative = sqlite3_column_type(stmt, 1) != SQLITE_NULL && sqlite3_column_text(stmt, 1) != nil
                 ? String(cString: sqlite3_column_text(stmt, 1)!)
                 : ""
-            return (path, relative)
+            let bucketRaw = sqlite3_column_type(stmt, 2) != SQLITE_NULL && sqlite3_column_text(stmt, 2) != nil
+                ? String(cString: sqlite3_column_text(stmt, 2)!)
+                : SessionBucket.active.rawValue
+            return (path, relative, SessionBucket(rawValue: bucketRaw) ?? .active)
         }
 
         for stale in staleSources {
             guard !currentSourcePaths.contains(stale.0) else { continue }
+            guard scanOutcome.status(for: stale.2).allowsTombstone else { continue }
             let sessions = try database.executeQuery(
                 sql: "SELECT session_id FROM codex_sessions WHERE source_path = ? OR relative_path = ?;",
                 bindings: [stale.0, stale.1]

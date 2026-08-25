@@ -7,8 +7,24 @@ public struct SessionDetailView: View {
     let detail: CodexSessionDetailDTO
     let onBackToRoot: () -> Void
     let onSelectSubagent: (String) -> Void
+    let onLoadMoreEvents: () -> Void
+    let isLoadingMoreEvents: Bool
     @Environment(\.colorScheme) var colorScheme
     @State private var isCopiedId = false
+
+    public init(
+        detail: CodexSessionDetailDTO,
+        onBackToRoot: @escaping () -> Void,
+        onSelectSubagent: @escaping (String) -> Void,
+        onLoadMoreEvents: @escaping () -> Void = {},
+        isLoadingMoreEvents: Bool = false
+    ) {
+        self.detail = detail
+        self.onBackToRoot = onBackToRoot
+        self.onSelectSubagent = onSelectSubagent
+        self.onLoadMoreEvents = onLoadMoreEvents
+        self.isLoadingMoreEvents = isLoadingMoreEvents
+    }
 
     public var body: some View {
         ScrollView {
@@ -215,13 +231,15 @@ public struct SessionDetailView: View {
         let blue = AppTheme.accentBlue(for: colorScheme)
         let emerald = AppTheme.accentEmerald(for: colorScheme)
         let purple = AppTheme.accentPurple(for: colorScheme)
+        let amber = AppTheme.accentAmber(for: colorScheme)
 
         let tokens = detail.session.tokens
         let uncached = Double(tokens.uncachedInputTokens)
         let cached = Double(tokens.cachedInputTokens)
+        let cacheWrite = Double(tokens.cacheWriteInputTokens)
         let output = Double(max(0, tokens.outputTokens - tokens.reasoningOutputTokens))
         let reasoning = Double(tokens.reasoningOutputTokens)
-        let total = max(1.0, uncached + cached + output + reasoning)
+        let total = max(1.0, uncached + cached + cacheWrite + output + reasoning)
 
         return VStack(alignment: .leading, spacing: 10) {
             Text(L10n.text("Token 构成比例", "Token Breakdown"))
@@ -233,6 +251,7 @@ public struct SessionDetailView: View {
                 HStack(spacing: 2) {
                     Rectangle().fill(cyan).frame(width: max(2, geo.size.width * CGFloat(uncached / total)))
                     Rectangle().fill(blue).frame(width: max(2, geo.size.width * CGFloat(cached / total)))
+                    Rectangle().fill(amber).frame(width: max(2, geo.size.width * CGFloat(cacheWrite / total)))
                     Rectangle().fill(emerald).frame(width: max(2, geo.size.width * CGFloat(output / total)))
                     Rectangle().fill(purple).frame(width: max(2, geo.size.width * CGFloat(reasoning / total)))
                 }
@@ -241,9 +260,14 @@ public struct SessionDetailView: View {
             .frame(height: 10)
 
             // 图例与数值
-            HStack(spacing: 12) {
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 108), spacing: 8, alignment: .leading)],
+                alignment: .leading,
+                spacing: 6
+            ) {
                 LegendItem(color: cyan, title: L10n.text("全新输入", "Uncached Input"), value: UsageNumberFormatter.compactTokenCount(tokens.uncachedInputTokens))
                 LegendItem(color: blue, title: L10n.text("命中缓存", "Cached Input"), value: UsageNumberFormatter.compactTokenCount(tokens.cachedInputTokens))
+                LegendItem(color: amber, title: L10n.text("缓存写入", "Cache Write"), value: UsageNumberFormatter.compactTokenCount(tokens.cacheWriteInputTokens))
                 LegendItem(color: emerald, title: L10n.text("常规生成", "Standard Output"), value: UsageNumberFormatter.compactTokenCount(max(0, tokens.outputTokens - tokens.reasoningOutputTokens)))
                 LegendItem(color: purple, title: L10n.text("深度推理", "Reasoning"), value: UsageNumberFormatter.compactTokenCount(tokens.reasoningOutputTokens))
             }
@@ -348,14 +372,55 @@ public struct SessionDetailView: View {
     // MARK: - 6. 事件流时间线
     private var eventTimelineCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(L10n.text("事件明细时间线 (最新 100 条)", "Event Timeline (Recent 100)"))
-                .font(.system(size: 12, weight: .bold, design: .rounded))
-                .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+            HStack {
+                Text(L10n.text("事件明细时间线", "Event Timeline"))
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+
+                Spacer()
+
+                Text(L10n.format(
+                    "%d/%d loaded",
+                    zhHans: "已加载 %d/%d",
+                    detail.loadedEventCount,
+                    detail.totalEventCount
+                ))
+                .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+            }
 
             LazyVStack(spacing: 4) {
                 ForEach(detail.recentEvents) { event in
                     UsageEventRow(event: event, colorScheme: colorScheme)
                 }
+            }
+
+            if detail.hasMoreEvents {
+                Button(action: onLoadMoreEvents) {
+                    HStack(spacing: 6) {
+                        if isLoadingMoreEvents {
+                            ProgressView()
+                                .controlSize(.mini)
+                        } else {
+                            Image(systemName: "arrow.down.circle")
+                                .font(.system(size: 11, weight: .bold))
+                        }
+                        Text(isLoadingMoreEvents
+                            ? L10n.text("正在加载…", "Loading...")
+                            : L10n.text("加载更多事件", "Load More Events"))
+                            .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 7)
+                    .foregroundStyle(AppTheme.accentCyan(for: colorScheme))
+                    .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 7))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 7)
+                            .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(isLoadingMoreEvents)
             }
         }
         .padding(12)

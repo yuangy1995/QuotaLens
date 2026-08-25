@@ -98,6 +98,10 @@ public struct CodexSessionDetailDTO: Sendable {
     public let subagents: [CodexSessionDTO]
     public let modelSummaries: [ModelUsageSummaryDTO]
     public let recentEvents: [CodexUsageEventDTO]
+    public let totalEventCount: Int
+    public let loadedEventCount: Int
+    public let hasMoreEvents: Bool
+    public let nextEventCursor: String?
     public let sourcePath: String
     public let relativePath: String
     public let totalSubagentTokens: TokenBreakdown
@@ -108,6 +112,10 @@ public struct CodexSessionDetailDTO: Sendable {
         subagents: [CodexSessionDTO] = [],
         modelSummaries: [ModelUsageSummaryDTO] = [],
         recentEvents: [CodexUsageEventDTO] = [],
+        totalEventCount: Int? = nil,
+        loadedEventCount: Int? = nil,
+        hasMoreEvents: Bool = false,
+        nextEventCursor: String? = nil,
         sourcePath: String = "",
         relativePath: String = "",
         totalSubagentTokens: TokenBreakdown = .zero,
@@ -117,10 +125,36 @@ public struct CodexSessionDetailDTO: Sendable {
         self.subagents = subagents
         self.modelSummaries = modelSummaries
         self.recentEvents = recentEvents
+        self.totalEventCount = totalEventCount ?? recentEvents.count
+        self.loadedEventCount = loadedEventCount ?? recentEvents.count
+        self.hasMoreEvents = hasMoreEvents
+        self.nextEventCursor = nextEventCursor
         self.sourcePath = sourcePath
         self.relativePath = relativePath
         self.totalSubagentTokens = totalSubagentTokens
         self.totalSubagentCost = totalSubagentCost
+    }
+}
+
+public struct CodexUsageEventPageDTO: Sendable {
+    public let events: [CodexUsageEventDTO]
+    public let totalEventCount: Int
+    public let loadedEventCount: Int
+    public let hasMore: Bool
+    public let nextCursor: String?
+
+    public init(
+        events: [CodexUsageEventDTO],
+        totalEventCount: Int,
+        loadedEventCount: Int? = nil,
+        hasMore: Bool,
+        nextCursor: String?
+    ) {
+        self.events = events
+        self.totalEventCount = totalEventCount
+        self.loadedEventCount = loadedEventCount ?? events.count
+        self.hasMore = hasMore
+        self.nextCursor = nextCursor
     }
 }
 
@@ -288,10 +322,25 @@ public struct DaySessionSliceDTO: Identifiable, Hashable, Sendable {
 public struct DayDetailDTO: Sendable {
     public let summary: DayUsageSummaryDTO
     public let sessions: [DaySessionSliceDTO]
+    public let totalEventCount: Int
+    public let loadedEventCount: Int
+    public let hasMoreEvents: Bool
+    public let nextEventCursor: String?
 
-    public init(summary: DayUsageSummaryDTO, sessions: [DaySessionSliceDTO] = []) {
+    public init(
+        summary: DayUsageSummaryDTO,
+        sessions: [DaySessionSliceDTO] = [],
+        totalEventCount: Int? = nil,
+        loadedEventCount: Int? = nil,
+        hasMoreEvents: Bool = false,
+        nextEventCursor: String? = nil
+    ) {
         self.summary = summary
         self.sessions = sessions
+        self.totalEventCount = totalEventCount ?? sessions.reduce(0) { $0 + $1.events.count }
+        self.loadedEventCount = loadedEventCount ?? sessions.reduce(0) { $0 + $1.events.count }
+        self.hasMoreEvents = hasMoreEvents
+        self.nextEventCursor = nextEventCursor
     }
 }
 
@@ -308,6 +357,9 @@ public struct DashboardMetricsDTO: Sendable {
     public let todayTokens: TokenBreakdown
     public let todayCost: MoneyNanoUSD
     public let pricingCoverage: PricingCoverage
+    public let eventPricingCoverage: Double
+    public let tokenPricingCoverage: Double
+    public let costForecastCoverage: Double
 
     public init(
         totalTokens: TokenBreakdown = .zero,
@@ -320,7 +372,10 @@ public struct DashboardMetricsDTO: Sendable {
         modelDistribution: [ModelUsageSummaryDTO] = [],
         todayTokens: TokenBreakdown = .zero,
         todayCost: MoneyNanoUSD = .zero,
-        pricingCoverage: PricingCoverage = .fullyPriced
+        pricingCoverage: PricingCoverage = .fullyPriced,
+        eventPricingCoverage: Double = 1.0,
+        tokenPricingCoverage: Double = 1.0,
+        costForecastCoverage: Double = 1.0
     ) {
         self.totalTokens = totalTokens
         self.totalCost = totalCost
@@ -333,6 +388,9 @@ public struct DashboardMetricsDTO: Sendable {
         self.todayTokens = todayTokens
         self.todayCost = todayCost
         self.pricingCoverage = pricingCoverage
+        self.eventPricingCoverage = eventPricingCoverage
+        self.tokenPricingCoverage = tokenPricingCoverage
+        self.costForecastCoverage = costForecastCoverage
     }
 }
 
@@ -393,6 +451,7 @@ public struct UsageDiagnosticsDTO: Codable, Sendable {
     public let sourcesIndexed: Int
     public let sourcesTombstoned: Int
     public let unknownModelEvents: Int
+    public let genericGPT56Events: Int
     public let unpricedEvents: Int
     public let fallbackTimestampEvents: Int
     public let totalEvents: Int
@@ -406,12 +465,14 @@ public struct UsageDiagnosticsDTO: Codable, Sendable {
     public let integrityCheckPassed: Bool
     public let foreignKeyViolationCount: Int
     public let invariantViolationCount: Int
+    public let pricingRepriceGeneration: Int64
 
     public init(
         sourcesDiscovered: Int = 0,
         sourcesIndexed: Int = 0,
         sourcesTombstoned: Int = 0,
         unknownModelEvents: Int = 0,
+        genericGPT56Events: Int = 0,
         unpricedEvents: Int = 0,
         fallbackTimestampEvents: Int = 0,
         totalEvents: Int = 0,
@@ -424,12 +485,14 @@ public struct UsageDiagnosticsDTO: Codable, Sendable {
         rebuiltSourceCount: Int = 0,
         integrityCheckPassed: Bool = true,
         foreignKeyViolationCount: Int = 0,
-        invariantViolationCount: Int = 0
+        invariantViolationCount: Int = 0,
+        pricingRepriceGeneration: Int64 = 0
     ) {
         self.sourcesDiscovered = sourcesDiscovered
         self.sourcesIndexed = sourcesIndexed
         self.sourcesTombstoned = sourcesTombstoned
         self.unknownModelEvents = unknownModelEvents
+        self.genericGPT56Events = genericGPT56Events
         self.unpricedEvents = unpricedEvents
         self.fallbackTimestampEvents = fallbackTimestampEvents
         self.totalEvents = totalEvents
@@ -443,6 +506,7 @@ public struct UsageDiagnosticsDTO: Codable, Sendable {
         self.integrityCheckPassed = integrityCheckPassed
         self.foreignKeyViolationCount = foreignKeyViolationCount
         self.invariantViolationCount = invariantViolationCount
+        self.pricingRepriceGeneration = pricingRepriceGeneration
     }
 }
 

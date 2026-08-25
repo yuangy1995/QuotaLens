@@ -31,47 +31,162 @@ public struct RolloutDiscoveredSource: Hashable, Sendable {
     }
 }
 
+public enum RootScanStatus: Hashable, Sendable {
+    case success
+    case notFound
+    case disabled
+    case inaccessible
+    case failed(String)
+
+    public var allowsTombstone: Bool {
+        if case .success = self { return true }
+        return false
+    }
+}
+
+public struct ScanOutcome: Sendable {
+    public let active: RootScanStatus
+    public let archived: RootScanStatus
+    public let sources: [RolloutDiscoveredSource]
+
+    public init(
+        active: RootScanStatus,
+        archived: RootScanStatus,
+        sources: [RolloutDiscoveredSource]
+    ) {
+        self.active = active
+        self.archived = archived
+        self.sources = sources
+    }
+
+    public func status(for bucket: SessionBucket) -> RootScanStatus {
+        switch bucket {
+        case .active: return active
+        case .archived: return archived
+        }
+    }
+}
+
 public enum CodexRolloutScanner {
-    public static func scan(paths: CodexHistoryPaths, scanArchived: Bool = true) -> [RolloutDiscoveredSource] {
+    public typealias EnumeratorFactory = (
+        _ directoryURL: URL,
+        _ keys: [URLResourceKey],
+        _ options: FileManager.DirectoryEnumerationOptions,
+        _ errorHandler: ((URL, Error) -> Bool)?
+    ) -> FileManager.DirectoryEnumerator?
+
+    public static func scan(
+        paths: CodexHistoryPaths,
+        scanArchived: Bool = true,
+        enumeratorFactory: EnumeratorFactory? = nil
+    ) -> ScanOutcome {
         var results: [RolloutDiscoveredSource] = []
         let fileManager = FileManager.default
 
-        // 1. 扫描活动会话目录
-        if fileManager.fileExists(atPath: paths.sessionsURL.path) {
-            results.append(contentsOf: scanDirectory(paths.sessionsURL, baseRootURL: paths.rootURL, bucket: .active))
-        }
+        let active = scanRoot(
+            paths.sessionsURL,
+            baseRootURL: paths.rootURL,
+            bucket: .active,
+            fileManager: fileManager,
+            enumeratorFactory: enumeratorFactory
+        )
+        results.append(contentsOf: active.sources)
 
-        // 2. 扫描归档会话目录
-        if scanArchived && fileManager.fileExists(atPath: paths.archivedSessionsURL.path) {
-            results.append(contentsOf: scanDirectory(paths.archivedSessionsURL, baseRootURL: paths.rootURL, bucket: .archived))
+        let archived: (status: RootScanStatus, sources: [RolloutDiscoveredSource])
+        if scanArchived {
+            archived = scanRoot(
+                paths.archivedSessionsURL,
+                baseRootURL: paths.rootURL,
+                bucket: .archived,
+                fileManager: fileManager,
+                enumeratorFactory: enumeratorFactory
+            )
+            results.append(contentsOf: archived.sources)
+        } else {
+            archived = (.disabled, [])
         }
 
         // 稳定排序：按 mtime 倒序，同时间按相对路径排序
-        return results.sorted {
+        let sorted = results.sorted {
             if $0.mtimeMs != $1.mtimeMs {
                 return $0.mtimeMs > $1.mtimeMs
             }
             return $0.relativePath < $1.relativePath
         }
+        return ScanOutcome(active: active.status, archived: archived.status, sources: sorted)
     }
 
-    private static func scanDirectory(_ directoryURL: URL, baseRootURL: URL, bucket: SessionBucket) -> [RolloutDiscoveredSource] {
-        let fileManager = FileManager.default
-        guard let enumerator = fileManager.enumerator(
-            at: directoryURL,
-            includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey],
-            options: [.skipsHiddenFiles, .skipsPackageDescendants]
-        ) else {
-            return []
+    public static func scanSources(paths: CodexHistoryPaths, scanArchived: Bool = true) -> [RolloutDiscoveredSource] {
+        scan(paths: paths, scanArchived: scanArchived).sources
+    }
+
+    private static func scanRoot(
+        _ directoryURL: URL,
+        baseRootURL: URL,
+        bucket: SessionBucket,
+        fileManager: FileManager,
+        enumeratorFactory: EnumeratorFactory?
+    ) -> (status: RootScanStatus, sources: [RolloutDiscoveredSource]) {
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: directoryURL.path, isDirectory: &isDirectory) else {
+            return (.notFound, [])
+        }
+        guard isDirectory.boolValue else {
+            return (.failed("Not a directory"), [])
+        }
+        guard fileManager.isReadableFile(atPath: directoryURL.path) else {
+            return (.inaccessible, [])
         }
 
+        var traversalError: Error?
+        let keys: [URLResourceKey] = [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey]
+        let options: FileManager.DirectoryEnumerationOptions = [.skipsHiddenFiles, .skipsPackageDescendants]
+        let errorHandler: (URL, Error) -> Bool = { _, error in
+            traversalError = error
+            return false
+        }
+        let factory = enumeratorFactory ?? { directoryURL, keys, options, errorHandler in
+            fileManager.enumerator(
+                at: directoryURL,
+                includingPropertiesForKeys: keys,
+                options: options,
+                errorHandler: errorHandler
+            )
+        }
+        guard let enumerator = factory(
+            directoryURL,
+            keys,
+            options,
+            errorHandler
+        ) else {
+            return (.failed("Enumerator unavailable"), [])
+        }
+
+        let sources = scanDirectory(
+            enumerator: enumerator,
+            directoryURL: directoryURL,
+            baseRootURL: baseRootURL,
+            bucket: bucket
+        )
+        if let traversalError {
+            return (.failed(traversalError.localizedDescription), sources)
+        }
+        return (.success, sources)
+    }
+
+    private static func scanDirectory(
+        enumerator: FileManager.DirectoryEnumerator,
+        directoryURL: URL,
+        baseRootURL: URL,
+        bucket: SessionBucket
+    ) -> [RolloutDiscoveredSource] {
         var list: [RolloutDiscoveredSource] = []
         let baseRootPath = baseRootURL.path
 
         for case let url as URL in enumerator {
             guard url.pathExtension == "jsonl" else { continue }
             let fileName = url.lastPathComponent
-            guard fileName.hasPrefix("rollout") || fileName.contains("session") || fileName.contains("-") else { continue }
+            guard isCanonicalRolloutFileName(fileName) || containsRolloutStructure(fileURL: url) else { continue }
 
             var statBuf = stat()
             let status = stat((url.path as NSString).fileSystemRepresentation, &statBuf)
@@ -110,6 +225,44 @@ public enum CodexRolloutScanner {
         }
 
         return list
+    }
+
+    private static func isCanonicalRolloutFileName(_ fileName: String) -> Bool {
+        guard fileName.hasSuffix(".jsonl") else { return false }
+        return fileName.range(
+            of: #"^rollout-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-[0-9a-fA-F-]{8,}\.jsonl$"#,
+            options: .regularExpression
+        ) != nil
+    }
+
+    private static func containsRolloutStructure(fileURL: URL) -> Bool {
+        guard let handle = try? FileHandle(forReadingFrom: fileURL) else { return false }
+        defer { try? handle.close() }
+        let data = (try? handle.read(upToCount: 64 * 1024)) ?? Data()
+        guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return false }
+        for rawLine in text.split(separator: "\n", omittingEmptySubsequences: true).prefix(20) {
+            let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !line.isEmpty, let lineData = line.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any] else {
+                continue
+            }
+            let outerType = (json["type"] as? String ?? json["event"] as? String ?? "").lowercased()
+            let payload = (json["payload"] as? [String: Any]) ?? json
+            let payloadType = (payload["type"] as? String ?? "").lowercased()
+            if outerType == "session_meta" || payload["session_id"] != nil || payload["id"] != nil && payload["cwd"] != nil {
+                return true
+            }
+            if outerType == "event_msg" && ["token_count", "turn_context", "task_started", "user_message"].contains(payloadType) {
+                return true
+            }
+            if payload["last_token_usage"] != nil
+                || payload["total_token_usage"] != nil
+                || (payload["info"] as? [String: Any])?["last_token_usage"] != nil
+                || (payload["info"] as? [String: Any])?["total_token_usage"] != nil {
+                return true
+            }
+        }
+        return false
     }
 
     public static func extractSessionId(from fileName: String, relativePath: String) -> String {

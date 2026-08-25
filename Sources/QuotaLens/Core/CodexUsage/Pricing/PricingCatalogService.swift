@@ -19,6 +19,7 @@ public final class PricingCatalogService: Sendable {
             sql: "SELECT catalog_sha256 FROM codex_pricing_catalogs WHERE catalog_version = ?;",
             bindings: [catalog.catalogVersion]
         )
+        let repriceNeeded = try catalogNeedsReprice(database: database, catalogVersion: catalog.catalogVersion)
 
         if installedSHA == catalogSHA {
             try database.transaction {
@@ -30,6 +31,9 @@ public final class PricingCatalogService: Sendable {
                     sql: "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES ('pricing_catalog_generation', ?, unixepoch());",
                     bindings: [catalog.catalogVersion]
                 )
+                if repriceNeeded {
+                    try repriceAllUsageEventsInTransaction(database: database)
+                }
             }
             return
         }
@@ -116,6 +120,15 @@ public final class PricingCatalogService: Sendable {
                 sql: "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES ('pricing_catalog_generation', ?, unixepoch());",
                 bindings: [catalog.catalogVersion]
             )
+            try repriceAllUsageEventsInTransaction(database: database)
+        }
+    }
+
+    /// Explicit, transactional repricing entrypoint used by migrations/tests
+    /// and by catalog upgrades. It is idempotent for a fixed active catalog.
+    public func repriceAllUsageEvents(database: SQLiteDatabase) throws {
+        try database.transaction {
+            try repriceAllUsageEventsInTransaction(database: database)
         }
     }
 
@@ -226,6 +239,173 @@ public final class PricingCatalogService: Sendable {
         return BundledPricingCatalog.currentVersion
     }
 
+    private func catalogNeedsReprice(database: SQLiteDatabase, catalogVersion: String) throws -> Bool {
+        let repricedCatalog = try database.stringScalar(
+            sql: "SELECT value FROM app_metadata WHERE key = 'pricing_reprice_catalog_version';"
+        )
+        guard repricedCatalog == catalogVersion else { return true }
+        let staleEventCount = try database.intScalar(
+            sql: """
+            SELECT COUNT(*)
+            FROM codex_usage_events
+            WHERE COALESCE(pricing_catalog_version, '') != ?;
+            """,
+            bindings: [catalogVersion]
+        )
+        return staleEventCount > 0
+    }
+
+    private struct RepriceEventRow {
+        let eventId: String
+        let modelCanonical: String
+        let serviceTier: String?
+        let timestampMs: Int64
+        let tokens: TokenBreakdown
+    }
+
+    private func repriceAllUsageEventsInTransaction(database: SQLiteDatabase) throws {
+        let snapshot = try loadSnapshot(database: database)
+        let rows = try database.executeQuery(
+            sql: """
+            SELECT
+                event_id, model_canonical, service_tier, timestamp_ms,
+                input_tokens, cached_input_tokens, cache_write_input_tokens,
+                output_tokens, reasoning_output_tokens, total_tokens
+            FROM codex_usage_events;
+            """
+        ) { stmt -> RepriceEventRow in
+            let tier = sqlite3_column_type(stmt, 2) != SQLITE_NULL && sqlite3_column_text(stmt, 2) != nil
+                ? String(cString: sqlite3_column_text(stmt, 2)!)
+                : nil
+            let total = sqlite3_column_int64(stmt, 9)
+            return RepriceEventRow(
+                eventId: String(cString: sqlite3_column_text(stmt, 0)),
+                modelCanonical: String(cString: sqlite3_column_text(stmt, 1)),
+                serviceTier: tier,
+                timestampMs: sqlite3_column_int64(stmt, 3),
+                tokens: TokenBreakdown(
+                    inputTokens: sqlite3_column_int64(stmt, 4),
+                    cachedInputTokens: sqlite3_column_int64(stmt, 5),
+                    cacheWriteInputTokens: sqlite3_column_int64(stmt, 6),
+                    outputTokens: sqlite3_column_int64(stmt, 7),
+                    reasoningOutputTokens: sqlite3_column_int64(stmt, 8),
+                    sourceTotalTokens: total
+                )
+            )
+        }
+
+        for row in rows {
+            let price = snapshot.evaluate(
+                modelCanonical: row.modelCanonical,
+                serviceTier: row.serviceTier,
+                timestampMs: row.timestampMs,
+                tokens: row.tokens
+            )
+            try database.executeUpdate(
+                sql: """
+                UPDATE codex_usage_events
+                SET estimated_cost_usd_nano = ?,
+                    pricing_rule_id = ?,
+                    pricing_status = ?,
+                    pricing_catalog_version = ?
+                WHERE event_id = ?;
+                """,
+                bindings: [
+                    price.estimatedCost.rawValue,
+                    price.pricingRuleId,
+                    price.pricingStatus.rawValue,
+                    price.catalogVersion,
+                    row.eventId
+                ]
+            )
+        }
+
+        try rebuildUsageSummariesInTransaction(database: database)
+        let previousGeneration = try database.int64Scalar(
+            sql: "SELECT value FROM app_metadata WHERE key = 'pricing_reprice_generation';"
+        ) ?? 0
+        let nextGeneration = previousGeneration + 1
+        try database.executeUpdate(
+            sql: "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES ('pricing_reprice_generation', ?, unixepoch());",
+            bindings: [String(nextGeneration)]
+        )
+        try database.executeUpdate(
+            sql: "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES ('pricing_reprice_catalog_version', ?, unixepoch());",
+            bindings: [snapshot.catalogVersion]
+        )
+    }
+
+    private func rebuildUsageSummariesInTransaction(database: SQLiteDatabase) throws {
+        try database.execute(sql: """
+        DELETE FROM codex_session_summaries;
+        DELETE FROM codex_daily_usage_summaries;
+
+        INSERT INTO codex_session_summaries (
+            session_id, model_canonical, event_count, total_tokens,
+            uncached_input_tokens, cached_input_tokens, cache_write_input_tokens,
+            output_tokens, reasoning_output_tokens, estimated_cost_usd_nano,
+            unpriced_event_count
+        )
+        SELECT
+            session_id,
+            model_canonical,
+            COUNT(*),
+            COALESCE(SUM(total_tokens), 0),
+            COALESCE(SUM(uncached_input_tokens), 0),
+            COALESCE(SUM(cached_input_tokens), 0),
+            COALESCE(SUM(cache_write_input_tokens), 0),
+            COALESCE(SUM(output_tokens), 0),
+            COALESCE(SUM(reasoning_output_tokens), 0),
+            COALESCE(SUM(estimated_cost_usd_nano), 0),
+            COALESCE(SUM(CASE WHEN pricing_status = 'priced' THEN 0 ELSE 1 END), 0)
+        FROM codex_usage_events
+        WHERE is_child_replay = 0
+        GROUP BY session_id, model_canonical;
+
+        INSERT INTO codex_daily_usage_summaries (
+            session_id, day_key, day_start_ms, model_canonical, event_count,
+            total_tokens, uncached_input_tokens, cached_input_tokens,
+            cache_write_input_tokens, output_tokens, reasoning_output_tokens,
+            estimated_cost_usd_nano, unpriced_event_count
+        )
+        SELECT
+            session_id,
+            strftime('%Y-%m-%d', timestamp_ms / 1000, 'unixepoch', 'localtime') AS day_key,
+            unixepoch(strftime('%Y-%m-%d', timestamp_ms / 1000, 'unixepoch', 'localtime')) * 1000 AS day_start_ms,
+            model_canonical,
+            COUNT(*),
+            COALESCE(SUM(total_tokens), 0),
+            COALESCE(SUM(uncached_input_tokens), 0),
+            COALESCE(SUM(cached_input_tokens), 0),
+            COALESCE(SUM(cache_write_input_tokens), 0),
+            COALESCE(SUM(output_tokens), 0),
+            COALESCE(SUM(reasoning_output_tokens), 0),
+            COALESCE(SUM(estimated_cost_usd_nano), 0),
+            COALESCE(SUM(CASE WHEN pricing_status = 'priced' THEN 0 ELSE 1 END), 0)
+        FROM codex_usage_events
+        WHERE is_child_replay = 0
+        GROUP BY session_id, day_key, model_canonical;
+
+        UPDATE codex_sessions
+        SET
+            event_count = COALESCE((SELECT SUM(event_count) FROM codex_session_summaries s WHERE s.session_id = codex_sessions.session_id), 0),
+            total_tokens = COALESCE((SELECT SUM(total_tokens) FROM codex_session_summaries s WHERE s.session_id = codex_sessions.session_id), 0),
+            input_tokens = COALESCE((SELECT SUM(uncached_input_tokens + cached_input_tokens + cache_write_input_tokens) FROM codex_session_summaries s WHERE s.session_id = codex_sessions.session_id), 0),
+            cached_input_tokens = COALESCE((SELECT SUM(cached_input_tokens) FROM codex_session_summaries s WHERE s.session_id = codex_sessions.session_id), 0),
+            cache_write_input_tokens = COALESCE((SELECT SUM(cache_write_input_tokens) FROM codex_session_summaries s WHERE s.session_id = codex_sessions.session_id), 0),
+            output_tokens = COALESCE((SELECT SUM(output_tokens) FROM codex_session_summaries s WHERE s.session_id = codex_sessions.session_id), 0),
+            reasoning_output_tokens = COALESCE((SELECT SUM(reasoning_output_tokens) FROM codex_session_summaries s WHERE s.session_id = codex_sessions.session_id), 0),
+            estimated_cost_usd_nano = COALESCE((SELECT SUM(estimated_cost_usd_nano) FROM codex_session_summaries s WHERE s.session_id = codex_sessions.session_id), 0),
+            pricing_status = CASE
+                WHEN COALESCE((SELECT SUM(event_count) FROM codex_session_summaries s WHERE s.session_id = codex_sessions.session_id), 0) = 0
+                    THEN 'unpricedUnknownModel'
+                WHEN COALESCE((SELECT SUM(unpriced_event_count) FROM codex_session_summaries s WHERE s.session_id = codex_sessions.session_id), 0) = 0
+                    THEN 'priced'
+                ELSE 'unpricedUnknownModel'
+            END;
+        """)
+    }
+
     private static func rawJSONString(for catalog: PricingCatalogModel) throws -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
@@ -314,8 +494,13 @@ public struct PricingCatalogSnapshot: Sendable {
         if normalized.isEmpty || ["auto", "default", "standard"].contains(normalized) {
             return nil
         }
-        // API responses report priority even when callers request fast.
-        return normalized == "fast" ? "priority" : normalized
+        // Priority processing was renamed Fast mode on 2026-07-30. Rollouts and
+        // API usage can still contain either spelling, so both select the same
+        // official Fast pricing row. Unknown tiers intentionally remain unpriced.
+        if normalized == "priority" || normalized == "fast" {
+            return "fast"
+        }
+        return normalized
     }
 }
 
@@ -386,6 +571,7 @@ public enum PricingEvaluator {
     ) -> PricingEvaluationResult {
         let uncachedInput = tokens.uncachedInputTokens
         let cachedInput = tokens.cachedInputTokens
+        let cacheWriteInput = tokens.cacheWriteInputTokens
         let output = tokens.outputTokens
         let longContext = rule.longContextThresholdTokens.map { tokens.inputTokens > $0 } ?? false
         let inputRate = longContext
@@ -394,15 +580,28 @@ public enum PricingEvaluator {
         let cachedRate = longContext
             ? scaledRate(rule.cachedNanoUsdPerToken, ppm: rule.longContextInputMultiplierPpm)
             : rule.cachedNanoUsdPerToken
+        let cacheWriteRate = rule.cacheWriteNanoUsdPerToken.map { rate in
+            longContext ? scaledRate(rate, ppm: rule.longContextInputMultiplierPpm) : rate
+        }
         let outputRate = longContext
             ? scaledRate(rule.outputNanoUsdPerToken, ppm: rule.longContextOutputMultiplierPpm)
             : rule.outputNanoUsdPerToken
 
+        guard cacheWriteInput == 0 || cacheWriteRate != nil else {
+            return PricingEvaluationResult(
+                estimatedCost: .zero,
+                pricingStatus: .unpricedHistoricalRuleMissing,
+                pricingRuleId: rule.ruleId,
+                catalogVersion: catalogVersion
+            )
+        }
+
         let (inCost, inOverflow) = uncachedInput.multipliedReportingOverflow(by: inputRate)
         let (cacheCost, cacheOverflow) = cachedInput.multipliedReportingOverflow(by: cachedRate)
+        let (cacheWriteCost, cacheWriteOverflow) = cacheWriteInput.multipliedReportingOverflow(by: cacheWriteRate ?? 0)
         let (outCost, outOverflow) = output.multipliedReportingOverflow(by: outputRate)
 
-        if inOverflow || cacheOverflow || outOverflow {
+        if inOverflow || cacheOverflow || cacheWriteOverflow || outOverflow {
             return PricingEvaluationResult(
                 estimatedCost: .zero,
                 pricingStatus: .unpricedCalculationOverflow,
@@ -412,8 +611,9 @@ public enum PricingEvaluator {
         }
 
         let (partial, addOverflow) = inCost.addingReportingOverflow(cacheCost)
-        let (total, totalOverflow) = partial.addingReportingOverflow(outCost)
-        if addOverflow || totalOverflow {
+        let (withCacheWrite, cacheWriteAddOverflow) = partial.addingReportingOverflow(cacheWriteCost)
+        let (total, totalOverflow) = withCacheWrite.addingReportingOverflow(outCost)
+        if addOverflow || cacheWriteAddOverflow || totalOverflow {
             return PricingEvaluationResult(
                 estimatedCost: .zero,
                 pricingStatus: .unpricedCalculationOverflow,

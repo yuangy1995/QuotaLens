@@ -2207,15 +2207,15 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Pesquisar sessões / projetos / caminhos…",
         .portugueseBrazil: "Buscar sessões / projetos / caminhos…"
     ],
-    "Event Timeline (Recent 100)": [
-        .traditionalChinese: "事件明細時間線 (最新 100 條)",
-        .japanese: "イベントタイムライン (最新 100 件)",
-        .korean: "이벤트 타임라인 (최근 100건)",
-        .spanish: "Línea de tiempo de eventos (últimos 100)",
-        .german: "Ereignis-Timeline (letzte 100)",
-        .french: "Chronologie des événements (100 récents)",
-        .portuguese: "Cronologia de eventos (100 recentes)",
-        .portugueseBrazil: "Linha do tempo de eventos (100 recentes)"
+    "Event Timeline": [
+        .traditionalChinese: "事件明細時間線",
+        .japanese: "イベントタイムライン",
+        .korean: "이벤트 타임라인",
+        .spanish: "Línea de tiempo de eventos",
+        .german: "Ereignis-Timeline",
+        .french: "Chronologie des événements",
+        .portuguese: "Cronologia de eventos",
+        .portugueseBrazil: "Linha do tempo de eventos"
     ],
     "Rate Limit Burn Forecast": [
         .traditionalChinese: "伺服器額度耗盡預測",

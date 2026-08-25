@@ -50,6 +50,7 @@ extension XCTestCase {
         model: String = "gpt-5.4",
         input: Int64,
         cached: Int64 = 0,
+        cacheWrite: Int64 = 0,
         output: Int64,
         parentSessionId: String? = nil,
         agentRole: String? = nil
@@ -61,7 +62,7 @@ extension XCTestCase {
         }
         let sessionMeta = "{\"timestamp\":\"\(timestamp)\",\"type\":\"session_meta\",\"payload\":{\"id\":\"\(sessionId)\",\"cwd\":\"/tmp/QuotaLensFixture\"\(source)}}"
         let context = "{\"timestamp\":\"\(timestamp)\",\"type\":\"turn_context\",\"payload\":{\"model\":\"\(model)\"}}"
-        let usage = "{\"timestamp\":\"\(timestamp)\",\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"last_token_usage\":{\"input_tokens\":\(input),\"cached_input_tokens\":\(cached),\"output_tokens\":\(output)},\"total_token_usage\":{\"input_tokens\":\(input),\"cached_input_tokens\":\(cached),\"output_tokens\":\(output)}}}}"
+        let usage = "{\"timestamp\":\"\(timestamp)\",\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"last_token_usage\":{\"input_tokens\":\(input),\"cached_input_tokens\":\(cached),\"cache_creation_input_tokens\":\(cacheWrite),\"output_tokens\":\(output)},\"total_token_usage\":{\"input_tokens\":\(input),\"cached_input_tokens\":\(cached),\"cache_creation_input_tokens\":\(cacheWrite),\"output_tokens\":\(output)}}}}"
         return [sessionMeta, context, usage].joined(separator: "\n") + "\n"
     }
 }

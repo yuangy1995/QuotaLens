@@ -22,7 +22,7 @@ QuotaLens 是一个原生 macOS 菜单栏应用，用来监测 Codex 与 ChatGPT
 - 支持调整刷新频率、自定义 Codex CLI 路径、开机自启动、隐藏 Dock 图标的纯菜单栏模式。
 - 点击 Dock 图标只会聚焦主窗口；额度浮窗只会由菜单栏状态图标打开。
 - 当可用额度降为 0 时，主页和菜单栏会显示「已用尽、等待重置」状态，并停止生成额度节奏预测。
-- 可独立关闭窗口悬浮挂件，不影响本地用量分析。基础模式无需辅助功能权限；精确吸附由用户主动开启，仅读取目标窗口的位置、尺寸和最小化状态。
+- 可独立关闭窗口悬浮挂件，不影响本地用量分析。基础模式无需辅助功能权限；精确吸附由用户主动开启，仅读取目标窗口的位置、尺寸和最小化状态。这里的悬浮挂件是 QuotaLens 自己的窗口覆盖层，不是 WidgetKit 桌面小组件或 Widget Extension。
 - 内置多语言：英文、简体中文、繁体中文、日文、韩文、西班牙文、德文、法文、葡萄牙文、巴西葡萄牙文。
 - 应用内更新日志跟随所选界面语言；远端简体中文日志不会再覆盖其他语言。
 
@@ -47,17 +47,19 @@ swift run QuotaLens
 swift build -c release
 ```
 
-生成已签名的 `.app`、`.zip` 和 `.dmg` 安装包：
+生成本地签名的 `.app`、`.zip` 和 `.dmg` 安装包：
 
 ```bash
 ./scripts/build_and_package.sh --arch universal
 ```
 
-打包脚本默认使用 ad-hoc 本地签名。如果需要使用 Developer ID 证书签名，可以在执行前设置 `DEVELOPER_ID_APPLICATION`：
+打包脚本默认使用 ad-hoc 本地签名。如果需要使用 Developer ID 证书签名，需要设置 `DEVELOPER_ID_APPLICATION` 并显式选择 Developer ID 签名：
 
 ```bash
-DEVELOPER_ID_APPLICATION="Developer ID Application: Your Name (TEAMID)" ./scripts/build_and_package.sh
+DEVELOPER_ID_APPLICATION="Developer ID Application: Your Name (TEAMID)" ./scripts/build_and_package.sh --signing-mode developer-id
 ```
+
+生产 GitHub Release 必须通过 Developer ID 签名、公证、staple 和 Gatekeeper 校验；缺少签名或公证凭据时 workflow 会失败，不会静默回退到 ad-hoc 签名。
 
 构建不同架构的下载包：
 

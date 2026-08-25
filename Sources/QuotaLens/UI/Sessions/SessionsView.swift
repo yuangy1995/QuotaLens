@@ -55,8 +55,8 @@ public struct SessionsView: View {
             }
         } message: { _ in
             Text(L10n.text(
-                "该会话及其子代理的 Codex 源文件会移到 macOS 废纸篓，可从废纸篓恢复。",
-                "The Codex source files for this session and its subagents will be moved to the macOS Trash, where they can be restored."
+                "无论点击的是主会话还是子 Agent，QuotaLens 都会删除对应主会话与全部子 Agent 的 Codex 源文件，并移到 macOS 废纸篓，可从废纸篓恢复。",
+                "Whether you clicked the main session or a child agent, QuotaLens will delete the main session and all child-agent Codex source files by moving them to the macOS Trash, where they can be restored."
             ))
         }
         .alert(
@@ -408,7 +408,11 @@ public struct SessionsView: View {
                     },
                     onSelectSubagent: { subagentId in
                         store.selectedSessionId = subagentId
-                    }
+                    },
+                    onLoadMoreEvents: {
+                        Task { await store.loadMoreSelectedSessionEvents() }
+                    },
+                    isLoadingMoreEvents: store.isLoadingMoreEvents
                 )
             } else {
                 VStack(spacing: 8) {

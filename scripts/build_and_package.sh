@@ -23,6 +23,8 @@ REQUESTED_ARCH="${ARCH:-universal}"
 APP_VERSION="${VERSION:-}"
 BUILD_NUMBER="${BUILD_NUMBER:-}"
 SIGN_IDENTITY="${DEVELOPER_ID_APPLICATION:-"-"}"
+SIGNING_MODE="${QUOTALENS_SIGNING_MODE:-adhoc}"
+NOTARIZE="${QUOTALENS_NOTARIZE:-0}"
 SPARKLE_PUBLIC_ED_KEY="${SPARKLE_PUBLIC_ED_KEY:-}"
 
 usage() {
@@ -40,6 +42,12 @@ Options:
       Swift build configuration. Defaults to release.
   --dist-dir <path>
       Output directory. Defaults to ./dist.
+  --signing-mode <adhoc|developer-id>
+      Signing mode. Defaults to adhoc for local packaging.
+  --notarize
+      Submit the signed app and DMG to Apple notarization, staple tickets, and
+      run Gatekeeper assessment. Requires Developer ID signing and Apple
+      notary credentials.
   -h, --help
       Show this help text.
 EOF
@@ -67,6 +75,14 @@ while [[ $# -gt 0 ]]; do
             DIST_DIR="${2:-}"
             shift 2
             ;;
+        --signing-mode)
+            SIGNING_MODE="${2:-}"
+            shift 2
+            ;;
+        --notarize)
+            NOTARIZE="1"
+            shift
+            ;;
         -h|--help)
             usage
             exit 0
@@ -78,6 +94,47 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+case "${SIGNING_MODE}" in
+    adhoc|developer-id)
+        ;;
+    *)
+        echo -e "${RED}Unsupported signing mode: ${SIGNING_MODE}${NC}"
+        usage
+        exit 2
+        ;;
+esac
+
+if [[ "${SIGNING_MODE}" == "developer-id" && "${SIGN_IDENTITY}" == "-" ]]; then
+    echo -e "${RED}Developer ID signing requested but DEVELOPER_ID_APPLICATION is missing.${NC}"
+    exit 1
+fi
+
+if [[ "${NOTARIZE}" == "1" && "${SIGNING_MODE}" != "developer-id" ]]; then
+    echo -e "${RED}Notarization requires --signing-mode developer-id.${NC}"
+    exit 1
+fi
+
+notarytool_submit() {
+    local artifact="$1"
+    if [[ -n "${APPLE_KEYCHAIN_PROFILE:-}" ]]; then
+        xcrun notarytool submit "${artifact}" \
+            --keychain-profile "${APPLE_KEYCHAIN_PROFILE}" \
+            --wait
+        return
+    fi
+
+    if [[ -z "${APPLE_ID:-}" || -z "${APPLE_TEAM_ID:-}" || -z "${APPLE_APP_SPECIFIC_PASSWORD:-}" ]]; then
+        echo -e "${RED}Missing Apple notarization credentials. Set APPLE_KEYCHAIN_PROFILE or APPLE_ID, APPLE_TEAM_ID, and APPLE_APP_SPECIFIC_PASSWORD.${NC}"
+        exit 1
+    fi
+
+    xcrun notarytool submit "${artifact}" \
+        --apple-id "${APPLE_ID}" \
+        --team-id "${APPLE_TEAM_ID}" \
+        --password "${APPLE_APP_SPECIFIC_PASSWORD}" \
+        --wait
+}
 
 if [[ -z "${APP_VERSION}" ]]; then
     if [[ -f "${PROJECT_DIR}/VERSION" ]]; then
@@ -143,6 +200,8 @@ echo -e "Project     : ${BLUE}${PROJECT_DIR}${NC}"
 echo -e "Version     : ${BLUE}${APP_VERSION}${NC}"
 echo -e "Build number: ${BLUE}${BUILD_NUMBER}${NC}"
 echo -e "Architecture: ${BLUE}${ARCH_LABEL}${NC}"
+echo -e "Signing     : ${BLUE}${SIGNING_MODE}${NC}"
+echo -e "Notarize    : ${BLUE}${NOTARIZE}${NC}"
 echo -e "Output      : ${BLUE}${DIST_DIR}${NC}"
 
 echo -e "\n${YELLOW}[1/6] Preparing output directories...${NC}"
@@ -275,22 +334,36 @@ echo -e "${GREEN}.app bundle assembled${NC}"
 
 echo -e "\n${YELLOW}[4/6] Signing app bundle...${NC}"
 if [[ -d "${APP_BUNDLE}/Contents/Frameworks/Sparkle.framework" ]]; then
-    if [[ "${SIGN_IDENTITY}" == "-" ]]; then
+    if [[ "${SIGNING_MODE}" == "adhoc" ]]; then
         codesign --force --deep --sign - "${APP_BUNDLE}/Contents/Frameworks/Sparkle.framework"
     else
         codesign --force --deep --options runtime --sign "${SIGN_IDENTITY}" "${APP_BUNDLE}/Contents/Frameworks/Sparkle.framework"
     fi
 fi
 
-if [[ "${SIGN_IDENTITY}" == "-" ]]; then
+if [[ "${SIGNING_MODE}" == "adhoc" ]]; then
     echo -e "Using ${CYAN}ad-hoc local signing${NC}"
     codesign --force --deep --sign - "${APP_BUNDLE}"
 else
     echo -e "Using Developer ID signing identity: ${CYAN}${SIGN_IDENTITY}${NC}"
     codesign --force --deep --options runtime --sign "${SIGN_IDENTITY}" "${APP_BUNDLE}"
 fi
-codesign -v --deep "${APP_BUNDLE}"
+codesign --verify --deep --strict --verbose=2 "${APP_BUNDLE}"
 echo -e "${GREEN}Code signature verified${NC}"
+
+if [[ "${NOTARIZE}" == "1" ]]; then
+    echo -e "\n${YELLOW}[4b/6] Notarizing and stapling app bundle...${NC}"
+    APP_NOTARY_ZIP="${DIST_DIR}/${ASSET_BASENAME}-notary.zip"
+    (
+        cd "${DIST_DIR}"
+        ditto --norsrc --noextattr -c -k --keepParent "${APP_NAME}.app" "${APP_NOTARY_ZIP}"
+    )
+    notarytool_submit "${APP_NOTARY_ZIP}"
+    xcrun stapler staple "${APP_BUNDLE}"
+    spctl --assess --type execute --verbose=2 "${APP_BUNDLE}"
+    rm -f "${APP_NOTARY_ZIP}"
+    echo -e "${GREEN}App notarization, stapling, and Gatekeeper assessment passed${NC}"
+fi
 
 echo -e "\n${YELLOW}[5/6] Creating ZIP archive...${NC}"
 (
@@ -314,6 +387,14 @@ hdiutil create -volname "${APP_NAME} v${APP_VERSION}" \
 
 rm -rf "${DMG_TMP_DIR}"
 echo -e "${GREEN}DMG created: ${DMG_PATH}${NC}"
+
+if [[ "${NOTARIZE}" == "1" ]]; then
+    echo -e "\n${YELLOW}[6b/6] Notarizing and stapling DMG...${NC}"
+    notarytool_submit "${DMG_PATH}"
+    xcrun stapler staple "${DMG_PATH}"
+    spctl --assess --type open --context context:primary-signature --verbose=2 "${DMG_PATH}"
+    echo -e "${GREEN}DMG notarization, stapling, and Gatekeeper assessment passed${NC}"
+fi
 
 echo -e "\n${CYAN}======================================================${NC}"
 echo -e "${GREEN}Packaging complete${NC}"

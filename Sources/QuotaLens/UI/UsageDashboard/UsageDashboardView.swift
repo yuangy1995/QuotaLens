@@ -548,22 +548,33 @@ public struct UsageDashboardView: View {
                             Text(L10n.text("预计 API 等价价值:", "Projected Value:"))
                                 .font(.system(size: 10, design: .monospaced))
                                 .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-                            Text(UsageNumberFormatter.currencyUSD(lf.projectedTotalCost))
+                            Text(lf.isCostForecastAvailable
+                                ? UsageNumberFormatter.currencyUSD(lf.projectedTotalCost)
+                                : L10n.text("未输出", "Not shown"))
                                 .font(.system(size: 14, weight: .heavy, design: .rounded))
-                                .foregroundStyle(emerald)
+                                .foregroundStyle(lf.isCostForecastAvailable ? emerald : amber)
                         }
 
                         Spacer()
                     }
 
                     Text(L10n.format(
-                        "Pricing coverage %.1f%% · %lld unpriced tokens",
-                        zhHans: "价格覆盖率 %.1f%% · %lld 未计价 Token",
-                        lf.pricingCoverage.coverageRatio * 100.0,
-                        lf.unpricedTokenCount
+                        "Token pricing coverage %.1f%% · event coverage %.1f%% · inferred from local token events",
+                        zhHans: "Token 价格覆盖率 %.1f%% · 事件覆盖率 %.1f%% · 按本地 Token 事件推断",
+                        lf.tokenPricingCoverage * 100.0,
+                        lf.eventPricingCoverage * 100.0
                     ))
                     .font(.system(size: 9.5, design: .monospaced))
                     .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+
+                    if !lf.isCostForecastAvailable {
+                        Text(L10n.text(
+                            "金额预测需要至少 80% Token 可计价；当前仅保留 Token 趋势。",
+                            "Cost projection requires at least 80% token pricing coverage; only token trend is retained."
+                        ))
+                        .font(.system(size: 9.5, design: .rounded))
+                        .foregroundStyle(amber)
+                    }
                 }
                 .padding(14)
                 .frame(maxWidth: .infinity)
@@ -1101,7 +1112,8 @@ private struct CacheHitMetricTile: View {
             return L10n.text("暂无请求", "No requests")
         }
         let cached = UsageNumberFormatter.compactTokenCount(metrics.totalTokens.cachedInputTokens)
-        return L10n.format("%@ cached", zhHans: "%@ 已缓存", cached)
+        let cacheWrite = UsageNumberFormatter.compactTokenCount(metrics.totalTokens.cacheWriteInputTokens)
+        return L10n.format("%@ read · %@ write", zhHans: "%@ 读缓存 · %@ 写缓存", cached, cacheWrite)
     }
 
     var body: some View {

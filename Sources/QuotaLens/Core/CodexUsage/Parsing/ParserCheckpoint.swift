@@ -5,12 +5,13 @@ import Foundation
 public struct ParserCheckpoint: Codable, Sendable {
     /// Bump whenever parsing or attribution semantics change. Import checkpoints
     /// from older versions are deliberately rebuilt instead of being resumed.
-    public static let currentParserVersion = 5
+    public static let currentParserVersion = 6
 
     public let lineOffset: Int64
     public let lineCount: Int
     public let lastCumulativeInput: Int64
     public let lastCumulativeCached: Int64
+    public let lastCumulativeCacheWrite: Int64
     public let lastCumulativeOutput: Int64
     public let lastCumulativeReasoning: Int64
     public let currentModel: String?
@@ -26,6 +27,7 @@ public struct ParserCheckpoint: Codable, Sendable {
         lineCount: Int = 0,
         lastCumulativeInput: Int64 = 0,
         lastCumulativeCached: Int64 = 0,
+        lastCumulativeCacheWrite: Int64 = 0,
         lastCumulativeOutput: Int64 = 0,
         lastCumulativeReasoning: Int64 = 0,
         currentModel: String? = nil,
@@ -40,6 +42,7 @@ public struct ParserCheckpoint: Codable, Sendable {
         self.lineCount = lineCount
         self.lastCumulativeInput = lastCumulativeInput
         self.lastCumulativeCached = lastCumulativeCached
+        self.lastCumulativeCacheWrite = lastCumulativeCacheWrite
         self.lastCumulativeOutput = lastCumulativeOutput
         self.lastCumulativeReasoning = lastCumulativeReasoning
         self.currentModel = currentModel
@@ -56,6 +59,7 @@ public struct ParserCheckpoint: Codable, Sendable {
         case lineCount
         case lastCumulativeInput
         case lastCumulativeCached
+        case lastCumulativeCacheWrite
         case lastCumulativeOutput
         case lastCumulativeReasoning
         case currentModel
@@ -73,6 +77,7 @@ public struct ParserCheckpoint: Codable, Sendable {
         self.lineCount = try container.decodeIfPresent(Int.self, forKey: .lineCount) ?? 0
         self.lastCumulativeInput = try container.decodeIfPresent(Int64.self, forKey: .lastCumulativeInput) ?? 0
         self.lastCumulativeCached = try container.decodeIfPresent(Int64.self, forKey: .lastCumulativeCached) ?? 0
+        self.lastCumulativeCacheWrite = try container.decodeIfPresent(Int64.self, forKey: .lastCumulativeCacheWrite) ?? 0
         self.lastCumulativeOutput = try container.decodeIfPresent(Int64.self, forKey: .lastCumulativeOutput) ?? 0
         self.lastCumulativeReasoning = try container.decodeIfPresent(Int64.self, forKey: .lastCumulativeReasoning) ?? 0
         self.currentModel = try container.decodeIfPresent(String.self, forKey: .currentModel)
@@ -88,6 +93,7 @@ public struct ParserCheckpoint: Codable, Sendable {
         TokenBreakdown(
             inputTokens: lastCumulativeInput,
             cachedInputTokens: lastCumulativeCached,
+            cacheWriteInputTokens: lastCumulativeCacheWrite,
             outputTokens: lastCumulativeOutput,
             reasoningOutputTokens: lastCumulativeReasoning
         )

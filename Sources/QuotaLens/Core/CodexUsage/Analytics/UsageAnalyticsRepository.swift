@@ -32,6 +32,7 @@ public enum SessionDeletionError: LocalizedError, Sendable {
 public final class UsageAnalyticsRepository: Sendable {
     private let database: SQLiteDatabase
     private let trashSourceFile: @Sendable (URL) throws -> Void
+    private let stageSourceFile: @Sendable (URL, URL) throws -> Void
     private typealias DayAggregate = (
         tokens: TokenBreakdown,
         cost: MoneyNanoUSD,
@@ -61,10 +62,14 @@ public final class UsageAnalyticsRepository: Sendable {
         trashSourceFile: @escaping @Sendable (URL) throws -> Void = { sourceURL in
             var resultingURL: NSURL?
             try FileManager.default.trashItem(at: sourceURL, resultingItemURL: &resultingURL)
+        },
+        stageSourceFile: @escaping @Sendable (URL, URL) throws -> Void = { sourceURL, stagingURL in
+            try FileManager.default.moveItem(at: sourceURL, to: stagingURL)
         }
     ) {
         self.database = database
         self.trashSourceFile = trashSourceFile
+        self.stageSourceFile = stageSourceFile
     }
 
     // MARK: - 1. 会话列表查询 (支持 Keyset 分页、项目过滤与搜索)
@@ -163,7 +168,8 @@ public final class UsageAnalyticsRepository: Sendable {
         SELECT
             session_id, root_session_id, parent_session_id, depth, title, project_name, cwd,
             created_at, updated_at, last_event_at, event_count, total_tokens, input_tokens,
-            cached_input_tokens, output_tokens, reasoning_output_tokens, estimated_cost_usd_nano,
+            cached_input_tokens, cache_write_input_tokens, output_tokens,
+            reasoning_output_tokens, estimated_cost_usd_nano,
             pricing_status, bucket, has_subagents, agent_type
         FROM codex_sessions
         \(whereClause)
@@ -182,13 +188,18 @@ public final class UsageAnalyticsRepository: Sendable {
     }
 
     // MARK: - 2. 会话完整详情查询
-    public func fetchSessionDetail(sessionId: String) throws -> CodexSessionDetailDTO? {
+    public func fetchSessionDetail(
+        sessionId: String,
+        eventLimit: Int = 500,
+        eventCursor: String? = nil
+    ) throws -> CodexSessionDetailDTO? {
         // 主会话
         let mainSessionSql = """
         SELECT
             session_id, root_session_id, parent_session_id, depth, title, project_name, cwd,
             created_at, updated_at, last_event_at, event_count, total_tokens, input_tokens,
-            cached_input_tokens, output_tokens, reasoning_output_tokens, estimated_cost_usd_nano,
+            cached_input_tokens, cache_write_input_tokens, output_tokens,
+            reasoning_output_tokens, estimated_cost_usd_nano,
             pricing_status, bucket, has_subagents, agent_type
         FROM codex_sessions
         WHERE session_id = ?;
@@ -215,7 +226,8 @@ public final class UsageAnalyticsRepository: Sendable {
         SELECT
             session_id, root_session_id, parent_session_id, depth, title, project_name, cwd,
             created_at, updated_at, last_event_at, event_count, total_tokens, input_tokens,
-            cached_input_tokens, output_tokens, reasoning_output_tokens, estimated_cost_usd_nano,
+            cached_input_tokens, cache_write_input_tokens, output_tokens,
+            reasoning_output_tokens, estimated_cost_usd_nano,
             pricing_status, bucket, has_subagents, agent_type
         FROM codex_sessions
         WHERE parent_session_id = ?
@@ -229,6 +241,7 @@ public final class UsageAnalyticsRepository: Sendable {
             model_canonical,
             SUM(uncached_input_tokens),
             SUM(cached_input_tokens),
+            SUM(cache_write_input_tokens),
             SUM(output_tokens),
             SUM(reasoning_output_tokens),
             SUM(total_tokens),
@@ -244,16 +257,18 @@ public final class UsageAnalyticsRepository: Sendable {
             let model = String(cString: sqlite3_column_text(stmt, 0))
             let uncachedTokens = sqlite3_column_int64(stmt, 1)
             let cachedTokens = sqlite3_column_int64(stmt, 2)
+            let cacheWriteTokens = sqlite3_column_int64(stmt, 3)
             let tokens = TokenBreakdown(
-                inputTokens: uncachedTokens + cachedTokens,
+                inputTokens: uncachedTokens + cachedTokens + cacheWriteTokens,
                 cachedInputTokens: cachedTokens,
-                outputTokens: sqlite3_column_int64(stmt, 3),
-                reasoningOutputTokens: sqlite3_column_int64(stmt, 4),
-                sourceTotalTokens: sqlite3_column_int64(stmt, 5)
+                cacheWriteInputTokens: cacheWriteTokens,
+                outputTokens: sqlite3_column_int64(stmt, 4),
+                reasoningOutputTokens: sqlite3_column_int64(stmt, 5),
+                sourceTotalTokens: sqlite3_column_int64(stmt, 6)
             )
-            let cost = MoneyNanoUSD(sqlite3_column_int64(stmt, 6))
-            let eventCount = Int(sqlite3_column_int(stmt, 7))
-            let unpriced = Int(sqlite3_column_int(stmt, 8))
+            let cost = MoneyNanoUSD(sqlite3_column_int64(stmt, 7))
+            let eventCount = Int(sqlite3_column_int(stmt, 8))
+            let unpriced = Int(sqlite3_column_int(stmt, 9))
             return ModelUsageSummaryDTO(
                 modelCanonical: model,
                 tokens: tokens,
@@ -270,19 +285,11 @@ public final class UsageAnalyticsRepository: Sendable {
             totalSubagentCost = totalSubagentCost + sub.estimatedCost
         }
 
-        let recentEventsSql = """
-        SELECT
-            event_id, session_id, root_session_id, turn_index, call_index, timestamp_ms,
-            model_raw, model_canonical, service_tier, reasoning_effort, input_tokens, cached_input_tokens,
-            output_tokens, reasoning_output_tokens, total_tokens, estimated_cost_usd_nano,
-            pricing_rule_id, pricing_status, usage_derivation, attribution_quality,
-            is_child_replay, source_path, line_offset, timestamp_quality, pricing_catalog_version
-        FROM codex_usage_events
-        WHERE session_id = ? AND is_child_replay = 0
-        ORDER BY timestamp_ms DESC, line_offset DESC
-        LIMIT 100;
-        """
-        let recentEvents = try database.executeQuery(sql: recentEventsSql, bindings: [sessionId], rowMapper: Self.mapEventRow)
+        let eventPage = try fetchSessionEventPage(
+            sessionId: sessionId,
+            limit: eventLimit,
+            cursor: eventCursor
+        )
 
         let preferredSourcePath = {
             guard let sourceInfo else { return "" }
@@ -293,11 +300,28 @@ public final class UsageAnalyticsRepository: Sendable {
             session: mainSession,
             subagents: subagents,
             modelSummaries: modelSummaries,
-            recentEvents: recentEvents,
+            recentEvents: eventPage.events,
+            totalEventCount: eventPage.totalEventCount,
+            loadedEventCount: eventPage.loadedEventCount,
+            hasMoreEvents: eventPage.hasMore,
+            nextEventCursor: eventPage.nextCursor,
             sourcePath: Self.absoluteSourcePath(preferredSourcePath),
             relativePath: sourceInfo?.1 ?? "",
             totalSubagentTokens: totalSubagentTokens,
             totalSubagentCost: totalSubagentCost
+        )
+    }
+
+    public func fetchSessionEventPage(
+        sessionId: String,
+        limit: Int = 500,
+        cursor: String? = nil
+    ) throws -> CodexUsageEventPageDTO {
+        try fetchEventPage(
+            whereClause: "session_id = ? AND is_child_replay = 0",
+            bindings: [sessionId],
+            limit: limit,
+            cursor: cursor
         )
     }
 
@@ -309,6 +333,10 @@ public final class UsageAnalyticsRepository: Sendable {
             let sessionId: String
             let sourcePath: String
             let relativePath: String
+        }
+        struct StagedSource {
+            let originalURL: URL
+            let stagingURL: URL
         }
 
         let records = try database.executeQuery(
@@ -349,54 +377,94 @@ public final class UsageAnalyticsRepository: Sendable {
         }
 
         let fileManager = FileManager.default
-        for sourceURL in sourceURLsByPath.values.sorted(by: { $0.path < $1.path }) {
+        let sortedSources = sourceURLsByPath.values.sorted(by: { $0.path < $1.path })
+        for sourceURL in sortedSources {
             guard fileManager.fileExists(atPath: sourceURL.path) else { continue }
             let values = try sourceURL.resourceValues(forKeys: [.isRegularFileKey])
             guard values.isRegularFile == true else {
                 throw SessionDeletionError.sourceIsNotRegularFile(sourceURL.path)
             }
-            try trashSourceFile(sourceURL)
         }
 
         let sessionIDs = Set(records.map(\.sessionId))
         let sourceKeys = Set(records.map { "\($0.sourcePath)\u{1F}\($0.relativePath)" })
+        let stagingRoot = try Self.makeDeletionStagingDirectory()
+        var stagedSources: [StagedSource] = []
+        var originalFailure: Error?
 
-        try database.transaction {
-            for sessionID in sessionIDs {
-                try database.executeUpdate(
-                    sql: "DELETE FROM codex_usage_events WHERE session_id = ? OR root_session_id = ?;",
-                    bindings: [sessionID, sessionID]
+        func restoreStagedSources() {
+            for staged in stagedSources.reversed() {
+                guard fileManager.fileExists(atPath: staged.stagingURL.path) else { continue }
+                try? fileManager.createDirectory(
+                    at: staged.originalURL.deletingLastPathComponent(),
+                    withIntermediateDirectories: true
                 )
-                try database.executeUpdate(
-                    sql: "DELETE FROM codex_session_summaries WHERE session_id = ?;",
-                    bindings: [sessionID]
-                )
-                try database.executeUpdate(
-                    sql: "DELETE FROM codex_daily_usage_summaries WHERE session_id = ?;",
-                    bindings: [sessionID]
-                )
+                try? fileManager.moveItem(at: staged.stagingURL, to: staged.originalURL)
             }
+            try? fileManager.removeItem(at: stagingRoot)
+        }
 
-            for sourceKey in sourceKeys {
-                let parts = sourceKey.split(separator: "\u{1F}", maxSplits: 1, omittingEmptySubsequences: false)
-                let sourcePath = String(parts[0])
-                let relativePath = parts.count > 1 ? String(parts[1]) : ""
-                try database.executeUpdate(
-                    sql: "DELETE FROM codex_usage_events WHERE source_path = ? OR source_path = ?;",
-                    bindings: [sourcePath, relativePath]
-                )
-                try database.executeUpdate(
-                    sql: "DELETE FROM codex_import_sources WHERE source_path = ? OR relative_path = ?;",
-                    bindings: [sourcePath, relativePath]
-                )
+        do {
+            for (index, sourceURL) in sortedSources.enumerated() {
+                guard fileManager.fileExists(atPath: sourceURL.path) else { continue }
+                let stagingDirectory = stagingRoot.appendingPathComponent(String(index), isDirectory: true)
+                try fileManager.createDirectory(at: stagingDirectory, withIntermediateDirectories: true)
+                let stagingURL = stagingDirectory.appendingPathComponent(sourceURL.lastPathComponent)
+                try stageSourceFile(sourceURL, stagingURL)
+                stagedSources.append(StagedSource(originalURL: sourceURL, stagingURL: stagingURL))
             }
+        } catch {
+            originalFailure = error
+            restoreStagedSources()
+            throw originalFailure ?? error
+        }
 
-            for sessionID in sessionIDs {
-                try database.executeUpdate(
-                    sql: "DELETE FROM codex_sessions WHERE session_id = ?;",
-                    bindings: [sessionID]
-                )
+        do {
+            try database.transaction {
+                for sessionID in sessionIDs {
+                    try database.executeUpdate(
+                        sql: "DELETE FROM codex_usage_events WHERE session_id = ? OR root_session_id = ?;",
+                        bindings: [sessionID, sessionID]
+                    )
+                    try database.executeUpdate(
+                        sql: "DELETE FROM codex_session_summaries WHERE session_id = ?;",
+                        bindings: [sessionID]
+                    )
+                    try database.executeUpdate(
+                        sql: "DELETE FROM codex_daily_usage_summaries WHERE session_id = ?;",
+                        bindings: [sessionID]
+                    )
+                }
+
+                for sourceKey in sourceKeys {
+                    let parts = sourceKey.split(separator: "\u{1F}", maxSplits: 1, omittingEmptySubsequences: false)
+                    let sourcePath = String(parts[0])
+                    let relativePath = parts.count > 1 ? String(parts[1]) : ""
+                    try database.executeUpdate(
+                        sql: "DELETE FROM codex_usage_events WHERE source_path = ? OR source_path = ?;",
+                        bindings: [sourcePath, relativePath]
+                    )
+                    try database.executeUpdate(
+                        sql: "DELETE FROM codex_import_sources WHERE source_path = ? OR relative_path = ?;",
+                        bindings: [sourcePath, relativePath]
+                    )
+                }
+
+                for sessionID in sessionIDs {
+                    try database.executeUpdate(
+                        sql: "DELETE FROM codex_sessions WHERE session_id = ?;",
+                        bindings: [sessionID]
+                    )
+                }
+
+                for staged in stagedSources {
+                    try trashSourceFile(staged.stagingURL)
+                }
             }
+            try? fileManager.removeItem(at: stagingRoot)
+        } catch {
+            restoreStagedSources()
+            throw error
         }
     }
 
@@ -493,7 +561,8 @@ public final class UsageAnalyticsRepository: Sendable {
     public func fetchDayDetail(
         dayKey: LocalDayKey,
         calendar: Calendar = .current,
-        eventLimit: Int = 500
+        eventLimit: Int = 500,
+        eventCursor: String? = nil
     ) throws -> DayDetailDTO {
         let startDate = dayKey.date(calendar: calendar)
         guard let endDate = calendar.date(byAdding: .day, value: 1, to: startDate) else {
@@ -575,23 +644,13 @@ public final class UsageAnalyticsRepository: Sendable {
             )
         }.sorted { $0.tokens.canonicalTotalTokens > $1.tokens.canonicalTotalTokens }
 
-        let recentEvents = try database.executeQuery(
-            sql: """
-            SELECT
-                event_id, session_id, root_session_id, turn_index, call_index, timestamp_ms,
-                model_raw, model_canonical, service_tier, reasoning_effort, input_tokens, cached_input_tokens,
-                output_tokens, reasoning_output_tokens, total_tokens, estimated_cost_usd_nano,
-                pricing_rule_id, pricing_status, usage_derivation, attribution_quality,
-                is_child_replay, source_path, line_offset, timestamp_quality, pricing_catalog_version
-            FROM codex_usage_events
-            WHERE is_child_replay = 0 AND timestamp_ms >= ? AND timestamp_ms < ?
-            ORDER BY timestamp_ms DESC, line_offset DESC
-            LIMIT ?;
-            """,
-            bindings: [startMs, endMs, min(max(1, eventLimit), 5_000)],
-            rowMapper: Self.mapEventRow
+        let eventPage = try fetchEventPage(
+            whereClause: "is_child_replay = 0 AND timestamp_ms >= ? AND timestamp_ms < ?",
+            bindings: [startMs, endMs],
+            limit: eventLimit,
+            cursor: eventCursor
         )
-        let eventsBySession = Dictionary(grouping: recentEvents, by: \CodexUsageEventDTO.sessionId)
+        let eventsBySession = Dictionary(grouping: eventPage.events, by: \CodexUsageEventDTO.sessionId)
 
         var slices: [DaySessionSliceDTO] = []
         var totalTokens = TokenBreakdown.zero
@@ -600,6 +659,8 @@ public final class UsageAnalyticsRepository: Sendable {
         var totalUnpriced = 0
         var totalUnpricedTokens: Int64 = 0
 
+        let sessionsById = try fetchSessionsById(ids: sessionRows.map(\.sessionId))
+
         for row in sessionRows {
             totalTokens = totalTokens + row.tokens
             totalCost = totalCost + row.cost
@@ -607,19 +668,7 @@ public final class UsageAnalyticsRepository: Sendable {
             totalUnpriced += row.unpricedCount
             totalUnpricedTokens += row.unpricedTokenCount
 
-            let sessionSQL = """
-            SELECT
-                session_id, root_session_id, parent_session_id, depth, title, project_name, cwd,
-                created_at, updated_at, last_event_at, event_count, total_tokens, input_tokens,
-                cached_input_tokens, output_tokens, reasoning_output_tokens, estimated_cost_usd_nano,
-                pricing_status, bucket, has_subagents, agent_type
-            FROM codex_sessions WHERE session_id = ?;
-            """
-            guard let session = try database.executeQuery(
-                sql: sessionSQL,
-                bindings: [row.sessionId],
-                rowMapper: Self.mapSessionRow
-            ).first else { continue }
+            guard let session = sessionsById[row.sessionId] else { continue }
             slices.append(
                 DaySessionSliceDTO(
                     session: session,
@@ -643,7 +692,11 @@ public final class UsageAnalyticsRepository: Sendable {
                 unpricedEventCount: totalUnpriced,
                 unpricedTokenCount: totalUnpricedTokens
             ),
-            sessions: slices
+            sessions: slices,
+            totalEventCount: eventPage.totalEventCount,
+            loadedEventCount: eventPage.loadedEventCount,
+            hasMoreEvents: eventPage.hasMore,
+            nextEventCursor: eventPage.nextCursor
         )
     }
 
@@ -679,6 +732,7 @@ public final class UsageAnalyticsRepository: Sendable {
         var totalEvents = 0
         var modelsAgg: [String: (tokens: TokenBreakdown, cost: MoneyNanoUSD, count: Int, unpriced: Int)] = [:]
         var unpricedTotal = 0
+        var unpricedTokenTotal: Int64 = 0
         var sessions = Set<String>()
         var daysMap: [LocalDayKey: DayAggregate] = [:]
 
@@ -688,6 +742,7 @@ public final class UsageAnalyticsRepository: Sendable {
             totalEvents += slice.eventCount
             sessions.insert(slice.sessionId)
             unpricedTotal += slice.unpricedCount
+            unpricedTokenTotal += slice.unpricedTokens
 
             var modelEntry = modelsAgg[slice.model] ?? (tokens: .zero, cost: .zero, count: 0, unpriced: 0)
             modelEntry.tokens = modelEntry.tokens + slice.tokens
@@ -742,6 +797,13 @@ public final class UsageAnalyticsRepository: Sendable {
         let pricingCoverage: PricingCoverage = unpricedTotal == 0
             ? .fullyPriced
             : (unpricedTotal == totalEvents ? .unpriced(totalEvents: totalEvents) : .partiallyPriced(coveredEvents: totalEvents - unpricedTotal, totalEvents: totalEvents))
+        let eventPricingCoverage = totalEvents > 0
+            ? max(0, min(1, Double(totalEvents - unpricedTotal) / Double(totalEvents)))
+            : 1.0
+        let totalTokenCount = totalTokens.canonicalTotalTokens
+        let tokenPricingCoverage = totalTokenCount > 0
+            ? max(0, min(1, Double(max(0, totalTokenCount - unpricedTokenTotal)) / Double(totalTokenCount)))
+            : 1.0
 
         return DashboardMetricsDTO(
             totalTokens: totalTokens,
@@ -754,7 +816,10 @@ public final class UsageAnalyticsRepository: Sendable {
             modelDistribution: modelDistribution,
             todayTokens: todayBucket?.tokens ?? .zero,
             todayCost: todayBucket?.estimatedCost ?? .zero,
-            pricingCoverage: pricingCoverage
+            pricingCoverage: pricingCoverage,
+            eventPricingCoverage: eventPricingCoverage,
+            tokenPricingCoverage: tokenPricingCoverage,
+            costForecastCoverage: tokenPricingCoverage
         )
     }
 
@@ -881,6 +946,7 @@ public final class UsageAnalyticsRepository: Sendable {
         let sourcesTombstoned = try database.intScalar(sql: "SELECT COUNT(*) FROM codex_import_sources WHERE status = 'tombstoned';")
         let totalEvents = try database.intScalar(sql: "SELECT COUNT(*) FROM codex_usage_events WHERE is_child_replay = 0;")
         let unknownModelEvents = try database.intScalar(sql: "SELECT COUNT(*) FROM codex_usage_events WHERE model_canonical = 'unknown' AND is_child_replay = 0;")
+        let genericGPT56Events = try database.intScalar(sql: "SELECT COUNT(*) FROM codex_usage_events WHERE model_canonical = 'gpt-5.6' AND is_child_replay = 0;")
         let unpricedEvents = try database.intScalar(sql: "SELECT COUNT(*) FROM codex_usage_events WHERE pricing_status != 'priced' AND is_child_replay = 0;")
         let fallbackTimestampEvents = try database.intScalar(
             sql: "SELECT COUNT(*) FROM codex_usage_events WHERE timestamp_quality != 'event_timestamp' AND is_child_replay = 0;"
@@ -915,7 +981,8 @@ public final class UsageAnalyticsRepository: Sendable {
         SELECT COUNT(*) FROM codex_usage_events
         WHERE estimated_cost_usd_nano < 0
            OR input_tokens < 0 OR cached_input_tokens < 0 OR output_tokens < 0 OR reasoning_output_tokens < 0
-           OR cached_input_tokens > input_tokens
+           OR cache_write_input_tokens < 0
+           OR cached_input_tokens + cache_write_input_tokens > input_tokens
            OR reasoning_output_tokens > output_tokens;
         """)
         let parentCycleViolations = try database.intScalar(sql: """
@@ -952,12 +1019,16 @@ public final class UsageAnalyticsRepository: Sendable {
             }
             return Date(timeIntervalSince1970: Double(value))
         }
+        let repriceGeneration = try database.int64Scalar(
+            sql: "SELECT value FROM app_metadata WHERE key = 'pricing_reprice_generation';"
+        ) ?? 0
 
         return UsageDiagnosticsDTO(
             sourcesDiscovered: sourcesDiscovered,
             sourcesIndexed: sourcesIndexed,
             sourcesTombstoned: sourcesTombstoned,
             unknownModelEvents: unknownModelEvents,
+            genericGPT56Events: genericGPT56Events,
             unpricedEvents: unpricedEvents,
             fallbackTimestampEvents: fallbackTimestampEvents,
             totalEvents: totalEvents,
@@ -970,13 +1041,110 @@ public final class UsageAnalyticsRepository: Sendable {
             rebuiltSourceCount: rebuiltSourceCount,
             integrityCheckPassed: integrityCheckPassed,
             foreignKeyViolationCount: foreignKeyViolationCount,
-            invariantViolationCount: invariantViolationCount
+            invariantViolationCount: invariantViolationCount,
+            pricingRepriceGeneration: repriceGeneration
         )
+    }
+
+    private func fetchEventPage(
+        whereClause: String,
+        bindings baseBindings: [Any?],
+        limit: Int,
+        cursor: String?
+    ) throws -> CodexUsageEventPageDTO {
+        let requestedLimit = min(max(1, limit), 1_000)
+        var conditions = [whereClause]
+        var bindings = baseBindings
+        if let cursorParts = Self.decodeEventCursor(cursor) {
+            conditions.append("""
+            (
+                timestamp_ms < ?
+                OR (timestamp_ms = ? AND line_offset < ?)
+                OR (timestamp_ms = ? AND line_offset = ? AND event_id < ?)
+            )
+            """)
+            bindings.append(contentsOf: [
+                cursorParts.timestampMs,
+                cursorParts.timestampMs,
+                cursorParts.lineOffset,
+                cursorParts.timestampMs,
+                cursorParts.lineOffset,
+                cursorParts.eventId
+            ])
+        }
+
+        let combinedWhere = conditions.joined(separator: " AND ")
+        let total = try database.intScalar(
+            sql: "SELECT COUNT(*) FROM codex_usage_events WHERE \(whereClause);",
+            bindings: baseBindings
+        )
+        let rows = try database.executeQuery(
+            sql: """
+            SELECT
+                event_id, session_id, root_session_id, turn_index, call_index, timestamp_ms,
+                model_raw, model_canonical, service_tier, reasoning_effort,
+                input_tokens, cached_input_tokens, cache_write_input_tokens,
+                output_tokens, reasoning_output_tokens, total_tokens, estimated_cost_usd_nano,
+                pricing_rule_id, pricing_status, usage_derivation, attribution_quality,
+                is_child_replay, source_path, line_offset, timestamp_quality, pricing_catalog_version
+            FROM codex_usage_events
+            WHERE \(combinedWhere)
+            ORDER BY timestamp_ms DESC, line_offset DESC, event_id DESC
+            LIMIT ?;
+            """,
+            bindings: bindings + [requestedLimit + 1],
+            rowMapper: Self.mapEventRow
+        )
+        let hasMore = rows.count > requestedLimit
+        let pageRows = Array(rows.prefix(requestedLimit))
+        return CodexUsageEventPageDTO(
+            events: pageRows,
+            totalEventCount: total,
+            loadedEventCount: pageRows.count,
+            hasMore: hasMore,
+            nextCursor: hasMore ? pageRows.last.map(Self.encodeEventCursor) : nil
+        )
+    }
+
+    private func fetchSessionsById(ids: [String]) throws -> [String: CodexSessionDTO] {
+        let uniqueIds = Array(Set(ids)).sorted()
+        guard !uniqueIds.isEmpty else { return [:] }
+        var result: [String: CodexSessionDTO] = [:]
+        let batchSize = 500
+        for start in stride(from: 0, to: uniqueIds.count, by: batchSize) {
+            let end = min(start + batchSize, uniqueIds.count)
+            let batch = Array(uniqueIds[start..<end])
+            let placeholders = Array(repeating: "?", count: batch.count).joined(separator: ",")
+            let sessions = try database.executeQuery(
+                sql: """
+                SELECT
+                    session_id, root_session_id, parent_session_id, depth, title, project_name, cwd,
+                    created_at, updated_at, last_event_at, event_count, total_tokens, input_tokens,
+                    cached_input_tokens, cache_write_input_tokens, output_tokens,
+                    reasoning_output_tokens, estimated_cost_usd_nano,
+                    pricing_status, bucket, has_subagents, agent_type
+                FROM codex_sessions
+                WHERE session_id IN (\(placeholders));
+                """,
+                bindings: batch,
+                rowMapper: Self.mapSessionRow
+            )
+            for session in sessions {
+                result[session.sessionId] = session
+            }
+        }
+        return result
     }
 
     private struct CursorParts {
         let primary: Int64
         let sessionId: String
+    }
+
+    private struct EventCursorParts {
+        let timestampMs: Int64
+        let lineOffset: Int64
+        let eventId: String
     }
 
     private static func decodeCursor(_ cursor: String?) -> CursorParts? {
@@ -999,6 +1167,22 @@ public final class UsageAnalyticsRepository: Sendable {
             primary = Int64(session.createdAt.timeIntervalSince1970 * 1_000)
         }
         return "\(primary)|\(session.sessionId)"
+    }
+
+    private static func decodeEventCursor(_ cursor: String?) -> EventCursorParts? {
+        guard let cursor, !cursor.isEmpty else { return nil }
+        let parts = cursor.split(separator: "|", maxSplits: 2).map(String.init)
+        guard parts.count == 3,
+              let timestamp = Int64(parts[0]),
+              let lineOffset = Int64(parts[1]) else {
+            return nil
+        }
+        return EventCursorParts(timestampMs: timestamp, lineOffset: lineOffset, eventId: parts[2])
+    }
+
+    private static func encodeEventCursor(event: CodexUsageEventDTO) -> String {
+        let timestampMs = Int64(event.timestamp.timeIntervalSince1970 * 1_000)
+        return "\(timestampMs)|\(event.lineOffset)|\(event.eventId)"
     }
 
     private static func escapeLike(_ value: String) -> String {
@@ -1071,7 +1255,7 @@ public final class UsageAnalyticsRepository: Sendable {
             sql: """
             SELECT
                 session_id, day_start_ms, model_canonical, event_count, total_tokens,
-                uncached_input_tokens, cached_input_tokens, output_tokens,
+                uncached_input_tokens, cached_input_tokens, cache_write_input_tokens, output_tokens,
                 reasoning_output_tokens, estimated_cost_usd_nano, unpriced_event_count
             FROM codex_daily_usage_summaries
             WHERE day_start_ms >= ? AND day_start_ms < ?
@@ -1082,20 +1266,22 @@ public final class UsageAnalyticsRepository: Sendable {
             let total = sqlite3_column_int64(statement, 4)
             let uncached = sqlite3_column_int64(statement, 5)
             let cached = sqlite3_column_int64(statement, 6)
-            let unpriced = Int(sqlite3_column_int(statement, 10))
+            let cacheWrite = sqlite3_column_int64(statement, 7)
+            let unpriced = Int(sqlite3_column_int(statement, 11))
             let dayStart = Date(
                 timeIntervalSince1970: Double(sqlite3_column_int64(statement, 1)) / 1_000.0
             )
             return UsageAggregateSlice(
                 dayKey: LocalDayKey(date: dayStart, calendar: calendar),
                 tokens: TokenBreakdown(
-                    inputTokens: uncached + cached,
+                    inputTokens: uncached + cached + cacheWrite,
                     cachedInputTokens: cached,
-                    outputTokens: sqlite3_column_int64(statement, 7),
-                    reasoningOutputTokens: sqlite3_column_int64(statement, 8),
+                    cacheWriteInputTokens: cacheWrite,
+                    outputTokens: sqlite3_column_int64(statement, 8),
+                    reasoningOutputTokens: sqlite3_column_int64(statement, 9),
                     sourceTotalTokens: total
                 ),
-                cost: MoneyNanoUSD(sqlite3_column_int64(statement, 9)),
+                cost: MoneyNanoUSD(sqlite3_column_int64(statement, 10)),
                 model: String(cString: sqlite3_column_text(statement, 2)),
                 sessionId: String(cString: sqlite3_column_text(statement, 0)),
                 eventCount: Int(sqlite3_column_int(statement, 3)),
@@ -1138,15 +1324,15 @@ public final class UsageAnalyticsRepository: Sendable {
             sql: """
             SELECT
                 timestamp_ms, model_canonical, session_id, pricing_status,
-                input_tokens, cached_input_tokens, output_tokens, reasoning_output_tokens,
-                total_tokens, estimated_cost_usd_nano
+                input_tokens, cached_input_tokens, cache_write_input_tokens,
+                output_tokens, reasoning_output_tokens, total_tokens, estimated_cost_usd_nano
             FROM codex_usage_events
             WHERE is_child_replay = 0 AND timestamp_ms >= ? AND timestamp_ms < ?;
             """,
             bindings: [startMs, endMs]
         ) { statement -> UsageAggregateSlice in
             let timestampMs = sqlite3_column_int64(statement, 0)
-            let total = sqlite3_column_int64(statement, 8)
+            let total = sqlite3_column_int64(statement, 9)
             let pricingStatus = PricingStatus(
                 rawValue: String(cString: sqlite3_column_text(statement, 3))
             ) ?? .unpricedUnknownModel
@@ -1158,11 +1344,12 @@ public final class UsageAnalyticsRepository: Sendable {
                 tokens: TokenBreakdown(
                     inputTokens: sqlite3_column_int64(statement, 4),
                     cachedInputTokens: sqlite3_column_int64(statement, 5),
-                    outputTokens: sqlite3_column_int64(statement, 6),
-                    reasoningOutputTokens: sqlite3_column_int64(statement, 7),
+                    cacheWriteInputTokens: sqlite3_column_int64(statement, 6),
+                    outputTokens: sqlite3_column_int64(statement, 7),
+                    reasoningOutputTokens: sqlite3_column_int64(statement, 8),
                     sourceTotalTokens: total
                 ),
-                cost: MoneyNanoUSD(sqlite3_column_int64(statement, 9)),
+                cost: MoneyNanoUSD(sqlite3_column_int64(statement, 10)),
                 model: String(cString: sqlite3_column_text(statement, 1)),
                 sessionId: String(cString: sqlite3_column_text(statement, 2)),
                 eventCount: 1,
@@ -1240,14 +1427,15 @@ public final class UsageAnalyticsRepository: Sendable {
         let totalTokens = sqlite3_column_int64(stmt, 11)
         let inputTokens = sqlite3_column_int64(stmt, 12)
         let cachedTokens = sqlite3_column_int64(stmt, 13)
-        let outputTokens = sqlite3_column_int64(stmt, 14)
-        let reasoningTokens = sqlite3_column_int64(stmt, 15)
-        let costNano = sqlite3_column_int64(stmt, 16)
-        let pricingStr = String(cString: sqlite3_column_text(stmt, 17))
-        let bucketStr = String(cString: sqlite3_column_text(stmt, 18))
-        let hasSubagents = sqlite3_column_int(stmt, 19) != 0
-        let agentType = sqlite3_column_type(stmt, 20) != SQLITE_NULL && sqlite3_column_text(stmt, 20) != nil
-            ? String(cString: sqlite3_column_text(stmt, 20)!) : nil
+        let cacheWriteTokens = sqlite3_column_int64(stmt, 14)
+        let outputTokens = sqlite3_column_int64(stmt, 15)
+        let reasoningTokens = sqlite3_column_int64(stmt, 16)
+        let costNano = sqlite3_column_int64(stmt, 17)
+        let pricingStr = String(cString: sqlite3_column_text(stmt, 18))
+        let bucketStr = String(cString: sqlite3_column_text(stmt, 19))
+        let hasSubagents = sqlite3_column_int(stmt, 20) != 0
+        let agentType = sqlite3_column_type(stmt, 21) != SQLITE_NULL && sqlite3_column_text(stmt, 21) != nil
+            ? String(cString: sqlite3_column_text(stmt, 21)!) : nil
 
         return CodexSessionDTO(
             sessionId: sid,
@@ -1265,6 +1453,7 @@ public final class UsageAnalyticsRepository: Sendable {
             tokens: TokenBreakdown(
                 inputTokens: inputTokens,
                 cachedInputTokens: cachedTokens,
+                cacheWriteInputTokens: cacheWriteTokens,
                 outputTokens: outputTokens,
                 reasoningOutputTokens: reasoningTokens,
                 sourceTotalTokens: totalTokens
@@ -1283,6 +1472,21 @@ public final class UsageAnalyticsRepository: Sendable {
         return CodexHistoryRootResolver.resolvePaths().rootURL
             .appendingPathComponent(path)
             .path
+    }
+
+    private static func makeDeletionStagingDirectory() throws -> URL {
+        let base = try FileManager.default.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )
+        let staging = base
+            .appendingPathComponent("QuotaLens", isDirectory: true)
+            .appendingPathComponent("DeletionStaging", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+        return staging
     }
 
     private static func safeSessionSourceURL(
@@ -1341,23 +1545,24 @@ public final class UsageAnalyticsRepository: Sendable {
             ? String(cString: sqlite3_column_text(stmt, 9)!) : nil
         let inTok = sqlite3_column_int64(stmt, 10)
         let cachedTok = sqlite3_column_int64(stmt, 11)
-        let outTok = sqlite3_column_int64(stmt, 12)
-        let reasonTok = sqlite3_column_int64(stmt, 13)
-        let totTok = sqlite3_column_int64(stmt, 14)
-        let costNano = sqlite3_column_int64(stmt, 15)
-        let ruleId = sqlite3_column_type(stmt, 16) != SQLITE_NULL && sqlite3_column_text(stmt, 16) != nil
-            ? String(cString: sqlite3_column_text(stmt, 16)!) : nil
-        let pStatus = String(cString: sqlite3_column_text(stmt, 17))
-        let deriv = String(cString: sqlite3_column_text(stmt, 18))
-        let attrib = String(cString: sqlite3_column_text(stmt, 19))
-        let isReplay = sqlite3_column_int(stmt, 20) != 0
-        let src = String(cString: sqlite3_column_text(stmt, 21))
-        let offset = sqlite3_column_int64(stmt, 22)
-        let timestampQualityRaw = sqlite3_column_type(stmt, 23) != SQLITE_NULL && sqlite3_column_text(stmt, 23) != nil
-            ? String(cString: sqlite3_column_text(stmt, 23)!)
-            : TimestampQuality.eventTimestamp.rawValue
-        let catalogVersion = sqlite3_column_type(stmt, 24) != SQLITE_NULL && sqlite3_column_text(stmt, 24) != nil
+        let cacheWriteTok = sqlite3_column_int64(stmt, 12)
+        let outTok = sqlite3_column_int64(stmt, 13)
+        let reasonTok = sqlite3_column_int64(stmt, 14)
+        let totTok = sqlite3_column_int64(stmt, 15)
+        let costNano = sqlite3_column_int64(stmt, 16)
+        let ruleId = sqlite3_column_type(stmt, 17) != SQLITE_NULL && sqlite3_column_text(stmt, 17) != nil
+            ? String(cString: sqlite3_column_text(stmt, 17)!) : nil
+        let pStatus = String(cString: sqlite3_column_text(stmt, 18))
+        let deriv = String(cString: sqlite3_column_text(stmt, 19))
+        let attrib = String(cString: sqlite3_column_text(stmt, 20))
+        let isReplay = sqlite3_column_int(stmt, 21) != 0
+        let src = String(cString: sqlite3_column_text(stmt, 22))
+        let offset = sqlite3_column_int64(stmt, 23)
+        let timestampQualityRaw = sqlite3_column_type(stmt, 24) != SQLITE_NULL && sqlite3_column_text(stmt, 24) != nil
             ? String(cString: sqlite3_column_text(stmt, 24)!)
+            : TimestampQuality.eventTimestamp.rawValue
+        let catalogVersion = sqlite3_column_type(stmt, 25) != SQLITE_NULL && sqlite3_column_text(stmt, 25) != nil
+            ? String(cString: sqlite3_column_text(stmt, 25)!)
             : nil
 
         return CodexUsageEventDTO(
@@ -1374,6 +1579,7 @@ public final class UsageAnalyticsRepository: Sendable {
             tokens: TokenBreakdown(
                 inputTokens: inTok,
                 cachedInputTokens: cachedTok,
+                cacheWriteInputTokens: cacheWriteTok,
                 outputTokens: outTok,
                 reasoningOutputTokens: reasonTok,
                 sourceTotalTokens: totTok

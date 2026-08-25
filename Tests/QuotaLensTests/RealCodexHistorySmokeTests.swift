@@ -9,7 +9,7 @@ final class RealCodexHistorySmokeTests: XCTestCase {
         }
 
         let paths = CodexHistoryPaths(rootURL: URL(fileURLWithPath: fixtureRoot, isDirectory: true))
-        let discovered = CodexRolloutScanner.scan(paths: paths, scanArchived: true)
+        let discovered = CodexRolloutScanner.scan(paths: paths, scanArchived: true).sources
         guard !discovered.isEmpty else {
             throw XCTSkip("The explicit fixture root contains no rollout JSONL files.")
         }

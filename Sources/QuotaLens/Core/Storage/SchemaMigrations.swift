@@ -24,7 +24,7 @@ private func addColumnIfMissing(
 }
 
 public struct SchemaMigrations {
-    public static let targetSchemaVersion = 8
+    public static let targetSchemaVersion = 9
 
     public static func migrate(database: SQLiteDatabase) throws {
         let currentVersion = try database.intScalar(sql: "PRAGMA user_version;")
@@ -51,7 +51,8 @@ public struct SchemaMigrations {
             V5AggregateOnlyUsageMigration(),
             V6UsageTruthAndRecoveryMigration(),
             V7CatalogIdentityAndParserV4Migration(),
-            V8ReasoningEffortMigration()
+            V8ReasoningEffortMigration(),
+            V9CacheWriteAndParserV6Migration()
         ]
 
         for migration in migrations where migration.version > currentVersion {
@@ -62,6 +63,58 @@ public struct SchemaMigrations {
         }
 
         try V5AggregateOnlyUsageMigration.compactIfNeeded(database: database)
+    }
+}
+
+// MARK: - V9: cache-write token bucket and parser v6 rebuild
+private struct V9CacheWriteAndParserV6Migration: DatabaseMigration {
+    let version = 9
+    let name = "V9CacheWriteAndParserV6"
+
+    func apply(database: SQLiteDatabase) throws {
+        try addColumnIfMissing(
+            database: database,
+            table: "codex_usage_events",
+            column: "cache_write_input_tokens",
+            definition: "INTEGER NOT NULL DEFAULT 0"
+        )
+        try addColumnIfMissing(
+            database: database,
+            table: "codex_sessions",
+            column: "cache_write_input_tokens",
+            definition: "INTEGER NOT NULL DEFAULT 0"
+        )
+        try addColumnIfMissing(
+            database: database,
+            table: "codex_session_summaries",
+            column: "cache_write_input_tokens",
+            definition: "INTEGER NOT NULL DEFAULT 0"
+        )
+        try addColumnIfMissing(
+            database: database,
+            table: "codex_daily_usage_summaries",
+            column: "cache_write_input_tokens",
+            definition: "INTEGER NOT NULL DEFAULT 0"
+        )
+
+        try database.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_codex_events_session_time_offset_id
+            ON codex_usage_events(session_id, is_child_replay, timestamp_ms DESC, line_offset DESC, event_id DESC);
+        CREATE INDEX IF NOT EXISTS idx_codex_events_day_time_offset_id
+            ON codex_usage_events(is_child_replay, timestamp_ms DESC, line_offset DESC, event_id DESC);
+
+        DELETE FROM codex_usage_events;
+        DELETE FROM codex_session_summaries;
+        DELETE FROM codex_daily_usage_summaries;
+        DELETE FROM codex_sessions;
+        DELETE FROM codex_import_sources;
+        INSERT OR REPLACE INTO app_metadata (key, value, updated_at)
+            VALUES ('codex_usage_generation', unixepoch(), unixepoch());
+        INSERT OR REPLACE INTO app_metadata (key, value, updated_at)
+            VALUES ('codex_parser_version', '6', unixepoch());
+        INSERT OR REPLACE INTO app_metadata (key, value, updated_at)
+            VALUES ('pricing_reprice_generation', '0', unixepoch());
+        """)
     }
 }
 
@@ -677,4 +730,3 @@ private struct V6UsageTruthAndRecoveryMigration: DatabaseMigration {
         """)
     }
 }
-

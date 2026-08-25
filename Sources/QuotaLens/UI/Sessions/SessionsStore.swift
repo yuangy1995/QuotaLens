@@ -47,6 +47,7 @@ public final class SessionsStore: ObservableObject {
     @Published public var isLoading: Bool = false
     @Published public var isLoadingNextPage: Bool = false
     @Published public var isLoadingDetail: Bool = false
+    @Published public var isLoadingMoreEvents: Bool = false
     @Published public var isDeletingSession: Bool = false
     @Published public var errorMessage: String? = nil
 
@@ -55,6 +56,7 @@ public final class SessionsStore: ObservableObject {
     private var nextCursor: String?
     private var queryGeneration = 0
     private let pageSize = 50
+    private let eventPageSize = 500
 
     public var hasMoreSessions: Bool { nextCursor != nil }
 
@@ -183,11 +185,51 @@ public final class SessionsStore: ObservableObject {
         }
         isLoadingDetail = true
         do {
-            self.selectedDetail = try await facade.getSessionDetail(sessionId: sid)
+            self.selectedDetail = try await facade.getSessionDetail(
+                sessionId: sid,
+                eventLimit: eventPageSize
+            )
         } catch {
             self.errorMessage = error.localizedDescription
         }
         isLoadingDetail = false
+    }
+
+    public func loadMoreSelectedSessionEvents() async {
+        guard !isLoadingDetail,
+              !isLoadingMoreEvents,
+              let current = selectedDetail,
+              current.hasMoreEvents,
+              let cursor = current.nextEventCursor else { return }
+        let sessionId = current.session.sessionId
+        isLoadingMoreEvents = true
+        defer { isLoadingMoreEvents = false }
+        do {
+            guard let page = try await facade.getSessionDetail(
+                sessionId: sessionId,
+                eventLimit: eventPageSize,
+                eventCursor: cursor
+            ) else { return }
+            guard selectedSessionId == sessionId, let existing = selectedDetail else { return }
+            let seen = Set(existing.recentEvents.map(\.eventId))
+            let mergedEvents = existing.recentEvents + page.recentEvents.filter { !seen.contains($0.eventId) }
+            selectedDetail = CodexSessionDetailDTO(
+                session: page.session,
+                subagents: page.subagents,
+                modelSummaries: page.modelSummaries,
+                recentEvents: mergedEvents,
+                totalEventCount: page.totalEventCount,
+                loadedEventCount: mergedEvents.count,
+                hasMoreEvents: page.hasMoreEvents,
+                nextEventCursor: page.nextEventCursor,
+                sourcePath: page.sourcePath,
+                relativePath: page.relativePath,
+                totalSubagentTokens: page.totalSubagentTokens,
+                totalSubagentCost: page.totalSubagentCost
+            )
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     @discardableResult

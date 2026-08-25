@@ -81,17 +81,130 @@ public struct PricingRuleEntry: Codable, Sendable {
 
 // MARK: - 内置官方 OpenAI 价格目录 (2026-08-25 官方列表价)
 public enum BundledPricingCatalog {
-    // v3 supersedes the partially-correct v2 catalog. Catalog versions are
-    // immutable so a developer build that already installed v2 also upgrades.
-    public static let currentVersion = "2026-08-v3"
+    // v4 adds cache-write token accounting, effective-dated GPT-5.6 pricing,
+    // and official Standard/Flex/Fast service-tier rows. Catalog versions are
+    // immutable so a developer build that already installed v3 also upgrades.
+    public static let currentVersion = "2026-08-v4"
     public static let publishedAtMs: Int64 = 1787616000000 // 2026-08-25
+    private static let gpt56ReleaseMs: Int64 = 1783555200000 // 2026-07-09
+    private static let gpt56TerraLunaCutoverMs: Int64 = 1785369600000 // 2026-07-30
+    private static let gpt56SolPromotionalCutoverMs: Int64 = 1787270400000 // 2026-08-21
+
+    private struct GPT56Rate: Sendable {
+        let input: Int64
+        let cached: Int64
+        let cacheWrite: Int64
+        let output: Int64
+    }
+
+    private static func gpt56Rule(
+        modelKey: String,
+        suffix: String,
+        serviceTier: String?,
+        effectiveFromMs: Int64,
+        effectiveToMs: Int64?,
+        rate: GPT56Rate
+    ) -> PricingRuleEntry {
+        let tierId = serviceTier ?? "std"
+        return PricingRuleEntry(
+            ruleId: "\(modelKey)-\(tierId)-\(suffix)",
+            serviceTier: serviceTier,
+            effectiveFromMs: effectiveFromMs,
+            effectiveToMs: effectiveToMs,
+            inputNanoUsdPerToken: rate.input,
+            cachedNanoUsdPerToken: rate.cached,
+            cacheWriteNanoUsdPerToken: rate.cacheWrite,
+            outputNanoUsdPerToken: rate.output,
+            longContextThresholdTokens: 272_000,
+            longContextInputMultiplierPpm: 2_000_000,
+            longContextOutputMultiplierPpm: 1_500_000
+        )
+    }
+
+    private static func scaledGPT56Rate(_ rate: GPT56Rate, multiplierPpm: Int64) -> GPT56Rate {
+        func scale(_ value: Int64) -> Int64 {
+            NSDecimalNumber(decimal: Decimal(value) * Decimal(multiplierPpm) / Decimal(1_000_000)).int64Value
+        }
+        return GPT56Rate(
+            input: scale(rate.input),
+            cached: scale(rate.cached),
+            cacheWrite: scale(rate.cacheWrite),
+            output: scale(rate.output)
+        )
+    }
+
+    private static func gpt56Rules(
+        modelKey: String,
+        launch: GPT56Rate,
+        current: GPT56Rate,
+        currentFromMs: Int64
+    ) -> [PricingRuleEntry] {
+        var rules: [PricingRuleEntry] = [
+            gpt56Rule(
+                modelKey: modelKey,
+                suffix: "launch-v4",
+                serviceTier: nil,
+                effectiveFromMs: gpt56ReleaseMs,
+                effectiveToMs: currentFromMs,
+                rate: launch
+            ),
+            gpt56Rule(
+                modelKey: modelKey,
+                suffix: "current-v4",
+                serviceTier: nil,
+                effectiveFromMs: currentFromMs,
+                effectiveToMs: nil,
+                rate: current
+            ),
+            gpt56Rule(
+                modelKey: modelKey,
+                suffix: "flex-current-v4",
+                serviceTier: "flex",
+                effectiveFromMs: currentFromMs,
+                effectiveToMs: nil,
+                rate: scaledGPT56Rate(current, multiplierPpm: 500_000)
+            ),
+            gpt56Rule(
+                modelKey: modelKey,
+                suffix: "fast-current-v4",
+                serviceTier: "fast",
+                effectiveFromMs: currentFromMs,
+                effectiveToMs: nil,
+                rate: scaledGPT56Rate(current, multiplierPpm: 2_000_000)
+            )
+        ]
+
+        // Fast mode replaced Priority processing on 2026-07-30. Sol's Standard
+        // price changed later, so its Fast historical row must preserve the
+        // twice-launch-rate period instead of back-pricing Aug 2026 usage with
+        // the promotional price.
+        if modelKey == "gpt-5.6-sol" {
+            rules.append(
+                gpt56Rule(
+                    modelKey: modelKey,
+                    suffix: "fast-launch-v4",
+                    serviceTier: "fast",
+                    effectiveFromMs: gpt56TerraLunaCutoverMs,
+                    effectiveToMs: currentFromMs,
+                    rate: scaledGPT56Rate(launch, multiplierPpm: 2_000_000)
+                )
+            )
+        }
+
+        return rules
+    }
 
     public static let defaultCatalog = PricingCatalogModel(
         catalogVersion: currentVersion,
-        schemaVersion: 2,
+        schemaVersion: 3,
         publishedAt: publishedAtMs,
         catalogSha256: "",
         sourceURLs: [
+            "https://developers.openai.com/api/docs/pricing",
+            "https://developers.openai.com/api/docs/changelog",
+            "https://developers.openai.com/api/docs/guides/deployment-checklist",
+            "https://developers.openai.com/api/docs/guides/flex-processing",
+            "https://developers.openai.com/api/docs/guides/fast-mode",
             "https://developers.openai.com/api/docs/models/gpt-5.6-sol",
             "https://developers.openai.com/api/docs/models/gpt-5.6-terra",
             "https://developers.openai.com/api/docs/models/gpt-5.6-luna",
@@ -108,57 +221,37 @@ public enum BundledPricingCatalog {
             // 1. GPT-5.6 系列 (旗舰推理模型)
             PricingModelEntry(
                 modelKey: "gpt-5.6-sol",
-                aliases: ["gpt-5.6", "gpt-5.6-sol", "codex-sol", "gpt-5-sol"],
-                rules: [
-                    PricingRuleEntry(
-                        ruleId: "gpt-5.6-sol-std-v3",
-                        serviceTier: nil,
-                        effectiveFromMs: 0,
-                        inputNanoUsdPerToken: 4_000,
-                        cachedNanoUsdPerToken: 400,
-                        cacheWriteNanoUsdPerToken: 5_000,
-                        outputNanoUsdPerToken: 20_000,
-                        longContextThresholdTokens: 272_000,
-                        longContextInputMultiplierPpm: 2_000_000,
-                        longContextOutputMultiplierPpm: 1_500_000
-                    )
-                ]
+                // The API changelog states that the request alias `gpt-5.6`
+                // routes to Sol. Local Codex rollout records can also use a
+                // generic family label, so QuotaLens keeps that generic label
+                // unpriced unless the rollout itself names a concrete SKU.
+                aliases: ["gpt-5.6-sol", "codex-sol", "gpt-5-sol"],
+                rules: Self.gpt56Rules(
+                    modelKey: "gpt-5.6-sol",
+                    launch: GPT56Rate(input: 5_000, cached: 500, cacheWrite: 6_250, output: 30_000),
+                    current: GPT56Rate(input: 4_000, cached: 400, cacheWrite: 5_000, output: 20_000),
+                    currentFromMs: gpt56SolPromotionalCutoverMs
+                )
             ),
             PricingModelEntry(
                 modelKey: "gpt-5.6-terra",
                 aliases: ["gpt-5.6-terra", "codex-terra", "gpt-5-terra"],
-                rules: [
-                    PricingRuleEntry(
-                        ruleId: "gpt-5.6-terra-std-v3",
-                        serviceTier: nil,
-                        effectiveFromMs: 0,
-                        inputNanoUsdPerToken: 2_000,
-                        cachedNanoUsdPerToken: 200,
-                        cacheWriteNanoUsdPerToken: 2_500,
-                        outputNanoUsdPerToken: 12_000,
-                        longContextThresholdTokens: 272_000,
-                        longContextInputMultiplierPpm: 2_000_000,
-                        longContextOutputMultiplierPpm: 1_500_000
-                    )
-                ]
+                rules: Self.gpt56Rules(
+                    modelKey: "gpt-5.6-terra",
+                    launch: GPT56Rate(input: 2_500, cached: 250, cacheWrite: 3_125, output: 15_000),
+                    current: GPT56Rate(input: 2_000, cached: 200, cacheWrite: 2_500, output: 12_000),
+                    currentFromMs: gpt56TerraLunaCutoverMs
+                )
             ),
             PricingModelEntry(
                 modelKey: "gpt-5.6-luna",
                 aliases: ["gpt-5.6-luna", "codex-luna", "gpt-5-luna"],
-                rules: [
-                    PricingRuleEntry(
-                        ruleId: "gpt-5.6-luna-std-v3",
-                        serviceTier: nil,
-                        effectiveFromMs: 0,
-                        inputNanoUsdPerToken: 200,
-                        cachedNanoUsdPerToken: 20,
-                        cacheWriteNanoUsdPerToken: 250,
-                        outputNanoUsdPerToken: 1_200,
-                        longContextThresholdTokens: 272_000,
-                        longContextInputMultiplierPpm: 2_000_000,
-                        longContextOutputMultiplierPpm: 1_500_000
-                    )
-                ]
+                rules: Self.gpt56Rules(
+                    modelKey: "gpt-5.6-luna",
+                    launch: GPT56Rate(input: 1_000, cached: 100, cacheWrite: 1_250, output: 6_000),
+                    current: GPT56Rate(input: 200, cached: 20, cacheWrite: 250, output: 1_200),
+                    currentFromMs: gpt56TerraLunaCutoverMs
+                )
             ),
 
             // 2. GPT-5.5 系列

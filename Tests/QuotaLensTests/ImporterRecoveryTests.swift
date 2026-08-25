@@ -98,23 +98,36 @@ final class ImporterRecoveryTests: XCTestCase {
         let importer = CodexUsageImportActor(database: database)
         let sessionID = "22222222-2222-2222-2222-222222222222"
         let file = paths.sessionsURL.appendingPathComponent("rollout-2026-08-20T12-00-00-\(sessionID).jsonl")
-        try overwriteFile(file, with: rolloutText(sessionId: sessionID, input: 10, cached: 2, output: 5))
+        try overwriteFile(file, with: rolloutText(
+            sessionId: sessionID,
+            model: "gpt-5.6-sol",
+            input: 10,
+            cached: 2,
+            cacheWrite: 3,
+            output: 5
+        ))
         _ = try await importer.importCodexHistory(paths: paths)
         try appendFile(file, with: usageLine(
             timestamp: "2026-08-20T13:00:00Z",
             input: 7,
             cached: 3,
+            cacheWrite: 2,
             output: 4,
             totalInput: 17,
             totalCached: 5,
+            totalCacheWrite: 5,
             totalOutput: 9
         ))
         _ = try await importer.importCodexHistory(paths: paths)
         let incremental = try sessionFacts(database, sessionID: sessionID)
+        XCTAssertEqual(incremental.tokens, 26)
+        XCTAssertEqual(incremental.cacheWriteTokens, 5)
+        XCTAssertEqual(incremental.cost, 338_750)
 
         _ = try await importer.importCodexHistory(paths: paths, forceRebuild: true)
         let rebuilt = try sessionFacts(database, sessionID: sessionID)
         XCTAssertEqual(incremental.tokens, rebuilt.tokens)
+        XCTAssertEqual(incremental.cacheWriteTokens, rebuilt.cacheWriteTokens)
         XCTAssertEqual(incremental.events, rebuilt.events)
         XCTAssertEqual(incremental.cost, rebuilt.cost)
     }
@@ -138,6 +151,100 @@ final class ImporterRecoveryTests: XCTestCase {
         _ = try await importer.importCodexHistory(paths: paths)
         XCTAssertEqual(try database.intScalar(sql: "SELECT COUNT(*) FROM codex_usage_events;"), 2)
         XCTAssertEqual(try sessionTotal(database, sessionID: sessionID), 20)
+    }
+
+    func testDisabledArchivedScanDoesNotTombstoneMissingArchivedSources() async throws {
+        let root = try makeTemporaryDirectory(named: "QuotaLensArchivedTombstone")
+        let paths = CodexHistoryPaths(rootURL: root)
+        try FileManager.default.createDirectory(at: paths.sessionsURL, withIntermediateDirectories: true)
+        let archivedPath = paths.archivedSessionsURL
+            .appendingPathComponent("rollout-2026-08-20T12-00-00-archived.jsonl")
+            .path
+        let database = try makeMigratedDatabase(in: root)
+        try database.executeUpdate(
+            sql: """
+            INSERT INTO codex_import_sources (
+                source_path, relative_path, bucket, device_id, inode, file_size,
+                mtime_ms, scan_generation, status
+            ) VALUES (?, 'archived_sessions/rollout-2026-08-20T12-00-00-archived.jsonl', 'archived', 1, 2, 1, 1, 0, 'indexed');
+            """,
+            bindings: [archivedPath]
+        )
+        try database.executeUpdate(
+            sql: """
+            INSERT INTO codex_sessions (
+                session_id, root_session_id, parent_session_id, depth, source_path,
+                relative_path, bucket, title, project_name, cwd, created_at, updated_at,
+                last_event_at, event_count, total_tokens, input_tokens, cached_input_tokens,
+                cache_write_input_tokens, output_tokens, reasoning_output_tokens,
+                estimated_cost_usd_nano, pricing_status, metadata_fingerprint,
+                has_subagents, agent_type
+            ) VALUES (
+                'archived-session', 'archived-session', NULL, 0, ?,
+                'archived_sessions/rollout-2026-08-20T12-00-00-archived.jsonl',
+                'archived', 'Archived', 'Fixture', '/tmp', 1, 1, 1,
+                1, 1, 1, 0, 0, 0, 0, 0, 'priced', NULL, 0, NULL
+            );
+            """,
+            bindings: [archivedPath]
+        )
+
+        let originalFlag = UsageFeatureFlags.shared.isScanArchivedSessionsEnabled
+        UsageFeatureFlags.shared.isScanArchivedSessionsEnabled = false
+        addTeardownBlock { UsageFeatureFlags.shared.isScanArchivedSessionsEnabled = originalFlag }
+
+        _ = try await CodexUsageImportActor(database: database).importCodexHistory(paths: paths)
+        XCTAssertEqual(
+            try database.stringScalar(sql: "SELECT status FROM codex_import_sources WHERE source_path = ?;", bindings: [archivedPath]),
+            "indexed"
+        )
+        XCTAssertEqual(try database.intScalar(sql: "SELECT COUNT(*) FROM codex_sessions WHERE session_id = 'archived-session';"), 1)
+    }
+
+    func testFailedActiveScanDoesNotTombstoneMissingActiveSources() async throws {
+        let root = try makeTemporaryDirectory(named: "QuotaLensActiveScanFailure")
+        let paths = CodexHistoryPaths(rootURL: root)
+        try FileManager.default.createDirectory(at: paths.sessionsURL, withIntermediateDirectories: true)
+        let sourcePath = paths.sessionsURL.appendingPathComponent("rollout-2026-08-20T12-00-00-active.jsonl").path
+        let database = try makeMigratedDatabase(in: root)
+        try database.executeUpdate(
+            sql: """
+            INSERT INTO codex_import_sources (
+                source_path, relative_path, bucket, device_id, inode, file_size,
+                mtime_ms, scan_generation, status
+            ) VALUES (?, 'sessions/rollout-2026-08-20T12-00-00-active.jsonl', 'active', 1, 2, 1, 1, 0, 'indexed');
+            """,
+            bindings: [sourcePath]
+        )
+        try database.executeUpdate(
+            sql: """
+            INSERT INTO codex_sessions (
+                session_id, root_session_id, parent_session_id, depth, source_path,
+                relative_path, bucket, title, project_name, cwd, created_at, updated_at,
+                last_event_at, event_count, total_tokens, input_tokens, cached_input_tokens,
+                cache_write_input_tokens, output_tokens, reasoning_output_tokens,
+                estimated_cost_usd_nano, pricing_status, metadata_fingerprint,
+                has_subagents, agent_type
+            ) VALUES (
+                'active-session', 'active-session', NULL, 0, ?,
+                'sessions/rollout-2026-08-20T12-00-00-active.jsonl',
+                'active', 'Active', 'Fixture', '/tmp', 1, 1, 1,
+                1, 1, 1, 0, 0, 0, 0, 0, 'priced', NULL, 0, NULL
+            );
+            """,
+            bindings: [sourcePath]
+        )
+
+        let importer = CodexUsageImportActor(database: database) { _, _ in
+            ScanOutcome(active: .failed("enumerator failed"), archived: .disabled, sources: [])
+        }
+        _ = try await importer.importCodexHistory(paths: paths)
+
+        XCTAssertEqual(
+            try database.stringScalar(sql: "SELECT status FROM codex_import_sources WHERE source_path = ?;", bindings: [sourcePath]),
+            "indexed"
+        )
+        XCTAssertEqual(try database.intScalar(sql: "SELECT COUNT(*) FROM codex_sessions WHERE session_id = 'active-session';"), 1)
     }
 
     func testChildReplayIsExcludedAndFreshTurnIsCountedAfterResume() async throws {
@@ -234,12 +341,14 @@ final class ImporterRecoveryTests: XCTestCase {
         timestamp: String,
         input: Int64,
         cached: Int64 = 0,
+        cacheWrite: Int64 = 0,
         output: Int64,
         totalInput: Int64,
         totalCached: Int64 = 0,
+        totalCacheWrite: Int64 = 0,
         totalOutput: Int64
     ) -> String {
-        "{\"timestamp\":\"\(timestamp)\",\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"last_token_usage\":{\"input_tokens\":\(input),\"cached_input_tokens\":\(cached),\"output_tokens\":\(output)},\"total_token_usage\":{\"input_tokens\":\(totalInput),\"cached_input_tokens\":\(totalCached),\"output_tokens\":\(totalOutput)}}}}\n"
+        "{\"timestamp\":\"\(timestamp)\",\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"last_token_usage\":{\"input_tokens\":\(input),\"cached_input_tokens\":\(cached),\"cache_creation_input_tokens\":\(cacheWrite),\"output_tokens\":\(output)},\"total_token_usage\":{\"input_tokens\":\(totalInput),\"cached_input_tokens\":\(totalCached),\"cache_creation_input_tokens\":\(totalCacheWrite),\"output_tokens\":\(totalOutput)}}}}\n"
     }
 
     private func sessionTotal(_ database: SQLiteDatabase, sessionID: String) throws -> Int64 {
@@ -252,15 +361,16 @@ final class ImporterRecoveryTests: XCTestCase {
     private func sessionFacts(
         _ database: SQLiteDatabase,
         sessionID: String
-    ) throws -> (tokens: Int64, events: Int, cost: Int64) {
+    ) throws -> (tokens: Int64, cacheWriteTokens: Int64, events: Int, cost: Int64) {
         try XCTUnwrap(database.executeQuery(
-            sql: "SELECT total_tokens, event_count, estimated_cost_usd_nano FROM codex_sessions WHERE session_id = ?;",
+            sql: "SELECT total_tokens, cache_write_input_tokens, event_count, estimated_cost_usd_nano FROM codex_sessions WHERE session_id = ?;",
             bindings: [sessionID]
         ) { statement in
             (
                 tokens: sqlite3_column_int64(statement, 0),
-                events: Int(sqlite3_column_int(statement, 1)),
-                cost: sqlite3_column_int64(statement, 2)
+                cacheWriteTokens: sqlite3_column_int64(statement, 1),
+                events: Int(sqlite3_column_int(statement, 2)),
+                cost: sqlite3_column_int64(statement, 3)
             )
         }.first)
     }

@@ -425,6 +425,14 @@ public struct SettingsView: View {
                     colorScheme: colorScheme
                 )
 
+                DiagnosticMetricTile(
+                    title: L10n.text("重计价代次", "Reprice Generation"),
+                    value: "\(diagnostics.pricingRepriceGeneration)",
+                    icon: "arrow.triangle.2.circlepath.circle.fill",
+                    accentColor: purple,
+                    colorScheme: colorScheme
+                )
+
                 // Row 2: 完整性与健康
                 DiagnosticMetricTile(
                     title: L10n.text("SQLite 完整性", "SQLite Integrity"),
@@ -468,10 +476,10 @@ public struct SettingsView: View {
                 // Row 3: 异常追踪与兜底
                 DiagnosticMetricTile(
                     title: L10n.text("未知模型", "Unknown Models"),
-                    value: "\(diagnostics.unknownModelEvents)",
+                    value: "\(diagnostics.unknownModelEvents + diagnostics.genericGPT56Events)",
                     icon: "questionmark.app.fill",
-                    accentColor: diagnostics.unknownModelEvents == 0 ? blue : amber,
-                    isWarning: diagnostics.unknownModelEvents > 0,
+                    accentColor: diagnostics.unknownModelEvents + diagnostics.genericGPT56Events == 0 ? blue : amber,
+                    isWarning: diagnostics.unknownModelEvents + diagnostics.genericGPT56Events > 0,
                     colorScheme: colorScheme
                 )
 
@@ -511,6 +519,22 @@ public struct SettingsView: View {
                     Text(diagnosticsExportStatus)
                         .font(.system(size: 10.5, weight: .medium, design: .rounded))
                         .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                }
+                .padding(.top, 2)
+            }
+
+            if diagnostics.genericGPT56Events > 0 {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "info.circle.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(amber)
+                    Text(L10n.format(
+                        "%d generic gpt-5.6 events are intentionally unpriced until Codex records a concrete Sol/Terra/Luna SKU.",
+                        zhHans: "%d 条通用 gpt-5.6 事件会保持未计价，直到 Codex 记录明确的 Sol/Terra/Luna 型号。",
+                        diagnostics.genericGPT56Events
+                    ))
+                    .font(.system(size: 10.5, weight: .medium, design: .rounded))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
                 }
                 .padding(.top, 2)
             }

@@ -5,6 +5,7 @@ import Foundation
 public struct RawTokenUsagePayload: Sendable {
     public let inputTokens: Int64
     public let cachedInputTokens: Int64
+    public let cacheWriteInputTokens: Int64
     public let outputTokens: Int64
     public let reasoningOutputTokens: Int64
     public let totalTokens: Int64?
@@ -12,14 +13,17 @@ public struct RawTokenUsagePayload: Sendable {
     public init(
         inputTokens: Int64 = 0,
         cachedInputTokens: Int64 = 0,
+        cacheWriteInputTokens: Int64 = 0,
         outputTokens: Int64 = 0,
         reasoningOutputTokens: Int64 = 0,
         totalTokens: Int64? = nil
     ) {
         let normalizedCached = max(0, cachedInputTokens)
+        let normalizedCacheWrite = max(0, cacheWriteInputTokens)
         let normalizedReasoning = max(0, reasoningOutputTokens)
-        self.inputTokens = max(max(0, inputTokens), normalizedCached)
+        self.inputTokens = max(max(0, inputTokens), normalizedCached + normalizedCacheWrite)
         self.cachedInputTokens = normalizedCached
+        self.cacheWriteInputTokens = normalizedCacheWrite
         self.outputTokens = max(max(0, outputTokens), normalizedReasoning)
         self.reasoningOutputTokens = normalizedReasoning
         self.totalTokens = totalTokens
@@ -81,6 +85,8 @@ public enum RolloutLineDecoder {
             || lineString.contains("user_message")
             || lineString.contains("last_token_usage")
             || lineString.contains("total_token_usage")
+            || lineString.contains("cache_creation_input_tokens")
+            || lineString.contains("cache_write_input_tokens")
             || lineString.contains("reasoning_effort")
             || lineString.contains("effort")
     }
@@ -92,7 +98,8 @@ public enum RolloutLineDecoder {
         let needles = [
             "token_count", "turn_context", "thread_settings_applied",
             "task_started", "user_message", "last_token_usage",
-            "total_token_usage", "reasoning_effort", "effort"
+            "total_token_usage", "cache_creation_input_tokens",
+            "cache_write_input_tokens", "reasoning_effort", "effort"
         ]
         return needles.contains { needle in
             lineData.range(of: Data(needle.utf8)) != nil
@@ -190,10 +197,14 @@ public enum RolloutLineDecoder {
         if lastUsage == nil && totalUsage == nil {
             let hasBucketField = payload["input_tokens"] != nil
                 || payload["cached_input_tokens"] != nil
+                || payload["cache_creation_input_tokens"] != nil
+                || payload["cache_write_input_tokens"] != nil
                 || payload["output_tokens"] != nil
                 || payload["reasoning_output_tokens"] != nil
                 || json["input_tokens"] != nil
                 || json["cached_input_tokens"] != nil
+                || json["cache_creation_input_tokens"] != nil
+                || json["cache_write_input_tokens"] != nil
                 || json["output_tokens"] != nil
                 || json["reasoning_output_tokens"] != nil
             if hasBucketField {
@@ -254,6 +265,7 @@ public enum RolloutLineDecoder {
     private static func parseTokenUsageDict(_ dict: [String: Any]) -> RawTokenUsagePayload {
         let input = int64Value(from: dict["input_tokens"])
         let cached = int64Value(from: dict["cached_input_tokens"] ?? dict["cache_read_input_tokens"])
+        let cacheWrite = int64Value(from: dict["cache_creation_input_tokens"] ?? dict["cache_write_input_tokens"])
         let output = int64Value(from: dict["output_tokens"])
         let reasoning = int64Value(from: dict["reasoning_output_tokens"] ?? dict["reasoning_tokens"])
         let total = dict["total_tokens"] != nil ? int64Value(from: dict["total_tokens"]) : nil
@@ -261,6 +273,7 @@ public enum RolloutLineDecoder {
         return RawTokenUsagePayload(
             inputTokens: input,
             cachedInputTokens: cached,
+            cacheWriteInputTokens: cacheWrite,
             outputTokens: output,
             reasoningOutputTokens: reasoning,
             totalTokens: total

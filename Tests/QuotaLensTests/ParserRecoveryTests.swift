@@ -25,6 +25,60 @@ final class ParserRecoveryTests: XCTestCase {
         XCTAssertEqual(event.lastTokenUsage?.outputTokens, 3)
     }
 
+    func testCacheWriteTokensAreParsedAndDifferencedAcrossAllBuckets() throws {
+        let creationLine = "{\"event\":\"token_count\",\"created_at\":1787227200,\"model\":\"gpt-5.6-sol\",\"input_tokens\":10,\"cached_input_tokens\":2,\"cache_creation_input_tokens\":3,\"output_tokens\":4}"
+        let creationEvent = try XCTUnwrap(RolloutLineDecoder.decodeLine(creationLine))
+        XCTAssertEqual(creationEvent.lastTokenUsage?.inputTokens, 10)
+        XCTAssertEqual(creationEvent.lastTokenUsage?.cachedInputTokens, 2)
+        XCTAssertEqual(creationEvent.lastTokenUsage?.cacheWriteInputTokens, 3)
+        XCTAssertEqual(creationEvent.lastTokenUsage?.outputTokens, 4)
+
+        let reducer = CodexUsageReducer(
+            sessionId: "session",
+            rootSessionId: "session",
+            isChildSession: false,
+            sourcePath: "/tmp/rollout.jsonl"
+        )
+        var state = CodexUsageReducer.ReducerState()
+        _ = reducer.reduce(
+            event: RolloutWireEvent(
+                eventType: "token_count",
+                timestampMs: 1,
+                totalTokenUsage: RawTokenUsagePayload(
+                    inputTokens: 10,
+                    cachedInputTokens: 2,
+                    cacheWriteInputTokens: 3,
+                    outputTokens: 4
+                )
+            ),
+            lineRecord: lineRecord(index: 0),
+            state: &state
+        )
+        let delta = try XCTUnwrap(reducer.reduce(
+            event: RolloutWireEvent(
+                eventType: "token_count",
+                timestampMs: 2,
+                totalTokenUsage: RawTokenUsagePayload(
+                    inputTokens: 15,
+                    cachedInputTokens: 4,
+                    cacheWriteInputTokens: 6,
+                    outputTokens: 7
+                )
+            ),
+            lineRecord: lineRecord(index: 1),
+            state: &state
+        ))
+        XCTAssertEqual(delta.tokens.inputTokens, 5)
+        XCTAssertEqual(delta.tokens.cachedInputTokens, 2)
+        XCTAssertEqual(delta.tokens.cacheWriteInputTokens, 3)
+        XCTAssertEqual(delta.tokens.uncachedInputTokens, 0)
+        XCTAssertEqual(delta.tokens.outputTokens, 3)
+        XCTAssertEqual(state.makeCheckpoint().lastCumulativeCacheWrite, 6)
+
+        let alternateSpelling = "{\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"last_token_usage\":{\"input_tokens\":8,\"cache_write_input_tokens\":5}}}}"
+        XCTAssertEqual(RolloutLineDecoder.decodeLine(alternateSpelling)?.lastTokenUsage?.cacheWriteInputTokens, 5)
+    }
+
     func testStreamingReaderFindsTypeAfter8KBAndBeyond1MBWithCRLF() throws {
         let directory = try makeTemporaryDirectory()
         let file = directory.appendingPathComponent("long.jsonl")

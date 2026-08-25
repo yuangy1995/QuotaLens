@@ -22,7 +22,7 @@ QuotaLens is a native macOS menu bar app for tracking Codex and ChatGPT quota us
 - Adjustable refresh interval, custom Codex CLI path, launch-at-login toggle, and pure menu-bar mode.
 - Clicking the Dock icon focuses only the main window; the quota popover opens only from the menu bar status item.
 - When the available quota reaches zero, the dashboard and menu bar show an exhausted/waiting-for-reset state and stop producing pace forecasts.
-- Optional floating overlay can be disabled independently from local analytics. Basic mode needs no Accessibility permission; precise snapping is an explicit opt-in and reads only target-window position, size, and minimized state.
+- Optional floating overlay can be disabled independently from local analytics. Basic mode needs no Accessibility permission; precise snapping is an explicit opt-in and reads only target-window position, size, and minimized state. This is QuotaLens' own floating window overlay, not a WidgetKit desktop widget or Widget Extension.
 - Built-in localization for English, Simplified Chinese, Traditional Chinese, Japanese, Korean, Spanish, German, French, Portuguese, and Brazilian Portuguese.
 - The in-app changelog follows the selected interface language; its Simplified Chinese remote source cannot override other languages.
 
@@ -47,17 +47,19 @@ Build a release binary:
 swift build -c release
 ```
 
-Create a signed `.app`, `.zip`, and `.dmg` package:
+Create a locally signed `.app`, `.zip`, and `.dmg` package:
 
 ```bash
 ./scripts/build_and_package.sh --arch universal
 ```
 
-By default, the packaging script uses ad-hoc signing. To sign with a Developer ID certificate, set `DEVELOPER_ID_APPLICATION` before running it:
+By default, the packaging script uses ad-hoc signing for local testing. To sign with a Developer ID certificate, set `DEVELOPER_ID_APPLICATION` and request Developer ID signing explicitly:
 
 ```bash
-DEVELOPER_ID_APPLICATION="Developer ID Application: Your Name (TEAMID)" ./scripts/build_and_package.sh
+DEVELOPER_ID_APPLICATION="Developer ID Application: Your Name (TEAMID)" ./scripts/build_and_package.sh --signing-mode developer-id
 ```
+
+Production GitHub releases require Developer ID signing, notarization, stapling, and Gatekeeper assessment. Missing signing or notarization credentials fail the workflow instead of falling back to ad-hoc signing.
 
 Build architecture-specific downloads:
 

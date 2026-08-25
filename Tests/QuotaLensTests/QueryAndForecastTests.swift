@@ -116,6 +116,69 @@ final class QueryAndForecastTests: XCTestCase {
         XCTAssertEqual(detail.sessions.first?.events.map(\.eventId), ["in-2"])
     }
 
+    func testSessionAndHistoryEventKeysetPaginationHasNoDuplicatesOrOmissions() throws {
+        let directory = try makeTemporaryDirectory()
+        let database = try makeMigratedDatabase(in: directory)
+        let repository = UsageAnalyticsRepository(database: database)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        let day = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026,
+            month: 8,
+            day: 20,
+            hour: 12
+        )))
+        try insertSession(database, id: "paged", title: "Paged")
+        for offset in 0..<13 {
+            try insertEvent(
+                database,
+                id: String(format: "event-%02d", offset),
+                sessionID: "paged",
+                date: day,
+                tokens: 1,
+                lineOffset: Int64(offset)
+            )
+        }
+
+        var sessionCursor: String?
+        var sessionIDs: [String] = []
+        repeat {
+            let page = try XCTUnwrap(repository.fetchSessionDetail(
+                sessionId: "paged",
+                eventLimit: 5,
+                eventCursor: sessionCursor
+            ))
+            XCTAssertEqual(page.totalEventCount, 13)
+            XCTAssertEqual(page.loadedEventCount, page.recentEvents.count)
+            sessionIDs.append(contentsOf: page.recentEvents.map(\.eventId))
+            sessionCursor = page.nextEventCursor
+            XCTAssertEqual(page.hasMoreEvents, sessionCursor != nil)
+        } while sessionCursor != nil
+        XCTAssertEqual(sessionIDs.count, 13)
+        XCTAssertEqual(Set(sessionIDs).count, 13)
+        XCTAssertEqual(sessionIDs.first, "event-12")
+        XCTAssertEqual(sessionIDs.last, "event-00")
+
+        let dayKey = LocalDayKey(date: day, calendar: calendar)
+        var dayCursor: String?
+        var dayIDs: [String] = []
+        repeat {
+            let detail = try repository.fetchDayDetail(
+                dayKey: dayKey,
+                calendar: calendar,
+                eventLimit: 4,
+                eventCursor: dayCursor
+            )
+            XCTAssertEqual(detail.totalEventCount, 13)
+            XCTAssertEqual(detail.loadedEventCount, detail.sessions.reduce(0) { $0 + $1.events.count })
+            dayIDs.append(contentsOf: detail.sessions.flatMap(\.events).map(\.eventId))
+            dayCursor = detail.nextEventCursor
+            XCTAssertEqual(detail.hasMoreEvents, dayCursor != nil)
+        } while dayCursor != nil
+        XCTAssertEqual(dayIDs.count, 13)
+        XCTAssertEqual(Set(dayIDs), Set(sessionIDs))
+    }
+
     func testFullDayQueriesPreferCompactDailySummariesOverRawLedgerEvents() throws {
         let directory = try makeTemporaryDirectory()
         let database = try makeMigratedDatabase(in: directory)
@@ -283,7 +346,10 @@ final class QueryAndForecastTests: XCTestCase {
             unpricedTokenCount: 100_000_000
         )
         let forecast = LocalUsageProjection.project(history: history, calendar: calendar, now: now)
-        XCTAssertEqual(forecast.confidence, .high)
+        XCTAssertEqual(forecast.confidence, .low)
+        XCTAssertFalse(forecast.isCostForecastAvailable)
+        XCTAssertEqual(forecast.projectedTotalCost, .zero)
+        XCTAssertLessThan(forecast.tokenPricingCoverage, 0.80)
         XCTAssertEqual(forecast.dailyProjections.count, 7)
         XCTAssertGreaterThan(forecast.unpricedTokenCount, 0)
         XCTAssertLessThan(forecast.pricingCoverage.coverageRatio, 1)
@@ -292,6 +358,46 @@ final class QueryAndForecastTests: XCTestCase {
             XCTAssertLessThanOrEqual(point.p50Tokens, point.p90Tokens)
             XCTAssertLessThan(point.p90Tokens, 1_000_000)
         }
+    }
+
+    func testLocalProjectionTokenCoverageThresholdsControlCostForecast() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+
+        var mediumCoverage = makeHistory(days: 28, now: now, calendar: calendar)
+        mediumCoverage[0] = DayUsageSummaryDTO(
+            dayKey: mediumCoverage[0].dayKey,
+            date: mediumCoverage[0].date,
+            tokens: TokenBreakdown(inputTokens: 5_000),
+            estimatedCost: .zero,
+            eventCount: 1,
+            sessionCount: 1,
+            unpricedEventCount: 1,
+            unpricedTokenCount: 5_000
+        )
+        let medium = LocalUsageProjection.project(history: mediumCoverage, calendar: calendar, now: now)
+        XCTAssertGreaterThanOrEqual(medium.tokenPricingCoverage, 0.80)
+        XCTAssertLessThan(medium.tokenPricingCoverage, 0.95)
+        XCTAssertTrue(medium.isCostForecastAvailable)
+        XCTAssertEqual(medium.confidence, .low)
+        XCTAssertGreaterThan(medium.projectedTotalCost.rawValue, 0)
+
+        var lowCoverage = makeHistory(days: 28, now: now, calendar: calendar)
+        lowCoverage[0] = DayUsageSummaryDTO(
+            dayKey: lowCoverage[0].dayKey,
+            date: lowCoverage[0].date,
+            tokens: TokenBreakdown(inputTokens: 100_000),
+            estimatedCost: .zero,
+            eventCount: 1,
+            sessionCount: 1,
+            unpricedEventCount: 1,
+            unpricedTokenCount: 100_000
+        )
+        let low = LocalUsageProjection.project(history: lowCoverage, calendar: calendar, now: now)
+        XCTAssertLessThan(low.tokenPricingCoverage, 0.80)
+        XCTAssertFalse(low.isCostForecastAvailable)
+        XCTAssertEqual(low.projectedTotalCost, .zero)
     }
 
     func testDiagnosticsDetectsApplicationInvariantCorruption() throws {
@@ -375,7 +481,8 @@ final class QueryAndForecastTests: XCTestCase {
         sessionID: String,
         date: Date,
         tokens: Int64,
-        priced: Bool = true
+        priced: Bool = true,
+        lineOffset: Int64 = 0
     ) throws {
         let status = priced ? PricingStatus.priced : .unpricedUnknownModel
         try database.executeUpdate(
@@ -388,12 +495,12 @@ final class QueryAndForecastTests: XCTestCase {
                 pricing_rule_id, pricing_status, usage_derivation, attribution_quality,
                 is_child_replay, source_path, line_offset, line_bytes, payload_sha256,
                 created_at, timestamp_quality, pricing_catalog_version
-            ) VALUES (?, ?, ?, 0, 0, ?, 'gpt-5.4', 'gpt-5.4', NULL, ?, 0, 0, 0, ?, ?, ?, NULL, ?, 'explicit_last_usage', 'direct_turn_context', 0, ?, 0, 1, NULL, ?, 'event_timestamp', ?);
+            ) VALUES (?, ?, ?, 0, 0, ?, 'gpt-5.4', 'gpt-5.4', NULL, ?, 0, 0, 0, ?, ?, ?, NULL, ?, 'explicit_last_usage', 'direct_turn_context', 0, ?, ?, 1, NULL, ?, 'event_timestamp', ?);
             """,
             bindings: [
                 id, sessionID, sessionID, Int64(date.timeIntervalSince1970 * 1_000),
                 tokens, tokens, tokens, priced ? tokens * 2_500 : 0,
-                status.rawValue, "/tmp/\(sessionID).jsonl",
+                status.rawValue, "/tmp/\(sessionID).jsonl", lineOffset,
                 Int64(date.timeIntervalSince1970 * 1_000), BundledPricingCatalog.currentVersion
             ]
         )

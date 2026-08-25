@@ -56,7 +56,7 @@ final class StorageResilienceTests: XCTestCase {
         XCTAssertEqual(try database.intScalar(sql: "SELECT COUNT(*) FROM codex_import_sources;"), 0)
         XCTAssertEqual(
             try database.stringScalar(sql: "SELECT value FROM app_metadata WHERE key = 'codex_parser_version';"),
-            "4"
+            String(ParserCheckpoint.currentParserVersion)
         )
     }
 }

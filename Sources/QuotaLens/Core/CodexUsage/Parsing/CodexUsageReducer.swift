@@ -126,6 +126,7 @@ public final class CodexUsageReducer: Sendable {
                 lineCount: totalLinesConsumed,
                 lastCumulativeInput: cumulativeBaseline.inputTokens,
                 lastCumulativeCached: cumulativeBaseline.cachedInputTokens,
+                lastCumulativeCacheWrite: cumulativeBaseline.cacheWriteInputTokens,
                 lastCumulativeOutput: cumulativeBaseline.outputTokens,
                 lastCumulativeReasoning: cumulativeBaseline.reasoningOutputTokens,
                 currentModel: activeModel,
@@ -207,6 +208,7 @@ public final class CodexUsageReducer: Sendable {
         if let last = event.lastTokenUsage {
             let hasPricableBuckets = last.inputTokens > 0
                 || last.cachedInputTokens > 0
+                || last.cacheWriteInputTokens > 0
                 || last.outputTokens > 0
                 || last.reasoningOutputTokens > 0
             guard hasPricableBuckets else {
@@ -221,6 +223,7 @@ public final class CodexUsageReducer: Sendable {
             let deltaBreakdown = TokenBreakdown(
                 inputTokens: last.inputTokens,
                 cachedInputTokens: last.cachedInputTokens,
+                cacheWriteInputTokens: last.cacheWriteInputTokens,
                 outputTokens: last.outputTokens,
                 reasoningOutputTokens: last.reasoningOutputTokens,
                 sourceTotalTokens: last.totalTokens
@@ -231,6 +234,7 @@ public final class CodexUsageReducer: Sendable {
                 state.cumulativeBaseline = TokenBreakdown(
                     inputTokens: totalUsage.inputTokens,
                     cachedInputTokens: totalUsage.cachedInputTokens,
+                    cacheWriteInputTokens: totalUsage.cacheWriteInputTokens,
                     outputTokens: totalUsage.outputTokens,
                     reasoningOutputTokens: totalUsage.reasoningOutputTokens,
                     sourceTotalTokens: totalUsage.totalTokens
@@ -271,39 +275,53 @@ public final class CodexUsageReducer: Sendable {
         if let total = event.totalTokenUsage {
             let curInput = total.inputTokens
             let curCached = total.cachedInputTokens
+            let curCacheWrite = total.cacheWriteInputTokens
             let curOutput = total.outputTokens
             let curReasoning = total.reasoningOutputTokens
 
             let prevInput = state.cumulativeBaseline.inputTokens
             let prevCached = state.cumulativeBaseline.cachedInputTokens
+            let prevCacheWrite = state.cumulativeBaseline.cacheWriteInputTokens
             let prevOutput = state.cumulativeBaseline.outputTokens
             let prevReasoning = state.cumulativeBaseline.reasoningOutputTokens
 
             let inputRestarted = curInput < prevInput
             let cachedRestarted = curCached < prevCached
+            let cacheWriteRestarted = curCacheWrite < prevCacheWrite
             let outputRestarted = curOutput < prevOutput
             let reasoningRestarted = curReasoning < prevReasoning
-            let anyCounterRestarted = inputRestarted || cachedRestarted || outputRestarted || reasoningRestarted
+            let anyCounterRestarted = inputRestarted
+                || cachedRestarted
+                || cacheWriteRestarted
+                || outputRestarted
+                || reasoningRestarted
 
             // Each counter may restart independently. Treat a decreasing bucket
             // as a new baseline for that bucket instead of either dropping it or
             // replaying every other cumulative bucket in full.
             let deltaInput = inputRestarted ? curInput : curInput - prevInput
             let deltaCached = cachedRestarted ? curCached : curCached - prevCached
+            let deltaCacheWrite = cacheWriteRestarted ? curCacheWrite : curCacheWrite - prevCacheWrite
             let deltaOutput = outputRestarted ? curOutput : curOutput - prevOutput
             let deltaReasoning = reasoningRestarted ? curReasoning : curReasoning - prevReasoning
-            let hasDelta = deltaInput > 0 || deltaCached > 0 || deltaOutput > 0 || deltaReasoning > 0
+            let hasDelta = deltaInput > 0
+                || deltaCached > 0
+                || deltaCacheWrite > 0
+                || deltaOutput > 0
+                || deltaReasoning > 0
 
             if hasDelta {
                 let deltaTokens = TokenBreakdown(
-                    inputTokens: max(deltaInput, deltaCached),
+                    inputTokens: max(deltaInput, deltaCached + deltaCacheWrite),
                     cachedInputTokens: deltaCached,
+                    cacheWriteInputTokens: deltaCacheWrite,
                     outputTokens: max(deltaOutput, deltaReasoning),
                     reasoningOutputTokens: deltaReasoning
                 )
                 state.cumulativeBaseline = TokenBreakdown(
                     inputTokens: curInput,
                     cachedInputTokens: curCached,
+                    cacheWriteInputTokens: curCacheWrite,
                     outputTokens: curOutput,
                     reasoningOutputTokens: curReasoning,
                     sourceTotalTokens: total.totalTokens
@@ -339,6 +357,7 @@ public final class CodexUsageReducer: Sendable {
             state.cumulativeBaseline = TokenBreakdown(
                 inputTokens: curInput,
                 cachedInputTokens: curCached,
+                cacheWriteInputTokens: curCacheWrite,
                 outputTokens: curOutput,
                 reasoningOutputTokens: curReasoning,
                 sourceTotalTokens: total.totalTokens

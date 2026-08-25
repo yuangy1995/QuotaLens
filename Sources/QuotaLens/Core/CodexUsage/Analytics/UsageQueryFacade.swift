@@ -34,8 +34,16 @@ public actor UsageQueryFacade {
         try repository.fetchSessionPage(sort: sort, search: search, project: project, limit: limit, cursor: cursor)
     }
 
-    public func getSessionDetail(sessionId: String) throws -> CodexSessionDetailDTO? {
-        try repository.fetchSessionDetail(sessionId: sessionId)
+    public func getSessionDetail(
+        sessionId: String,
+        eventLimit: Int = 500,
+        eventCursor: String? = nil
+    ) throws -> CodexSessionDetailDTO? {
+        try repository.fetchSessionDetail(
+            sessionId: sessionId,
+            eventLimit: eventLimit,
+            eventCursor: eventCursor
+        )
     }
 
     public func deleteSession(sessionId: String) throws {
@@ -50,8 +58,18 @@ public actor UsageQueryFacade {
         try repository.fetchHistoryDays(daysCount: daysCount, calendar: calendar, now: now)
     }
 
-    public func getDayDetail(dayKey: LocalDayKey, calendar: Calendar = .current) throws -> DayDetailDTO {
-        try repository.fetchDayDetail(dayKey: dayKey, calendar: calendar)
+    public func getDayDetail(
+        dayKey: LocalDayKey,
+        calendar: Calendar = .current,
+        eventLimit: Int = 500,
+        eventCursor: String? = nil
+    ) throws -> DayDetailDTO {
+        try repository.fetchDayDetail(
+            dayKey: dayKey,
+            calendar: calendar,
+            eventLimit: eventLimit,
+            eventCursor: eventCursor
+        )
     }
 
     public func getDashboardMetrics(days: Int = 30, calendar: Calendar = .current) throws -> DashboardMetricsDTO {

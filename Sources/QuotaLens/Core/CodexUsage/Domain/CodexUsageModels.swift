@@ -47,6 +47,7 @@ public struct MoneyNanoUSD: Hashable, Comparable, Sendable, Codable {
 public struct TokenBreakdown: Hashable, Sendable, Codable {
     public let inputTokens: Int64
     public let cachedInputTokens: Int64
+    public let cacheWriteInputTokens: Int64
     public let outputTokens: Int64
     public let reasoningOutputTokens: Int64
     public let sourceTotalTokens: Int64?
@@ -54,14 +55,17 @@ public struct TokenBreakdown: Hashable, Sendable, Codable {
     public init(
         inputTokens: Int64 = 0,
         cachedInputTokens: Int64 = 0,
+        cacheWriteInputTokens: Int64 = 0,
         outputTokens: Int64 = 0,
         reasoningOutputTokens: Int64 = 0,
         sourceTotalTokens: Int64? = nil
     ) {
         let normalizedCached = max(0, cachedInputTokens)
+        let normalizedCacheWrite = max(0, cacheWriteInputTokens)
         let normalizedReasoning = max(0, reasoningOutputTokens)
-        self.inputTokens = max(max(0, inputTokens), normalizedCached)
+        self.inputTokens = max(max(0, inputTokens), normalizedCached + normalizedCacheWrite)
         self.cachedInputTokens = normalizedCached
+        self.cacheWriteInputTokens = normalizedCacheWrite
         self.outputTokens = max(max(0, outputTokens), normalizedReasoning)
         self.reasoningOutputTokens = normalizedReasoning
         self.sourceTotalTokens = sourceTotalTokens
@@ -69,7 +73,7 @@ public struct TokenBreakdown: Hashable, Sendable, Codable {
 
     /// 未命中缓存的输入 Token（计全价）
     public var uncachedInputTokens: Int64 {
-        max(0, inputTokens - cachedInputTokens)
+        max(0, inputTokens - cachedInputTokens - cacheWriteInputTokens)
     }
 
     /// 标准总量回退值：优先使用上游明确 total，否则为 input + output（cached/reasoning 不重复累加）
@@ -92,6 +96,7 @@ public struct TokenBreakdown: Hashable, Sendable, Codable {
         TokenBreakdown(
             inputTokens: lhs.inputTokens + rhs.inputTokens,
             cachedInputTokens: lhs.cachedInputTokens + rhs.cachedInputTokens,
+            cacheWriteInputTokens: lhs.cacheWriteInputTokens + rhs.cacheWriteInputTokens,
             outputTokens: lhs.outputTokens + rhs.outputTokens,
             reasoningOutputTokens: lhs.reasoningOutputTokens + rhs.reasoningOutputTokens,
             sourceTotalTokens: (lhs.canonicalTotalTokens + rhs.canonicalTotalTokens)

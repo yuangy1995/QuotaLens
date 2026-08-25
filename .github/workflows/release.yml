@@ -15,8 +15,44 @@ permissions:
   contents: write
 
 jobs:
+  quality:
+    name: Quality Gate
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Full test suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test
+
+      - name: Migration parser pricing regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --filter 'StorageResilienceTests|ParserRecoveryTests|PricingTruthTests|ImporterRecoveryTests|CodexRolloutScannerTests'
+
+      - name: Release build
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift build -c release
+
+      - name: Git whitespace check
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+
   build:
     name: Build ${{ matrix.label }}
+    needs: quality
     strategy:
       fail-fast: false
       matrix:
@@ -63,20 +99,72 @@ jobs:
           echo "APP_VERSION=${version}" >> "${GITHUB_ENV}"
           echo "RELEASE_TAG=${tag}" >> "${GITHUB_ENV}"
 
+      - name: Import Developer ID certificate
+        shell: bash
+        env:
+          DEVELOPER_ID_APPLICATION: ${{ secrets.DEVELOPER_ID_APPLICATION }}
+          DEVELOPER_ID_CERTIFICATE_BASE64: ${{ secrets.DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64 }}
+          DEVELOPER_ID_CERTIFICATE_PASSWORD: ${{ secrets.DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD }}
+          BUILD_KEYCHAIN_PASSWORD: ${{ secrets.APPLE_BUILD_KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${DEVELOPER_ID_APPLICATION}" ]]; then
+            echo "Missing DEVELOPER_ID_APPLICATION repository secret."
+            exit 1
+          fi
+          if [[ -z "${DEVELOPER_ID_CERTIFICATE_BASE64}" || -z "${DEVELOPER_ID_CERTIFICATE_PASSWORD}" ]]; then
+            echo "Missing Developer ID certificate secrets."
+            exit 1
+          fi
+          if [[ -z "${BUILD_KEYCHAIN_PASSWORD}" ]]; then
+            echo "Missing APPLE_BUILD_KEYCHAIN_PASSWORD repository secret."
+            exit 1
+          fi
+
+          CERT_PATH="${RUNNER_TEMP}/developer-id.p12"
+          KEYCHAIN_PATH="${RUNNER_TEMP}/quotalens-signing.keychain-db"
+          printf '%s' "${DEVELOPER_ID_CERTIFICATE_BASE64}" | base64 -D > "${CERT_PATH}"
+          security create-keychain -p "${BUILD_KEYCHAIN_PASSWORD}" "${KEYCHAIN_PATH}"
+          security set-keychain-settings -lut 21600 "${KEYCHAIN_PATH}"
+          security unlock-keychain -p "${BUILD_KEYCHAIN_PASSWORD}" "${KEYCHAIN_PATH}"
+          security import "${CERT_PATH}" \
+            -P "${DEVELOPER_ID_CERTIFICATE_PASSWORD}" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "${KEYCHAIN_PATH}"
+          security list-keychains -d user -s "${KEYCHAIN_PATH}" $(security list-keychains -d user | sed 's/[ "]//g')
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${BUILD_KEYCHAIN_PASSWORD}" "${KEYCHAIN_PATH}"
+          security find-identity -v -p codesigning "${KEYCHAIN_PATH}" | grep -F "${DEVELOPER_ID_APPLICATION}"
+
       - name: Build package
         shell: bash
         env:
           SPARKLE_PUBLIC_ED_KEY: ${{ secrets.SPARKLE_PUBLIC_ED_KEY }}
+          DEVELOPER_ID_APPLICATION: ${{ secrets.DEVELOPER_ID_APPLICATION }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
         run: |
           set -euo pipefail
           if [[ -z "${SPARKLE_PUBLIC_ED_KEY}" ]]; then
             echo "Missing SPARKLE_PUBLIC_ED_KEY repository secret."
             exit 1
           fi
+          if [[ -z "${DEVELOPER_ID_APPLICATION}" ]]; then
+            echo "Missing DEVELOPER_ID_APPLICATION repository secret."
+            exit 1
+          fi
+          if [[ -z "${APPLE_ID}" || -z "${APPLE_TEAM_ID}" || -z "${APPLE_APP_SPECIFIC_PASSWORD}" ]]; then
+            echo "Missing Apple notarization secrets."
+            exit 1
+          fi
           ./scripts/build_and_package.sh \
             --arch "${{ matrix.arch }}" \
             --version "${APP_VERSION}" \
-            --build-number "${GITHUB_RUN_NUMBER}"
+            --build-number "${GITHUB_RUN_NUMBER}" \
+            --signing-mode developer-id \
+            --notarize
 
       - name: Generate architecture appcast
         if: matrix.arch != 'universal'

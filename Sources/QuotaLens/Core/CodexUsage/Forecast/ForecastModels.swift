@@ -87,6 +87,10 @@ public struct LocalUsageForecastDTO: Sendable {
     public let confidence: ForecastConfidence
     public let dailyProjections: [DailyProjectionPoint]
     public let pricingCoverage: PricingCoverage
+    public let eventPricingCoverage: Double
+    public let tokenPricingCoverage: Double
+    public let costForecastCoverage: Double
+    public let isCostForecastAvailable: Bool
     public let unpricedTokenCount: Int64
 
     public struct DailyProjectionPoint: Identifiable, Sendable {
@@ -106,6 +110,10 @@ public struct LocalUsageForecastDTO: Sendable {
         confidence: ForecastConfidence = .insufficientData,
         dailyProjections: [DailyProjectionPoint] = [],
         pricingCoverage: PricingCoverage = .fullyPriced,
+        eventPricingCoverage: Double = 1.0,
+        tokenPricingCoverage: Double = 1.0,
+        costForecastCoverage: Double = 1.0,
+        isCostForecastAvailable: Bool = true,
         unpricedTokenCount: Int64 = 0
     ) {
         self.daysHorizon = daysHorizon
@@ -114,6 +122,10 @@ public struct LocalUsageForecastDTO: Sendable {
         self.confidence = confidence
         self.dailyProjections = dailyProjections
         self.pricingCoverage = pricingCoverage
+        self.eventPricingCoverage = eventPricingCoverage
+        self.tokenPricingCoverage = tokenPricingCoverage
+        self.costForecastCoverage = costForecastCoverage
+        self.isCostForecastAvailable = isCostForecastAvailable
         self.unpricedTokenCount = unpricedTokenCount
     }
 }

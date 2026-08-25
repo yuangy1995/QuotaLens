@@ -14,6 +14,16 @@ public enum LocalUsageProjection {
         let totalEvents = completeHistory.reduce(0) { $0 + $1.eventCount }
         let unpricedEvents = completeHistory.reduce(0) { $0 + $1.unpricedEventCount }
         let unpricedTokens = completeHistory.reduce(Int64(0)) { $0 + $1.unpricedTokenCount }
+        let totalObservedTokenCoverageBase = completeHistory.reduce(Int64(0)) {
+            $0 + $1.tokens.canonicalTotalTokens
+        }
+        let eventPricingCoverage = totalEvents > 0
+            ? max(0, min(1, Double(totalEvents - unpricedEvents) / Double(totalEvents)))
+            : 1.0
+        let tokenPricingCoverage = totalObservedTokenCoverageBase > 0
+            ? max(0, min(1, Double(max(0, totalObservedTokenCoverageBase - unpricedTokens)) / Double(totalObservedTokenCoverageBase)))
+            : 1.0
+        let isCostForecastAvailable = tokenPricingCoverage >= 0.80
         let coverage: PricingCoverage = unpricedEvents == 0
             ? .fullyPriced
             : (unpricedEvents == totalEvents
@@ -27,6 +37,10 @@ public enum LocalUsageProjection {
                 confidence: .insufficientData,
                 dailyProjections: [],
                 pricingCoverage: coverage,
+                eventPricingCoverage: eventPricingCoverage,
+                tokenPricingCoverage: tokenPricingCoverage,
+                costForecastCoverage: tokenPricingCoverage,
+                isCostForecastAvailable: isCostForecastAvailable,
                 unpricedTokenCount: unpricedTokens
             )
         }
@@ -109,10 +123,14 @@ public enum LocalUsageProjection {
             let p10Token = max(0, Int64(quantile(bootstrap, probability: 0.10).rounded()))
             let p50Token = max(p10Token, Int64(quantile(bootstrap, probability: 0.50).rounded()))
             let p90Token = max(p50Token, Int64(quantile(bootstrap, probability: 0.90).rounded()))
-            let p50CostNano = max(0, Int64((Double(p50Token) * costNanoPerPricedToken).rounded()))
+            let p50CostNano = isCostForecastAvailable
+                ? max(0, Int64((Double(p50Token) * costNanoPerPricedToken).rounded()))
+                : 0
 
             totalProjectedTokens += p50Token
-            totalProjectedCostNano += p50CostNano
+            if isCostForecastAvailable {
+                totalProjectedCostNano += p50CostNano
+            }
 
             projectedPoints.append(
                 LocalUsageForecastDTO.DailyProjectionPoint(
@@ -126,15 +144,22 @@ public enum LocalUsageProjection {
             )
         }
 
-        let confidence: ForecastConfidence = sorted.count >= 28 ? .high : (sorted.count >= 14 ? .medium : .low)
+        let sampleConfidence: ForecastConfidence = sorted.count >= 28 ? .high : (sorted.count >= 14 ? .medium : .low)
+        let confidence: ForecastConfidence = tokenPricingCoverage < 0.95
+            ? .low
+            : sampleConfidence
 
         return LocalUsageForecastDTO(
             daysHorizon: horizonDays,
             projectedTotalTokens: totalProjectedTokens,
-            projectedTotalCost: MoneyNanoUSD(totalProjectedCostNano),
+            projectedTotalCost: isCostForecastAvailable ? MoneyNanoUSD(totalProjectedCostNano) : .zero,
             confidence: confidence,
             dailyProjections: projectedPoints,
             pricingCoverage: coverage,
+            eventPricingCoverage: eventPricingCoverage,
+            tokenPricingCoverage: tokenPricingCoverage,
+            costForecastCoverage: tokenPricingCoverage,
+            isCostForecastAvailable: isCostForecastAvailable,
             unpricedTokenCount: unpricedTokens
         )
     }
