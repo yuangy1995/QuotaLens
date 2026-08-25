@@ -53,6 +53,15 @@ public struct AboutView: View {
     private var defaultChangelogs: [ChangelogEntry] {
         [
             ChangelogEntry(
+                id: "v1.0.13",
+                version: "v1.0.13",
+                date: "2026-08-25",
+                changes: [
+                    L10n.text("优化 App 启动阶段菜单栏控制器初始化生命周期，确保冷启动时即刻可靠挂载菜单栏图标并响应交互", "Optimized menu bar controller initialization during app startup ensuring instant and reliable menu bar presence"),
+                    L10n.text("完善主窗口唤醒与数据刷新回调联动，提升菜单栏常驻模式下的响应速度与稳定性", "Refined main window focus and refresh callback bindings for enhanced menu bar responsiveness")
+                ]
+            ),
+            ChangelogEntry(
                 id: "v1.0.12",
                 version: "v1.0.12",
                 date: "2026-08-25",

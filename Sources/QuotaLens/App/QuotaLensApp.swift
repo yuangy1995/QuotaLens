@@ -5,11 +5,11 @@ import AppKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
-        AppEnvironment.shared.applyDockIconVisibility()
-        AppEnvironment.shared.applyThemeAppearance()
+        let environment = AppEnvironment.shared
+        environment.applyDockIconVisibility()
+        environment.applyThemeAppearance()
+        environment.installStartupMenuBarController()
         NSApp.activate(ignoringOtherApps: true)
-        // 强制立即初始化全局单例环境
-        _ = AppEnvironment.shared
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

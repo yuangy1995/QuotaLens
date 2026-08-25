@@ -307,6 +307,22 @@ public final class AppEnvironment: ObservableObject {
         state.launchAtLoginStatusText = loginState.description
     }
 
+    public func installStartupMenuBarController() {
+        installMenuBarController(
+            onOpenMainWindow: { [weak self] in
+                guard let self else { return }
+                if !self.focusExistingMainWindow() {
+                    NSApp.activate(ignoringOtherApps: true)
+                }
+            },
+            onRefresh: { [weak self] in
+                Task { @MainActor [weak self] in
+                    await self?.refreshAllData()
+                }
+            }
+        )
+    }
+
     private func isMainWindow(_ window: NSWindow) -> Bool {
         window.identifier?.rawValue == "main" || window.title == "QuotaLens"
     }
@@ -1287,4 +1303,3 @@ public final class AppEnvironment: ObservableObject {
         await refreshAllData(fetchServer: true, scheduleRetryOnFailure: true)
     }
 }
-
