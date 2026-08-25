@@ -32,6 +32,10 @@ public actor UsageQueryFacade {
         try repository.fetchSessionDetail(sessionId: sessionId)
     }
 
+    public func deleteSession(sessionId: String) throws {
+        try repository.deleteSession(sessionId: sessionId)
+    }
+
     public func getHistoryDays(
         daysCount: Int = 30,
         calendar: Calendar = .current,

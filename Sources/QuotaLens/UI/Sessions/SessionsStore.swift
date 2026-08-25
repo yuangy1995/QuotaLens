@@ -27,6 +27,7 @@ public final class SessionsStore: ObservableObject {
     @Published public var isLoading: Bool = false
     @Published public var isLoadingNextPage: Bool = false
     @Published public var isLoadingDetail: Bool = false
+    @Published public var isDeletingSession: Bool = false
     @Published public var errorMessage: String? = nil
 
     private let facade: UsageQueryFacade
@@ -105,6 +106,28 @@ public final class SessionsStore: ObservableObject {
             self.errorMessage = error.localizedDescription
         }
         isLoadingDetail = false
+    }
+
+    @discardableResult
+    public func deleteSession(_ session: CodexSessionDTO) async -> Bool {
+        guard !isDeletingSession else { return false }
+        isDeletingSession = true
+        errorMessage = nil
+        defer { isDeletingSession = false }
+
+        do {
+            try await facade.deleteSession(sessionId: session.sessionId)
+            if selectedSessionId == session.sessionId
+                || selectedDetail?.session.rootSessionId == session.rootSessionId {
+                selectedSessionId = nil
+                selectedDetail = nil
+            }
+            await reloadSessions()
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
     }
 
     private func debounceSearch() {

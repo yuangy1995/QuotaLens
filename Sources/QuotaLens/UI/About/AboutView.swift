@@ -4,6 +4,12 @@ import Foundation
 import SwiftUI
 import AppKit
 
+enum ChangelogContentPolicy {
+    static func allowsRemoteContent(for language: AppLanguage) -> Bool {
+        language == .simplifiedChinese
+    }
+}
+
 public struct AboutView: View {
     @ObservedObject var state: AppState
     @ObservedObject var updateManager: UpdateManager
@@ -145,7 +151,10 @@ public struct AboutView: View {
     }
 
     private var displayedChangelogs: [ChangelogEntry] {
-        remoteChangelogs ?? defaultChangelogs
+        guard ChangelogContentPolicy.allowsRemoteContent(for: L10n.language) else {
+            return defaultChangelogs
+        }
+        return remoteChangelogs ?? defaultChangelogs
     }
 
     private var displayedLicenseText: String {
@@ -219,6 +228,12 @@ public struct AboutView: View {
             }
         }
         .animation(.spring(response: 0.28, dampingFraction: 0.86), value: activeModal != nil)
+        .onChange(of: state.languageMode) { _, _ in
+            remoteChangelogs = nil
+            if activeModal == .changelog {
+                Task { await fetchRemoteChangelogs() }
+            }
+        }
     }
 
     // MARK: - 核心品牌与版本卡片
@@ -862,6 +877,13 @@ public struct AboutView: View {
         isFetchingChangelog = true
         defer { isFetchingChangelog = false }
 
+        // The public remote changelog is Simplified Chinese. All other
+        // languages use the bundled, fully localized structured changelog so
+        // a network refresh can never replace it with Chinese copy.
+        remoteChangelogs = nil
+        let requestedLanguage = L10n.language
+        guard ChangelogContentPolicy.allowsRemoteContent(for: requestedLanguage) else { return }
+
         // 1. 优先拉取 raw CHANGELOG.md（包含详细改动项）
         let changelogURL = URL(string: "https://raw.githubusercontent.com/yuangy1995/QuotaLens/main/CHANGELOG.md")!
         var request = URLRequest(url: changelogURL, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData, timeoutInterval: 8)
@@ -872,7 +894,7 @@ public struct AboutView: View {
             if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode),
                let text = String(data: data, encoding: .utf8) {
                 let parsed = parseMarkdownChangelog(text)
-                if !parsed.isEmpty {
+                if !parsed.isEmpty, L10n.language == requestedLanguage {
                     remoteChangelogs = parsed
                     return
                 }
@@ -891,7 +913,7 @@ public struct AboutView: View {
             let (data, response) = try await URLSession.shared.data(for: relRequest)
             if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
                 let parsed = parseGitHubReleases(data)
-                if !parsed.isEmpty {
+                if !parsed.isEmpty, L10n.language == requestedLanguage {
                     remoteChangelogs = parsed
                 }
             }
@@ -1102,5 +1124,3 @@ public struct AboutView: View {
         """
     }
 }
-
-

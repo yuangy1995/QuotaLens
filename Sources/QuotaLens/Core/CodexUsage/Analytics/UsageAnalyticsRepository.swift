@@ -4,8 +4,34 @@
 import Foundation
 import SQLite3
 
+public enum SessionDeletionError: LocalizedError, Sendable {
+    case sessionNotFound
+    case unsafeSourcePath(String)
+    case sourceIsNotRegularFile(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .sessionNotFound:
+            return L10n.text("该会话已不存在。", "The session no longer exists.")
+        case .unsafeSourcePath(let path):
+            return L10n.format(
+                "QuotaLens refused to delete a source outside the Codex session folders: %@",
+                zhHans: "QuotaLens 已拒绝删除 Codex 会话目录之外的文件：%@",
+                path
+            )
+        case .sourceIsNotRegularFile(let path):
+            return L10n.format(
+                "The session source is not a regular file: %@",
+                zhHans: "会话源不是普通文件：%@",
+                path
+            )
+        }
+    }
+}
+
 public final class UsageAnalyticsRepository: Sendable {
     private let database: SQLiteDatabase
+    private let trashSourceFile: @Sendable (URL) throws -> Void
     private typealias DayAggregate = (
         tokens: TokenBreakdown,
         cost: MoneyNanoUSD,
@@ -16,8 +42,29 @@ public final class UsageAnalyticsRepository: Sendable {
         unpricedTokens: Int64
     )
 
-    public init(database: SQLiteDatabase) {
+    /// One already-aggregated session/model/day slice. Normal queries read
+    /// these from `codex_daily_usage_summaries` so UI loading cost is bounded
+    /// by the number of sessions and models, not by raw ledger event count.
+    private struct UsageAggregateSlice {
+        let dayKey: LocalDayKey
+        let tokens: TokenBreakdown
+        let cost: MoneyNanoUSD
+        let model: String
+        let sessionId: String
+        let eventCount: Int
+        let unpricedCount: Int
+        let unpricedTokens: Int64
+    }
+
+    public init(
+        database: SQLiteDatabase,
+        trashSourceFile: @escaping @Sendable (URL) throws -> Void = { sourceURL in
+            var resultingURL: NSURL?
+            try FileManager.default.trashItem(at: sourceURL, resultingItemURL: &resultingURL)
+        }
+    ) {
         self.database = database
+        self.trashSourceFile = trashSourceFile
     }
 
     // MARK: - 1. 会话列表查询 (支持 Keyset 分页与搜索)
@@ -232,6 +279,105 @@ public final class UsageAnalyticsRepository: Sendable {
         )
     }
 
+    /// Moves the rollout source for a session tree to the macOS Trash, then
+    /// removes its derived analytics rows so the deleted session disappears
+    /// immediately and is not re-imported on the next scan.
+    public func deleteSession(sessionId: String, historyRootURL: URL? = nil) throws {
+        struct SourceRecord {
+            let sessionId: String
+            let sourcePath: String
+            let relativePath: String
+        }
+
+        let records = try database.executeQuery(
+            sql: """
+            SELECT session_id, source_path, relative_path
+            FROM codex_sessions
+            WHERE session_id = ?
+               OR root_session_id = (
+                    SELECT root_session_id
+                    FROM codex_sessions
+                    WHERE session_id = ?
+               );
+            """,
+            bindings: [sessionId, sessionId]
+        ) { statement -> SourceRecord in
+            SourceRecord(
+                sessionId: String(cString: sqlite3_column_text(statement, 0)),
+                sourcePath: String(cString: sqlite3_column_text(statement, 1)),
+                relativePath: String(cString: sqlite3_column_text(statement, 2))
+            )
+        }
+
+        guard !records.isEmpty else {
+            throw SessionDeletionError.sessionNotFound
+        }
+
+        let historyPaths = CodexHistoryPaths(
+            rootURL: historyRootURL ?? CodexHistoryRootResolver.resolveRootURL()
+        )
+        var sourceURLsByPath: [String: URL] = [:]
+        for record in records {
+            let sourceURL = try Self.safeSessionSourceURL(
+                sourcePath: record.sourcePath,
+                relativePath: record.relativePath,
+                historyPaths: historyPaths
+            )
+            sourceURLsByPath[sourceURL.path] = sourceURL
+        }
+
+        let fileManager = FileManager.default
+        for sourceURL in sourceURLsByPath.values.sorted(by: { $0.path < $1.path }) {
+            guard fileManager.fileExists(atPath: sourceURL.path) else { continue }
+            let values = try sourceURL.resourceValues(forKeys: [.isRegularFileKey])
+            guard values.isRegularFile == true else {
+                throw SessionDeletionError.sourceIsNotRegularFile(sourceURL.path)
+            }
+            try trashSourceFile(sourceURL)
+        }
+
+        let sessionIDs = Set(records.map(\.sessionId))
+        let sourceKeys = Set(records.map { "\($0.sourcePath)\u{1F}\($0.relativePath)" })
+
+        try database.transaction {
+            for sessionID in sessionIDs {
+                try database.executeUpdate(
+                    sql: "DELETE FROM codex_usage_events WHERE session_id = ? OR root_session_id = ?;",
+                    bindings: [sessionID, sessionID]
+                )
+                try database.executeUpdate(
+                    sql: "DELETE FROM codex_session_summaries WHERE session_id = ?;",
+                    bindings: [sessionID]
+                )
+                try database.executeUpdate(
+                    sql: "DELETE FROM codex_daily_usage_summaries WHERE session_id = ?;",
+                    bindings: [sessionID]
+                )
+            }
+
+            for sourceKey in sourceKeys {
+                let parts = sourceKey.split(separator: "\u{1F}", maxSplits: 1, omittingEmptySubsequences: false)
+                let sourcePath = String(parts[0])
+                let relativePath = parts.count > 1 ? String(parts[1]) : ""
+                try database.executeUpdate(
+                    sql: "DELETE FROM codex_usage_events WHERE source_path = ? OR source_path = ?;",
+                    bindings: [sourcePath, relativePath]
+                )
+                try database.executeUpdate(
+                    sql: "DELETE FROM codex_import_sources WHERE source_path = ? OR relative_path = ?;",
+                    bindings: [sourcePath, relativePath]
+                )
+            }
+
+            for sessionID in sessionIDs {
+                try database.executeUpdate(
+                    sql: "DELETE FROM codex_sessions WHERE session_id = ?;",
+                    bindings: [sessionID]
+                )
+            }
+        }
+    }
+
     // MARK: - 3. 每日用量汇总 (History 列表)
     public func fetchHistoryDays(
         daysCount: Int = 30,
@@ -244,58 +390,11 @@ public final class UsageAnalyticsRepository: Sendable {
               let endDate = calendar.date(byAdding: .day, value: 1, to: todayStart) else {
             return []
         }
-        let startTs = Int64(startDate.timeIntervalSince1970 * 1000)
-        let endTs = Int64(endDate.timeIntervalSince1970 * 1000)
-
-        let sql = """
-        SELECT
-            timestamp_ms, model_canonical, session_id, pricing_status,
-            input_tokens, cached_input_tokens, output_tokens, reasoning_output_tokens,
-            total_tokens, estimated_cost_usd_nano
-        FROM codex_usage_events
-        WHERE is_child_replay = 0 AND timestamp_ms >= ? AND timestamp_ms < ?
-        ORDER BY timestamp_ms ASC;
-        """
-
-        struct EventSlice {
-            let dayKey: LocalDayKey
-            let tokens: TokenBreakdown
-            let cost: MoneyNanoUSD
-            let model: String
-            let sessionId: String
-            let eventCount: Int
-            let unpricedCount: Int
-            let unpricedTokens: Int64
-        }
-
-        let slices: [EventSlice] = try database.executeQuery(sql: sql, bindings: [startTs, endTs]) { stmt in
-            let timestampMs = sqlite3_column_int64(stmt, 0)
-            let model = String(cString: sqlite3_column_text(stmt, 1))
-            let sess = String(cString: sqlite3_column_text(stmt, 2))
-            let pricingStatus = PricingStatus(rawValue: String(cString: sqlite3_column_text(stmt, 3))) ?? .unpricedUnknownModel
-            let totalTokens = sqlite3_column_int64(stmt, 8)
-            let cachedTokens = sqlite3_column_int64(stmt, 5)
-
-            return EventSlice(
-                dayKey: LocalDayKey(
-                    date: Date(timeIntervalSince1970: Double(timestampMs) / 1000.0),
-                    calendar: calendar
-                ),
-                tokens: TokenBreakdown(
-                    inputTokens: sqlite3_column_int64(stmt, 4),
-                    cachedInputTokens: cachedTokens,
-                    outputTokens: sqlite3_column_int64(stmt, 6),
-                    reasoningOutputTokens: sqlite3_column_int64(stmt, 7),
-                    sourceTotalTokens: totalTokens
-                ),
-                cost: MoneyNanoUSD(sqlite3_column_int64(stmt, 9)),
-                model: model,
-                sessionId: sess,
-                eventCount: 1,
-                unpricedCount: pricingStatus.isPriced ? 0 : 1,
-                unpricedTokens: pricingStatus.isPriced ? 0 : totalTokens
-            )
-        }
+        let slices = try fetchUsageAggregateSlices(
+            rangeStart: startDate,
+            endExclusive: endDate,
+            calendar: calendar
+        )
 
         // 按日历日分组聚合
         var daysMap: [LocalDayKey: DayAggregate] = [:]
@@ -390,36 +489,69 @@ public final class UsageAnalyticsRepository: Sendable {
             let unpricedTokenCount: Int64
         }
 
-        let sessionRows = try database.executeQuery(
-            sql: """
-            SELECT
-                session_id, COUNT(*), SUM(input_tokens), SUM(cached_input_tokens),
-                SUM(output_tokens), SUM(reasoning_output_tokens), SUM(total_tokens),
-                SUM(estimated_cost_usd_nano),
-                SUM(CASE WHEN pricing_status = 'priced' THEN 0 ELSE 1 END),
-                SUM(CASE WHEN pricing_status = 'priced' THEN 0 ELSE total_tokens END)
-            FROM codex_usage_events
-            WHERE is_child_replay = 0 AND timestamp_ms >= ? AND timestamp_ms < ?
-            GROUP BY session_id
-            ORDER BY SUM(total_tokens) DESC, session_id DESC;
-            """,
-            bindings: [startMs, endMs]
-        ) { stmt in
-            SessionAggregateRow(
-                sessionId: String(cString: sqlite3_column_text(stmt, 0)),
-                eventCount: Int(sqlite3_column_int(stmt, 1)),
-                tokens: TokenBreakdown(
-                    inputTokens: sqlite3_column_int64(stmt, 2),
-                    cachedInputTokens: sqlite3_column_int64(stmt, 3),
-                    outputTokens: sqlite3_column_int64(stmt, 4),
-                    reasoningOutputTokens: sqlite3_column_int64(stmt, 5),
-                    sourceTotalTokens: sqlite3_column_int64(stmt, 6)
-                ),
-                cost: MoneyNanoUSD(sqlite3_column_int64(stmt, 7)),
-                unpricedCount: Int(sqlite3_column_int(stmt, 8)),
-                unpricedTokenCount: sqlite3_column_int64(stmt, 9)
-            )
+        let aggregateSlices = try fetchUsageAggregateSlices(
+            rangeStart: startDate,
+            endExclusive: endDate,
+            calendar: calendar
+        )
+        var sessionAggregates: [String: (
+            eventCount: Int,
+            tokens: TokenBreakdown,
+            cost: MoneyNanoUSD,
+            unpricedCount: Int,
+            unpricedTokens: Int64
+        )] = [:]
+        var modelAggregates: [String: (
+            eventCount: Int,
+            tokens: TokenBreakdown,
+            cost: MoneyNanoUSD,
+            unpricedCount: Int
+        )] = [:]
+
+        for aggregate in aggregateSlices {
+            var session = sessionAggregates[aggregate.sessionId]
+                ?? (0, .zero, .zero, 0, 0)
+            session.eventCount += aggregate.eventCount
+            session.tokens = session.tokens + aggregate.tokens
+            session.cost = session.cost + aggregate.cost
+            session.unpricedCount += aggregate.unpricedCount
+            session.unpricedTokens += aggregate.unpricedTokens
+            sessionAggregates[aggregate.sessionId] = session
+
+            var model = modelAggregates[aggregate.model]
+                ?? (0, .zero, .zero, 0)
+            model.eventCount += aggregate.eventCount
+            model.tokens = model.tokens + aggregate.tokens
+            model.cost = model.cost + aggregate.cost
+            model.unpricedCount += aggregate.unpricedCount
+            modelAggregates[aggregate.model] = model
         }
+
+        let sessionRows = sessionAggregates.map { sessionId, aggregate in
+            SessionAggregateRow(
+                sessionId: sessionId,
+                eventCount: aggregate.eventCount,
+                tokens: aggregate.tokens,
+                cost: aggregate.cost,
+                unpricedCount: aggregate.unpricedCount,
+                unpricedTokenCount: aggregate.unpricedTokens
+            )
+        }.sorted {
+            if $0.tokens.canonicalTotalTokens != $1.tokens.canonicalTotalTokens {
+                return $0.tokens.canonicalTotalTokens > $1.tokens.canonicalTotalTokens
+            }
+            return $0.sessionId > $1.sessionId
+        }
+
+        let modelSummaries = modelAggregates.map { model, aggregate in
+            ModelUsageSummaryDTO(
+                modelCanonical: model,
+                tokens: aggregate.tokens,
+                estimatedCost: aggregate.cost,
+                eventCount: aggregate.eventCount,
+                unpricedCount: aggregate.unpricedCount
+            )
+        }.sorted { $0.tokens.canonicalTotalTokens > $1.tokens.canonicalTotalTokens }
 
         let recentEvents = try database.executeQuery(
             sql: """
@@ -477,35 +609,6 @@ public final class UsageAnalyticsRepository: Sendable {
             )
         }
 
-        let modelSummaries = try database.executeQuery(
-            sql: """
-            SELECT
-                model_canonical, SUM(input_tokens), SUM(cached_input_tokens),
-                SUM(output_tokens), SUM(reasoning_output_tokens), SUM(total_tokens),
-                SUM(estimated_cost_usd_nano), COUNT(*),
-                SUM(CASE WHEN pricing_status = 'priced' THEN 0 ELSE 1 END)
-            FROM codex_usage_events
-            WHERE is_child_replay = 0 AND timestamp_ms >= ? AND timestamp_ms < ?
-            GROUP BY model_canonical
-            ORDER BY SUM(total_tokens) DESC, model_canonical ASC;
-            """,
-            bindings: [startMs, endMs]
-        ) { stmt in
-            ModelUsageSummaryDTO(
-                modelCanonical: String(cString: sqlite3_column_text(stmt, 0)),
-                tokens: TokenBreakdown(
-                    inputTokens: sqlite3_column_int64(stmt, 1),
-                    cachedInputTokens: sqlite3_column_int64(stmt, 2),
-                    outputTokens: sqlite3_column_int64(stmt, 3),
-                    reasoningOutputTokens: sqlite3_column_int64(stmt, 4),
-                    sourceTotalTokens: sqlite3_column_int64(stmt, 5)
-                ),
-                estimatedCost: MoneyNanoUSD(sqlite3_column_int64(stmt, 6)),
-                eventCount: Int(sqlite3_column_int(stmt, 7)),
-                unpricedCount: Int(sqlite3_column_int(stmt, 8))
-            )
-        }
-
         return DayDetailDTO(
             summary: DayUsageSummaryDTO(
                 dayKey: dayKey,
@@ -543,60 +646,16 @@ public final class UsageAnalyticsRepository: Sendable {
         endExclusive endDate: Date,
         calendar: Calendar = .current
     ) throws -> DashboardMetricsDTO {
-        let startTs = Int64(startDate.timeIntervalSince1970 * 1000)
-        let endTs = Int64(endDate.timeIntervalSince1970 * 1000)
-
-        struct EventSlice {
-            let timestampMs: Int64
-            let dayKey: LocalDayKey
-            let tokens: TokenBreakdown
-            let cost: MoneyNanoUSD
-            let model: String
-            let sessionId: String
-            let pricingStatus: PricingStatus
-        }
-
-        let slices = try database.executeQuery(
-            sql: """
-            SELECT
-                timestamp_ms, model_canonical, session_id, pricing_status,
-                input_tokens, cached_input_tokens, output_tokens, reasoning_output_tokens,
-                total_tokens, estimated_cost_usd_nano
-            FROM codex_usage_events
-            WHERE is_child_replay = 0
-              AND timestamp_ms >= ?
-              AND timestamp_ms < ?
-            ORDER BY timestamp_ms ASC;
-            """,
-            bindings: [startTs, endTs]
-        ) { stmt -> EventSlice in
-            let ts = sqlite3_column_int64(stmt, 0)
-            let date = Date(timeIntervalSince1970: Double(ts) / 1000.0)
-            let model = String(cString: sqlite3_column_text(stmt, 1))
-            let sessionId = String(cString: sqlite3_column_text(stmt, 2))
-            let pricingStatusRaw = String(cString: sqlite3_column_text(stmt, 3))
-            let total = sqlite3_column_int64(stmt, 8)
-            return EventSlice(
-                timestampMs: ts,
-                dayKey: LocalDayKey(date: date, calendar: calendar),
-                tokens: TokenBreakdown(
-                    inputTokens: sqlite3_column_int64(stmt, 4),
-                    cachedInputTokens: sqlite3_column_int64(stmt, 5),
-                    outputTokens: sqlite3_column_int64(stmt, 6),
-                    reasoningOutputTokens: sqlite3_column_int64(stmt, 7),
-                    sourceTotalTokens: total
-                ),
-                cost: MoneyNanoUSD(sqlite3_column_int64(stmt, 9)),
-                model: model,
-                sessionId: sessionId,
-                pricingStatus: PricingStatus(rawValue: pricingStatusRaw) ?? .unpricedUnknownModel
-            )
-        }
+        let slices = try fetchUsageAggregateSlices(
+            rangeStart: startDate,
+            endExclusive: endDate,
+            calendar: calendar
+        )
 
         var totalTokens = TokenBreakdown.zero
         var totalCost = MoneyNanoUSD.zero
         var totalEvents = 0
-        var modelsAgg: [String: (tokens: TokenBreakdown, cost: MoneyNanoUSD, count: Int)] = [:]
+        var modelsAgg: [String: (tokens: TokenBreakdown, cost: MoneyNanoUSD, count: Int, unpriced: Int)] = [:]
         var unpricedTotal = 0
         var sessions = Set<String>()
         var daysMap: [LocalDayKey: DayAggregate] = [:]
@@ -604,16 +663,15 @@ public final class UsageAnalyticsRepository: Sendable {
         for slice in slices {
             totalTokens = totalTokens + slice.tokens
             totalCost = totalCost + slice.cost
-            totalEvents += 1
+            totalEvents += slice.eventCount
             sessions.insert(slice.sessionId)
-            if !slice.pricingStatus.isPriced {
-                unpricedTotal += 1
-            }
+            unpricedTotal += slice.unpricedCount
 
-            var modelEntry = modelsAgg[slice.model] ?? (tokens: .zero, cost: .zero, count: 0)
+            var modelEntry = modelsAgg[slice.model] ?? (tokens: .zero, cost: .zero, count: 0, unpriced: 0)
             modelEntry.tokens = modelEntry.tokens + slice.tokens
             modelEntry.cost = modelEntry.cost + slice.cost
-            modelEntry.count += 1
+            modelEntry.count += slice.eventCount
+            modelEntry.unpriced += slice.unpricedCount
             modelsAgg[slice.model] = modelEntry
 
             var dayEntry = daysMap[slice.dayKey] ?? (
@@ -627,16 +685,14 @@ public final class UsageAnalyticsRepository: Sendable {
             )
             dayEntry.tokens = dayEntry.tokens + slice.tokens
             dayEntry.cost = dayEntry.cost + slice.cost
-            dayEntry.eventCount += 1
+            dayEntry.eventCount += slice.eventCount
             dayEntry.sessions.insert(slice.sessionId)
-            if !slice.pricingStatus.isPriced {
-                dayEntry.unpriced += 1
-                dayEntry.unpricedTokens += slice.tokens.canonicalTotalTokens
-            }
+            dayEntry.unpriced += slice.unpricedCount
+            dayEntry.unpricedTokens += slice.unpricedTokens
             var dayModelEntry = dayEntry.models[slice.model] ?? (tokens: .zero, cost: .zero, count: 0)
             dayModelEntry.tokens = dayModelEntry.tokens + slice.tokens
             dayModelEntry.cost = dayModelEntry.cost + slice.cost
-            dayModelEntry.count += 1
+            dayModelEntry.count += slice.eventCount
             dayEntry.models[slice.model] = dayModelEntry
             daysMap[slice.dayKey] = dayEntry
         }
@@ -646,7 +702,8 @@ public final class UsageAnalyticsRepository: Sendable {
                 modelCanonical: modelKey,
                 tokens: val.tokens,
                 estimatedCost: val.cost,
-                eventCount: val.count
+                eventCount: val.count,
+                unpricedCount: val.unpriced
             )
         }.sorted { $0.tokens.canonicalTotalTokens > $1.tokens.canonicalTotalTokens }
 
@@ -929,6 +986,170 @@ public final class UsageAnalyticsRepository: Sendable {
             .replacingOccurrences(of: "_", with: "\\_")
     }
 
+    /// Reads full calendar days from the compact aggregate table and only
+    /// touches raw ledger events for the two partial boundary days. A fallback
+    /// keeps manually-created and legacy databases working when summaries have
+    /// not been built yet.
+    private func fetchUsageAggregateSlices(
+        rangeStart startDate: Date,
+        endExclusive endDate: Date,
+        calendar: Calendar
+    ) throws -> [UsageAggregateSlice] {
+        guard startDate < endDate else { return [] }
+
+        let startDay = calendar.startOfDay(for: startDate)
+        let endDay = calendar.startOfDay(for: endDate)
+        guard let dayAfterStart = calendar.date(byAdding: .day, value: 1, to: startDay) else {
+            return try fetchRawUsageSlices(rangeStart: startDate, endExclusive: endDate, calendar: calendar)
+        }
+
+        let startsOnDayBoundary = abs(startDate.timeIntervalSince(startDay)) < 0.001
+        let summaryStart = startsOnDayBoundary ? startDay : dayAfterStart
+
+        // No complete calendar day exists inside this range.
+        guard summaryStart < endDay else {
+            return try fetchRawUsageSlices(rangeStart: startDate, endExclusive: endDate, calendar: calendar)
+        }
+
+        var slices: [UsageAggregateSlice] = []
+        if startDate < summaryStart {
+            slices += try fetchRawUsageSlices(
+                rangeStart: startDate,
+                endExclusive: min(summaryStart, endDate),
+                calendar: calendar
+            )
+        }
+
+        slices += try fetchFullDayUsageSlices(
+            rangeStart: summaryStart,
+            endExclusive: endDay,
+            calendar: calendar
+        )
+
+        if endDay < endDate {
+            slices += try fetchRawUsageSlices(
+                rangeStart: max(endDay, startDate),
+                endExclusive: endDate,
+                calendar: calendar
+            )
+        }
+        return slices
+    }
+
+    private func fetchFullDayUsageSlices(
+        rangeStart startDate: Date,
+        endExclusive endDate: Date,
+        calendar: Calendar
+    ) throws -> [UsageAggregateSlice] {
+        guard startDate < endDate else { return [] }
+        let startMs = Int64(startDate.timeIntervalSince1970 * 1_000)
+        let endMs = Int64(endDate.timeIntervalSince1970 * 1_000)
+
+        let summaries = try database.executeQuery(
+            sql: """
+            SELECT
+                session_id, day_start_ms, model_canonical, event_count, total_tokens,
+                uncached_input_tokens, cached_input_tokens, output_tokens,
+                reasoning_output_tokens, estimated_cost_usd_nano, unpriced_event_count
+            FROM codex_daily_usage_summaries
+            WHERE day_start_ms >= ? AND day_start_ms < ?
+            ORDER BY day_start_ms ASC, session_id ASC, model_canonical ASC;
+            """,
+            bindings: [startMs, endMs]
+        ) { statement -> UsageAggregateSlice in
+            let total = sqlite3_column_int64(statement, 4)
+            let uncached = sqlite3_column_int64(statement, 5)
+            let cached = sqlite3_column_int64(statement, 6)
+            let unpriced = Int(sqlite3_column_int(statement, 10))
+            let dayStart = Date(
+                timeIntervalSince1970: Double(sqlite3_column_int64(statement, 1)) / 1_000.0
+            )
+            return UsageAggregateSlice(
+                dayKey: LocalDayKey(date: dayStart, calendar: calendar),
+                tokens: TokenBreakdown(
+                    inputTokens: uncached + cached,
+                    cachedInputTokens: cached,
+                    outputTokens: sqlite3_column_int64(statement, 7),
+                    reasoningOutputTokens: sqlite3_column_int64(statement, 8),
+                    sourceTotalTokens: total
+                ),
+                cost: MoneyNanoUSD(sqlite3_column_int64(statement, 9)),
+                model: String(cString: sqlite3_column_text(statement, 2)),
+                sessionId: String(cString: sqlite3_column_text(statement, 0)),
+                eventCount: Int(sqlite3_column_int(statement, 3)),
+                unpricedCount: unpriced,
+                // Summaries are grouped by model. A model row containing an
+                // unpriced event is conservatively treated as fully unpriced.
+                unpricedTokens: unpriced > 0 ? total : 0
+            )
+        }
+
+        if !summaries.isEmpty {
+            return summaries
+        }
+
+        let hasRawEvents = try database.intScalar(
+            sql: """
+            SELECT EXISTS(
+                SELECT 1 FROM codex_usage_events
+                WHERE is_child_replay = 0 AND timestamp_ms >= ? AND timestamp_ms < ?
+                LIMIT 1
+            );
+            """,
+            bindings: [startMs, endMs]
+        ) > 0
+        return hasRawEvents
+            ? try fetchRawUsageSlices(rangeStart: startDate, endExclusive: endDate, calendar: calendar)
+            : []
+    }
+
+    private func fetchRawUsageSlices(
+        rangeStart startDate: Date,
+        endExclusive endDate: Date,
+        calendar: Calendar
+    ) throws -> [UsageAggregateSlice] {
+        guard startDate < endDate else { return [] }
+        let startMs = Int64(startDate.timeIntervalSince1970 * 1_000)
+        let endMs = Int64(endDate.timeIntervalSince1970 * 1_000)
+
+        return try database.executeQuery(
+            sql: """
+            SELECT
+                timestamp_ms, model_canonical, session_id, pricing_status,
+                input_tokens, cached_input_tokens, output_tokens, reasoning_output_tokens,
+                total_tokens, estimated_cost_usd_nano
+            FROM codex_usage_events
+            WHERE is_child_replay = 0 AND timestamp_ms >= ? AND timestamp_ms < ?;
+            """,
+            bindings: [startMs, endMs]
+        ) { statement -> UsageAggregateSlice in
+            let timestampMs = sqlite3_column_int64(statement, 0)
+            let total = sqlite3_column_int64(statement, 8)
+            let pricingStatus = PricingStatus(
+                rawValue: String(cString: sqlite3_column_text(statement, 3))
+            ) ?? .unpricedUnknownModel
+            return UsageAggregateSlice(
+                dayKey: LocalDayKey(
+                    date: Date(timeIntervalSince1970: Double(timestampMs) / 1_000.0),
+                    calendar: calendar
+                ),
+                tokens: TokenBreakdown(
+                    inputTokens: sqlite3_column_int64(statement, 4),
+                    cachedInputTokens: sqlite3_column_int64(statement, 5),
+                    outputTokens: sqlite3_column_int64(statement, 6),
+                    reasoningOutputTokens: sqlite3_column_int64(statement, 7),
+                    sourceTotalTokens: total
+                ),
+                cost: MoneyNanoUSD(sqlite3_column_int64(statement, 9)),
+                model: String(cString: sqlite3_column_text(statement, 1)),
+                sessionId: String(cString: sqlite3_column_text(statement, 2)),
+                eventCount: 1,
+                unpricedCount: pricingStatus.isPriced ? 0 : 1,
+                unpricedTokens: pricingStatus.isPriced ? 0 : total
+            )
+        }
+    }
+
     private static func filledDailyBuckets(
         startDate: Date,
         endDate: Date,
@@ -1040,6 +1261,47 @@ public final class UsageAnalyticsRepository: Sendable {
         return CodexHistoryRootResolver.resolvePaths().rootURL
             .appendingPathComponent(path)
             .path
+    }
+
+    private static func safeSessionSourceURL(
+        sourcePath: String,
+        relativePath: String,
+        historyPaths: CodexHistoryPaths
+    ) throws -> URL {
+        let rootURL = historyPaths.rootURL.standardizedFileURL.resolvingSymlinksInPath()
+        let allowedRoots = [historyPaths.sessionsURL, historyPaths.archivedSessionsURL]
+            .map { $0.standardizedFileURL.resolvingSymlinksInPath() }
+
+        var candidates: [URL] = []
+        if !sourcePath.isEmpty {
+            candidates.append(
+                sourcePath.hasPrefix("/")
+                    ? URL(fileURLWithPath: sourcePath)
+                    : rootURL.appendingPathComponent(sourcePath)
+            )
+        }
+        if !relativePath.isEmpty {
+            candidates.append(rootURL.appendingPathComponent(relativePath))
+        }
+
+        let safeCandidates = candidates
+            .map { $0.standardizedFileURL.resolvingSymlinksInPath() }
+            .filter { candidate in
+                allowedRoots.contains { allowedRoot in
+                    candidate.path.hasPrefix(allowedRoot.path + "/")
+                }
+            }
+
+        if let existing = safeCandidates.first(where: { FileManager.default.fileExists(atPath: $0.path) }) {
+            return existing
+        }
+        if let safeCandidate = safeCandidates.first {
+            return safeCandidate
+        }
+
+        throw SessionDeletionError.unsafeSourcePath(
+            sourcePath.isEmpty ? relativePath : sourcePath
+        )
     }
 
     private static func mapEventRow(_ stmt: OpaquePointer) -> CodexUsageEventDTO {

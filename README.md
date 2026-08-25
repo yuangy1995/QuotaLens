@@ -14,12 +14,17 @@ QuotaLens is a native macOS menu bar app for tracking Codex and ChatGPT quota us
 - Reset-card expiry reminders with acknowledge and snooze controls.
 - Local SQLite persistence under `~/Library/Application Support/QuotaLens/quotalens.sqlite`.
 - Local Codex usage analytics from `~/.codex/sessions` and, when enabled, `~/.codex/archived_sessions`, including Sessions, History, Dashboard, model mix, cache hit rate, and token trend views.
+- Pointer-following detail cards for usage bars and the annual heatmap. Hover feedback stays inside the chart overlay and never resizes or shifts the heatmap.
+- Session rows include a right-click Delete action. Subagent details provide a Back to Main Session control, and the search toolbar uses one unambiguous filter/sort icon. After deletion confirmation, the selected session tree's Codex rollout files are moved to the macOS Trash and its derived local index rows are removed; files can be restored from the Trash.
 - API equivalent value estimates marked as Beta. These use OpenAI API list prices for comparison only and are not ChatGPT/Codex subscription bills or actual charges.
 - Minimal event ledger for local analytics: timestamp, model, token buckets, pricing status, source path, and byte offset. Conversation prompts and responses are not stored.
 - Local index diagnostics for unknown models, unpriced events, timestamp fallbacks, parser version, active pricing catalog, rewritten files, and tombstoned sources, with a privacy-safe aggregate JSON export.
 - Adjustable refresh interval, custom Codex CLI path, launch-at-login toggle, and pure menu-bar mode.
+- Clicking the Dock icon focuses only the main window; the quota popover opens only from the menu bar status item.
+- When the available quota reaches zero, the dashboard and menu bar show an exhausted/waiting-for-reset state and stop producing pace forecasts.
 - Optional floating overlay can be disabled independently from local analytics. Basic mode needs no Accessibility permission; precise snapping is an explicit opt-in and reads only target-window position, size, and minimized state.
 - Built-in localization for English, Simplified Chinese, Traditional Chinese, Japanese, Korean, Spanish, German, French, Portuguese, and Brazilian Portuguese.
+- The in-app changelog follows the selected interface language; its Simplified Chinese remote source cannot override other languages.
 
 ## Requirements
 

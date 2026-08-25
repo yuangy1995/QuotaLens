@@ -4,6 +4,72 @@ import SwiftUI
 import Charts
 import Combine
 
+enum UsageDashboardHoverLayout {
+    static func heatmapCellIndex(
+        at location: CGPoint,
+        squareSize: CGFloat,
+        spacing: CGFloat,
+        rowCount: Int,
+        cellCount: Int
+    ) -> Int? {
+        guard location.x >= 0,
+              location.y >= 0,
+              squareSize > 0,
+              rowCount > 0,
+              cellCount > 0 else {
+            return nil
+        }
+
+        let stride = squareSize + spacing
+        guard stride > 0 else { return nil }
+
+        let column = Int(floor(location.x / stride))
+        let row = Int(floor(location.y / stride))
+        let localX = location.x - CGFloat(column) * stride
+        let localY = location.y - CGFloat(row) * stride
+
+        guard row < rowCount,
+              localX <= squareSize,
+              localY <= squareSize else {
+            return nil
+        }
+
+        let index = column * rowCount + row
+        return index < cellCount ? index : nil
+    }
+
+    static func cardPosition(
+        cursor: CGPoint,
+        containerSize: CGSize,
+        cardSize: CGSize
+    ) -> CGPoint {
+        let gap: CGFloat = 12
+        let inset: CGFloat = 6
+        let halfWidth = cardSize.width / 2
+        let halfHeight = cardSize.height / 2
+
+        var x = cursor.x + gap + halfWidth
+        if x + halfWidth > containerSize.width - inset {
+            x = cursor.x - gap - halfWidth
+        }
+
+        var y = cursor.y + gap + halfHeight
+        if y + halfHeight > containerSize.height - inset {
+            y = cursor.y - gap - halfHeight
+        }
+
+        let minimumX = min(inset + halfWidth, containerSize.width / 2)
+        let maximumX = max(minimumX, containerSize.width - inset - halfWidth)
+        let minimumY = min(inset + halfHeight, containerSize.height / 2)
+        let maximumY = max(minimumY, containerSize.height - inset - halfHeight)
+
+        return CGPoint(
+            x: min(max(x, minimumX), maximumX),
+            y: min(max(y, minimumY), maximumY)
+        )
+    }
+}
+
 @MainActor
 public final class UsageDashboardStore: ObservableObject {
     @Published public var selectedRangeDays: Int = 30
@@ -49,12 +115,14 @@ public final class UsageDashboardStore: ObservableObject {
             self.heatmapCells = heatmap
 
             // 计算双重预测
-            self.quotaForecast = QuotaForecastEngine.forecast(
-                currentUsedPercent: currentUsedPercent,
-                resetsAt: resetsAt,
-                currentCycleKey: currentCycleKey,
-                snapshots: rateSnapshots
-            )
+            self.quotaForecast = currentUsedPercent >= 99.999_9
+                ? nil
+                : QuotaForecastEngine.forecast(
+                    currentUsedPercent: currentUsedPercent,
+                    resetsAt: resetsAt,
+                    currentCycleKey: currentCycleKey,
+                    snapshots: rateSnapshots
+                )
 
             self.localForecast = LocalUsageProjection.project(
                 history: history,
@@ -72,7 +140,9 @@ public struct UsageDashboardView: View {
     @EnvironmentObject var env: AppEnvironment
     @Environment(\.colorScheme) var colorScheme
     @State private var hoveredTrendDayID: String?
+    @State private var hoveredTrendLocation: CGPoint?
     @State private var hoveredHeatmapCellID: String?
+    @State private var hoveredHeatmapLocation: CGPoint?
 
     public init(facade: UsageQueryFacade) {
         _store = StateObject(wrappedValue: UsageDashboardStore(facade: facade))
@@ -82,7 +152,7 @@ public struct UsageDashboardView: View {
         let cyan = AppTheme.accentCyan(for: colorScheme)
 
         ScrollView {
-            VStack(spacing: 20) {
+            LazyVStack(spacing: 20) {
                 // 1. 顶部控制栏与时间范围选择
                 headerControlBar
 
@@ -129,7 +199,11 @@ public struct UsageDashboardView: View {
             }
         }
         .onChange(of: store.selectedRangeDays) { _, _ in
+            clearChartHoverState()
             Task { await reloadData() }
+        }
+        .onDisappear {
+            clearChartHoverState()
         }
     }
 
@@ -529,7 +603,8 @@ public struct UsageDashboardView: View {
             } else {
                 let hoveredDay = chartData.first { $0.id == hoveredTrendDayID }
 
-                ZStack(alignment: .topTrailing) {
+                GeometryReader { container in
+                    ZStack(alignment: .topLeading) {
                     Chart {
                         ForEach(chartData) { day in
                             BarMark(
@@ -585,28 +660,42 @@ public struct UsageDashboardView: View {
                                     case .active(let location):
                                         guard let plotFrameAnchor = chartProxy.plotFrame else {
                                             hoveredTrendDayID = nil
+                                            hoveredTrendLocation = nil
                                             return
                                         }
                                         let plotFrame = geometry[plotFrameAnchor]
                                         guard plotFrame.contains(location) else {
                                             hoveredTrendDayID = nil
+                                            hoveredTrendLocation = nil
                                             return
                                         }
                                         let relativeX = location.x - plotFrame.origin.x
                                         if let date = chartProxy.value(atX: relativeX, as: Date.self) {
                                             hoveredTrendDayID = nearestTrendDayID(to: date, in: chartData)
+                                            hoveredTrendLocation = location
+                                        } else {
+                                            hoveredTrendDayID = nil
+                                            hoveredTrendLocation = nil
                                         }
                                     case .ended:
                                         hoveredTrendDayID = nil
+                                        hoveredTrendLocation = nil
                                     }
                                 }
                         }
                     }
 
-                    if let hoveredDay {
+                    if let hoveredDay, let cursor = hoveredTrendLocation {
                         usageTrendHoverCard(hoveredDay)
-                            .padding(8)
-                            .transition(.opacity)
+                            .allowsHitTesting(false)
+                            .position(
+                                UsageDashboardHoverLayout.cardPosition(
+                                    cursor: cursor,
+                                    containerSize: container.size,
+                                    cardSize: CGSize(width: 188, height: 160)
+                                )
+                            )
+                    }
                     }
                 }
                 .frame(height: 180)
@@ -649,8 +738,8 @@ public struct UsageDashboardView: View {
                 }
             }
 
-            ZStack(alignment: .topTrailing) {
-                GeometryReader { proxy in
+            GeometryReader { proxy in
+                ZStack(alignment: .topLeading) {
                     let spacing = adaptiveHeatmapSpacing(width: proxy.size.width)
                     let squareSize = adaptiveHeatmapSquareSize(
                         width: proxy.size.width,
@@ -667,23 +756,51 @@ public struct UsageDashboardView: View {
                                 size: squareSize,
                                 isHighlighted: hoveredHeatmapCellID == cell.id
                             )
-                            .onHover { hovering in
-                                if hovering {
-                                    hoveredHeatmapCellID = cell.id
-                                } else if hoveredHeatmapCellID == cell.id {
-                                    hoveredHeatmapCellID = nil
-                                }
-                            }
-                            .help(heatmapHelpText(cell))
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                }
 
-                if let hoveredCell = cells.first(where: { $0.id == hoveredHeatmapCellID }) {
-                    heatmapHoverCard(hoveredCell)
-                        .padding(8)
-                        .transition(.opacity)
+                    // A single tracking surface owns hover state for the whole
+                    // heatmap. This prevents per-cell tracking areas and native
+                    // help tags from producing duplicate or stale popovers.
+                    Rectangle()
+                        .fill(.clear)
+                        .contentShape(Rectangle())
+                        .onContinuousHover { phase in
+                            switch phase {
+                            case .active(let location):
+                                guard let index = UsageDashboardHoverLayout.heatmapCellIndex(
+                                    at: location,
+                                    squareSize: squareSize,
+                                    spacing: spacing,
+                                    rowCount: rowCount,
+                                    cellCount: cells.count
+                                ) else {
+                                    hoveredHeatmapCellID = nil
+                                    hoveredHeatmapLocation = nil
+                                    return
+                                }
+                                hoveredHeatmapCellID = cells[index].id
+                                hoveredHeatmapLocation = location
+                            case .ended:
+                                hoveredHeatmapCellID = nil
+                                hoveredHeatmapLocation = nil
+                            }
+                        }
+                        .accessibilityHidden(true)
+
+                    if let hoveredCell = cells.first(where: { $0.id == hoveredHeatmapCellID }),
+                       let cursor = hoveredHeatmapLocation {
+                        heatmapHoverCard(hoveredCell)
+                            .allowsHitTesting(false)
+                            .position(
+                                UsageDashboardHoverLayout.cardPosition(
+                                    cursor: cursor,
+                                    containerSize: proxy.size,
+                                    cardSize: CGSize(width: 188, height: 122)
+                                )
+                            )
+                    }
                 }
             }
             .aspectRatio(Double(columnCount) / Double(rowCount), contentMode: .fit)
@@ -729,8 +846,6 @@ public struct UsageDashboardView: View {
                         lineWidth: isHighlighted ? 1.2 : 0
                     )
             )
-            .scaleEffect(isHighlighted ? 1.18 : 1.0)
-            .animation(.easeOut(duration: 0.12), value: isHighlighted)
     }
 
     private func usageTrendHoverCard(_ day: DayUsageSummaryDTO) -> some View {
@@ -843,13 +958,11 @@ public struct UsageDashboardView: View {
         }
     }
 
-    private func heatmapHelpText(_ cell: ActivityHeatmapCellDTO) -> String {
-        [
-            longDayString(cell.date),
-            "\(L10n.text("Token 总量", "Total Tokens")): \(UsageNumberFormatter.formattedTokenCount(cell.tokenCount))",
-            "\(L10n.text("费用", "Cost")): \(UsageNumberFormatter.currencyUSD(cell.estimatedCost))",
-            "\(L10n.text("调用", "Events")): \(cell.eventCount)"
-        ].joined(separator: "\n")
+    private func clearChartHoverState() {
+        hoveredTrendDayID = nil
+        hoveredTrendLocation = nil
+        hoveredHeatmapCellID = nil
+        hoveredHeatmapLocation = nil
     }
 
     private func nearestTrendDayID(to date: Date, in days: [DayUsageSummaryDTO]) -> String? {

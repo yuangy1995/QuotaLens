@@ -8,6 +8,7 @@ public struct SessionsView: View {
     @StateObject private var store: SessionsStore
     @EnvironmentObject var env: AppEnvironment
     @Environment(\.colorScheme) var colorScheme
+    @State private var sessionPendingDeletion: CodexSessionDTO?
 
     public init(facade: UsageQueryFacade) {
         _store = StateObject(wrappedValue: SessionsStore(facade: facade))
@@ -31,6 +32,45 @@ public struct SessionsView: View {
             Task {
                 await store.reloadSessions()
             }
+        }
+        .confirmationDialog(
+            L10n.text("删除会话？", "Delete Session?"),
+            isPresented: Binding(
+                get: { sessionPendingDeletion != nil },
+                set: { if !$0 { sessionPendingDeletion = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: sessionPendingDeletion
+        ) { session in
+            Button(L10n.text("移到废纸篓", "Move to Trash"), role: .destructive) {
+                sessionPendingDeletion = nil
+                Task {
+                    if await store.deleteSession(session) {
+                        env.scanCoordinator.triggerScan()
+                    }
+                }
+            }
+            Button(L10n.text("取消", "Cancel"), role: .cancel) {
+                sessionPendingDeletion = nil
+            }
+        } message: { _ in
+            Text(L10n.text(
+                "该会话及其子代理的 Codex 源文件会移到 macOS 废纸篓，可从废纸篓恢复。",
+                "The Codex source files for this session and its subagents will be moved to the macOS Trash, where they can be restored."
+            ))
+        }
+        .alert(
+            L10n.text("操作失败", "Operation Failed"),
+            isPresented: Binding(
+                get: { store.errorMessage != nil },
+                set: { if !$0 { store.errorMessage = nil } }
+            )
+        ) {
+            Button(L10n.text("好", "OK"), role: .cancel) {
+                store.errorMessage = nil
+            }
+        } message: {
+            Text(store.errorMessage ?? "")
         }
     }
 
@@ -80,14 +120,17 @@ public struct SessionsView: View {
                         }
                     }
                 } label: {
-                    Image(systemName: "arrow.up.arrow.down")
+                    Image(systemName: "line.3.horizontal.decrease")
                         .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(cyan)
                         .frame(width: 24, height: 24)
                         .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 6))
                 }
                 .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
                 .frame(width: 24)
+                .accessibilityLabel(L10n.text("筛选与排序", "Filter and Sort"))
+                .accessibilityIdentifier("sessions.filterAndSort")
             }
             .padding(10)
 
@@ -123,6 +166,9 @@ public struct SessionsView: View {
                                 colorScheme: colorScheme,
                                 onSelect: {
                                     store.selectedSessionId = session.sessionId
+                                },
+                                onDelete: {
+                                    sessionPendingDeletion = session
                                 }
                             )
                         }
@@ -156,9 +202,15 @@ public struct SessionsView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let detail = store.selectedDetail {
-                SessionDetailView(detail: detail, onSelectSubagent: { subagentId in
-                    store.selectedSessionId = subagentId
-                })
+                SessionDetailView(
+                    detail: detail,
+                    onBackToRoot: {
+                        store.selectedSessionId = detail.session.rootSessionId
+                    },
+                    onSelectSubagent: { subagentId in
+                        store.selectedSessionId = subagentId
+                    }
+                )
             } else {
                 VStack(spacing: 8) {
                     Image(systemName: "doc.text.magnifyingglass")
@@ -180,6 +232,7 @@ private struct SessionSidebarRow: View {
     let isSelected: Bool
     let colorScheme: ColorScheme
     let onSelect: () -> Void
+    let onDelete: () -> Void
 
     var body: some View {
         let isDark = colorScheme == .dark
@@ -257,5 +310,10 @@ private struct SessionSidebarRow: View {
             )
         }
         .buttonStyle(.plain)
+        .contextMenu {
+            Button(role: .destructive, action: onDelete) {
+                Label(L10n.text("删除", "Delete"), systemImage: "trash")
+            }
+        }
     }
 }

@@ -20,6 +20,10 @@ public final class CodexUsageScanCoordinator: ObservableObject {
     private var scanDebounceTask: Task<Void, Never>?
     private var lastRequestedScanTime: Date?
     private var lastGenerationPublishTime = Date.distantPast
+    private var lastProgressPublishTime = Date.distantPast
+    private let automaticRescanInterval: TimeInterval = 60
+    private let progressPublishInterval: TimeInterval = 0.2
+    private let generationPublishInterval: TimeInterval = 10
 
     public init() {}
 
@@ -29,6 +33,19 @@ public final class CodexUsageScanCoordinator: ObservableObject {
 
     /// 触发扫描并导入（带 1 秒 Debounce，防止快速重复调用）
     public func triggerScan(forceRebuild: Bool = false) {
+        let now = Date()
+        if !forceRebuild {
+            guard !isScanning else { return }
+            if let lastScanTime,
+               now.timeIntervalSince(lastScanTime) < automaticRescanInterval {
+                return
+            }
+            if let lastRequestedScanTime,
+               now.timeIntervalSince(lastRequestedScanTime) < 1 {
+                return
+            }
+        }
+        lastRequestedScanTime = now
         scanDebounceTask?.cancel()
         scanDebounceTask = Task { @MainActor in
             do {
@@ -57,7 +74,8 @@ public final class CodexUsageScanCoordinator: ObservableObject {
         progress = 0.0
         statusText = L10n.text("准备扫描…", "Preparing scan...")
         lastError = nil
-        lastGenerationPublishTime = .distantPast
+        lastGenerationPublishTime = Date()
+        lastProgressPublishTime = .distantPast
         defer {
             isScanning = false
             progress = nil
@@ -71,10 +89,10 @@ public final class CodexUsageScanCoordinator: ObservableObject {
                 forceRebuild: forceRebuild
             ) { [weak self] currentProgress, status in
                 Task { @MainActor [weak self] in
-                    guard let self = self else { return }
-                    self.progress = currentProgress
-                    self.statusText = status
-                    self.publishDataGenerationIfNeeded(progress: currentProgress)
+                    self?.publishProgressIfNeeded(
+                        progress: currentProgress,
+                        status: status
+                    )
                 }
             }
 
@@ -88,9 +106,26 @@ public final class CodexUsageScanCoordinator: ObservableObject {
         }
     }
 
-    private func publishDataGenerationIfNeeded(progress: Double) {
+    private func publishProgressIfNeeded(progress: Double, status: String) {
+        guard isScanning else { return }
         let now = Date()
-        guard progress >= 1.0 || now.timeIntervalSince(lastGenerationPublishTime) >= 2.5 else { return }
+        guard progress >= 1
+                || now.timeIntervalSince(lastProgressPublishTime) >= progressPublishInterval else {
+            return
+        }
+        self.progress = progress
+        if statusText != status {
+            statusText = status
+        }
+        lastProgressPublishTime = now
+        publishDataGenerationIfNeeded(progress: progress, now: now)
+    }
+
+    private func publishDataGenerationIfNeeded(progress: Double, now: Date) {
+        guard progress < 1,
+              now.timeIntervalSince(lastGenerationPublishTime) >= generationPublishInterval else {
+            return
+        }
         dataGeneration &+= 1
         lastGenerationPublishTime = now
     }

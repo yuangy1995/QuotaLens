@@ -265,13 +265,22 @@ public final class AppEnvironment: ObservableObject {
         menuBarController?.closePopoverAndSuppressOpening()
     }
 
-    public func openOrFocusMainWindow(createWindow: () -> Void) {
+    @discardableResult
+    public func focusExistingMainWindow() -> Bool {
         prepareForMainWindowActivation()
-        if let window = NSApp.windows.first(where: isMainWindow) {
-            window.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
+        guard let window = NSApp.windows.first(where: isMainWindow) else {
+            return false
+        }
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        return true
+    }
+
+    public func openOrFocusMainWindow(createWindow: () -> Void) {
+        if focusExistingMainWindow() {
             return
         }
+        prepareForMainWindowActivation()
         createWindow()
         DispatchQueue.main.async { [weak self] in
             if let window = NSApp.windows.first(where: { self?.isMainWindow($0) == true }) {

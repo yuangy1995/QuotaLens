@@ -116,6 +116,55 @@ final class QueryAndForecastTests: XCTestCase {
         XCTAssertEqual(detail.sessions.first?.events.map(\.eventId), ["in-2"])
     }
 
+    func testFullDayQueriesPreferCompactDailySummariesOverRawLedgerEvents() throws {
+        let directory = try makeTemporaryDirectory()
+        let database = try makeMigratedDatabase(in: directory)
+        let repository = UsageAnalyticsRepository(database: database)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        let dayStart = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026,
+            month: 8,
+            day: 20
+        )))
+        let dayEnd = try XCTUnwrap(calendar.date(byAdding: .day, value: 1, to: dayStart))
+
+        try insertSession(database, id: "summary-backed")
+        // Deliberately differs from the compact summary. If either query scans
+        // the raw ledger for a full day, it will return 999 instead of 123.
+        try insertEvent(
+            database,
+            id: "raw-event",
+            sessionID: "summary-backed",
+            date: dayStart.addingTimeInterval(3_600),
+            tokens: 999
+        )
+        try insertDailySummary(
+            database,
+            sessionID: "summary-backed",
+            dayStart: dayStart,
+            calendar: calendar,
+            eventCount: 7,
+            tokens: 123
+        )
+
+        let dashboard = try repository.fetchDashboardMetrics(
+            rangeStart: dayStart,
+            endExclusive: dayEnd,
+            calendar: calendar
+        )
+        XCTAssertEqual(dashboard.totalTokens.canonicalTotalTokens, 123)
+        XCTAssertEqual(dashboard.totalEvents, 7)
+
+        let history = try repository.fetchHistoryDays(
+            daysCount: 1,
+            calendar: calendar,
+            now: dayStart.addingTimeInterval(12 * 3_600)
+        )
+        XCTAssertEqual(history.first?.tokens.canonicalTotalTokens, 123)
+        XCTAssertEqual(history.first?.eventCount, 7)
+    }
+
     func testTodayMetricsUseNaturalDayInsteadOfPast24Hours() throws {
         let directory = try makeTemporaryDirectory()
         let database = try makeMigratedDatabase(in: directory)
@@ -346,6 +395,34 @@ final class QueryAndForecastTests: XCTestCase {
                 tokens, tokens, tokens, priced ? tokens * 2_500 : 0,
                 status.rawValue, "/tmp/\(sessionID).jsonl",
                 Int64(date.timeIntervalSince1970 * 1_000), BundledPricingCatalog.currentVersion
+            ]
+        )
+    }
+
+    private func insertDailySummary(
+        _ database: SQLiteDatabase,
+        sessionID: String,
+        dayStart: Date,
+        calendar: Calendar,
+        eventCount: Int,
+        tokens: Int64
+    ) throws {
+        try database.executeUpdate(
+            sql: """
+            INSERT INTO codex_daily_usage_summaries (
+                session_id, day_key, day_start_ms, model_canonical, event_count,
+                total_tokens, uncached_input_tokens, cached_input_tokens, output_tokens,
+                reasoning_output_tokens, estimated_cost_usd_nano, unpriced_event_count
+            ) VALUES (?, ?, ?, 'gpt-5.4', ?, ?, ?, 0, 0, 0, ?, 0);
+            """,
+            bindings: [
+                sessionID,
+                LocalDayKey(date: dayStart, calendar: calendar).yyyyMMdd,
+                Int64(dayStart.timeIntervalSince1970 * 1_000),
+                eventCount,
+                tokens,
+                tokens,
+                tokens * 2_500
             ]
         )
     }

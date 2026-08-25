@@ -1156,35 +1156,29 @@ private struct LanguageModeMenu: View {
                 }
             }
         } label: {
-            HStack(spacing: 10) {
+            HStack(spacing: 7) {
                 Image(systemName: selection.icon)
-                    .font(.system(size: 13, weight: .bold))
+                    .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(cyan)
-                    .frame(width: 26, height: 26)
-                    .background(cyan.opacity(isDark ? 0.18 : 0.12), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .frame(width: 22, height: 22)
+                    .background(cyan.opacity(isDark ? 0.18 : 0.12), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
                             .strokeBorder(cyan.opacity(isDark ? 0.45 : 0.30), lineWidth: 0.8)
                     )
 
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(selection.title)
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
-                        .foregroundStyle(AppTheme.textPrimary(for: isDark ? .dark : .light))
-
-                    Text(selection.detail)
-                        .font(.system(size: 9.5, weight: .medium, design: .monospaced))
-                        .foregroundStyle(textSecondary)
-                        .lineLimit(1)
-                }
+                Text(selection.title)
+                    .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                    .foregroundStyle(AppTheme.textPrimary(for: isDark ? .dark : .light))
+                    .lineLimit(1)
 
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(textSecondary)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .frame(minWidth: 210, alignment: .leading)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .fixedSize(horizontal: true, vertical: false)
             .background(
                 isDark ? Color.white.opacity(0.06) : Color.black.opacity(0.04),
                 in: RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -1195,6 +1189,9 @@ private struct LanguageModeMenu: View {
             )
         }
         .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .accessibilityLabel(L10n.text("界面语言", "Interface Language"))
+        .accessibilityValue(selection.title)
     }
 }
 

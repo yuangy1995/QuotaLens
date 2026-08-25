@@ -171,7 +171,7 @@ public struct HistoryView: View {
         Group {
             if let day = store.selectedDaySummary {
                 ScrollView {
-                    VStack(spacing: 16) {
+                    LazyVStack(spacing: 16) {
                         // 1. 日度全息指标卡
                         dayHeaderCard(day: day)
 
@@ -376,57 +376,59 @@ public struct HistoryView: View {
                     .font(.system(size: 10.5, design: .monospaced))
                     .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
             } else {
-                ForEach(detail.sessions) { slice in
-                    VStack(alignment: .leading, spacing: 7) {
-                        HStack(spacing: 8) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(slice.session.displayTitle)
-                                    .font(.system(size: 11.5, weight: .bold, design: .rounded))
-                                    .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
-                                    .lineLimit(1)
-                                Text(L10n.format("%d events", zhHans: "%d 条事件", slice.dayEventCount))
-                                    .font(.system(size: 9.5, design: .monospaced))
-                                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-                            }
-                            Spacer()
-                            Text(UsageNumberFormatter.compactTokenCount(slice.dayTokens.canonicalTotalTokens))
-                                .font(.system(size: 10.5, weight: .bold, design: .monospaced))
-                                .foregroundStyle(cyan)
-                            Text(UsageNumberFormatter.currencyUSD(slice.dayCost))
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                .foregroundStyle(emerald)
-                        }
-
-                        ForEach(slice.events.prefix(50)) { event in
+                LazyVStack(spacing: 10) {
+                    ForEach(detail.sessions) { slice in
+                        VStack(alignment: .leading, spacing: 7) {
                             HStack(spacing: 8) {
-                                Text(event.timestamp.formatted(date: .omitted, time: .standard))
-                                    .font(.system(size: 9, design: .monospaced))
-                                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-                                    .frame(width: 72, alignment: .leading)
-                                Text(event.modelCanonical)
-                                    .font(.system(size: 9.5, weight: .bold, design: .monospaced))
-                                    .foregroundStyle(cyan)
-                                    .lineLimit(1)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(slice.session.displayTitle)
+                                        .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                                        .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                                        .lineLimit(1)
+                                    Text(L10n.format("%d events", zhHans: "%d 条事件", slice.dayEventCount))
+                                        .font(.system(size: 9.5, design: .monospaced))
+                                        .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                                }
                                 Spacer()
-                                Text(UsageNumberFormatter.compactTokenCount(event.tokens.canonicalTotalTokens))
-                                    .font(.system(size: 9.5, weight: .medium, design: .monospaced))
-                                    .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
-                                Text(event.pricingStatus.isPriced
-                                    ? UsageNumberFormatter.currencyUSD(event.estimatedCost)
-                                    : L10n.text("未计价", "Unpriced"))
-                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                    .foregroundStyle(event.pricingStatus.isPriced ? emerald : AppTheme.accentAmber(for: colorScheme))
-                                    .frame(width: 66, alignment: .trailing)
+                                Text(UsageNumberFormatter.compactTokenCount(slice.dayTokens.canonicalTotalTokens))
+                                    .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(cyan)
+                                Text(UsageNumberFormatter.currencyUSD(slice.dayCost))
+                                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(emerald)
                             }
-                            .padding(.vertical, 2)
+
+                            ForEach(slice.events.prefix(50)) { event in
+                                HStack(spacing: 8) {
+                                    Text(event.timestamp.formatted(date: .omitted, time: .standard))
+                                        .font(.system(size: 9, design: .monospaced))
+                                        .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                                        .frame(width: 72, alignment: .leading)
+                                    Text(event.modelCanonical)
+                                        .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                                        .foregroundStyle(cyan)
+                                        .lineLimit(1)
+                                    Spacer()
+                                    Text(UsageNumberFormatter.compactTokenCount(event.tokens.canonicalTotalTokens))
+                                        .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                                        .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                                    Text(event.pricingStatus.isPriced
+                                        ? UsageNumberFormatter.currencyUSD(event.estimatedCost)
+                                        : L10n.text("未计价", "Unpriced"))
+                                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                        .foregroundStyle(event.pricingStatus.isPriced ? emerald : AppTheme.accentAmber(for: colorScheme))
+                                        .frame(width: 66, alignment: .trailing)
+                                }
+                                .padding(.vertical, 2)
+                            }
                         }
+                        .padding(10)
+                        .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 8))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.7)
+                        )
                     }
-                    .padding(10)
-                    .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 8))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.7)
-                    )
                 }
             }
         }

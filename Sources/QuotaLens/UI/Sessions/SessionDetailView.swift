@@ -5,13 +5,41 @@ import AppKit
 
 public struct SessionDetailView: View {
     let detail: CodexSessionDetailDTO
+    let onBackToRoot: () -> Void
     let onSelectSubagent: (String) -> Void
     @Environment(\.colorScheme) var colorScheme
     @State private var isCopiedId = false
 
     public var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
+            LazyVStack(spacing: 16) {
+                if detail.session.isSubagent {
+                    HStack {
+                        Button(action: onBackToRoot) {
+                            Label(
+                                L10n.text("返回主会话", "Back to Main Session"),
+                                systemImage: "chevron.left"
+                            )
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
+                            .foregroundStyle(AppTheme.accentCyan(for: colorScheme))
+                            .background(
+                                AppTheme.insetSurface(for: colorScheme),
+                                in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                    .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("sessions.backToMainSession")
+
+                        Spacer()
+                    }
+                }
+
                 // 1. 顶部全息信息头
                 sessionHeaderCard
 

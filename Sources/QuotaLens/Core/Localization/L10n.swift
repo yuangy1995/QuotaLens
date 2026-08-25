@@ -255,6 +255,386 @@ public enum L10n {
 }
 
 private let keyedTranslations: [String: [AppLanguage: String]] = [
+    "Back to Main Session": [
+        .traditionalChinese: "返回主會話",
+        .japanese: "メインセッションに戻る",
+        .korean: "기본 세션으로 돌아가기",
+        .spanish: "Volver a la sesión principal",
+        .german: "Zur Hauptsitzung zurück",
+        .french: "Retour à la session principale",
+        .portuguese: "Voltar à sessão principal",
+        .portugueseBrazil: "Voltar à sessão principal"
+    ],
+    "Filter and Sort": [
+        .traditionalChinese: "篩選與排序",
+        .japanese: "絞り込みと並べ替え",
+        .korean: "필터 및 정렬",
+        .spanish: "Filtrar y ordenar",
+        .german: "Filtern und sortieren",
+        .french: "Filtrer et trier",
+        .portuguese: "Filtrar e ordenar",
+        .portugueseBrazil: "Filtrar e ordenar"
+    ],
+    "Delete Session?": [
+        .traditionalChinese: "刪除會話？",
+        .japanese: "セッションを削除しますか？",
+        .korean: "세션을 삭제할까요?",
+        .spanish: "¿Eliminar la sesión?",
+        .german: "Sitzung löschen?",
+        .french: "Supprimer la session ?",
+        .portuguese: "Eliminar sessão?",
+        .portugueseBrazil: "Excluir sessão?"
+    ],
+    "Move to Trash": [
+        .traditionalChinese: "移至垃圾桶",
+        .japanese: "ゴミ箱に入れる",
+        .korean: "휴지통으로 이동",
+        .spanish: "Mover a la papelera",
+        .german: "In den Papierkorb legen",
+        .french: "Placer dans la corbeille",
+        .portuguese: "Mover para o Lixo",
+        .portugueseBrazil: "Mover para o Lixo"
+    ],
+    "Delete": [
+        .traditionalChinese: "刪除",
+        .japanese: "削除",
+        .korean: "삭제",
+        .spanish: "Eliminar",
+        .german: "Löschen",
+        .french: "Supprimer",
+        .portuguese: "Eliminar",
+        .portugueseBrazil: "Excluir"
+    ],
+    "Operation Failed": [
+        .traditionalChinese: "操作失敗",
+        .japanese: "操作に失敗しました",
+        .korean: "작업 실패",
+        .spanish: "Error en la operación",
+        .german: "Vorgang fehlgeschlagen",
+        .french: "Échec de l’opération",
+        .portuguese: "Falha na operação",
+        .portugueseBrazil: "Falha na operação"
+    ],
+    "The session no longer exists.": [
+        .traditionalChinese: "該會話已不存在。",
+        .japanese: "このセッションはもう存在しません。",
+        .korean: "이 세션은 더 이상 존재하지 않습니다.",
+        .spanish: "La sesión ya no existe.",
+        .german: "Die Sitzung existiert nicht mehr.",
+        .french: "Cette session n’existe plus.",
+        .portuguese: "A sessão já não existe.",
+        .portugueseBrazil: "A sessão não existe mais."
+    ],
+    "QuotaLens refused to delete a source outside the Codex session folders: %@": [
+        .traditionalChinese: "QuotaLens 已拒絕刪除 Codex 會話目錄之外的檔案：%@",
+        .japanese: "QuotaLens は Codex セッションフォルダ外のソースの削除を拒否しました: %@",
+        .korean: "QuotaLens가 Codex 세션 폴더 외부의 소스 삭제를 거부했습니다: %@",
+        .spanish: "QuotaLens rechazó eliminar una fuente fuera de las carpetas de sesiones de Codex: %@",
+        .german: "QuotaLens hat das Löschen einer Quelle außerhalb der Codex-Sitzungsordner abgelehnt: %@",
+        .french: "QuotaLens a refusé de supprimer une source hors des dossiers de sessions Codex : %@",
+        .portuguese: "O QuotaLens recusou eliminar uma origem fora das pastas de sessões do Codex: %@",
+        .portugueseBrazil: "O QuotaLens recusou excluir uma origem fora das pastas de sessões do Codex: %@"
+    ],
+    "The session source is not a regular file: %@": [
+        .traditionalChinese: "會話來源不是一般檔案：%@",
+        .japanese: "セッションソースは通常のファイルではありません: %@",
+        .korean: "세션 소스가 일반 파일이 아닙니다: %@",
+        .spanish: "La fuente de la sesión no es un archivo normal: %@",
+        .german: "Die Sitzungsquelle ist keine reguläre Datei: %@",
+        .french: "La source de la session n’est pas un fichier ordinaire : %@",
+        .portuguese: "A origem da sessão não é um ficheiro normal: %@",
+        .portugueseBrazil: "A origem da sessão não é um arquivo comum: %@"
+    ],
+    "The Codex source files for this session and its subagents will be moved to the macOS Trash, where they can be restored.": [
+        .traditionalChinese: "此會話及其子代理的 Codex 來源檔案將移至 macOS 垃圾桶，可從垃圾桶還原。",
+        .japanese: "このセッションとサブエージェントの Codex ソースファイルを macOS のゴミ箱に移動します。ゴミ箱から復元できます。",
+        .korean: "이 세션과 하위 에이전트의 Codex 소스 파일을 macOS 휴지통으로 이동합니다. 휴지통에서 복원할 수 있습니다.",
+        .spanish: "Los archivos fuente de Codex de esta sesión y sus subagentes se moverán a la papelera de macOS, desde donde podrán restaurarse.",
+        .german: "Die Codex-Quelldateien dieser Sitzung und ihrer Subagenten werden in den macOS-Papierkorb gelegt und können dort wiederhergestellt werden.",
+        .french: "Les fichiers source Codex de cette session et de ses sous-agents seront placés dans la corbeille macOS, d’où ils pourront être restaurés.",
+        .portuguese: "Os ficheiros de origem do Codex desta sessão e dos respetivos subagentes serão movidos para o Lixo do macOS, de onde podem ser restaurados.",
+        .portugueseBrazil: "Os arquivos de origem do Codex desta sessão e de seus subagentes serão movidos para o Lixo do macOS, de onde poderão ser restaurados."
+    ],
+    "No quota remaining · Waiting for reset": [
+        .traditionalChinese: "本週期無可用額度 · 等待重置",
+        .japanese: "利用可能なクォータなし · リセット待ち",
+        .korean: "남은 할당량 없음 · 재설정 대기 중",
+        .spanish: "Sin cuota restante · Esperando el reinicio",
+        .german: "Kein Kontingent übrig · Warten auf Reset",
+        .french: "Aucun quota restant · En attente de réinitialisation",
+        .portuguese: "Sem quota restante · A aguardar reposição",
+        .portugueseBrazil: "Sem cota restante · Aguardando redefinição"
+    ],
+    "Quota Exhausted": [
+        .traditionalChinese: "額度已用盡",
+        .japanese: "クォータを使い切りました",
+        .korean: "할당량 소진",
+        .spanish: "Cuota agotada",
+        .german: "Kontingent aufgebraucht",
+        .french: "Quota épuisé",
+        .portuguese: "Quota esgotada",
+        .portugueseBrazil: "Cota esgotada"
+    ],
+    "Waiting": [
+        .traditionalChinese: "等待重置",
+        .japanese: "待機中",
+        .korean: "대기 중",
+        .spanish: "Esperando",
+        .german: "Warten",
+        .french: "En attente",
+        .portuguese: "A aguardar",
+        .portugueseBrazil: "Aguardando"
+    ],
+    "No forecast": [
+        .traditionalChinese: "無需預測",
+        .japanese: "予測不要",
+        .korean: "예측 불필요",
+        .spanish: "Sin previsión",
+        .german: "Keine Prognose",
+        .french: "Aucune prévision",
+        .portuguese: "Sem previsão",
+        .portugueseBrazil: "Sem previsão"
+    ],
+    "Resets in %@": [
+        .traditionalChinese: "%@ 後重置",
+        .japanese: "%@ 後にリセット",
+        .korean: "%@ 후 재설정",
+        .spanish: "Se reinicia en %@",
+        .german: "Reset in %@",
+        .french: "Réinitialisation dans %@",
+        .portuguese: "Repõe dentro de %@",
+        .portugueseBrazil: "Redefine em %@"
+    ],
+    "Quota Status": [
+        .traditionalChinese: "額度狀態",
+        .japanese: "クォータ状態",
+        .korean: "할당량 상태",
+        .spanish: "Estado de la cuota",
+        .german: "Kontingentstatus",
+        .french: "État du quota",
+        .portuguese: "Estado da quota",
+        .portugueseBrazil: "Status da cota"
+    ],
+    "Exhausted": [
+        .traditionalChinese: "已用盡",
+        .japanese: "使い切りました",
+        .korean: "소진됨",
+        .spanish: "Agotada",
+        .german: "Aufgebraucht",
+        .french: "Épuisé",
+        .portuguese: "Esgotada",
+        .portugueseBrazil: "Esgotada"
+    ],
+    "No quota remains in this cycle, so no forecast is needed": [
+        .traditionalChinese: "本週期沒有可用額度，無需繼續預測",
+        .japanese: "このサイクルに利用可能なクォータがないため、予測は不要です",
+        .korean: "이번 주기에 남은 할당량이 없어 예측이 필요하지 않습니다",
+        .spanish: "No queda cuota en este ciclo, por lo que no se necesita previsión",
+        .german: "In diesem Zyklus ist kein Kontingent mehr verfügbar; eine Prognose ist nicht erforderlich",
+        .french: "Il ne reste aucun quota pour ce cycle ; aucune prévision n’est nécessaire",
+        .portuguese: "Não resta quota neste ciclo, por isso não é necessária uma previsão",
+        .portugueseBrazil: "Não resta cota neste ciclo, portanto não é necessária uma previsão"
+    ],
+    "Real-time parsing and streaming index for Codex local history & rollout audit logs": [
+        .traditionalChinese: "即時解析 Codex 本機歷史用量與 Rollout 稽核日誌，並支援串流索引",
+        .japanese: "Codex のローカル履歴と Rollout 監査ログをリアルタイム解析・ストリーミング索引",
+        .korean: "Codex 로컬 기록 및 Rollout 감사 로그 실시간 분석과 스트리밍 인덱싱",
+        .spanish: "Análisis en tiempo real e indexación continua del historial local y los registros de auditoría Rollout de Codex",
+        .german: "Echtzeitanalyse und Streaming-Index für lokale Codex-Verläufe und Rollout-Auditprotokolle",
+        .french: "Analyse en temps réel et indexation continue de l’historique local et des journaux d’audit Rollout de Codex",
+        .portuguese: "Análise em tempo real e indexação contínua do histórico local e dos registos de auditoria Rollout do Codex",
+        .portugueseBrazil: "Análise em tempo real e indexação contínua do histórico local e dos logs de auditoria Rollout do Codex"
+    ],
+    "Quota consumption forecast engine with linear projection and runout estimation": [
+        .traditionalChinese: "配額消耗預測引擎，支援線性投影與耗盡時間估算",
+        .japanese: "線形予測と枯渇時間推定に対応したクォータ消費予測エンジン",
+        .korean: "선형 투영 및 소진 시점 추정 기반 할당량 소비 예측 엔진",
+        .spanish: "Motor de previsión de consumo de cuota con proyección lineal y estimación del agotamiento",
+        .german: "Prognose-Engine für den Kontingentverbrauch mit linearer Projektion und Aufbrauchschätzung",
+        .french: "Moteur de prévision de consommation du quota avec projection linéaire et estimation de l’épuisement",
+        .portuguese: "Motor de previsão de consumo da quota com projeção linear e estimativa de esgotamento",
+        .portugueseBrazil: "Motor de previsão de consumo da cota com projeção linear e estimativa de esgotamento"
+    ],
+    "Interactive session breakdown and usage analytics dashboard": [
+        .traditionalChinese: "互動式會話明細與用量分析儀表板",
+        .japanese: "インタラクティブなセッション内訳と利用分析ダッシュボード",
+        .korean: "대화형 세션 세부 정보 및 사용량 분석 대시보드",
+        .spanish: "Desglose interactivo de sesiones y panel de análisis de uso",
+        .german: "Interaktive Sitzungsaufschlüsselung und Nutzungsanalyse-Dashboard",
+        .french: "Détail interactif des sessions et tableau de bord d’analyse de l’usage",
+        .portuguese: "Detalhe interativo de sessões e painel de análise de utilização",
+        .portugueseBrazil: "Detalhamento interativo de sessões e painel de análise de uso"
+    ],
+    "Floating HUD overlay window and enhanced menu bar interactions": [
+        .traditionalChinese: "獨立懸浮 HUD 視窗與增強的選單列互動",
+        .japanese: "フローティング HUD オーバーレイと強化されたメニューバー操作",
+        .korean: "플로팅 HUD 오버레이 창 및 향상된 메뉴 막대 상호작용",
+        .spanish: "Ventana HUD flotante e interacciones mejoradas en la barra de menús",
+        .german: "Schwebendes HUD-Overlay und verbesserte Menüleisteninteraktionen",
+        .french: "Fenêtre HUD flottante et interactions améliorées dans la barre des menus",
+        .portuguese: "Janela HUD flutuante e interações melhoradas na barra de menus",
+        .portugueseBrazil: "Janela HUD flutuante e interações aprimoradas na barra de menus"
+    ],
+    "Fixed update feed cache-busting to ensure latest release metadata": [
+        .traditionalChinese: "修正更新來源快取，確保取得最新版本中繼資料",
+        .japanese: "更新フィードのキャッシュ問題を修正し、最新リリース情報を確実に取得",
+        .korean: "최신 릴리스 메타데이터를 가져오도록 업데이트 피드 캐시 문제 수정",
+        .spanish: "Corregida la caché del canal de actualizaciones para obtener los metadatos más recientes",
+        .german: "Cache-Umgehung des Update-Feeds korrigiert, damit stets die neuesten Release-Metadaten geladen werden",
+        .french: "Correction du cache du flux de mise à jour afin de récupérer les dernières métadonnées de version",
+        .portuguese: "Corrigida a cache do feed de atualizações para obter os metadados da versão mais recente",
+        .portugueseBrazil: "Corrigido o cache do feed de atualizações para obter os metadados da versão mais recente"
+    ],
+    "Refined reset card confirmation dialog visual aesthetics with smart rule-based copy": [
+        .traditionalChinese: "全面優化重置卡確認對話框的視覺質感與智慧規則文案",
+        .japanese: "リセットカード確認ダイアログの外観を改善し、ルールベースのスマートな文言を追加",
+        .korean: "재설정 카드 확인 대화상자의 시각적 완성도와 규칙 기반 안내 문구 개선",
+        .spanish: "Mejoras visuales del diálogo de confirmación de tarjetas de reinicio con textos inteligentes basados en reglas",
+        .german: "Bestätigungsdialog für Reset-Karten optisch verfeinert und mit regelbasierten Hinweisen ergänzt",
+        .french: "Amélioration visuelle de la confirmation des cartes de réinitialisation avec des textes intelligents fondés sur des règles",
+        .portuguese: "Melhoria visual da confirmação de cartões de reset com texto inteligente baseado em regras",
+        .portugueseBrazil: "Aprimoramento visual da confirmação de cartões de reset com texto inteligente baseado em regras"
+    ],
+    "Dynamic top bar title reflecting active tab and brand integration in sidebar footer": [
+        .traditionalChinese: "頂端列動態顯示目前分頁，並將品牌整合至側邊欄底部",
+        .japanese: "選択中のタブを反映する動的トップバーと、サイドバー下部へのブランド統合",
+        .korean: "현재 탭을 반영하는 동적 상단 제목과 사이드바 하단 브랜드 통합",
+        .spanish: "Título dinámico en la barra superior según la pestaña activa e integración de la marca en el pie lateral",
+        .german: "Dynamischer Titel in der oberen Leiste und Markenintegration im Seitenleistenfuß",
+        .french: "Titre dynamique dans la barre supérieure et intégration de la marque au bas de la barre latérale",
+        .portuguese: "Título dinâmico na barra superior e integração da marca no rodapé da barra lateral",
+        .portugueseBrazil: "Título dinâmico na barra superior e integração da marca no rodapé da barra lateral"
+    ],
+    "Cleaned up redundant page titles and streamlined overview controls into Hero header": [
+        .traditionalChinese: "移除重複頁面標題，並將概覽控制項整合至 Hero 標頭",
+        .japanese: "重複するページ見出しを整理し、概要コントロールを Hero ヘッダーに統合",
+        .korean: "중복 페이지 제목을 정리하고 개요 제어 기능을 Hero 헤더에 통합",
+        .spanish: "Eliminados títulos redundantes e integrados los controles de resumen en la cabecera Hero",
+        .german: "Redundante Seitentitel entfernt und Übersichtssteuerung in den Hero-Kopf integriert",
+        .french: "Suppression des titres redondants et intégration des contrôles d’aperçu dans l’en-tête Hero",
+        .portuguese: "Remoção de títulos redundantes e integração dos controlos de visão geral no cabeçalho Hero",
+        .portugueseBrazil: "Remoção de títulos redundantes e integração dos controles de visão geral no cabeçalho Hero"
+    ],
+    "Upgraded countdown and daily budget pace to real-time second-level precision": [
+        .traditionalChinese: "倒數計時與每日額度節奏升級為即時秒級精度",
+        .japanese: "カウントダウンと日次クォータペースをリアルタイム秒精度に強化",
+        .korean: "카운트다운과 일일 할당량 속도를 실시간 초 단위 정밀도로 개선",
+        .spanish: "Cuenta atrás y ritmo diario de cuota actualizados con precisión en tiempo real al segundo",
+        .german: "Countdown und tägliches Kontingenttempo auf Echtzeit-Sekundengenauigkeit erweitert",
+        .french: "Compte à rebours et rythme quotidien du quota mis à jour en temps réel à la seconde",
+        .portuguese: "Contagem decrescente e ritmo diário da quota atualizados em tempo real ao segundo",
+        .portugueseBrazil: "Contagem regressiva e ritmo diário da cota atualizados em tempo real por segundo"
+    ],
+    "Complete localized translations for 10 supported languages": [
+        .traditionalChinese: "完整支援 10 種語言的本地化翻譯",
+        .japanese: "対応する10言語のローカライズを完備",
+        .korean: "지원되는 10개 언어의 전체 현지화 번역",
+        .spanish: "Traducción completa para los 10 idiomas compatibles",
+        .german: "Vollständige Lokalisierung für 10 unterstützte Sprachen",
+        .french: "Traductions complètes pour les 10 langues prises en charge",
+        .portuguese: "Traduções completas para os 10 idiomas suportados",
+        .portugueseBrazil: "Traduções completas para os 10 idiomas compatíveis"
+    ],
+    "Added daily budget pace module based on cycle remaining time and quota": [
+        .traditionalChinese: "新增依週期剩餘時間與額度計算的每日建議節奏模組",
+        .japanese: "サイクル残り時間とクォータに基づく日次利用ペースモジュールを追加",
+        .korean: "주기 잔여 시간과 할당량 기반 일일 사용 속도 모듈 추가",
+        .spanish: "Añadido el módulo de ritmo diario según el tiempo y la cuota restantes del ciclo",
+        .german: "Modul für das tägliche Kontingenttempo anhand verbleibender Zykluszeit und Quote hinzugefügt",
+        .french: "Ajout du rythme quotidien selon le temps et le quota restants du cycle",
+        .portuguese: "Adicionado módulo de ritmo diário com base no tempo e na quota restantes do ciclo",
+        .portugueseBrazil: "Adicionado módulo de ritmo diário com base no tempo e na cota restantes do ciclo"
+    ],
+    "Cleaned up auxiliary subtitles and tags across pages and sidebar": [
+        .traditionalChinese: "清理各頁面與側邊欄的輔助副標題和標籤",
+        .japanese: "各ページとサイドバーの補助字幕・タグを整理",
+        .korean: "페이지와 사이드바의 보조 설명 및 태그 정리",
+        .spanish: "Simplificados los subtítulos y etiquetas auxiliares de las páginas y la barra lateral",
+        .german: "Zusätzliche Untertitel und Tags auf Seiten und in der Seitenleiste bereinigt",
+        .french: "Nettoyage des sous-titres et étiquettes secondaires dans les pages et la barre latérale",
+        .portuguese: "Limpeza de subtítulos e etiquetas auxiliares nas páginas e na barra lateral",
+        .portugueseBrazil: "Limpeza de subtítulos e etiquetas auxiliares nas páginas e na barra lateral"
+    ],
+    "Complete 10-language localized translations and code cleanup": [
+        .traditionalChinese: "完成 10 種語言本地化並清理程式碼",
+        .japanese: "10言語の完全なローカライズとコード整理",
+        .korean: "10개 언어 전체 현지화 및 코드 정리",
+        .spanish: "Localización completa en 10 idiomas y limpieza de código",
+        .german: "Vollständige Lokalisierung in 10 Sprachen und Codebereinigung",
+        .french: "Localisation complète en 10 langues et nettoyage du code",
+        .portuguese: "Localização completa em 10 idiomas e limpeza de código",
+        .portugueseBrazil: "Localização completa em 10 idiomas e limpeza de código"
+    ],
+    "Redesigned About view layout with Hero brand center and 2x3 feature grid": [
+        .traditionalChinese: "重新設計「關於」頁面，加入 Hero 品牌中心與 2×3 功能網格",
+        .japanese: "Hero ブランドセンターと2×3機能グリッドで「このアプリについて」を刷新",
+        .korean: "Hero 브랜드 영역과 2×3 기능 그리드로 정보 화면 재설계",
+        .spanish: "Rediseñada la vista Acerca de con centro de marca Hero y cuadrícula de funciones 2×3",
+        .german: "Info-Ansicht mit Hero-Markenbereich und 2×3-Funktionsraster neu gestaltet",
+        .french: "Nouvelle mise en page À propos avec centre de marque Hero et grille de fonctions 2×3",
+        .portuguese: "Vista Acerca redesenhada com centro de marca Hero e grelha de funcionalidades 2×3",
+        .portugueseBrazil: "Tela Sobre redesenhada com centro de marca Hero e grade de recursos 2×3"
+    ],
+    "Polished online update interactions and status indicators": [
+        .traditionalChinese: "優化線上更新互動與狀態指示",
+        .japanese: "オンライン更新の操作とステータス表示を改善",
+        .korean: "온라인 업데이트 상호작용 및 상태 표시 개선",
+        .spanish: "Mejoradas las interacciones de actualización en línea y los indicadores de estado",
+        .german: "Interaktionen und Statusanzeigen für Online-Updates verbessert",
+        .french: "Amélioration des interactions de mise à jour en ligne et des indicateurs d’état",
+        .portuguese: "Melhoria das interações de atualização online e dos indicadores de estado",
+        .portugueseBrazil: "Aprimoramento das interações de atualização online e dos indicadores de status"
+    ],
+    "Fixed Sparkle in-app delta update checking and version comparison": [
+        .traditionalChinese: "修正 Sparkle 應用程式內增量更新檢查與版本比較",
+        .japanese: "Sparkle のアプリ内差分更新確認とバージョン比較を修正",
+        .korean: "Sparkle 앱 내 증분 업데이트 확인 및 버전 비교 수정",
+        .spanish: "Corregidas la comprobación de actualizaciones delta y la comparación de versiones con Sparkle",
+        .german: "Sparkle-Prüfung auf Delta-Updates und Versionsvergleich korrigiert",
+        .french: "Correction de la recherche de mises à jour delta et de la comparaison des versions avec Sparkle",
+        .portuguese: "Corrigidas a verificação de atualizações delta e a comparação de versões com o Sparkle",
+        .portugueseBrazil: "Corrigidas a verificação de atualizações delta e a comparação de versões com o Sparkle"
+    ],
+    "Unified language and preference setting icons": [
+        .traditionalChinese: "統一語言與偏好設定圖示",
+        .japanese: "言語と環境設定のアイコンを統一",
+        .korean: "언어 및 환경설정 아이콘 통일",
+        .spanish: "Unificados los iconos de idioma y preferencias",
+        .german: "Symbole für Sprache und Einstellungen vereinheitlicht",
+        .french: "Harmonisation des icônes de langue et de préférences",
+        .portuguese: "Ícones de idioma e preferências uniformizados",
+        .portugueseBrazil: "Ícones de idioma e preferências padronizados"
+    ],
+    "Added menu bar compact mode and optional hidden Dock icon": [
+        .traditionalChinese: "新增精簡選單列模式與可選的 Dock 圖示隱藏功能",
+        .japanese: "メニューバーコンパクトモードとDockアイコン非表示オプションを追加",
+        .korean: "메뉴 막대 컴팩트 모드 및 Dock 아이콘 숨기기 옵션 추가",
+        .spanish: "Añadidos el modo compacto de barra de menús y la opción de ocultar el icono del Dock",
+        .german: "Kompakten Menüleistenmodus und optional ausgeblendetes Dock-Symbol hinzugefügt",
+        .french: "Ajout du mode compact de barre des menus et du masquage facultatif de l’icône du Dock",
+        .portuguese: "Adicionado modo compacto da barra de menus e opção para ocultar o ícone da Dock",
+        .portugueseBrazil: "Adicionado modo compacto da barra de menus e opção para ocultar o ícone do Dock"
+    ],
+    "Improved ChatGPT and Codex quota snapshot parsers": [
+        .traditionalChinese: "改進 ChatGPT 與 Codex 額度快照解析器",
+        .japanese: "ChatGPT と Codex のクォータスナップショット解析を改善",
+        .korean: "ChatGPT 및 Codex 할당량 스냅샷 파서 개선",
+        .spanish: "Mejorados los analizadores de instantáneas de cuota de ChatGPT y Codex",
+        .german: "Parser für ChatGPT- und Codex-Kontingent-Snapshots verbessert",
+        .french: "Amélioration des analyseurs d’instantanés de quota ChatGPT et Codex",
+        .portuguese: "Melhoria dos analisadores de instantâneos de quota do ChatGPT e Codex",
+        .portugueseBrazil: "Melhoria dos analisadores de instantâneos de cota do ChatGPT e Codex"
+    ],
+    "Initial release of QuotaLens with real-time quota tracking, reset card alerts, and cycle detection": [
+        .traditionalChinese: "QuotaLens 首次發布，支援即時額度追蹤、重置卡提醒與週期偵測",
+        .japanese: "リアルタイムのクォータ追跡、リセットカード通知、サイクル検出を備えた QuotaLens 初回リリース",
+        .korean: "실시간 할당량 추적, 재설정 카드 알림 및 주기 감지를 지원하는 QuotaLens 최초 출시",
+        .spanish: "Primera versión de QuotaLens con seguimiento de cuota en tiempo real, alertas de tarjetas de reinicio y detección de ciclos",
+        .german: "Erste QuotaLens-Version mit Echtzeit-Kontingentverfolgung, Reset-Karten-Warnungen und Zykluserkennung",
+        .french: "Première version de QuotaLens avec suivi du quota en temps réel, alertes de cartes de réinitialisation et détection des cycles",
+        .portuguese: "Primeira versão do QuotaLens com monitorização de quota em tempo real, alertas de cartões de reset e deteção de ciclos",
+        .portugueseBrazil: "Primeira versão do QuotaLens com monitoramento de cota em tempo real, alertas de cartões de reset e detecção de ciclos"
+    ],
     "API Equivalent Value · Beta": [
         .traditionalChinese: "API 等價價值 · Beta",
         .japanese: "API 換算価値 · Beta",

@@ -69,7 +69,7 @@ public struct MainView: View {
                             isSelected: selectedTab == tab,
                             colorScheme: colorScheme
                         ) {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                            if selectedTab != tab {
                                 selectedTab = tab
                             }
                         }

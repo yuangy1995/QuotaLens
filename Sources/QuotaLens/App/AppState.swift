@@ -265,6 +265,10 @@ public final class AppState: ObservableObject {
         max(0.0, 100.0 - currentUsedPercent)
     }
 
+    public var isQuotaExhausted: Bool {
+        hasQuotaSnapshot && currentRemainingPercent <= 0.000_1
+    }
+
     public var currentUsedPercentString: String {
         formatPercent(currentUsedPercent)
     }
@@ -475,6 +479,7 @@ public final class AppState: ObservableObject {
 
     /// 建议每日可用配额百分比（至重置刚好用完）
     public func recommendedDailyQuotaPercent(now: Date = Date()) -> Double? {
+        guard currentRemainingPercent > 0.000_1 else { return nil }
         guard let days = currentPeriodRemainingDays(now: now), days > 0 else { return nil }
         return min(100.0, max(0.0, currentRemainingPercent / days))
     }
@@ -495,6 +500,9 @@ public final class AppState: ObservableObject {
 
     /// 建议每日配额短文案（例如 "剩余 6.7 天 · 匀速可用"）
     public func recommendedDailyQuotaSubtitle(now: Date = Date()) -> String {
+        if latestRateLimit != nil, currentRemainingPercent <= 0.000_1 {
+            return L10n.text("本周期无可用额度 · 等待重置", "No quota remaining · Waiting for reset")
+        }
         guard let days = currentPeriodRemainingDays(now: now), days > 0 else {
             return L10n.text("周期即将结束", "Cycle ending soon")
         }

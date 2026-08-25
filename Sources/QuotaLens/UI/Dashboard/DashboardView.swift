@@ -172,44 +172,59 @@ public struct DashboardView: View {
     private var dailyBudgetPaceCard: some View {
         let isDark = colorScheme == .dark
         let emerald = AppTheme.accentEmerald(for: colorScheme)
+        let rose = AppTheme.accentRose(for: colorScheme)
+        let isExhausted = state.isQuotaExhausted
+        let accent = isExhausted ? rose : emerald
 
         return TimelineView(.periodic(from: .now, by: 1)) { context in
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 5) {
-                    Image(systemName: "chart.line.uptrend.xyaxis")
+                    Image(systemName: isExhausted ? "exclamationmark.octagon.fill" : "chart.line.uptrend.xyaxis")
                         .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(emerald)
+                        .foregroundStyle(accent)
 
-                    Text(L10n.text("建议日均消耗", "Daily Budget Pace"))
+                    Text(isExhausted
+                        ? L10n.text("本周期额度已用尽", "Quota Exhausted")
+                        : L10n.text("建议日均消耗", "Daily Budget Pace"))
                         .font(.system(size: 10.5, weight: .bold))
                         .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
 
                     Spacer(minLength: 4)
 
-                    Text(L10n.text("匀速", "Paced"))
+                    Text(isExhausted
+                        ? L10n.text("等待重置", "Waiting")
+                        : L10n.text("匀速", "Paced"))
                         .font(.system(size: 9, weight: .heavy, design: .monospaced))
-                        .foregroundStyle(emerald)
+                        .foregroundStyle(accent)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 1.5)
-                        .background(emerald.opacity(isDark ? 0.16 : 0.10), in: RoundedRectangle(cornerRadius: 3.5))
+                        .background(accent.opacity(isDark ? 0.16 : 0.10), in: RoundedRectangle(cornerRadius: 3.5))
                         .overlay(
                             RoundedRectangle(cornerRadius: 3.5)
-                                .strokeBorder(emerald.opacity(0.35), lineWidth: 0.6)
+                                .strokeBorder(accent.opacity(0.35), lineWidth: 0.6)
                         )
                 }
 
-                HStack(alignment: .firstTextBaseline, spacing: 3) {
-                    Text(state.recommendedDailyQuotaPercentString(now: context.date))
+                if isExhausted {
+                    Text(L10n.text("无需预测", "No forecast"))
                         .font(.system(size: 18, weight: .black, design: .rounded))
-                        .foregroundStyle(emerald)
-                        .monospacedDigit()
+                        .foregroundStyle(accent)
+                } else {
+                    HStack(alignment: .firstTextBaseline, spacing: 3) {
+                        Text(state.recommendedDailyQuotaPercentString(now: context.date))
+                            .font(.system(size: 18, weight: .black, design: .rounded))
+                            .foregroundStyle(accent)
+                            .monospacedDigit()
 
-                    Text("/" + L10n.text("天", "day"))
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                        Text("/" + L10n.text("天", "day"))
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                    }
                 }
 
-                Text(state.recommendedDailyQuotaSubtitle(now: context.date))
+                Text(isExhausted
+                    ? L10n.format("Resets in %@", zhHans: "%@ 后重置", state.resetCountdownString)
+                    : state.recommendedDailyQuotaSubtitle(now: context.date))
                     .font(.system(size: 9.5, weight: .medium, design: .monospaced))
                     .foregroundStyle(AppTheme.textSecondary(for: colorScheme).opacity(0.88))
                     .lineLimit(1)
@@ -220,7 +235,7 @@ public struct DashboardView: View {
             .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .strokeBorder(emerald.opacity(isDark ? 0.28 : 0.20), lineWidth: 0.8)
+                    .strokeBorder(accent.opacity(isDark ? 0.28 : 0.20), lineWidth: 0.8)
             )
         }
     }

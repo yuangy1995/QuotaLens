@@ -29,6 +29,11 @@ private final class MenuBarLocalUsageStore: ObservableObject {
         sevenDayMetrics = try? await facade.getDashboardMetrics(days: 7)
         thirtyDayMetrics = try? await facade.getDashboardMetrics(days: 30)
 
+        guard currentUsedPercent < 99.999_9 else {
+            quotaForecast = nil
+            return
+        }
+
         let storedSnaps = (try? await facade.getRecentRateLimitSnapshots(accountKey: accountKey, limit: 50)) ?? []
         let points = storedSnaps.compactMap { snapshot -> QuotaForecastEngine.RateSnapshotPoint? in
             guard let resetAt = snapshot.resetsAt else { return nil }
@@ -275,7 +280,9 @@ public struct MenuBarContentView: View {
             )
             .shadow(color: isDark ? Color.black.opacity(0.25) : Color.black.opacity(0.04), radius: 6, y: 2)
 
-            if let prediction = quotaPacePrediction {
+            if state.isQuotaExhausted {
+                quotaExhaustedStatusStrip
+            } else if let prediction = quotaPacePrediction {
                 quotaPacePredictionStrip(prediction)
             }
 
@@ -460,6 +467,50 @@ public struct MenuBarContentView: View {
         )
     }
 
+    private var quotaExhaustedStatusStrip: some View {
+        let rose = AppTheme.accentRose(for: colorScheme)
+        let isDark = colorScheme == .dark
+
+        return TimelineView(.periodic(from: .now, by: 1)) { _ in
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.octagon.fill")
+                        .font(.system(size: 10.5, weight: .bold))
+                        .foregroundStyle(rose)
+
+                    Text(L10n.text("额度状态", "Quota Status"))
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+
+                    Spacer()
+
+                    Text(L10n.text("已用尽", "Exhausted"))
+                        .font(.system(size: 9.5, weight: .heavy, design: .monospaced))
+                        .foregroundStyle(rose)
+                }
+
+                Text(L10n.text("本周期没有可用额度，无需继续预测", "No quota remains in this cycle, so no forecast is needed"))
+                    .font(.system(size: 10.5, weight: .heavy, design: .rounded))
+                    .foregroundStyle(rose)
+                    .lineLimit(2)
+
+                Text(L10n.format("Resets in %@", zhHans: "%@ 后重置", state.resetCountdownString))
+                    .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(
+                rose.opacity(isDark ? 0.12 : 0.08),
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(rose.opacity(isDark ? 0.34 : 0.24), lineWidth: 0.8)
+            )
+        }
+    }
+
     private func renewalBadgeColor(emerald: Color, amber: Color, rose: Color, fallback: Color) -> Color {
         switch state.subscriptionRenewalState {
         case .autoRenews:
@@ -474,7 +525,7 @@ public struct MenuBarContentView: View {
     }
 
     private var quotaPacePrediction: (text: String, color: Color)? {
-        guard state.hasQuotaSnapshot else {
+        guard state.hasQuotaSnapshot, !state.isQuotaExhausted else {
             return nil
         }
 
