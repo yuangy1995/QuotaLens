@@ -48,6 +48,14 @@ public struct PricingRuleEntry: Codable, Sendable {
     public let cachedNanoUsdPerToken: Int64
     public let cacheWriteNanoUsdPerToken: Int64?
     public let outputNanoUsdPerToken: Int64
+    /// Common denominator for all per-token rate numerators in this rule.
+    /// Most rows use 1; fractional nano-USD rates such as $0.0375 / 1M
+    /// cached tokens use 2 so the catalog does not round away half a nano.
+    public let rateDivisor: Int64
+    /// Largest input-token count supported by this exact tier/rate row.
+    /// A nil value means the row either has explicit long-context pricing or
+    /// does not publish a short-context-only ceiling.
+    public let maximumInputTokens: Int64?
     public let longContextThresholdTokens: Int64?
     public let longContextInputMultiplierPpm: Int64?
     public let longContextOutputMultiplierPpm: Int64?
@@ -61,6 +69,8 @@ public struct PricingRuleEntry: Codable, Sendable {
         cachedNanoUsdPerToken: Int64,
         cacheWriteNanoUsdPerToken: Int64? = nil,
         outputNanoUsdPerToken: Int64,
+        rateDivisor: Int64 = 1,
+        maximumInputTokens: Int64? = nil,
         longContextThresholdTokens: Int64? = nil,
         longContextInputMultiplierPpm: Int64? = nil,
         longContextOutputMultiplierPpm: Int64? = nil
@@ -73,6 +83,8 @@ public struct PricingRuleEntry: Codable, Sendable {
         self.cachedNanoUsdPerToken = cachedNanoUsdPerToken
         self.cacheWriteNanoUsdPerToken = cacheWriteNanoUsdPerToken
         self.outputNanoUsdPerToken = outputNanoUsdPerToken
+        self.rateDivisor = rateDivisor
+        self.maximumInputTokens = maximumInputTokens
         self.longContextThresholdTokens = longContextThresholdTokens
         self.longContextInputMultiplierPpm = longContextInputMultiplierPpm
         self.longContextOutputMultiplierPpm = longContextOutputMultiplierPpm
@@ -139,64 +151,124 @@ public enum BundledPricingCatalog {
         current: GPT56Rate,
         currentFromMs: Int64
     ) -> [PricingRuleEntry] {
-        var rules: [PricingRuleEntry] = [
-            gpt56Rule(
-                modelKey: modelKey,
-                suffix: "launch-v4",
-                serviceTier: nil,
-                effectiveFromMs: gpt56ReleaseMs,
-                effectiveToMs: currentFromMs,
-                rate: launch
-            ),
-            gpt56Rule(
-                modelKey: modelKey,
-                suffix: "current-v4",
-                serviceTier: nil,
-                effectiveFromMs: currentFromMs,
-                effectiveToMs: nil,
-                rate: current
-            ),
-            gpt56Rule(
-                modelKey: modelKey,
-                suffix: "flex-current-v4",
-                serviceTier: "flex",
-                effectiveFromMs: currentFromMs,
-                effectiveToMs: nil,
-                rate: scaledGPT56Rate(current, multiplierPpm: 500_000)
-            ),
-            gpt56Rule(
-                modelKey: modelKey,
-                suffix: "fast-current-v4",
-                serviceTier: "fast",
-                effectiveFromMs: currentFromMs,
-                effectiveToMs: nil,
-                rate: scaledGPT56Rate(current, multiplierPpm: 2_000_000)
-            )
+        let periods: [(suffix: String, from: Int64, to: Int64?, rate: GPT56Rate)] = [
+            ("launch-v4", gpt56ReleaseMs, currentFromMs, launch),
+            ("current-v4", currentFromMs, nil, current)
         ]
-
-        // Fast mode replaced Priority processing on 2026-07-30. Sol's Standard
-        // price changed later, so its Fast historical row must preserve the
-        // twice-launch-rate period instead of back-pricing Aug 2026 usage with
-        // the promotional price.
-        if modelKey == "gpt-5.6-sol" {
-            rules.append(
+        return periods.flatMap { period in
+            [
                 gpt56Rule(
                     modelKey: modelKey,
-                    suffix: "fast-launch-v4",
+                    suffix: period.suffix,
+                    serviceTier: nil,
+                    effectiveFromMs: period.from,
+                    effectiveToMs: period.to,
+                    rate: period.rate
+                ),
+                gpt56Rule(
+                    modelKey: modelKey,
+                    suffix: period.suffix,
+                    serviceTier: "flex",
+                    effectiveFromMs: period.from,
+                    effectiveToMs: period.to,
+                    rate: scaledGPT56Rate(period.rate, multiplierPpm: 500_000)
+                ),
+                gpt56Rule(
+                    modelKey: modelKey,
+                    suffix: period.suffix,
                     serviceTier: "fast",
-                    effectiveFromMs: gpt56TerraLunaCutoverMs,
-                    effectiveToMs: currentFromMs,
-                    rate: scaledGPT56Rate(launch, multiplierPpm: 2_000_000)
+                    effectiveFromMs: period.from,
+                    effectiveToMs: period.to,
+                    rate: scaledGPT56Rate(period.rate, multiplierPpm: 2_000_000)
                 )
-            )
+            ]
         }
+    }
 
+    private static func greatestCommonDivisor(_ lhs: Int64, _ rhs: Int64) -> Int64 {
+        var a = lhs
+        var b = rhs
+        while b != 0 {
+            (a, b) = (b, a % b)
+        }
+        return a
+    }
+
+    private static func publishedTierRule(
+        modelKey: String,
+        serviceTier: String?,
+        input: Int64,
+        cached: Int64,
+        output: Int64,
+        multiplierPpm: Int64,
+        supportsLongContext: Bool
+    ) -> PricingRuleEntry {
+        let divisorBase: Int64 = 1_000_000
+        let commonDivisor = greatestCommonDivisor(multiplierPpm, divisorBase)
+        let numeratorMultiplier = multiplierPpm / commonDivisor
+        let rateDivisor = divisorBase / commonDivisor
+        let tierId = serviceTier ?? "std"
+        return PricingRuleEntry(
+            ruleId: "\(modelKey)-\(tierId)-v4",
+            serviceTier: serviceTier,
+            effectiveFromMs: 0,
+            inputNanoUsdPerToken: input * numeratorMultiplier,
+            cachedNanoUsdPerToken: cached * numeratorMultiplier,
+            outputNanoUsdPerToken: output * numeratorMultiplier,
+            rateDivisor: rateDivisor,
+            maximumInputTokens: supportsLongContext ? nil : 272_000,
+            longContextThresholdTokens: supportsLongContext ? 272_000 : nil,
+            longContextInputMultiplierPpm: supportsLongContext ? 2_000_000 : nil,
+            longContextOutputMultiplierPpm: supportsLongContext ? 1_500_000 : nil
+        )
+    }
+
+    private static func publishedTierRules(
+        modelKey: String,
+        input: Int64,
+        cached: Int64,
+        output: Int64,
+        supportsLongContext: Bool,
+        supportsFlex: Bool,
+        fastMultiplierPpm: Int64?
+    ) -> [PricingRuleEntry] {
+        var rules = [publishedTierRule(
+            modelKey: modelKey,
+            serviceTier: nil,
+            input: input,
+            cached: cached,
+            output: output,
+            multiplierPpm: 1_000_000,
+            supportsLongContext: supportsLongContext
+        )]
+        if supportsFlex {
+            rules.append(publishedTierRule(
+                modelKey: modelKey,
+                serviceTier: "flex",
+                input: input,
+                cached: cached,
+                output: output,
+                multiplierPpm: 500_000,
+                supportsLongContext: supportsLongContext
+            ))
+        }
+        if let fastMultiplierPpm {
+            rules.append(publishedTierRule(
+                modelKey: modelKey,
+                serviceTier: "fast",
+                input: input,
+                cached: cached,
+                output: output,
+                multiplierPpm: fastMultiplierPpm,
+                supportsLongContext: false
+            ))
+        }
         return rules
     }
 
     public static let defaultCatalog = PricingCatalogModel(
         catalogVersion: currentVersion,
-        schemaVersion: 3,
+        schemaVersion: 4,
         publishedAt: publishedAtMs,
         catalogSha256: "",
         sourceURLs: [
@@ -258,84 +330,112 @@ public enum BundledPricingCatalog {
             PricingModelEntry(
                 modelKey: "gpt-5.5",
                 aliases: ["gpt-5.5", "gpt-5.5-codex", "gpt-5.5-preview"],
-                rules: [
-                    PricingRuleEntry(
-                        ruleId: "gpt-5.5-std-v3",
-                        serviceTier: nil,
-                        effectiveFromMs: 0,
-                        inputNanoUsdPerToken: 5_000,
-                        cachedNanoUsdPerToken: 500,
-                        outputNanoUsdPerToken: 30_000,
-                        longContextThresholdTokens: 272_000,
-                        longContextInputMultiplierPpm: 2_000_000,
-                        longContextOutputMultiplierPpm: 1_500_000
-                    )
-                ]
+                rules: Self.publishedTierRules(
+                    modelKey: "gpt-5.5",
+                    input: 5_000,
+                    cached: 500,
+                    output: 30_000,
+                    supportsLongContext: true,
+                    supportsFlex: true,
+                    fastMultiplierPpm: 2_500_000
+                )
             ),
 
             // 3. GPT-5.4 系列
             PricingModelEntry(
                 modelKey: "gpt-5.4",
                 aliases: ["gpt-5.4", "gpt-5.4-codex"],
-                rules: [
-                    PricingRuleEntry(
-                        ruleId: "gpt-5.4-std-v3",
-                        serviceTier: nil,
-                        effectiveFromMs: 0,
-                        inputNanoUsdPerToken: 2_500,
-                        cachedNanoUsdPerToken: 250,
-                        outputNanoUsdPerToken: 15_000,
-                        longContextThresholdTokens: 272_000,
-                        longContextInputMultiplierPpm: 2_000_000,
-                        longContextOutputMultiplierPpm: 1_500_000
-                    )
-                ]
+                rules: Self.publishedTierRules(
+                    modelKey: "gpt-5.4",
+                    input: 2_500,
+                    cached: 250,
+                    output: 15_000,
+                    supportsLongContext: true,
+                    supportsFlex: true,
+                    fastMultiplierPpm: 2_000_000
+                )
             ),
             PricingModelEntry(
                 modelKey: "gpt-5.4-mini",
                 aliases: ["gpt-5.4-mini"],
-                rules: [
-                    PricingRuleEntry(ruleId: "gpt-5.4-mini-std-v3", serviceTier: nil, effectiveFromMs: 0, inputNanoUsdPerToken: 750, cachedNanoUsdPerToken: 75, outputNanoUsdPerToken: 4_500)
-                ]
+                rules: Self.publishedTierRules(
+                    modelKey: "gpt-5.4-mini",
+                    input: 750,
+                    cached: 75,
+                    output: 4_500,
+                    supportsLongContext: false,
+                    supportsFlex: true,
+                    fastMultiplierPpm: 2_000_000
+                )
             ),
             PricingModelEntry(
                 modelKey: "gpt-5.4-nano",
                 aliases: ["gpt-5.4-nano"],
-                rules: [
-                    PricingRuleEntry(ruleId: "gpt-5.4-nano-std-v3", serviceTier: nil, effectiveFromMs: 0, inputNanoUsdPerToken: 200, cachedNanoUsdPerToken: 20, outputNanoUsdPerToken: 1_250)
-                ]
+                rules: Self.publishedTierRules(
+                    modelKey: "gpt-5.4-nano",
+                    input: 200,
+                    cached: 20,
+                    output: 1_250,
+                    supportsLongContext: false,
+                    supportsFlex: true,
+                    fastMultiplierPpm: nil
+                )
             ),
 
             // 4. GPT-5.3 系列
             PricingModelEntry(
                 modelKey: "gpt-5.3-codex",
                 aliases: ["gpt-5.3-codex", "gpt-5.3"],
-                rules: [
-                    PricingRuleEntry(ruleId: "gpt-5.3-codex-std-v3", serviceTier: nil, effectiveFromMs: 0, inputNanoUsdPerToken: 1_750, cachedNanoUsdPerToken: 175, outputNanoUsdPerToken: 14_000)
-                ]
+                rules: Self.publishedTierRules(
+                    modelKey: "gpt-5.3-codex",
+                    input: 1_750,
+                    cached: 175,
+                    output: 14_000,
+                    supportsLongContext: false,
+                    supportsFlex: false,
+                    fastMultiplierPpm: 2_000_000
+                )
             ),
 
             // 5. GPT-5.2 / GPT-5.1 历史模型
             PricingModelEntry(
                 modelKey: "gpt-5.2",
                 aliases: ["gpt-5.2", "gpt-5.2-codex"],
-                rules: [
-                    PricingRuleEntry(ruleId: "gpt-5.2-std-v3", serviceTier: nil, effectiveFromMs: 0, inputNanoUsdPerToken: 1_750, cachedNanoUsdPerToken: 175, outputNanoUsdPerToken: 14_000)
-                ]
+                rules: Self.publishedTierRules(
+                    modelKey: "gpt-5.2",
+                    input: 1_750,
+                    cached: 175,
+                    output: 14_000,
+                    supportsLongContext: false,
+                    supportsFlex: true,
+                    fastMultiplierPpm: 2_000_000
+                )
             ),
             PricingModelEntry(
                 modelKey: "gpt-5.1-codex",
                 aliases: ["gpt-5.1-codex", "gpt-5.1", "gpt-5.1-codex-max"],
-                rules: [
-                    PricingRuleEntry(ruleId: "gpt-5.1-codex-std-v3", serviceTier: nil, effectiveFromMs: 0, inputNanoUsdPerToken: 1_250, cachedNanoUsdPerToken: 125, outputNanoUsdPerToken: 10_000)
-                ]
+                rules: Self.publishedTierRules(
+                    modelKey: "gpt-5.1-codex",
+                    input: 1_250,
+                    cached: 125,
+                    output: 10_000,
+                    supportsLongContext: false,
+                    supportsFlex: false,
+                    fastMultiplierPpm: nil
+                )
             ),
             PricingModelEntry(
                 modelKey: "gpt-5.1-codex-mini",
                 aliases: ["gpt-5.1-codex-mini"],
-                rules: [
-                    PricingRuleEntry(ruleId: "gpt-5.1-mini-std-v3", serviceTier: nil, effectiveFromMs: 0, inputNanoUsdPerToken: 250, cachedNanoUsdPerToken: 25, outputNanoUsdPerToken: 2_000)
-                ]
+                rules: Self.publishedTierRules(
+                    modelKey: "gpt-5.1-codex-mini",
+                    input: 250,
+                    cached: 25,
+                    output: 2_000,
+                    supportsLongContext: false,
+                    supportsFlex: false,
+                    fastMultiplierPpm: nil
+                )
             ),
 
             // 6. 标准 GPT-5 / GPT-5-Codex。Only explicit model IDs are
@@ -343,9 +443,15 @@ public enum BundledPricingCatalog {
             PricingModelEntry(
                 modelKey: "gpt-5",
                 aliases: ["gpt-5", "gpt-5-codex"],
-                rules: [
-                    PricingRuleEntry(ruleId: "gpt-5-std-v3", serviceTier: nil, effectiveFromMs: 0, inputNanoUsdPerToken: 1_250, cachedNanoUsdPerToken: 125, outputNanoUsdPerToken: 10_000)
-                ]
+                rules: Self.publishedTierRules(
+                    modelKey: "gpt-5",
+                    input: 1_250,
+                    cached: 125,
+                    output: 10_000,
+                    supportsLongContext: false,
+                    supportsFlex: true,
+                    fastMultiplierPpm: 2_000_000
+                )
             )
         ]
     )

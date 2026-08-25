@@ -228,6 +228,51 @@ final class QueryAndForecastTests: XCTestCase {
         XCTAssertEqual(history.first?.eventCount, 7)
     }
 
+    func testFullDayTokenPricingCoverageUsesExactUnpricedTokenWeight() throws {
+        let directory = try makeTemporaryDirectory()
+        let database = try makeMigratedDatabase(in: directory)
+        let repository = UsageAnalyticsRepository(database: database)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        let dayStart = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026,
+            month: 8,
+            day: 20
+        )))
+        let dayEnd = try XCTUnwrap(calendar.date(byAdding: .day, value: 1, to: dayStart))
+
+        try insertSession(database, id: "coverage")
+        try database.executeUpdate(
+            sql: """
+            INSERT INTO codex_daily_usage_summaries (
+                session_id, day_key, day_start_ms, model_canonical, event_count,
+                total_tokens, uncached_input_tokens, cached_input_tokens,
+                cache_write_input_tokens, output_tokens, reasoning_output_tokens,
+                estimated_cost_usd_nano, unpriced_event_count, unpriced_token_count
+            ) VALUES ('coverage', '2026-08-20', ?, 'gpt-5.6-sol', 10,
+                100000, 100000, 0, 0, 0, 0, 1000, 1, 5000);
+            """,
+            bindings: [Int64(dayStart.timeIntervalSince1970 * 1_000)]
+        )
+
+        let metrics = try repository.fetchDashboardMetrics(
+            rangeStart: dayStart,
+            endExclusive: dayEnd,
+            calendar: calendar
+        )
+        XCTAssertEqual(metrics.eventPricingCoverage, 0.9, accuracy: 0.000_001)
+        XCTAssertEqual(metrics.tokenPricingCoverage, 0.95, accuracy: 0.000_001)
+        XCTAssertEqual(metrics.costForecastCoverage, 0.95, accuracy: 0.000_001)
+
+        let history = try repository.fetchHistoryDays(
+            daysCount: 1,
+            calendar: calendar,
+            now: dayStart.addingTimeInterval(12 * 3_600)
+        )
+        XCTAssertEqual(history.first?.unpricedEventCount, 1)
+        XCTAssertEqual(history.first?.unpricedTokenCount, 5_000)
+    }
+
     func testTodayMetricsUseNaturalDayInsteadOfPast24Hours() throws {
         let directory = try makeTemporaryDirectory()
         let database = try makeMigratedDatabase(in: directory)

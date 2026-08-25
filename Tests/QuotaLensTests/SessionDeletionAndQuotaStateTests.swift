@@ -41,10 +41,12 @@ final class SessionDeletionAndQuotaStateTests: XCTestCase {
         try insertDerivedRows(database, sessionID: "child", rootID: "root", sourceURL: childSource)
 
         let repository = UsageAnalyticsRepository(database: database) { sourceURL in
+            let destination = simulatedTrash.appendingPathComponent(sourceURL.lastPathComponent)
             try FileManager.default.moveItem(
                 at: sourceURL,
-                to: simulatedTrash.appendingPathComponent(sourceURL.lastPathComponent)
+                to: destination
             )
+            return destination
         }
 
         try repository.deleteSession(sessionId: "root", historyRootURL: historyRoot)
@@ -80,8 +82,9 @@ final class SessionDeletionAndQuotaStateTests: XCTestCase {
             sourceURL: outsideSource,
             relativePath: "../outside.jsonl"
         )
-        let repository = UsageAnalyticsRepository(database: database) { _ in
+        let repository = UsageAnalyticsRepository(database: database) { sourceURL in
             XCTFail("Unsafe source must never reach the Trash handler")
+            return sourceURL
         }
 
         XCTAssertThrowsError(
@@ -136,7 +139,10 @@ final class SessionDeletionAndQuotaStateTests: XCTestCase {
         let stageMoveCounter = StageMoveCounter()
         let repository = UsageAnalyticsRepository(
             database: database,
-            trashSourceFile: { _ in XCTFail("Trash must not be reached when staging fails.") },
+            trashSourceFile: { sourceURL in
+                XCTFail("Trash must not be reached when staging fails.")
+                return sourceURL
+            },
             stageSourceFile: { sourceURL, stagingURL in
                 stageMoveCounter.count += 1
                 if stageMoveCounter.count == 2 {
@@ -155,6 +161,74 @@ final class SessionDeletionAndQuotaStateTests: XCTestCase {
         XCTAssertEqual(try database.intScalar(sql: "SELECT COUNT(*) FROM codex_usage_events;"), 2)
         XCTAssertEqual(try database.intScalar(sql: "SELECT COUNT(*) FROM codex_session_summaries;"), 2)
         XCTAssertEqual(try database.intScalar(sql: "SELECT COUNT(*) FROM codex_daily_usage_summaries;"), 2)
+    }
+
+    func testDeleteSessionRestoresTrashMovesAndDatabaseWhenSecondTrashMoveFails() throws {
+        let directory = try makeTemporaryDirectory(named: "SessionDeletionTrashFailure")
+        let historyRoot = directory.appendingPathComponent("codex", isDirectory: true)
+        let sessionsDirectory = historyRoot.appendingPathComponent("sessions", isDirectory: true)
+        let simulatedTrash = directory.appendingPathComponent("Trash", isDirectory: true)
+        try FileManager.default.createDirectory(at: sessionsDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: simulatedTrash, withIntermediateDirectories: true)
+
+        let rootSource = sessionsDirectory.appendingPathComponent("root.jsonl")
+        let childSource = sessionsDirectory.appendingPathComponent("child.jsonl")
+        try overwriteFile(rootSource, with: "root\n")
+        try overwriteFile(childSource, with: "child\n")
+
+        let database = try makeMigratedDatabase(in: directory)
+        try insertSession(
+            database,
+            id: "root",
+            rootID: "root",
+            parentID: nil,
+            depth: 0,
+            sourceURL: rootSource,
+            relativePath: "sessions/root.jsonl"
+        )
+        try insertSession(
+            database,
+            id: "child",
+            rootID: "root",
+            parentID: "root",
+            depth: 1,
+            sourceURL: childSource,
+            relativePath: "sessions/child.jsonl"
+        )
+        try insertSource(database, sourceURL: rootSource, relativePath: "sessions/root.jsonl", inode: 1)
+        try insertSource(database, sourceURL: childSource, relativePath: "sessions/child.jsonl", inode: 2)
+        try insertDerivedRows(database, sessionID: "root", rootID: "root", sourceURL: rootSource)
+        try insertDerivedRows(database, sessionID: "child", rootID: "root", sourceURL: childSource)
+
+        final class TrashMoveCounter: @unchecked Sendable {
+            var count = 0
+        }
+        let trashMoveCounter = TrashMoveCounter()
+        let repository = UsageAnalyticsRepository(
+            database: database,
+            trashSourceFile: { sourceURL in
+                trashMoveCounter.count += 1
+                if trashMoveCounter.count == 2 {
+                    throw NSError(domain: "QuotaLensTests", code: 43)
+                }
+                let destination = simulatedTrash.appendingPathComponent(sourceURL.lastPathComponent)
+                try FileManager.default.moveItem(at: sourceURL, to: destination)
+                return destination
+            }
+        )
+
+        XCTAssertThrowsError(try repository.deleteSession(sessionId: "child", historyRootURL: historyRoot))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: rootSource.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: childSource.path))
+        XCTAssertEqual(try String(contentsOf: rootSource, encoding: .utf8), "root\n")
+        XCTAssertEqual(try String(contentsOf: childSource, encoding: .utf8), "child\n")
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: simulatedTrash.path), [])
+        XCTAssertEqual(try database.intScalar(sql: "SELECT COUNT(*) FROM codex_sessions;"), 2)
+        XCTAssertEqual(try database.intScalar(sql: "SELECT COUNT(*) FROM codex_import_sources;"), 2)
+        XCTAssertEqual(try database.intScalar(sql: "SELECT COUNT(*) FROM codex_usage_events;"), 2)
+        XCTAssertEqual(try database.intScalar(sql: "SELECT COUNT(*) FROM codex_session_summaries;"), 2)
+        XCTAssertEqual(try database.intScalar(sql: "SELECT COUNT(*) FROM codex_daily_usage_summaries;"), 2)
+        XCTAssertNotNil(try repository.fetchSessionDetail(sessionId: "child"))
     }
 
     @MainActor

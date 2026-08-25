@@ -8,6 +8,8 @@ public enum SessionDeletionError: LocalizedError, Sendable {
     case sessionNotFound
     case unsafeSourcePath(String)
     case sourceIsNotRegularFile(String)
+    case trashDestinationUnavailable(String)
+    case rollbackFailed(String)
 
     public var errorDescription: String? {
         switch self {
@@ -25,13 +27,25 @@ public enum SessionDeletionError: LocalizedError, Sendable {
                 zhHans: "会话源不是普通文件：%@",
                 path
             )
+        case .trashDestinationUnavailable(let path):
+            return L10n.format(
+                "The Trash did not return a recovery location for: %@",
+                zhHans: "废纸篓没有返回可恢复位置：%@",
+                path
+            )
+        case .rollbackFailed(let details):
+            return L10n.format(
+                "Session deletion failed and one or more source files could not be restored: %@",
+                zhHans: "会话删除失败，且一个或多个源文件无法恢复：%@",
+                details
+            )
         }
     }
 }
 
 public final class UsageAnalyticsRepository: Sendable {
     private let database: SQLiteDatabase
-    private let trashSourceFile: @Sendable (URL) throws -> Void
+    private let trashSourceFile: @Sendable (URL) throws -> URL
     private let stageSourceFile: @Sendable (URL, URL) throws -> Void
     private typealias DayAggregate = (
         tokens: TokenBreakdown,
@@ -59,9 +73,13 @@ public final class UsageAnalyticsRepository: Sendable {
 
     public init(
         database: SQLiteDatabase,
-        trashSourceFile: @escaping @Sendable (URL) throws -> Void = { sourceURL in
+        trashSourceFile: @escaping @Sendable (URL) throws -> URL = { sourceURL in
             var resultingURL: NSURL?
             try FileManager.default.trashItem(at: sourceURL, resultingItemURL: &resultingURL)
+            guard let resultingURL else {
+                throw SessionDeletionError.trashDestinationUnavailable(sourceURL.path)
+            }
+            return resultingURL as URL
         },
         stageSourceFile: @escaping @Sendable (URL, URL) throws -> Void = { sourceURL, stagingURL in
             try FileManager.default.moveItem(at: sourceURL, to: stagingURL)
@@ -337,6 +355,7 @@ public final class UsageAnalyticsRepository: Sendable {
         struct StagedSource {
             let originalURL: URL
             let stagingURL: URL
+            var recoveryURL: URL?
         }
 
         let records = try database.executeQuery(
@@ -390,18 +409,33 @@ public final class UsageAnalyticsRepository: Sendable {
         let sourceKeys = Set(records.map { "\($0.sourcePath)\u{1F}\($0.relativePath)" })
         let stagingRoot = try Self.makeDeletionStagingDirectory()
         var stagedSources: [StagedSource] = []
-        var originalFailure: Error?
 
-        func restoreStagedSources() {
+        func restoreStagedSources() -> [String] {
+            var failures: [String] = []
             for staged in stagedSources.reversed() {
-                guard fileManager.fileExists(atPath: staged.stagingURL.path) else { continue }
-                try? fileManager.createDirectory(
-                    at: staged.originalURL.deletingLastPathComponent(),
-                    withIntermediateDirectories: true
-                )
-                try? fileManager.moveItem(at: staged.stagingURL, to: staged.originalURL)
+                let recoveryURL = staged.recoveryURL ?? staged.stagingURL
+                guard fileManager.fileExists(atPath: recoveryURL.path) else {
+                    if !fileManager.fileExists(atPath: staged.originalURL.path) {
+                        failures.append("missing recovery source \(recoveryURL.path)")
+                    }
+                    continue
+                }
+                guard !fileManager.fileExists(atPath: staged.originalURL.path) else {
+                    failures.append("restore destination already exists \(staged.originalURL.path)")
+                    continue
+                }
+                do {
+                    try fileManager.createDirectory(
+                        at: staged.originalURL.deletingLastPathComponent(),
+                        withIntermediateDirectories: true
+                    )
+                    try fileManager.moveItem(at: recoveryURL, to: staged.originalURL)
+                } catch {
+                    failures.append("\(staged.originalURL.path): \(error.localizedDescription)")
+                }
             }
             try? fileManager.removeItem(at: stagingRoot)
+            return failures
         }
 
         do {
@@ -411,12 +445,18 @@ public final class UsageAnalyticsRepository: Sendable {
                 try fileManager.createDirectory(at: stagingDirectory, withIntermediateDirectories: true)
                 let stagingURL = stagingDirectory.appendingPathComponent(sourceURL.lastPathComponent)
                 try stageSourceFile(sourceURL, stagingURL)
-                stagedSources.append(StagedSource(originalURL: sourceURL, stagingURL: stagingURL))
+                stagedSources.append(StagedSource(
+                    originalURL: sourceURL,
+                    stagingURL: stagingURL,
+                    recoveryURL: nil
+                ))
             }
         } catch {
-            originalFailure = error
-            restoreStagedSources()
-            throw originalFailure ?? error
+            let rollbackFailures = restoreStagedSources()
+            if !rollbackFailures.isEmpty {
+                throw SessionDeletionError.rollbackFailed(rollbackFailures.joined(separator: "; "))
+            }
+            throw error
         }
 
         do {
@@ -457,13 +497,17 @@ public final class UsageAnalyticsRepository: Sendable {
                     )
                 }
 
-                for staged in stagedSources {
-                    try trashSourceFile(staged.stagingURL)
+                for index in stagedSources.indices {
+                    let trashURL = try trashSourceFile(stagedSources[index].stagingURL)
+                    stagedSources[index].recoveryURL = trashURL
                 }
             }
             try? fileManager.removeItem(at: stagingRoot)
         } catch {
-            restoreStagedSources()
+            let rollbackFailures = restoreStagedSources()
+            if !rollbackFailures.isEmpty {
+                throw SessionDeletionError.rollbackFailed(rollbackFailures.joined(separator: "; "))
+            }
             throw error
         }
     }
@@ -975,6 +1019,8 @@ public final class UsageAnalyticsRepository: Sendable {
             HAVING s.event_count != COALESCE(SUM(d.event_count), 0)
                 OR s.total_tokens != COALESCE(SUM(d.total_tokens), 0)
                 OR s.estimated_cost_usd_nano != COALESCE(SUM(d.estimated_cost_usd_nano), 0)
+                OR s.unpriced_event_count != COALESCE(SUM(d.unpriced_event_count), 0)
+                OR s.unpriced_token_count != COALESCE(SUM(d.unpriced_token_count), 0)
         );
         """)
         let invalidValueViolations = try database.intScalar(sql: """
@@ -984,6 +1030,19 @@ public final class UsageAnalyticsRepository: Sendable {
            OR cache_write_input_tokens < 0
            OR cached_input_tokens + cache_write_input_tokens > input_tokens
            OR reasoning_output_tokens > output_tokens;
+        """)
+        let summaryCoverageViolations = try database.intScalar(sql: """
+        SELECT COUNT(*) FROM codex_session_summaries
+        WHERE unpriced_event_count < 0
+           OR unpriced_event_count > event_count
+           OR unpriced_token_count < 0
+           OR unpriced_token_count > total_tokens;
+        """) + database.intScalar(sql: """
+        SELECT COUNT(*) FROM codex_daily_usage_summaries
+        WHERE unpriced_event_count < 0
+           OR unpriced_event_count > event_count
+           OR unpriced_token_count < 0
+           OR unpriced_token_count > total_tokens;
         """)
         let parentCycleViolations = try database.intScalar(sql: """
         WITH RECURSIVE chain(start_id, current_id, path, is_cycle, hops) AS (
@@ -1003,6 +1062,7 @@ public final class UsageAnalyticsRepository: Sendable {
         let invariantViolationCount = sessionSummaryViolations
             + dailySummaryViolations
             + invalidValueViolations
+            + summaryCoverageViolations
             + parentCycleViolations
         let activeCatalog = try database.stringScalar(
             sql: "SELECT catalog_version FROM codex_pricing_catalogs WHERE is_active = 1 ORDER BY published_at DESC LIMIT 1;"
@@ -1158,13 +1218,13 @@ public final class UsageAnalyticsRepository: Sendable {
         let primary: Int64
         switch sort {
         case .lastActivityDesc:
-            primary = Int64((session.lastEventAt ?? session.updatedAt).timeIntervalSince1970 * 1_000)
+            primary = Int64(((session.lastEventAt ?? session.updatedAt).timeIntervalSince1970 * 1_000).rounded())
         case .totalTokensDesc:
             primary = session.tokens.canonicalTotalTokens
         case .estimatedCostDesc:
             primary = session.estimatedCost.rawValue
         case .createdDesc:
-            primary = Int64(session.createdAt.timeIntervalSince1970 * 1_000)
+            primary = Int64((session.createdAt.timeIntervalSince1970 * 1_000).rounded())
         }
         return "\(primary)|\(session.sessionId)"
     }
@@ -1181,7 +1241,7 @@ public final class UsageAnalyticsRepository: Sendable {
     }
 
     private static func encodeEventCursor(event: CodexUsageEventDTO) -> String {
-        let timestampMs = Int64(event.timestamp.timeIntervalSince1970 * 1_000)
+        let timestampMs = Int64((event.timestamp.timeIntervalSince1970 * 1_000).rounded())
         return "\(timestampMs)|\(event.lineOffset)|\(event.eventId)"
     }
 
@@ -1256,7 +1316,8 @@ public final class UsageAnalyticsRepository: Sendable {
             SELECT
                 session_id, day_start_ms, model_canonical, event_count, total_tokens,
                 uncached_input_tokens, cached_input_tokens, cache_write_input_tokens, output_tokens,
-                reasoning_output_tokens, estimated_cost_usd_nano, unpriced_event_count
+                reasoning_output_tokens, estimated_cost_usd_nano, unpriced_event_count,
+                unpriced_token_count
             FROM codex_daily_usage_summaries
             WHERE day_start_ms >= ? AND day_start_ms < ?
             ORDER BY day_start_ms ASC, session_id ASC, model_canonical ASC;
@@ -1286,9 +1347,7 @@ public final class UsageAnalyticsRepository: Sendable {
                 sessionId: String(cString: sqlite3_column_text(statement, 0)),
                 eventCount: Int(sqlite3_column_int(statement, 3)),
                 unpricedCount: unpriced,
-                // Summaries are grouped by model. A model row containing an
-                // unpriced event is conservatively treated as fully unpriced.
-                unpricedTokens: unpriced > 0 ? total : 0
+                unpricedTokens: sqlite3_column_int64(statement, 12)
             )
         }
 

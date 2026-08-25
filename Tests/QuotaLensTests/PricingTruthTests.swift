@@ -162,6 +162,84 @@ final class PricingTruthTests: XCTestCase {
         XCTAssertEqual(ModelAliasResolver.resolve(rawModel: "gpt-5.6"), "gpt-5.6")
     }
 
+    func testPublishedFlexAndFastRowsCoverOlderSupportedModelsExactly() {
+        let tokens = TokenBreakdown(inputTokens: 100_000)
+        let cases: [(model: String, tier: String, expected: Int64)] = [
+            ("gpt-5.5", "flex", 250_000_000),
+            ("gpt-5.5", "fast", 1_250_000_000),
+            ("gpt-5.4", "flex", 125_000_000),
+            ("gpt-5.4", "fast", 500_000_000),
+            ("gpt-5.4-mini", "flex", 37_500_000),
+            ("gpt-5.4-mini", "fast", 150_000_000),
+            ("gpt-5.4-nano", "flex", 10_000_000),
+            ("gpt-5.3-codex", "fast", 350_000_000),
+            ("gpt-5.2", "flex", 87_500_000),
+            ("gpt-5.2", "fast", 350_000_000),
+            ("gpt-5", "flex", 62_500_000),
+            ("gpt-5", "fast", 250_000_000)
+        ]
+        for item in cases {
+            let result = PricingEvaluator.evaluate(
+                modelCanonical: item.model,
+                serviceTier: item.tier,
+                timestampMs: BundledPricingCatalog.publishedAtMs,
+                tokens: tokens
+            )
+            XCTAssertEqual(result.pricingStatus, .priced, "\(item.model) \(item.tier)")
+            XCTAssertEqual(result.estimatedCost.rawValue, item.expected, "\(item.model) \(item.tier)")
+        }
+
+        let fractionalCachedRate = PricingEvaluator.evaluate(
+            modelCanonical: "gpt-5.4-mini",
+            serviceTier: "flex",
+            timestampMs: BundledPricingCatalog.publishedAtMs,
+            tokens: TokenBreakdown(inputTokens: 100_000, cachedInputTokens: 100_000)
+        )
+        XCTAssertEqual(fractionalCachedRate.estimatedCost.rawValue, 3_750_000)
+
+        let unsupportedFastLongContext = PricingEvaluator.evaluate(
+            modelCanonical: "gpt-5.5",
+            serviceTier: "fast",
+            timestampMs: BundledPricingCatalog.publishedAtMs,
+            tokens: TokenBreakdown(inputTokens: 272_001)
+        )
+        XCTAssertEqual(unsupportedFastLongContext.pricingStatus, .unpricedUnsupportedContextLength)
+        XCTAssertEqual(unsupportedFastLongContext.estimatedCost, .zero)
+
+        let supportedFlexLongContext = PricingEvaluator.evaluate(
+            modelCanonical: "gpt-5.5",
+            serviceTier: "flex",
+            timestampMs: BundledPricingCatalog.publishedAtMs,
+            tokens: TokenBreakdown(inputTokens: 272_001)
+        )
+        XCTAssertEqual(supportedFlexLongContext.pricingStatus, .priced)
+        XCTAssertEqual(supportedFlexLongContext.estimatedCost.rawValue, 1_360_005_000)
+
+        let unsupportedTier = PricingEvaluator.evaluate(
+            modelCanonical: "gpt-5.4-nano",
+            serviceTier: "fast",
+            timestampMs: BundledPricingCatalog.publishedAtMs,
+            tokens: tokens
+        )
+        XCTAssertEqual(unsupportedTier.pricingStatus, .unpricedUnsupportedServiceMode)
+    }
+
+    func testInstalledCatalogPreservesFractionalNanoUsdRates() throws {
+        let directory = try makeTemporaryDirectory()
+        let database = try makeMigratedDatabase(in: directory)
+        try PricingCatalogService.shared.ensureCatalogInstalled(database: database)
+        let snapshot = try PricingCatalogService.shared.loadSnapshot(database: database)
+
+        let result = snapshot.evaluate(
+            modelCanonical: "gpt-5.4-mini",
+            serviceTier: "flex",
+            timestampMs: BundledPricingCatalog.publishedAtMs,
+            tokens: TokenBreakdown(inputTokens: 100_000, cachedInputTokens: 100_000)
+        )
+        XCTAssertEqual(result.pricingStatus, .priced)
+        XCTAssertEqual(result.estimatedCost.rawValue, 3_750_000)
+    }
+
     func testHistoricalGPT56CutoversUseEventTime() {
         let tokenCount: Int64 = 100_000
         let beforeTerraCutover: Int64 = 1_785_369_599_999
@@ -182,6 +260,18 @@ final class PricingTruthTests: XCTestCase {
             tokens: TokenBreakdown(inputTokens: tokenCount)
         ).estimatedCost.rawValue, 200_000_000)
         XCTAssertEqual(PricingEvaluator.evaluate(
+            modelCanonical: "gpt-5.6-terra",
+            serviceTier: "flex",
+            timestampMs: beforeTerraCutover,
+            tokens: TokenBreakdown(inputTokens: tokenCount)
+        ).estimatedCost.rawValue, 125_000_000)
+        XCTAssertEqual(PricingEvaluator.evaluate(
+            modelCanonical: "gpt-5.6-terra",
+            serviceTier: "priority",
+            timestampMs: beforeTerraCutover,
+            tokens: TokenBreakdown(inputTokens: tokenCount)
+        ).estimatedCost.rawValue, 500_000_000)
+        XCTAssertEqual(PricingEvaluator.evaluate(
             modelCanonical: "gpt-5.6-sol",
             serviceTier: nil,
             timestampMs: beforeSolCutover,
@@ -193,6 +283,18 @@ final class PricingTruthTests: XCTestCase {
             timestampMs: solCutover,
             tokens: TokenBreakdown(inputTokens: tokenCount)
         ).estimatedCost.rawValue, 400_000_000)
+        XCTAssertEqual(PricingEvaluator.evaluate(
+            modelCanonical: "gpt-5.6-sol",
+            serviceTier: "flex",
+            timestampMs: beforeSolCutover,
+            tokens: TokenBreakdown(inputTokens: tokenCount)
+        ).estimatedCost.rawValue, 250_000_000)
+        XCTAssertEqual(PricingEvaluator.evaluate(
+            modelCanonical: "gpt-5.6-sol",
+            serviceTier: "fast",
+            timestampMs: beforeSolCutover,
+            tokens: TokenBreakdown(inputTokens: tokenCount)
+        ).estimatedCost.rawValue, 1_000_000_000)
     }
 
     func testInstalledCatalogStoresVerifiableRawJSONAndSourceURLs() throws {
@@ -349,11 +451,57 @@ final class PricingTruthTests: XCTestCase {
             sql: "SELECT value FROM app_metadata WHERE key = 'pricing_reprice_generation';"
         ), beforeGeneration + 1)
 
+        let expectedDayStarts = Set([beforeTerraCutover, terraCutover].map { timestamp -> Int64 in
+            let date = Date(timeIntervalSince1970: Double(timestamp) / 1_000)
+            return Int64((Calendar.current.startOfDay(for: date).timeIntervalSince1970 * 1_000).rounded())
+        })
+        let rebuiltDayStarts = Set(try database.executeQuery(
+            sql: "SELECT day_start_ms FROM codex_daily_usage_summaries WHERE session_id = 'reprice-session';"
+        ) { stmt in sqlite3_column_int64(stmt, 0) })
+        XCTAssertEqual(rebuiltDayStarts, expectedDayStarts)
+
         let stableEventCosts = eventCosts.map { $0.1 }
         try PricingCatalogService.shared.repriceAllUsageEvents(database: database)
         let repeatedEventCosts = try database.executeQuery(
             sql: "SELECT estimated_cost_usd_nano FROM codex_usage_events ORDER BY event_id ASC;"
         ) { stmt in sqlite3_column_int64(stmt, 0) }
         XCTAssertEqual(repeatedEventCosts, stableEventCosts)
+
+        try database.executeUpdate(sql: """
+        WITH RECURSIVE sequence(value) AS (
+            VALUES(1)
+            UNION ALL
+            SELECT value + 1 FROM sequence WHERE value < 505
+        )
+        INSERT INTO codex_usage_events (
+            event_id, session_id, root_session_id, turn_index, call_index,
+            timestamp_ms, model_raw, model_canonical, service_tier, reasoning_effort,
+            input_tokens, cached_input_tokens, cache_write_input_tokens,
+            output_tokens, reasoning_output_tokens, total_tokens, uncached_input_tokens,
+            estimated_cost_usd_nano, pricing_rule_id, pricing_status,
+            usage_derivation, attribution_quality, is_child_replay, source_path,
+            line_offset, line_bytes, payload_sha256, created_at, timestamp_quality,
+            pricing_catalog_version
+        )
+        SELECT
+            printf('batch-%03d', value), 'reprice-session', 'reprice-session', 0, value,
+            ?, 'gpt-5.6-terra', 'gpt-5.6-terra', NULL, NULL,
+            1, 0, 0, 0, 0, 1, 1,
+            0, NULL, 'unpricedUnknownModel', 'explicit_last_usage',
+            'direct_turn_context', 0, '/tmp/reprice.jsonl', value,
+            1, NULL, ?, 'event_timestamp', 'stale-batch'
+        FROM sequence;
+        """, bindings: [terraCutover, terraCutover])
+        try PricingCatalogService.shared.repriceAllUsageEvents(database: database)
+        XCTAssertEqual(try database.intScalar(
+            sql: "SELECT COUNT(*) FROM codex_usage_events WHERE pricing_catalog_version != ?;",
+            bindings: [BundledPricingCatalog.currentVersion]
+        ), 0)
+        XCTAssertEqual(try database.intScalar(
+            sql: "SELECT COUNT(*) FROM codex_usage_events WHERE event_id LIKE 'batch-%' AND pricing_status = 'priced';"
+        ), 505)
+        XCTAssertEqual(try database.int64Scalar(
+            sql: "SELECT SUM(estimated_cost_usd_nano) FROM codex_usage_events WHERE event_id LIKE 'batch-%';"
+        ), 1_010_000)
     }
 }

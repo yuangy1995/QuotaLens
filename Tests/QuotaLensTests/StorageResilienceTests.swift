@@ -1,3 +1,4 @@
+import SQLite3
 import XCTest
 @testable import QuotaLens
 
@@ -17,6 +18,33 @@ final class StorageResilienceTests: XCTestCase {
         XCTAssertThrowsError(try database.intScalar(sql: "SELECT 1;")) { error in
             XCTAssertTrue(error.localizedDescription.contains("数据库未连接"))
         }
+    }
+
+    func testFailedBeginDoesNotRunNestedTransactionInAutocommitMode() throws {
+        let database = try SQLiteDatabase(path: ":memory:")
+        try database.execute(sql: "CREATE TABLE transaction_probe (id INTEGER PRIMARY KEY);")
+
+        XCTAssertThrowsError(try database.transaction {
+            try database.executeUpdate(
+                sql: "INSERT INTO transaction_probe (id) VALUES (1);",
+                bindings: []
+            )
+            try database.transaction {
+                try database.executeUpdate(
+                    sql: "INSERT INTO transaction_probe (id) VALUES (2);",
+                    bindings: []
+                )
+            }
+        })
+
+        XCTAssertEqual(try database.intScalar(sql: "SELECT COUNT(*) FROM transaction_probe;"), 0)
+        try database.transaction {
+            try database.executeUpdate(
+                sql: "INSERT INTO transaction_probe (id) VALUES (3);",
+                bindings: []
+            )
+        }
+        XCTAssertEqual(try database.intScalar(sql: "SELECT COUNT(*) FROM transaction_probe;"), 1)
     }
 
     func testParserMigrationClearsOnlyDerivedCodexUsageData() throws {
@@ -58,5 +86,30 @@ final class StorageResilienceTests: XCTestCase {
             try database.stringScalar(sql: "SELECT value FROM app_metadata WHERE key = 'codex_parser_version';"),
             String(ParserCheckpoint.currentParserVersion)
         )
+    }
+
+    func testV10DeveloperDatabaseUpgradesToExactCoverageSchema() throws {
+        let directory = try makeTemporaryDirectory(named: "QuotaLensV10CoverageUpgrade")
+        let database = try makeMigratedDatabase(in: directory)
+        try database.execute(sql: "ALTER TABLE codex_session_summaries DROP COLUMN unpriced_token_count;")
+        try database.execute(sql: "ALTER TABLE codex_daily_usage_summaries DROP COLUMN unpriced_token_count;")
+        try database.executeUpdate(
+            sql: "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES ('pricing_reprice_catalog_version', 'developer-v10', unixepoch());",
+            bindings: []
+        )
+        try database.execute(sql: "PRAGMA user_version = 10;")
+
+        try SchemaMigrations.migrate(database: database)
+
+        XCTAssertEqual(try database.intScalar(sql: "PRAGMA user_version;"), 11)
+        for table in ["codex_session_summaries", "codex_daily_usage_summaries"] {
+            let columns = try database.executeQuery(sql: "PRAGMA table_info(\(table));") { statement in
+                String(cString: sqlite3_column_text(statement, 1))
+            }
+            XCTAssertTrue(columns.contains("unpriced_token_count"), table)
+        }
+        XCTAssertNil(try database.stringScalar(
+            sql: "SELECT value FROM app_metadata WHERE key = 'pricing_reprice_catalog_version';"
+        ))
     }
 }

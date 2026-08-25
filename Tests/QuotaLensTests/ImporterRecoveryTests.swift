@@ -245,6 +245,73 @@ final class ImporterRecoveryTests: XCTestCase {
             "indexed"
         )
         XCTAssertEqual(try database.intScalar(sql: "SELECT COUNT(*) FROM codex_sessions WHERE session_id = 'active-session';"), 1)
+        XCTAssertEqual(try database.stringScalar(sql: "SELECT status FROM codex_import_runs ORDER BY started_at DESC LIMIT 1;"), "partial")
+        XCTAssertEqual(try database.intScalar(sql: "SELECT COUNT(*) FROM codex_import_runs WHERE status = 'success';"), 0)
+        XCTAssertTrue(
+            try XCTUnwrap(database.stringScalar(
+                sql: "SELECT error_message FROM codex_import_runs ORDER BY started_at DESC LIMIT 1;"
+            )).contains("sessions: enumerator failed")
+        )
+    }
+
+    func testSuccessfulRootTombstonesOnlyItsBucketWhenOtherRootFails() async throws {
+        let root = try makeTemporaryDirectory(named: "QuotaLensIndependentBucketFailure")
+        let paths = CodexHistoryPaths(rootURL: root)
+        let database = try makeMigratedDatabase(in: root)
+        let activePath = paths.sessionsURL.appendingPathComponent("missing-active.jsonl").path
+        let archivedPath = paths.archivedSessionsURL.appendingPathComponent("missing-archived.jsonl").path
+
+        for (sessionID, sourcePath, relativePath, bucket, inode) in [
+            ("active-session", activePath, "sessions/missing-active.jsonl", "active", 1),
+            ("archived-session", archivedPath, "archived_sessions/missing-archived.jsonl", "archived", 2)
+        ] {
+            try database.executeUpdate(
+                sql: """
+                INSERT INTO codex_import_sources (
+                    source_path, relative_path, bucket, device_id, inode, file_size,
+                    mtime_ms, scan_generation, status
+                ) VALUES (?, ?, ?, 1, ?, 1, 1, 0, 'indexed');
+                """,
+                bindings: [sourcePath, relativePath, bucket, inode]
+            )
+            try database.executeUpdate(
+                sql: """
+                INSERT INTO codex_sessions (
+                    session_id, root_session_id, parent_session_id, depth, source_path,
+                    relative_path, bucket, title, project_name, cwd, created_at, updated_at,
+                    last_event_at, event_count, total_tokens, input_tokens, cached_input_tokens,
+                    cache_write_input_tokens, output_tokens, reasoning_output_tokens,
+                    estimated_cost_usd_nano, pricing_status, metadata_fingerprint,
+                    has_subagents, agent_type
+                ) VALUES (
+                    ?, ?, NULL, 0, ?, ?, ?, 'Fixture', 'Fixture', '/tmp', 1, 1, 1,
+                    1, 1, 1, 0, 0, 0, 0, 0, 'priced', NULL, 0, NULL
+                );
+                """,
+                bindings: [sessionID, sessionID, sourcePath, relativePath, bucket]
+            )
+        }
+
+        let originalFlag = UsageFeatureFlags.shared.isScanArchivedSessionsEnabled
+        UsageFeatureFlags.shared.isScanArchivedSessionsEnabled = true
+        addTeardownBlock { UsageFeatureFlags.shared.isScanArchivedSessionsEnabled = originalFlag }
+
+        let importer = CodexUsageImportActor(database: database) { _, _ in
+            ScanOutcome(active: .success, archived: .failed("archived enumerator failed"), sources: [])
+        }
+        _ = try await importer.importCodexHistory(paths: paths)
+
+        XCTAssertEqual(
+            try database.stringScalar(sql: "SELECT status FROM codex_import_sources WHERE source_path = ?;", bindings: [activePath]),
+            "tombstoned"
+        )
+        XCTAssertEqual(
+            try database.stringScalar(sql: "SELECT status FROM codex_import_sources WHERE source_path = ?;", bindings: [archivedPath]),
+            "indexed"
+        )
+        XCTAssertEqual(try database.intScalar(sql: "SELECT COUNT(*) FROM codex_sessions WHERE session_id = 'active-session';"), 0)
+        XCTAssertEqual(try database.intScalar(sql: "SELECT COUNT(*) FROM codex_sessions WHERE session_id = 'archived-session';"), 1)
+        XCTAssertEqual(try database.stringScalar(sql: "SELECT status FROM codex_import_runs LIMIT 1;"), "partial")
     }
 
     func testChildReplayIsExcludedAndFreshTurnIsCountedAfterResume() async throws {

@@ -104,10 +104,27 @@ public final class SQLiteDatabase: @unchecked Sendable {
             throw NSError(domain: "SQLiteDatabase", code: -1, userInfo: [NSLocalizedDescriptionKey: "数据库未连接"])
         }
 
-        sqlite3_exec(db, "BEGIN IMMEDIATE TRANSACTION;", nil, nil, nil)
+        func executeTransactionControl(_ sql: String) throws {
+            var errorMessage: UnsafeMutablePointer<CChar>?
+            let status = sqlite3_exec(db, sql, nil, nil, &errorMessage)
+            guard status == SQLITE_OK else {
+                let message = errorMessage.map { String(cString: $0) }
+                    ?? String(cString: sqlite3_errmsg(db))
+                sqlite3_free(errorMessage)
+                throw NSError(
+                    domain: "SQLiteDatabase",
+                    code: Int(status),
+                    userInfo: [NSLocalizedDescriptionKey: message]
+                )
+            }
+        }
+
+        // A failed BEGIN must stop the block. Otherwise its statements would
+        // run in autocommit mode and could not be rolled back as a unit.
+        try executeTransactionControl("BEGIN IMMEDIATE TRANSACTION;")
         do {
             let result = try block()
-            sqlite3_exec(db, "COMMIT TRANSACTION;", nil, nil, nil)
+            try executeTransactionControl("COMMIT TRANSACTION;")
             return result
         } catch {
             sqlite3_exec(db, "ROLLBACK TRANSACTION;", nil, nil, nil)

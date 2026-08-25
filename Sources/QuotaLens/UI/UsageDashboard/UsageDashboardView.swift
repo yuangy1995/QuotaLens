@@ -559,8 +559,8 @@ public struct UsageDashboardView: View {
                     }
 
                     Text(L10n.format(
-                        "Token pricing coverage %.1f%% · event coverage %.1f%% · inferred from local token events",
-                        zhHans: "Token 价格覆盖率 %.1f%% · 事件覆盖率 %.1f%% · 按本地 Token 事件推断",
+                        "Token pricing coverage %.1f%% · event coverage %.1f%% · long-context pricing inferred from local token events",
+                        zhHans: "Token 价格覆盖率 %.1f%% · 事件覆盖率 %.1f%% · 长上下文价格按本地 Token 事件推断",
                         lf.tokenPricingCoverage * 100.0,
                         lf.eventPricingCoverage * 100.0
                     ))

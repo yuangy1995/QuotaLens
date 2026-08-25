@@ -180,6 +180,7 @@ public enum PricingStatus: String, Hashable, Sendable, Codable {
     case unpricedUnknownModel = "unpricedUnknownModel"
     case unpricedHistoricalRuleMissing = "unpricedHistoricalRuleMissing"
     case unpricedUnsupportedServiceMode = "unpricedUnsupportedServiceMode"
+    case unpricedUnsupportedContextLength = "unpricedUnsupportedContextLength"
     case unpricedInvalidTokenRecord = "unpricedInvalidTokenRecord"
     case unpricedCalculationOverflow = "unpricedCalculationOverflow"
 
@@ -195,6 +196,8 @@ public enum PricingStatus: String, Hashable, Sendable, Codable {
             return L10n.text("缺少历史费率规则", "Missing historical rate rule")
         case .unpricedUnsupportedServiceMode:
             return L10n.text("不支持的服务模式，未计价", "Unsupported service mode, not priced")
+        case .unpricedUnsupportedContextLength:
+            return L10n.text("该服务模式不支持此上下文长度，未计价", "Context length unsupported for this service mode, not priced")
         case .unpricedInvalidTokenRecord:
             return L10n.text("无效 Token 记录，未计价", "Invalid token record, not priced")
         case .unpricedCalculationOverflow:

@@ -75,10 +75,35 @@ public enum CodexRolloutScanner {
         _ errorHandler: ((URL, Error) -> Bool)?
     ) -> FileManager.DirectoryEnumerator?
 
+    struct RolloutFileMetadata: Sendable {
+        let identity: RolloutSourceIdentity
+        let fileSize: Int64
+        let mtimeMs: Int64
+    }
+
+    typealias FileProbe = (_ fileURL: URL, _ hasCanonicalName: Bool) throws -> RolloutFileMetadata?
+
     public static func scan(
         paths: CodexHistoryPaths,
         scanArchived: Bool = true,
         enumeratorFactory: EnumeratorFactory? = nil
+    ) -> ScanOutcome {
+        scan(
+            paths: paths,
+            scanArchived: scanArchived,
+            enumeratorFactory: enumeratorFactory,
+            fileProbe: probeRolloutFile
+        )
+    }
+
+    /// Internal injection point used by deterministic fault tests. A probe
+    /// error makes the containing root scan incomplete, which prevents stale
+    /// source tombstoning for that root.
+    static func scan(
+        paths: CodexHistoryPaths,
+        scanArchived: Bool = true,
+        enumeratorFactory: EnumeratorFactory? = nil,
+        fileProbe: @escaping FileProbe
     ) -> ScanOutcome {
         var results: [RolloutDiscoveredSource] = []
         let fileManager = FileManager.default
@@ -88,7 +113,8 @@ public enum CodexRolloutScanner {
             baseRootURL: paths.rootURL,
             bucket: .active,
             fileManager: fileManager,
-            enumeratorFactory: enumeratorFactory
+            enumeratorFactory: enumeratorFactory,
+            fileProbe: fileProbe
         )
         results.append(contentsOf: active.sources)
 
@@ -99,7 +125,8 @@ public enum CodexRolloutScanner {
                 baseRootURL: paths.rootURL,
                 bucket: .archived,
                 fileManager: fileManager,
-                enumeratorFactory: enumeratorFactory
+                enumeratorFactory: enumeratorFactory,
+                fileProbe: fileProbe
             )
             results.append(contentsOf: archived.sources)
         } else {
@@ -125,7 +152,8 @@ public enum CodexRolloutScanner {
         baseRootURL: URL,
         bucket: SessionBucket,
         fileManager: FileManager,
-        enumeratorFactory: EnumeratorFactory?
+        enumeratorFactory: EnumeratorFactory?,
+        fileProbe: @escaping FileProbe
     ) -> (status: RootScanStatus, sources: [RolloutDiscoveredSource]) {
         var isDirectory: ObjCBool = false
         guard fileManager.fileExists(atPath: directoryURL.path, isDirectory: &isDirectory) else {
@@ -162,48 +190,48 @@ public enum CodexRolloutScanner {
             return (.failed("Enumerator unavailable"), [])
         }
 
-        let sources = scanDirectory(
+        let directoryScan = scanDirectory(
             enumerator: enumerator,
             directoryURL: directoryURL,
             baseRootURL: baseRootURL,
-            bucket: bucket
+            bucket: bucket,
+            fileProbe: fileProbe
         )
         if let traversalError {
-            return (.failed(traversalError.localizedDescription), sources)
+            return (.failed(traversalError.localizedDescription), directoryScan.sources)
         }
-        return (.success, sources)
+        if let fileFailure = directoryScan.failureDescription {
+            return (.failed(fileFailure), directoryScan.sources)
+        }
+        return (.success, directoryScan.sources)
     }
 
     private static func scanDirectory(
         enumerator: FileManager.DirectoryEnumerator,
         directoryURL: URL,
         baseRootURL: URL,
-        bucket: SessionBucket
-    ) -> [RolloutDiscoveredSource] {
+        bucket: SessionBucket,
+        fileProbe: @escaping FileProbe
+    ) -> (sources: [RolloutDiscoveredSource], failureDescription: String?) {
         var list: [RolloutDiscoveredSource] = []
+        var failureDescription: String?
         let baseRootPath = baseRootURL.path
 
         for case let url as URL in enumerator {
             guard url.pathExtension == "jsonl" else { continue }
             let fileName = url.lastPathComponent
-            guard isCanonicalRolloutFileName(fileName) || containsRolloutStructure(fileURL: url) else { continue }
-
-            var statBuf = stat()
-            let status = stat((url.path as NSString).fileSystemRepresentation, &statBuf)
-            guard status == 0 else { continue }
-
-            let isRegular = (statBuf.st_mode & S_IFMT) == S_IFREG
-            guard isRegular else { continue }
-
-            let fileSize = Int64(statBuf.st_size)
-            let mtimeMs = Int64(statBuf.st_mtimespec.tv_sec) * 1000 + Int64(statBuf.st_mtimespec.tv_nsec / 1_000_000)
-            let birthtimeNs = Int64(statBuf.st_birthtimespec.tv_sec) * 1_000_000_000 + Int64(statBuf.st_birthtimespec.tv_nsec)
-
-            let identity = RolloutSourceIdentity(
-                device: UInt64(statBuf.st_dev),
-                inode: UInt64(statBuf.st_ino),
-                birthtimeNs: birthtimeNs > 0 ? birthtimeNs : nil
-            )
+            let metadata: RolloutFileMetadata
+            do {
+                guard let probed = try fileProbe(url, isCanonicalRolloutFileName(fileName)) else {
+                    continue
+                }
+                metadata = probed
+            } catch {
+                if failureDescription == nil {
+                    failureDescription = "\(url.path): \(error.localizedDescription)"
+                }
+                continue
+            }
 
             let relPath = url.path.hasPrefix(baseRootPath)
                 ? String(url.path.dropFirst(baseRootPath.count)).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
@@ -217,28 +245,62 @@ public enum CodexRolloutScanner {
                     relativePath: relPath,
                     bucket: bucket,
                     sessionId: sessionId,
-                    identity: identity,
-                    fileSize: fileSize,
-                    mtimeMs: mtimeMs
+                    identity: metadata.identity,
+                    fileSize: metadata.fileSize,
+                    mtimeMs: metadata.mtimeMs
                 )
             )
         }
 
-        return list
+        return (list, failureDescription)
     }
 
     private static func isCanonicalRolloutFileName(_ fileName: String) -> Bool {
         guard fileName.hasSuffix(".jsonl") else { return false }
         return fileName.range(
-            of: #"^rollout-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-[0-9a-fA-F-]{8,}\.jsonl$"#,
+            of: #"^rollout-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\.jsonl$"#,
             options: .regularExpression
         ) != nil
     }
 
-    private static func containsRolloutStructure(fileURL: URL) -> Bool {
-        guard let handle = try? FileHandle(forReadingFrom: fileURL) else { return false }
+    private static func probeRolloutFile(
+        fileURL: URL,
+        hasCanonicalName: Bool
+    ) throws -> RolloutFileMetadata? {
+        if !hasCanonicalName {
+            guard try containsRolloutStructure(fileURL: fileURL) else { return nil }
+        }
+
+        var statBuf = stat()
+        let status = stat((fileURL.path as NSString).fileSystemRepresentation, &statBuf)
+        guard status == 0 else {
+            let errorCode = errno
+            throw NSError(
+                domain: NSPOSIXErrorDomain,
+                code: Int(errorCode),
+                userInfo: [NSFilePathErrorKey: fileURL.path]
+            )
+        }
+        guard (statBuf.st_mode & S_IFMT) == S_IFREG else { return nil }
+
+        let birthtimeNs = Int64(statBuf.st_birthtimespec.tv_sec) * 1_000_000_000
+            + Int64(statBuf.st_birthtimespec.tv_nsec)
+        return RolloutFileMetadata(
+            identity: RolloutSourceIdentity(
+                device: UInt64(statBuf.st_dev),
+                inode: UInt64(statBuf.st_ino),
+                birthtimeNs: birthtimeNs > 0 ? birthtimeNs : nil
+            ),
+            fileSize: Int64(statBuf.st_size),
+            mtimeMs: Int64(statBuf.st_mtimespec.tv_sec) * 1_000
+                + Int64(statBuf.st_mtimespec.tv_nsec / 1_000_000)
+        )
+    }
+
+    private static func containsRolloutStructure(fileURL: URL) throws -> Bool {
+        let handle = try FileHandle(forReadingFrom: fileURL)
         defer { try? handle.close() }
-        let data = (try? handle.read(upToCount: 64 * 1024)) ?? Data()
+        let data = try handle.read(upToCount: 64 * 1024) ?? Data()
         guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return false }
         for rawLine in text.split(separator: "\n", omittingEmptySubsequences: true).prefix(20) {
             let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)

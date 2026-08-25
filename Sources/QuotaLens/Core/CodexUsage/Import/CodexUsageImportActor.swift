@@ -64,6 +64,12 @@ public actor CodexUsageImportActor {
         // 1. 扫描文件源
         onProgress?(0.05, L10n.text("正在扫描 Codex 会话文件…", "Scanning Codex session files..."))
         let scanOutcome = scanHistory(paths, UsageFeatureFlags.shared.isScanArchivedSessionsEnabled)
+        let scanIssueMessage = [
+            Self.scanIssue(root: "sessions", status: scanOutcome.active),
+            Self.scanIssue(root: "archived_sessions", status: scanOutcome.archived)
+        ]
+        .compactMap { $0 }
+        .joined(separator: "; ")
         let scannedSources = scanOutcome.sources
         let rolloutHeaders = CodexSessionMetadataStore.loadFromRolloutHeaders(sources: scannedSources)
         let discoveredSources = scannedSources.map { source in
@@ -122,6 +128,7 @@ public actor CodexUsageImportActor {
 
         let completedAtMs = Self.unixMillis()
         let duration = max(0.001, CFAbsoluteTimeGetCurrent() - monotonicStart)
+        let runStatus = scanIssueMessage.isEmpty ? "success" : "partial"
 
         let runId = "run_\(Int64(Date().timeIntervalSince1970 * 1000))"
         try? database.executeUpdate(
@@ -129,7 +136,7 @@ public actor CodexUsageImportActor {
             INSERT INTO codex_import_runs (
                 run_id, started_at, completed_at, sources_scanned, sources_updated,
                 events_inserted, bytes_read, status, error_message
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'success', NULL);
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
             """,
             bindings: [
                 runId,
@@ -138,7 +145,9 @@ public actor CodexUsageImportActor {
                 discoveredSources.count,
                 sourcesUpdated,
                 totalEventsInserted,
-                totalBytesRead
+                totalBytesRead,
+                runStatus,
+                scanIssueMessage.isEmpty ? nil : scanIssueMessage
             ]
         )
 
@@ -147,7 +156,10 @@ public actor CodexUsageImportActor {
             bindings: []
         )
 
-        onProgress?(1.0, L10n.text("导入完成", "Import complete"))
+        let completionMessage = scanIssueMessage.isEmpty
+            ? L10n.text("导入完成", "Import complete")
+            : L10n.text("导入完成（部分扫描失败）", "Import complete (partial scan failure)")
+        onProgress?(1.0, completionMessage)
 
         return ImportSummary(
             sourcesScanned: discoveredSources.count,
@@ -156,6 +168,17 @@ public actor CodexUsageImportActor {
             bytesRead: totalBytesRead,
             durationSeconds: duration
         )
+    }
+
+    private static func scanIssue(root: String, status: RootScanStatus) -> String? {
+        switch status {
+        case .inaccessible:
+            return "\(root): inaccessible"
+        case .failed(let message):
+            return "\(root): \(message)"
+        case .success, .notFound, .disabled:
+            return nil
+        }
     }
 
     private struct SingleSourceProcessResult {
@@ -174,6 +197,7 @@ public actor CodexUsageImportActor {
         var tokens = TokenBreakdown.zero
         var estimatedCost = MoneyNanoUSD.zero
         var unpricedEventCount = 0
+        var unpricedTokenCount: Int64 = 0
         var firstEventAtMs: Int64?
         var lastEventAtMs: Int64?
 
@@ -183,6 +207,10 @@ public actor CodexUsageImportActor {
             estimatedCost = estimatedCost + price.estimatedCost
             if !price.pricingStatus.isPriced {
                 unpricedEventCount += 1
+                let (sum, overflow) = unpricedTokenCount.addingReportingOverflow(
+                    event.tokens.canonicalTotalTokens
+                )
+                unpricedTokenCount = overflow ? Int64.max : sum
             }
             if let current = firstEventAtMs {
                 firstEventAtMs = min(current, event.timestampMs)
@@ -869,8 +897,8 @@ public actor CodexUsageImportActor {
                 session_id, model_canonical, event_count, total_tokens,
                 uncached_input_tokens, cached_input_tokens, cache_write_input_tokens,
                 output_tokens, reasoning_output_tokens,
-                estimated_cost_usd_nano, unpriced_event_count
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                estimated_cost_usd_nano, unpriced_event_count, unpriced_token_count
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(session_id, model_canonical) DO UPDATE SET
                 event_count = event_count + excluded.event_count,
                 total_tokens = total_tokens + excluded.total_tokens,
@@ -880,7 +908,8 @@ public actor CodexUsageImportActor {
                 output_tokens = output_tokens + excluded.output_tokens,
                 reasoning_output_tokens = reasoning_output_tokens + excluded.reasoning_output_tokens,
                 estimated_cost_usd_nano = estimated_cost_usd_nano + excluded.estimated_cost_usd_nano,
-                unpriced_event_count = unpriced_event_count + excluded.unpriced_event_count;
+                unpriced_event_count = unpriced_event_count + excluded.unpriced_event_count,
+                unpriced_token_count = unpriced_token_count + excluded.unpriced_token_count;
             """,
             bindings: aggregateBindings(prefix: [sessionId, modelCanonical], aggregate: aggregate)
         )
@@ -897,8 +926,8 @@ public actor CodexUsageImportActor {
                 session_id, day_key, day_start_ms, model_canonical, event_count,
                 total_tokens, uncached_input_tokens, cached_input_tokens, cache_write_input_tokens,
                 output_tokens, reasoning_output_tokens,
-                estimated_cost_usd_nano, unpriced_event_count
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                estimated_cost_usd_nano, unpriced_event_count, unpriced_token_count
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(session_id, day_key, model_canonical) DO UPDATE SET
                 day_start_ms = excluded.day_start_ms,
                 event_count = event_count + excluded.event_count,
@@ -909,7 +938,8 @@ public actor CodexUsageImportActor {
                 output_tokens = output_tokens + excluded.output_tokens,
                 reasoning_output_tokens = reasoning_output_tokens + excluded.reasoning_output_tokens,
                 estimated_cost_usd_nano = estimated_cost_usd_nano + excluded.estimated_cost_usd_nano,
-                unpriced_event_count = unpriced_event_count + excluded.unpriced_event_count;
+                unpriced_event_count = unpriced_event_count + excluded.unpriced_event_count,
+                unpriced_token_count = unpriced_token_count + excluded.unpriced_token_count;
             """,
             bindings: aggregateBindings(
                 prefix: [sessionId, key.dayKey, key.dayStartMs, key.modelCanonical],
@@ -928,7 +958,8 @@ public actor CodexUsageImportActor {
             aggregate.tokens.outputTokens,
             aggregate.tokens.reasoningOutputTokens,
             aggregate.estimatedCost.rawValue,
-            aggregate.unpricedEventCount
+            aggregate.unpricedEventCount,
+            aggregate.unpricedTokenCount
         ]
     }
 

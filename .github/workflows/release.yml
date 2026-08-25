@@ -48,7 +48,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git diff --check
+          previous_tag="$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)"
+          if [[ -n "${previous_tag}" ]]; then
+            git diff --check "${previous_tag}" HEAD
+          else
+            empty_tree="$(git hash-object -t tree /dev/null)"
+            git diff --check "${empty_tree}" HEAD
+          fi
 
   build:
     name: Build ${{ matrix.label }}

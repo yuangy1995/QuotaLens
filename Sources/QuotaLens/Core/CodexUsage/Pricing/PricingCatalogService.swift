@@ -91,10 +91,11 @@ public final class PricingCatalogService: Sendable {
                         INSERT OR REPLACE INTO codex_pricing_rules (
                             rule_id, model_key, service_tier, effective_from_ms, effective_to_ms,
                             input_usd_nano_per_token, cached_usd_nano_per_token, cache_write_usd_nano_per_token,
-                            output_usd_nano_per_token, long_context_threshold_tokens,
+                            output_usd_nano_per_token, rate_divisor, maximum_input_tokens,
+                            long_context_threshold_tokens,
                             long_context_input_multiplier_ppm, long_context_output_multiplier_ppm,
                             catalog_version
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                         """,
                         bindings: [
                             rule.ruleId,
@@ -106,6 +107,8 @@ public final class PricingCatalogService: Sendable {
                             rule.cachedNanoUsdPerToken,
                             rule.cacheWriteNanoUsdPerToken,
                             rule.outputNanoUsdPerToken,
+                            rule.rateDivisor,
+                            rule.maximumInputTokens,
                             rule.longContextThresholdTokens,
                             rule.longContextInputMultiplierPpm,
                             rule.longContextOutputMultiplierPpm,
@@ -161,7 +164,8 @@ public final class PricingCatalogService: Sendable {
                 model_key, rule_id, service_tier, effective_from_ms, effective_to_ms,
                 input_usd_nano_per_token, cached_usd_nano_per_token,
                 cache_write_usd_nano_per_token, output_usd_nano_per_token,
-                long_context_threshold_tokens, long_context_input_multiplier_ppm,
+                rate_divisor, maximum_input_tokens, long_context_threshold_tokens,
+                long_context_input_multiplier_ppm,
                 long_context_output_multiplier_ppm
             FROM codex_pricing_rules
             WHERE catalog_version = ?
@@ -179,14 +183,17 @@ public final class PricingCatalogService: Sendable {
             let cacheWrite = sqlite3_column_type(stmt, 7) != SQLITE_NULL
                 ? sqlite3_column_int64(stmt, 7)
                 : nil
-            let longThreshold = sqlite3_column_type(stmt, 9) != SQLITE_NULL
-                ? sqlite3_column_int64(stmt, 9)
-                : nil
-            let longInputMultiplier = sqlite3_column_type(stmt, 10) != SQLITE_NULL
+            let maximumInputTokens = sqlite3_column_type(stmt, 10) != SQLITE_NULL
                 ? sqlite3_column_int64(stmt, 10)
                 : nil
-            let longOutputMultiplier = sqlite3_column_type(stmt, 11) != SQLITE_NULL
+            let longThreshold = sqlite3_column_type(stmt, 11) != SQLITE_NULL
                 ? sqlite3_column_int64(stmt, 11)
+                : nil
+            let longInputMultiplier = sqlite3_column_type(stmt, 12) != SQLITE_NULL
+                ? sqlite3_column_int64(stmt, 12)
+                : nil
+            let longOutputMultiplier = sqlite3_column_type(stmt, 13) != SQLITE_NULL
+                ? sqlite3_column_int64(stmt, 13)
                 : nil
             return (
                 modelKey,
@@ -199,6 +206,8 @@ public final class PricingCatalogService: Sendable {
                     cachedNanoUsdPerToken: sqlite3_column_int64(stmt, 6),
                     cacheWriteNanoUsdPerToken: cacheWrite,
                     outputNanoUsdPerToken: sqlite3_column_int64(stmt, 8),
+                    rateDivisor: sqlite3_column_int64(stmt, 9),
+                    maximumInputTokens: maximumInputTokens,
                     longContextThresholdTokens: longThreshold,
                     longContextInputMultiplierPpm: longInputMultiplier,
                     longContextOutputMultiplierPpm: longOutputMultiplier
@@ -256,7 +265,7 @@ public final class PricingCatalogService: Sendable {
     }
 
     private struct RepriceEventRow {
-        let eventId: String
+        let rowID: Int64
         let modelCanonical: String
         let serviceTier: String?
         let timestampMs: Int64
@@ -265,59 +274,69 @@ public final class PricingCatalogService: Sendable {
 
     private func repriceAllUsageEventsInTransaction(database: SQLiteDatabase) throws {
         let snapshot = try loadSnapshot(database: database)
-        let rows = try database.executeQuery(
-            sql: """
-            SELECT
-                event_id, model_canonical, service_tier, timestamp_ms,
-                input_tokens, cached_input_tokens, cache_write_input_tokens,
-                output_tokens, reasoning_output_tokens, total_tokens
-            FROM codex_usage_events;
-            """
-        ) { stmt -> RepriceEventRow in
-            let tier = sqlite3_column_type(stmt, 2) != SQLITE_NULL && sqlite3_column_text(stmt, 2) != nil
-                ? String(cString: sqlite3_column_text(stmt, 2)!)
-                : nil
-            let total = sqlite3_column_int64(stmt, 9)
-            return RepriceEventRow(
-                eventId: String(cString: sqlite3_column_text(stmt, 0)),
-                modelCanonical: String(cString: sqlite3_column_text(stmt, 1)),
-                serviceTier: tier,
-                timestampMs: sqlite3_column_int64(stmt, 3),
-                tokens: TokenBreakdown(
-                    inputTokens: sqlite3_column_int64(stmt, 4),
-                    cachedInputTokens: sqlite3_column_int64(stmt, 5),
-                    cacheWriteInputTokens: sqlite3_column_int64(stmt, 6),
-                    outputTokens: sqlite3_column_int64(stmt, 7),
-                    reasoningOutputTokens: sqlite3_column_int64(stmt, 8),
-                    sourceTotalTokens: total
-                )
-            )
-        }
-
-        for row in rows {
-            let price = snapshot.evaluate(
-                modelCanonical: row.modelCanonical,
-                serviceTier: row.serviceTier,
-                timestampMs: row.timestampMs,
-                tokens: row.tokens
-            )
-            try database.executeUpdate(
+        let batchSize = 500
+        var lastRowID: Int64 = 0
+        while true {
+            let rows = try database.executeQuery(
                 sql: """
-                UPDATE codex_usage_events
-                SET estimated_cost_usd_nano = ?,
-                    pricing_rule_id = ?,
-                    pricing_status = ?,
-                    pricing_catalog_version = ?
-                WHERE event_id = ?;
+                SELECT
+                    rowid, model_canonical, service_tier, timestamp_ms,
+                    input_tokens, cached_input_tokens, cache_write_input_tokens,
+                    output_tokens, reasoning_output_tokens, total_tokens
+                FROM codex_usage_events
+                WHERE rowid > ?
+                ORDER BY rowid ASC
+                LIMIT ?;
                 """,
-                bindings: [
-                    price.estimatedCost.rawValue,
-                    price.pricingRuleId,
-                    price.pricingStatus.rawValue,
-                    price.catalogVersion,
-                    row.eventId
-                ]
-            )
+                bindings: [lastRowID, batchSize]
+            ) { stmt -> RepriceEventRow in
+                let tier = sqlite3_column_type(stmt, 2) != SQLITE_NULL && sqlite3_column_text(stmt, 2) != nil
+                    ? String(cString: sqlite3_column_text(stmt, 2)!)
+                    : nil
+                let total = sqlite3_column_int64(stmt, 9)
+                return RepriceEventRow(
+                    rowID: sqlite3_column_int64(stmt, 0),
+                    modelCanonical: String(cString: sqlite3_column_text(stmt, 1)),
+                    serviceTier: tier,
+                    timestampMs: sqlite3_column_int64(stmt, 3),
+                    tokens: TokenBreakdown(
+                        inputTokens: sqlite3_column_int64(stmt, 4),
+                        cachedInputTokens: sqlite3_column_int64(stmt, 5),
+                        cacheWriteInputTokens: sqlite3_column_int64(stmt, 6),
+                        outputTokens: sqlite3_column_int64(stmt, 7),
+                        reasoningOutputTokens: sqlite3_column_int64(stmt, 8),
+                        sourceTotalTokens: total
+                    )
+                )
+            }
+            guard let finalRowID = rows.last?.rowID else { break }
+
+            for row in rows {
+                let price = snapshot.evaluate(
+                    modelCanonical: row.modelCanonical,
+                    serviceTier: row.serviceTier,
+                    timestampMs: row.timestampMs,
+                    tokens: row.tokens
+                )
+                try database.executeUpdate(
+                    sql: """
+                    UPDATE codex_usage_events
+                    SET estimated_cost_usd_nano = ?,
+                        pricing_rule_id = ?,
+                        pricing_status = ?,
+                        pricing_catalog_version = ?
+                    WHERE rowid = ?;
+                    """,
+                    bindings: [
+                        price.estimatedCost.rawValue,
+                        price.pricingRuleId,
+                        price.pricingStatus.rawValue,
+                        price.catalogVersion,
+                        row.rowID
+                    ]
+                )
+            }
+            lastRowID = finalRowID
         }
 
         try rebuildUsageSummariesInTransaction(database: database)
@@ -344,7 +363,7 @@ public final class PricingCatalogService: Sendable {
             session_id, model_canonical, event_count, total_tokens,
             uncached_input_tokens, cached_input_tokens, cache_write_input_tokens,
             output_tokens, reasoning_output_tokens, estimated_cost_usd_nano,
-            unpriced_event_count
+            unpriced_event_count, unpriced_token_count
         )
         SELECT
             session_id,
@@ -357,7 +376,8 @@ public final class PricingCatalogService: Sendable {
             COALESCE(SUM(output_tokens), 0),
             COALESCE(SUM(reasoning_output_tokens), 0),
             COALESCE(SUM(estimated_cost_usd_nano), 0),
-            COALESCE(SUM(CASE WHEN pricing_status = 'priced' THEN 0 ELSE 1 END), 0)
+            COALESCE(SUM(CASE WHEN pricing_status = 'priced' THEN 0 ELSE 1 END), 0),
+            COALESCE(SUM(CASE WHEN pricing_status = 'priced' THEN 0 ELSE total_tokens END), 0)
         FROM codex_usage_events
         WHERE is_child_replay = 0
         GROUP BY session_id, model_canonical;
@@ -366,12 +386,12 @@ public final class PricingCatalogService: Sendable {
             session_id, day_key, day_start_ms, model_canonical, event_count,
             total_tokens, uncached_input_tokens, cached_input_tokens,
             cache_write_input_tokens, output_tokens, reasoning_output_tokens,
-            estimated_cost_usd_nano, unpriced_event_count
+            estimated_cost_usd_nano, unpriced_event_count, unpriced_token_count
         )
         SELECT
             session_id,
             strftime('%Y-%m-%d', timestamp_ms / 1000, 'unixepoch', 'localtime') AS day_key,
-            unixepoch(strftime('%Y-%m-%d', timestamp_ms / 1000, 'unixepoch', 'localtime')) * 1000 AS day_start_ms,
+            unixepoch(strftime('%Y-%m-%d', timestamp_ms / 1000, 'unixepoch', 'localtime'), 'utc') * 1000 AS day_start_ms,
             model_canonical,
             COUNT(*),
             COALESCE(SUM(total_tokens), 0),
@@ -381,7 +401,8 @@ public final class PricingCatalogService: Sendable {
             COALESCE(SUM(output_tokens), 0),
             COALESCE(SUM(reasoning_output_tokens), 0),
             COALESCE(SUM(estimated_cost_usd_nano), 0),
-            COALESCE(SUM(CASE WHEN pricing_status = 'priced' THEN 0 ELSE 1 END), 0)
+            COALESCE(SUM(CASE WHEN pricing_status = 'priced' THEN 0 ELSE 1 END), 0),
+            COALESCE(SUM(CASE WHEN pricing_status = 'priced' THEN 0 ELSE total_tokens END), 0)
         FROM codex_usage_events
         WHERE is_child_replay = 0
         GROUP BY session_id, day_key, model_canonical;
@@ -569,6 +590,24 @@ public enum PricingEvaluator {
         tokens: TokenBreakdown,
         catalogVersion: String? = nil
     ) -> PricingEvaluationResult {
+        guard rule.rateDivisor > 0 else {
+            return PricingEvaluationResult(
+                estimatedCost: .zero,
+                pricingStatus: .unpricedCalculationOverflow,
+                pricingRuleId: rule.ruleId,
+                catalogVersion: catalogVersion
+            )
+        }
+        if let maximumInputTokens = rule.maximumInputTokens,
+           tokens.inputTokens > maximumInputTokens {
+            return PricingEvaluationResult(
+                estimatedCost: .zero,
+                pricingStatus: .unpricedUnsupportedContextLength,
+                pricingRuleId: rule.ruleId,
+                catalogVersion: catalogVersion
+            )
+        }
+
         let uncachedInput = tokens.uncachedInputTokens
         let cachedInput = tokens.cachedInputTokens
         let cacheWriteInput = tokens.cacheWriteInputTokens
@@ -622,8 +661,21 @@ public enum PricingEvaluator {
             )
         }
 
+        let quotient = total / rule.rateDivisor
+        let remainder = total % rule.rateDivisor
+        let shouldRoundUp = remainder >= (rule.rateDivisor + 1) / 2
+        let (roundedTotal, roundingOverflow) = quotient.addingReportingOverflow(shouldRoundUp ? 1 : 0)
+        if roundingOverflow {
+            return PricingEvaluationResult(
+                estimatedCost: .zero,
+                pricingStatus: .unpricedCalculationOverflow,
+                pricingRuleId: rule.ruleId,
+                catalogVersion: catalogVersion
+            )
+        }
+
         return PricingEvaluationResult(
-            estimatedCost: MoneyNanoUSD(total),
+            estimatedCost: MoneyNanoUSD(roundedTotal),
             pricingStatus: .priced,
             pricingRuleId: rule.ruleId,
             catalogVersion: catalogVersion

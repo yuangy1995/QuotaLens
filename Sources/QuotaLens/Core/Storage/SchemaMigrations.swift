@@ -24,7 +24,7 @@ private func addColumnIfMissing(
 }
 
 public struct SchemaMigrations {
-    public static let targetSchemaVersion = 9
+    public static let targetSchemaVersion = 11
 
     public static func migrate(database: SQLiteDatabase) throws {
         let currentVersion = try database.intScalar(sql: "PRAGMA user_version;")
@@ -52,7 +52,9 @@ public struct SchemaMigrations {
             V6UsageTruthAndRecoveryMigration(),
             V7CatalogIdentityAndParserV4Migration(),
             V8ReasoningEffortMigration(),
-            V9CacheWriteAndParserV6Migration()
+            V9CacheWriteAndParserV6Migration(),
+            V10PricingRuleBoundsMigration(),
+            V11ExactPricingCoverageMigration()
         ]
 
         for migration in migrations where migration.version > currentVersion {
@@ -63,6 +65,55 @@ public struct SchemaMigrations {
         }
 
         try V5AggregateOnlyUsageMigration.compactIfNeeded(database: database)
+    }
+}
+
+// MARK: - V11: exact token-weighted pricing coverage in compact summaries
+private struct V11ExactPricingCoverageMigration: DatabaseMigration {
+    let version = 11
+    let name = "V11ExactPricingCoverage"
+
+    func apply(database: SQLiteDatabase) throws {
+        try addColumnIfMissing(
+            database: database,
+            table: "codex_session_summaries",
+            column: "unpriced_token_count",
+            definition: "INTEGER NOT NULL DEFAULT 0"
+        )
+        try addColumnIfMissing(
+            database: database,
+            table: "codex_daily_usage_summaries",
+            column: "unpriced_token_count",
+            definition: "INTEGER NOT NULL DEFAULT 0"
+        )
+        // Force the next catalog check to rebuild both compact summaries from
+        // event-level pricing truth, including databases created by a v10
+        // developer build.
+        try database.executeUpdate(
+            sql: "DELETE FROM app_metadata WHERE key = 'pricing_reprice_catalog_version';",
+            bindings: []
+        )
+    }
+}
+
+// MARK: - V10: exact fractional rates and short-context-only rule bounds
+private struct V10PricingRuleBoundsMigration: DatabaseMigration {
+    let version = 10
+    let name = "V10PricingRuleBounds"
+
+    func apply(database: SQLiteDatabase) throws {
+        try addColumnIfMissing(
+            database: database,
+            table: "codex_pricing_rules",
+            column: "rate_divisor",
+            definition: "INTEGER NOT NULL DEFAULT 1"
+        )
+        try addColumnIfMissing(
+            database: database,
+            table: "codex_pricing_rules",
+            column: "maximum_input_tokens",
+            definition: "INTEGER"
+        )
     }
 }
 
