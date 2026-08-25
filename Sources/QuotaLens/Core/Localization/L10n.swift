@@ -252,6 +252,62 @@ public enum L10n {
             return "\(sign)\(value)K"
         }
     }
+
+    public static let changelogZhToEnMap: [String: String] = [
+        "全新重构设置界面为 5 大分类 Tab 架构（常规外观、账号同步、悬浮挂件、Codex 环境、存储诊断），告别冗长滚动": "Restructured Settings view into a 5-tab layout (General, Account, Overlay, Codex, Storage) with persistent state and zero long-scrolling",
+        "升级弹窗全新高颜值重构，支持版本跃迁对比、安装包体积展示（如 📦 7.3 MB）与更新日志独立滚动面板": "Redesigned software update dialog with version transition badges, download package size, and scrollable release notes panel",
+        "新增模型推理级别（Reasoning Effort）深度解析，并在历史明细与会话详情中以高对比度渐变徽章醒目展示": "Parsed model reasoning effort levels from Codex sessions and displayed high-contrast reasoning badges in history and session views",
+        "会话列表支持按项目（代码工作区）聚合分组与过滤筛选，支持一键折叠展开并统计项目消耗": "Added project-based session grouping, filtering chips, and expand/collapse support with aggregate tokens and cost analytics",
+        "新增 Prompt 缓存命中率与节约效益分析，并在主看板增加配额耗尽与重置卡智能建议横幅": "Added prompt cache hit rate efficiency analysis and smart suggestion banners for quota exhaustion and reset cards",
+        "优化当日无活动时的友好空状态展示，精简掉默认的 DEFAULT/STANDARD 服务层级标签": "Refined empty-day activity cards with user-friendly copy and removed redundant default service tier badges",
+        "新增会话删除与安全清理能力，支持源文件移至废纸篓并自动级联清理本地索引与统计数据": "Session deletion with trash-move safety and automatic cascade cleanup of derived analytics",
+        "新增配额耗尽（0% 配额）预警与专属状态展示，并在配额耗尽时智能静默预测": "Dedicated quota exhausted state handling and intelligent forecast suppression",
+        "全面升级全息悬浮窗交互，支持磁吸贴边、自由拖拽定位与置顶固定状态记忆": "Enhanced floating HUD overlay with magnetic edge snapping, dragging, and pin persistence",
+        "用量分析看板与年度热力图新增鼠标跟随悬浮详情卡片，并大幅优化历史全天汇总查询性能": "Pointer-following detail cards for usage charts and heatmap with faster compact summary queries",
+        "优化 Dock 图标聚焦与菜单栏弹窗交互行为，关于页更新日志支持多语言自适应显示": "Refined Dock and menu bar activation behaviors, with localized changelog rendering",
+        "新增 Codex 本地历史用量与 Rollout 审计日志实时追踪解析引擎，支持秒级流式索引": "Real-time parsing and streaming index for Codex local history & rollout audit logs",
+        "新增配额消耗预测引擎（基于线性投影与历史会话特征预估周期耗尽时间与建议节奏）": "Quota consumption forecast engine with linear projection and runout estimation",
+        "新增「会话明细」与「历史用量」分析看板，支持按会话、模型、分支多维度聚合统计": "Interactive session breakdown and usage analytics dashboard",
+        "新增独立全息悬浮置顶窗与菜单栏交互增强，实时监控用量与重置倒计时": "Floating HUD overlay window and enhanced menu bar interactions",
+        "修复在线检查更新源 URL 缓存问题，确保每次请求均拉取远端最新版本": "Fixed update feed cache-busting to ensure latest release metadata",
+        "全面优化「确认使用重置卡」弹窗 Cyber 视觉质感，并严格按规则智能生成确认提示文案": "Refined reset card confirmation dialog visual aesthetics with smart rule-based copy",
+        "顶栏左侧升级为动态展示当前菜单名称，并将 App 品牌整合至侧边栏底座": "Dynamic top bar title reflecting active tab and brand integration in sidebar footer",
+        "全局清理各菜单页面内容顶部的冗余大标题，将概览页视图模式与同步状态下沉至 Hero 卡片": "Cleaned up redundant page titles and streamlined overview controls into Hero header",
+        "倒计时与建议日均消耗全面升级为秒级精确度，接入 TimelineView 实现每秒实时平滑跳动": "Upgraded countdown and daily budget pace to real-time second-level precision",
+        "全面覆盖 10 种语言的多语言本地化翻译": "Complete localized translations for 10 supported languages",
+        "更新日志与开源协议升级为动态网络拉取，每次点开弹窗时自动获取最新发布内容": "Dynamic fetching and manual refresh for changelog & license",
+        "修复当前版本高亮匹配逻辑，与当前运行应用版本实时保持一致": "Fixed current version matching algorithm to accurately highlight active release",
+        "新增建议日均消耗微卡片，根据当前周期的剩余时间与剩余配额智能推算均摊用量": "Added daily budget pace module based on cycle remaining time and quota",
+        "全局清理页面与侧边栏次级说明小字，提升界面清爽与精致度": "Cleaned up auxiliary subtitles and tags across pages and sidebar",
+        "全面覆盖 10 种语言的多语言本地化翻译并清理冗余词条": "Complete 10-language localized translations and code cleanup",
+        "移除构建次数显示，并去掉概览与设置页面的分块序号徽章": "Removed build count and section number tags across overview and settings",
+        "更新日志与开源协议采用应用内可滚动弹窗展示，并支持一键复制": "In-app scrollable dialogs for changelog and license with one-click copy support",
+        "进一步优化全息卡片间距与界面精致度": "Refined card spacing and visual aesthetics",
+        "全新关于页面 UI 排版重构，引入 Hero 品牌中心与 2x3 核心特性矩阵": "Redesigned About view layout with Hero brand center and 2x3 feature grid",
+        "优化在线升级交互与状态指示面板": "Polished online update interactions and status indicators",
+        "修复 Sparkle 在线增量升级检测与版本比对流程": "Fixed Sparkle in-app delta update checking and version comparison",
+        "统一语言与偏好设置图标": "Unified language and preference setting icons",
+        "新增轻量菜单栏模式与 Dock 隐藏支持": "Added menu bar compact mode and optional hidden Dock icon",
+        "优化 ChatGPT 与 Codex 额度快照解析器": "Improved ChatGPT and Codex quota snapshot parsers",
+        "QuotaLens 正式发布！首发支持实时配额监控、重置卡追踪与周期推算": "Initial release of QuotaLens with real-time quota tracking, reset card alerts, and cycle detection"
+    ]
+
+    public static func localizeChangelogText(_ rawText: String) -> String {
+        if language == .simplifiedChinese {
+            return rawText
+        }
+        if let englishKey = changelogZhToEnMap[rawText] {
+            return localized(englishKey, zhHans: rawText)
+        }
+        let trimmed = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let englishKey = changelogZhToEnMap[trimmed] {
+            return localized(englishKey, zhHans: trimmed)
+        }
+        if keyedTranslations[rawText] != nil {
+            return localized(rawText)
+        }
+        return rawText
+    }
 }
 
 private let keyedTranslations: [String: [AppLanguage: String]] = [

@@ -161,13 +161,27 @@ final class SessionDeletionAndQuotaStateTests: XCTestCase {
         }
     }
 
-    func testRemoteChangelogIsRestrictedToItsSourceLanguage() {
-        for language in AppLanguage.allCases {
-            XCTAssertEqual(
-                ChangelogContentPolicy.allowsRemoteContent(for: language),
-                language == .simplifiedChinese,
-                language.rawValue
-            )
+    func testRemoteChangelogLocalizationAcrossLanguages() {
+        let defaults = UserDefaults.standard
+        let previousLanguage = defaults.string(forKey: L10n.languageModeDefaultsKey)
+        defer {
+            if let previousLanguage {
+                defaults.set(previousLanguage, forKey: L10n.languageModeDefaultsKey)
+            } else {
+                defaults.removeObject(forKey: L10n.languageModeDefaultsKey)
+            }
+        }
+
+        let chinese = "全新重构设置界面为 5 大分类 Tab 架构（常规外观、账号同步、悬浮挂件、Codex 环境、存储诊断），告别冗长滚动"
+        for mode in AppLanguageMode.allCases where mode != .system {
+            defaults.set(mode.rawValue, forKey: L10n.languageModeDefaultsKey)
+            let localized = L10n.localizeChangelogText(chinese)
+            switch mode {
+            case .simplifiedChinese:
+                XCTAssertEqual(localized, chinese)
+            default:
+                XCTAssertNotEqual(localized, chinese, mode.rawValue)
+            }
         }
     }
 

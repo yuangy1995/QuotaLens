@@ -4,12 +4,6 @@ import Foundation
 import SwiftUI
 import AppKit
 
-enum ChangelogContentPolicy {
-    static func allowsRemoteContent(for language: AppLanguage) -> Bool {
-        language == .simplifiedChinese
-    }
-}
-
 public struct AboutView: View {
     @ObservedObject var state: AppState
     @ObservedObject var updateManager: UpdateManager
@@ -176,10 +170,7 @@ public struct AboutView: View {
     }
 
     private var displayedChangelogs: [ChangelogEntry] {
-        guard ChangelogContentPolicy.allowsRemoteContent(for: L10n.language) else {
-            return defaultChangelogs
-        }
-        return remoteChangelogs ?? defaultChangelogs
+        remoteChangelogs ?? defaultChangelogs
     }
 
     private var displayedLicenseText: String {
@@ -848,7 +839,7 @@ public struct AboutView: View {
                                 Text("•")
                                     .font(.system(size: 12, weight: .bold))
                                     .foregroundStyle(cyan)
-                                Text(change)
+                                Text(L10n.localizeChangelogText(change))
                                     .font(.system(size: 12, weight: .medium))
                                     .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
                                     .fixedSize(horizontal: false, vertical: true)
@@ -902,12 +893,8 @@ public struct AboutView: View {
         isFetchingChangelog = true
         defer { isFetchingChangelog = false }
 
-        // The public remote changelog is Simplified Chinese. All other
-        // languages use the bundled, fully localized structured changelog so
-        // a network refresh can never replace it with Chinese copy.
         remoteChangelogs = nil
         let requestedLanguage = L10n.language
-        guard ChangelogContentPolicy.allowsRemoteContent(for: requestedLanguage) else { return }
 
         // 1. 优先拉取 raw CHANGELOG.md（包含详细改动项）
         let changelogURL = URL(string: "https://raw.githubusercontent.com/yuangy1995/QuotaLens/main/CHANGELOG.md")!

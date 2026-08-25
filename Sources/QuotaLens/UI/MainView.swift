@@ -431,17 +431,8 @@ private struct UpdateCheckDialog: View {
         let emerald = AppTheme.accentEmerald(for: colorScheme)
         let isDark = colorScheme == .dark
 
-        VStack(spacing: 0) {
-            // 顶部流光呼吸条
-            LinearGradient(
-                colors: [cyan, blue, purple],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-            .frame(height: 3.5)
-
-            VStack(alignment: .leading, spacing: 16) {
-                // 头部：图标 + 标题 + 版本与包大小胶囊
+        VStack(alignment: .leading, spacing: 16) {
+            // 头部：图标 + 标题 + 版本与包大小胶囊
                 HStack(alignment: .top, spacing: 14) {
                     ZStack {
                         RoundedRectangle(cornerRadius: 15, style: .continuous)
@@ -650,11 +641,10 @@ private struct UpdateCheckDialog: View {
                 .padding(.top, 4)
             }
             .padding(22)
-        }
-        .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(isDark ? Color(red: 0.08, green: 0.095, blue: 0.14) : Color(red: 0.98, green: 0.985, blue: 1.0))
-        )
+            .background(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(isDark ? Color(red: 0.08, green: 0.095, blue: 0.14) : Color(red: 0.98, green: 0.985, blue: 1.0))
+            )
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .strokeBorder(cyan.opacity(isDark ? 0.35 : 0.22), lineWidth: 1)
