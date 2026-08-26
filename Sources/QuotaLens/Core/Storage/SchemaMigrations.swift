@@ -23,8 +23,29 @@ private func addColumnIfMissing(
     try database.execute(sql: "ALTER TABLE \(table) ADD COLUMN \(column) \(definition);")
 }
 
+private let unpricedReasonColumnDefinitions: [(String, String)] = [
+    ("unpriced_unknown_model_event_count", "INTEGER NOT NULL DEFAULT 0"),
+    ("unpriced_unknown_model_token_count", "INTEGER NOT NULL DEFAULT 0"),
+    ("unpriced_unsupported_tier_event_count", "INTEGER NOT NULL DEFAULT 0"),
+    ("unpriced_unsupported_tier_token_count", "INTEGER NOT NULL DEFAULT 0"),
+    ("unpriced_historical_rule_missing_event_count", "INTEGER NOT NULL DEFAULT 0"),
+    ("unpriced_historical_rule_missing_token_count", "INTEGER NOT NULL DEFAULT 0"),
+    ("unpriced_unsupported_context_event_count", "INTEGER NOT NULL DEFAULT 0"),
+    ("unpriced_unsupported_context_token_count", "INTEGER NOT NULL DEFAULT 0"),
+    ("unpriced_invalid_record_event_count", "INTEGER NOT NULL DEFAULT 0"),
+    ("unpriced_invalid_record_token_count", "INTEGER NOT NULL DEFAULT 0"),
+    ("unpriced_overflow_event_count", "INTEGER NOT NULL DEFAULT 0"),
+    ("unpriced_overflow_token_count", "INTEGER NOT NULL DEFAULT 0")
+]
+
+private func addUnpricedReasonColumns(database: SQLiteDatabase, table: String) throws {
+    for (column, definition) in unpricedReasonColumnDefinitions {
+        try addColumnIfMissing(database: database, table: table, column: column, definition: definition)
+    }
+}
+
 public struct SchemaMigrations {
-    public static let targetSchemaVersion = 11
+    public static let targetSchemaVersion = 12
 
     public static func migrate(database: SQLiteDatabase) throws {
         let currentVersion = try database.intScalar(sql: "PRAGMA user_version;")
@@ -54,7 +75,8 @@ public struct SchemaMigrations {
             V8ReasoningEffortMigration(),
             V9CacheWriteAndParserV6Migration(),
             V10PricingRuleBoundsMigration(),
-            V11ExactPricingCoverageMigration()
+            V11ExactPricingCoverageMigration(),
+            V12AggregateReasonsAndRebuildStateMigration()
         ]
 
         for migration in migrations where migration.version > currentVersion {
@@ -65,6 +87,51 @@ public struct SchemaMigrations {
         }
 
         try V5AggregateOnlyUsageMigration.compactIfNeeded(database: database)
+    }
+}
+
+// MARK: - V12: 聚合原因、可恢复重计价状态与时区口径
+private struct V12AggregateReasonsAndRebuildStateMigration: DatabaseMigration {
+    let version = 12
+    let name = "V12AggregateReasonsAndRebuildState"
+
+    func apply(database: SQLiteDatabase) throws {
+        for table in ["codex_sessions", "codex_session_summaries", "codex_daily_usage_summaries"] {
+            try addUnpricedReasonColumns(database: database, table: table)
+        }
+
+        try database.execute(sql: """
+        CREATE TABLE IF NOT EXISTS codex_scan_diagnostics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_path TEXT NOT NULL,
+            relative_path TEXT NOT NULL,
+            bucket TEXT NOT NULL,
+            diagnostic_code TEXT NOT NULL,
+            message TEXT NOT NULL,
+            scan_generation INTEGER NOT NULL,
+            created_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_codex_scan_diagnostics_generation
+            ON codex_scan_diagnostics(scan_generation, diagnostic_code);
+
+        INSERT OR IGNORE INTO app_metadata (key, value, updated_at)
+            VALUES ('pricing_reprice_status', 'completed', unixepoch());
+        INSERT OR IGNORE INTO app_metadata (key, value, updated_at)
+            VALUES ('pricing_reprice_last_rowid', '0', unixepoch());
+        INSERT OR IGNORE INTO app_metadata (key, value, updated_at)
+            VALUES ('pricing_reprice_processed_events', '0', unixepoch());
+        INSERT OR IGNORE INTO app_metadata (key, value, updated_at)
+            VALUES ('pricing_reprice_total_events', '0', unixepoch());
+        INSERT OR IGNORE INTO app_metadata (key, value, updated_at)
+            VALUES ('usage_aggregation_timezone_id', '\(TimeZone.current.identifier)', unixepoch());
+        INSERT OR IGNORE INTO app_metadata (key, value, updated_at)
+            VALUES ('usage_aggregation_timezone_generation', '0', unixepoch());
+        INSERT OR IGNORE INTO app_metadata (key, value, updated_at)
+            VALUES ('codex_parser_rebuild_status', 'completed', unixepoch());
+        INSERT OR IGNORE INTO app_metadata (key, value, updated_at)
+            VALUES ('codex_parser_rebuild_generation', '0', unixepoch());
+        DELETE FROM app_metadata WHERE key = 'pricing_reprice_catalog_version';
+        """)
     }
 }
 
@@ -154,17 +221,20 @@ private struct V9CacheWriteAndParserV6Migration: DatabaseMigration {
         CREATE INDEX IF NOT EXISTS idx_codex_events_day_time_offset_id
             ON codex_usage_events(is_child_replay, timestamp_ms DESC, line_offset DESC, event_id DESC);
 
-        DELETE FROM codex_usage_events;
-        DELETE FROM codex_session_summaries;
-        DELETE FROM codex_daily_usage_summaries;
-        DELETE FROM codex_sessions;
-        DELETE FROM codex_import_sources;
+        UPDATE codex_import_sources
+            SET status = CASE WHEN status = 'tombstoned' THEN status ELSE 'stale' END,
+                error_message = CASE WHEN status = 'tombstoned' THEN error_message ELSE 'parser rebuild pending' END;
         INSERT OR REPLACE INTO app_metadata (key, value, updated_at)
             VALUES ('codex_usage_generation', unixepoch(), unixepoch());
         INSERT OR REPLACE INTO app_metadata (key, value, updated_at)
             VALUES ('codex_parser_version', '6', unixepoch());
         INSERT OR REPLACE INTO app_metadata (key, value, updated_at)
             VALUES ('pricing_reprice_generation', '0', unixepoch());
+        INSERT OR REPLACE INTO app_metadata (key, value, updated_at)
+            VALUES ('codex_parser_rebuild_status', 'pending', unixepoch());
+        INSERT OR REPLACE INTO app_metadata (key, value, updated_at)
+            VALUES ('codex_parser_rebuild_generation', COALESCE((SELECT CAST(value AS INTEGER) + 1 FROM app_metadata WHERE key = 'codex_parser_rebuild_generation'), 1), unixepoch());
+        DELETE FROM app_metadata WHERE key = 'pricing_reprice_catalog_version';
         """)
     }
 }
@@ -250,18 +320,19 @@ private struct V7CatalogIdentityAndParserV4Migration: DatabaseMigration {
         try addColumnIfMissing(database: database, table: "codex_import_sources", column: "unresolved_timestamp_count", definition: "INTEGER NOT NULL DEFAULT 0")
         try addColumnIfMissing(database: database, table: "codex_import_sources", column: "unknown_event_type_count", definition: "INTEGER NOT NULL DEFAULT 0")
 
-        // Parser v4 introduces stable physical-source event IDs and
-        // component-wise cumulative counter restart handling.
+        // Parser v4 改变事件 ID 与累计计数语义，保留旧索引并标记后台重建。
         try database.execute(sql: """
-        DELETE FROM codex_usage_events;
-        DELETE FROM codex_session_summaries;
-        DELETE FROM codex_daily_usage_summaries;
-        DELETE FROM codex_sessions;
-        DELETE FROM codex_import_sources;
+        UPDATE codex_import_sources
+            SET status = CASE WHEN status = 'tombstoned' THEN status ELSE 'stale' END,
+                error_message = CASE WHEN status = 'tombstoned' THEN error_message ELSE 'parser rebuild pending' END;
         INSERT OR REPLACE INTO app_metadata (key, value, updated_at)
             VALUES ('codex_usage_generation', unixepoch(), unixepoch());
         INSERT OR REPLACE INTO app_metadata (key, value, updated_at)
             VALUES ('codex_parser_version', '4', unixepoch());
+        INSERT OR REPLACE INTO app_metadata (key, value, updated_at)
+            VALUES ('codex_parser_rebuild_status', 'pending', unixepoch());
+        INSERT OR REPLACE INTO app_metadata (key, value, updated_at)
+            VALUES ('codex_parser_rebuild_generation', COALESCE((SELECT CAST(value AS INTEGER) + 1 FROM app_metadata WHERE key = 'codex_parser_rebuild_generation'), 1), unixepoch());
         """)
     }
 }
@@ -678,13 +749,9 @@ private struct V5AggregateOnlyUsageMigration: DatabaseMigration {
         CREATE INDEX IF NOT EXISTS idx_codex_daily_model ON codex_daily_usage_summaries(model_canonical, day_start_ms);
         CREATE INDEX IF NOT EXISTS idx_codex_daily_session ON codex_daily_usage_summaries(session_id);
 
-        -- v4 首次实现会把每条 token 事件落盘。迁移到 v5 时丢弃这些中间明细，
-        -- 清掉检查点，下一次启动扫描只重建最终聚合表。
-        DELETE FROM codex_usage_events;
-        DELETE FROM codex_session_summaries;
-        DELETE FROM codex_daily_usage_summaries;
-        DELETE FROM codex_sessions;
-        DELETE FROM codex_import_sources;
+        -- v5 以后保留旧索引可见性；需要重建时由扫描器按源原子替换。
+        UPDATE codex_import_sources
+            SET status = CASE WHEN status = 'tombstoned' THEN status ELSE status END;
         INSERT OR REPLACE INTO app_metadata (key, value, updated_at)
             VALUES ('codex_usage_generation', unixepoch(), unixepoch());
         """
@@ -766,18 +833,19 @@ private struct V6UsageTruthAndRecoveryMigration: DatabaseMigration {
             ON codex_import_sources(scan_generation, status);
         """)
 
-        // Parser v3 changes timestamp/model/replay semantics and pricing v2 changes value math.
-        // Preserve quota/account data, but force local Codex usage aggregates to rebuild.
+        // Parser v3 改变时间戳、模型和 replay 语义，保留旧索引并标记后台重建。
         try database.execute(sql: """
-        DELETE FROM codex_usage_events;
-        DELETE FROM codex_session_summaries;
-        DELETE FROM codex_daily_usage_summaries;
-        DELETE FROM codex_sessions;
-        DELETE FROM codex_import_sources;
+        UPDATE codex_import_sources
+            SET status = CASE WHEN status = 'tombstoned' THEN status ELSE 'stale' END,
+                error_message = CASE WHEN status = 'tombstoned' THEN error_message ELSE 'parser rebuild pending' END;
         INSERT OR REPLACE INTO app_metadata (key, value, updated_at)
             VALUES ('codex_usage_generation', unixepoch(), unixepoch());
         INSERT OR REPLACE INTO app_metadata (key, value, updated_at)
             VALUES ('codex_parser_version', '3', unixepoch());
+        INSERT OR REPLACE INTO app_metadata (key, value, updated_at)
+            VALUES ('codex_parser_rebuild_status', 'pending', unixepoch());
+        INSERT OR REPLACE INTO app_metadata (key, value, updated_at)
+            VALUES ('codex_parser_rebuild_generation', COALESCE((SELECT CAST(value AS INTEGER) + 1 FROM app_metadata WHERE key = 'codex_parser_rebuild_generation'), 1), unixepoch());
         """)
     }
 }

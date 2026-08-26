@@ -48,13 +48,10 @@ public struct PricingRuleEntry: Codable, Sendable {
     public let cachedNanoUsdPerToken: Int64
     public let cacheWriteNanoUsdPerToken: Int64?
     public let outputNanoUsdPerToken: Int64
-    /// Common denominator for all per-token rate numerators in this rule.
-    /// Most rows use 1; fractional nano-USD rates such as $0.0375 / 1M
-    /// cached tokens use 2 so the catalog does not round away half a nano.
+    /// 本规则所有 token 单价分子的共同分母。
+    /// 大多数规则为 1；例如 $0.0375 / 1M cached token 这类半 nano 费率使用 2，避免目录层提前舍入。
     public let rateDivisor: Int64
-    /// Largest input-token count supported by this exact tier/rate row.
-    /// A nil value means the row either has explicit long-context pricing or
-    /// does not publish a short-context-only ceiling.
+    /// 当前层级/费率行支持的最大输入 token 数；nil 表示有显式长上下文价格，或没有公开短上下文上限。
     public let maximumInputTokens: Int64?
     public let longContextThresholdTokens: Int64?
     public let longContextInputMultiplierPpm: Int64?
@@ -93,14 +90,24 @@ public struct PricingRuleEntry: Codable, Sendable {
 
 // MARK: - 内置官方 OpenAI 价格目录 (2026-08-25 官方列表价)
 public enum BundledPricingCatalog {
-    // v4 adds cache-write token accounting, effective-dated GPT-5.6 pricing,
-    // and official Standard/Flex/Fast service-tier rows. Catalog versions are
-    // immutable so a developer build that already installed v3 also upgrades.
-    public static let currentVersion = "2026-08-v4"
+    // v5 保持 v4 不可变，补齐旧模型 Cache Write、官方上线日期和 Sol 促销精确切点。
+    public static let currentVersion = "2026-08-v5"
     public static let publishedAtMs: Int64 = 1787616000000 // 2026-08-25
     private static let gpt56ReleaseMs: Int64 = 1783555200000 // 2026-07-09
     private static let gpt56TerraLunaCutoverMs: Int64 = 1785369600000 // 2026-07-30
-    private static let gpt56SolPromotionalCutoverMs: Int64 = 1787270400000 // 2026-08-21
+    private static let gpt56SolPromotionalCutoverMs: Int64 = 1787340850000 // 2026-08-21T19:34:10Z
+
+    // OpenAI changelog / model docs 对旧模型多为日期粒度，统一使用该日期的 UTC 00:00:00 边界。
+    private static let gpt5APIReleaseMs: Int64 = 1754524800000 // 2025-08-07
+    private static let gpt5CodexReleaseMs: Int64 = 1757894400000 // 2025-09-15
+    private static let gpt51ReleaseMs: Int64 = 1762992000000 // 2025-11-13
+    private static let gpt51CodexMaxReleaseMs: Int64 = 1763424000000 // 2025-11-18
+    private static let gpt52ReleaseMs: Int64 = 1765411200000 // 2025-12-11
+    private static let gpt52CodexReleaseMs: Int64 = 1768348800000 // 2026-01-14
+    private static let gpt53CodexReleaseMs: Int64 = 1771891200000 // 2026-02-24
+    private static let gpt54ReleaseMs: Int64 = 1772668800000 // 2026-03-05
+    private static let gpt54MiniNanoReleaseMs: Int64 = 1773705600000 // 2026-03-17
+    private static let gpt55ReleaseMs: Int64 = 1776988800000 // 2026-04-24
 
     private struct GPT56Rate: Sendable {
         let input: Int64
@@ -152,8 +159,8 @@ public enum BundledPricingCatalog {
         currentFromMs: Int64
     ) -> [PricingRuleEntry] {
         let periods: [(suffix: String, from: Int64, to: Int64?, rate: GPT56Rate)] = [
-            ("launch-v4", gpt56ReleaseMs, currentFromMs, launch),
-            ("current-v4", currentFromMs, nil, current)
+            ("launch-v5", gpt56ReleaseMs, currentFromMs, launch),
+            ("current-v5", currentFromMs, nil, current)
         ]
         return periods.flatMap { period in
             [
@@ -197,6 +204,7 @@ public enum BundledPricingCatalog {
     private static func publishedTierRule(
         modelKey: String,
         serviceTier: String?,
+        effectiveFromMs: Int64,
         input: Int64,
         cached: Int64,
         output: Int64,
@@ -209,11 +217,12 @@ public enum BundledPricingCatalog {
         let rateDivisor = divisorBase / commonDivisor
         let tierId = serviceTier ?? "std"
         return PricingRuleEntry(
-            ruleId: "\(modelKey)-\(tierId)-v4",
+            ruleId: "\(modelKey)-\(tierId)-v5",
             serviceTier: serviceTier,
-            effectiveFromMs: 0,
+            effectiveFromMs: effectiveFromMs,
             inputNanoUsdPerToken: input * numeratorMultiplier,
             cachedNanoUsdPerToken: cached * numeratorMultiplier,
+            cacheWriteNanoUsdPerToken: input * numeratorMultiplier,
             outputNanoUsdPerToken: output * numeratorMultiplier,
             rateDivisor: rateDivisor,
             maximumInputTokens: supportsLongContext ? nil : 272_000,
@@ -225,6 +234,7 @@ public enum BundledPricingCatalog {
 
     private static func publishedTierRules(
         modelKey: String,
+        effectiveFromMs: Int64,
         input: Int64,
         cached: Int64,
         output: Int64,
@@ -235,6 +245,7 @@ public enum BundledPricingCatalog {
         var rules = [publishedTierRule(
             modelKey: modelKey,
             serviceTier: nil,
+            effectiveFromMs: effectiveFromMs,
             input: input,
             cached: cached,
             output: output,
@@ -245,6 +256,7 @@ public enum BundledPricingCatalog {
             rules.append(publishedTierRule(
                 modelKey: modelKey,
                 serviceTier: "flex",
+                effectiveFromMs: effectiveFromMs,
                 input: input,
                 cached: cached,
                 output: output,
@@ -256,6 +268,7 @@ public enum BundledPricingCatalog {
             rules.append(publishedTierRule(
                 modelKey: modelKey,
                 serviceTier: "fast",
+                effectiveFromMs: effectiveFromMs,
                 input: input,
                 cached: cached,
                 output: output,
@@ -268,7 +281,7 @@ public enum BundledPricingCatalog {
 
     public static let defaultCatalog = PricingCatalogModel(
         catalogVersion: currentVersion,
-        schemaVersion: 4,
+        schemaVersion: 5,
         publishedAt: publishedAtMs,
         catalogSha256: "",
         sourceURLs: [
@@ -278,6 +291,7 @@ public enum BundledPricingCatalog {
             "https://developers.openai.com/api/docs/guides/flex-processing",
             "https://developers.openai.com/api/docs/guides/fast-mode",
             "https://developers.openai.com/api/docs/models/gpt-5.6-sol",
+            "https://developers.openai.com/api/docs/guides/prompt-caching",
             "https://developers.openai.com/api/docs/models/gpt-5.6-terra",
             "https://developers.openai.com/api/docs/models/gpt-5.6-luna",
             "https://developers.openai.com/api/docs/models/gpt-5.5",
@@ -285,18 +299,20 @@ public enum BundledPricingCatalog {
             "https://developers.openai.com/api/docs/models/gpt-5.4-mini",
             "https://developers.openai.com/api/docs/models/gpt-5.4-nano",
             "https://developers.openai.com/api/docs/models/gpt-5.3-codex",
+            "https://developers.openai.com/api/docs/models/gpt-5.2",
             "https://developers.openai.com/api/docs/models/gpt-5.2-codex",
             "https://developers.openai.com/api/docs/models/gpt-5.1-codex",
-            "https://developers.openai.com/api/docs/models/gpt-5.1-codex-mini"
+            "https://developers.openai.com/api/docs/models/gpt-5.1-codex-max",
+            "https://developers.openai.com/api/docs/models/gpt-5.1-codex-mini",
+            "https://developers.openai.com/api/docs/models/gpt-5",
+            "https://developers.openai.com/api/docs/models/gpt-5-codex"
         ],
         models: [
             // 1. GPT-5.6 系列 (旗舰推理模型)
             PricingModelEntry(
                 modelKey: "gpt-5.6-sol",
-                // The API changelog states that the request alias `gpt-5.6`
-                // routes to Sol. Local Codex rollout records can also use a
-                // generic family label, so QuotaLens keeps that generic label
-                // unpriced unless the rollout itself names a concrete SKU.
+                // API changelog 说明请求别名 `gpt-5.6` 路由到 Sol；本地 Codex rollout 也可能写入泛化族名，
+                // 因此 QuotaLens 仅在日志明确记录具体 SKU 时计价，泛化族名继续保持未计价。
                 aliases: ["gpt-5.6-sol", "codex-sol", "gpt-5-sol"],
                 rules: Self.gpt56Rules(
                     modelKey: "gpt-5.6-sol",
@@ -332,6 +348,7 @@ public enum BundledPricingCatalog {
                 aliases: ["gpt-5.5", "gpt-5.5-codex", "gpt-5.5-preview"],
                 rules: Self.publishedTierRules(
                     modelKey: "gpt-5.5",
+                    effectiveFromMs: gpt55ReleaseMs,
                     input: 5_000,
                     cached: 500,
                     output: 30_000,
@@ -347,6 +364,7 @@ public enum BundledPricingCatalog {
                 aliases: ["gpt-5.4", "gpt-5.4-codex"],
                 rules: Self.publishedTierRules(
                     modelKey: "gpt-5.4",
+                    effectiveFromMs: gpt54ReleaseMs,
                     input: 2_500,
                     cached: 250,
                     output: 15_000,
@@ -360,6 +378,7 @@ public enum BundledPricingCatalog {
                 aliases: ["gpt-5.4-mini"],
                 rules: Self.publishedTierRules(
                     modelKey: "gpt-5.4-mini",
+                    effectiveFromMs: gpt54MiniNanoReleaseMs,
                     input: 750,
                     cached: 75,
                     output: 4_500,
@@ -373,6 +392,7 @@ public enum BundledPricingCatalog {
                 aliases: ["gpt-5.4-nano"],
                 rules: Self.publishedTierRules(
                     modelKey: "gpt-5.4-nano",
+                    effectiveFromMs: gpt54MiniNanoReleaseMs,
                     input: 200,
                     cached: 20,
                     output: 1_250,
@@ -385,9 +405,10 @@ public enum BundledPricingCatalog {
             // 4. GPT-5.3 系列
             PricingModelEntry(
                 modelKey: "gpt-5.3-codex",
-                aliases: ["gpt-5.3-codex", "gpt-5.3"],
+                aliases: ["gpt-5.3-codex"],
                 rules: Self.publishedTierRules(
                     modelKey: "gpt-5.3-codex",
+                    effectiveFromMs: gpt53CodexReleaseMs,
                     input: 1_750,
                     cached: 175,
                     output: 14_000,
@@ -400,9 +421,24 @@ public enum BundledPricingCatalog {
             // 5. GPT-5.2 / GPT-5.1 历史模型
             PricingModelEntry(
                 modelKey: "gpt-5.2",
-                aliases: ["gpt-5.2", "gpt-5.2-codex"],
+                aliases: ["gpt-5.2"],
                 rules: Self.publishedTierRules(
                     modelKey: "gpt-5.2",
+                    effectiveFromMs: gpt52ReleaseMs,
+                    input: 1_750,
+                    cached: 175,
+                    output: 14_000,
+                    supportsLongContext: false,
+                    supportsFlex: true,
+                    fastMultiplierPpm: 2_000_000
+                )
+            ),
+            PricingModelEntry(
+                modelKey: "gpt-5.2-codex",
+                aliases: ["gpt-5.2-codex"],
+                rules: Self.publishedTierRules(
+                    modelKey: "gpt-5.2-codex",
+                    effectiveFromMs: gpt52CodexReleaseMs,
                     input: 1_750,
                     cached: 175,
                     output: 14_000,
@@ -413,9 +449,24 @@ public enum BundledPricingCatalog {
             ),
             PricingModelEntry(
                 modelKey: "gpt-5.1-codex",
-                aliases: ["gpt-5.1-codex", "gpt-5.1", "gpt-5.1-codex-max"],
+                aliases: ["gpt-5.1-codex", "gpt-5.1"],
                 rules: Self.publishedTierRules(
                     modelKey: "gpt-5.1-codex",
+                    effectiveFromMs: gpt51ReleaseMs,
+                    input: 1_250,
+                    cached: 125,
+                    output: 10_000,
+                    supportsLongContext: false,
+                    supportsFlex: false,
+                    fastMultiplierPpm: nil
+                )
+            ),
+            PricingModelEntry(
+                modelKey: "gpt-5.1-codex-max",
+                aliases: ["gpt-5.1-codex-max"],
+                rules: Self.publishedTierRules(
+                    modelKey: "gpt-5.1-codex-max",
+                    effectiveFromMs: gpt51CodexMaxReleaseMs,
                     input: 1_250,
                     cached: 125,
                     output: 10_000,
@@ -429,6 +480,7 @@ public enum BundledPricingCatalog {
                 aliases: ["gpt-5.1-codex-mini"],
                 rules: Self.publishedTierRules(
                     modelKey: "gpt-5.1-codex-mini",
+                    effectiveFromMs: gpt51ReleaseMs,
                     input: 250,
                     cached: 25,
                     output: 2_000,
@@ -438,13 +490,27 @@ public enum BundledPricingCatalog {
                 )
             ),
 
-            // 6. 标准 GPT-5 / GPT-5-Codex。Only explicit model IDs are
-            // aliases; generic "default" data must remain unknown and unpriced.
+            // 6. 标准 GPT-5 / GPT-5-Codex。只接受明确模型 ID，generic default 仍保持未知。
             PricingModelEntry(
                 modelKey: "gpt-5",
-                aliases: ["gpt-5", "gpt-5-codex"],
+                aliases: ["gpt-5"],
                 rules: Self.publishedTierRules(
                     modelKey: "gpt-5",
+                    effectiveFromMs: gpt5APIReleaseMs,
+                    input: 1_250,
+                    cached: 125,
+                    output: 10_000,
+                    supportsLongContext: false,
+                    supportsFlex: true,
+                    fastMultiplierPpm: 2_000_000
+                )
+            ),
+            PricingModelEntry(
+                modelKey: "gpt-5-codex",
+                aliases: ["gpt-5-codex"],
+                rules: Self.publishedTierRules(
+                    modelKey: "gpt-5-codex",
+                    effectiveFromMs: gpt5CodexReleaseMs,
                     input: 1_250,
                     cached: 125,
                     output: 10_000,

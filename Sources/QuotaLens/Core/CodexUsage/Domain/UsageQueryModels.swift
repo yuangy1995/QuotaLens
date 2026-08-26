@@ -21,7 +21,8 @@ public struct CodexSessionDTO: Identifiable, Hashable, Sendable {
     public let eventCount: Int
     public let tokens: TokenBreakdown
     public let estimatedCost: MoneyNanoUSD
-    public let pricingStatus: PricingStatus
+    public let pricingStatus: AggregatePricingStatus
+    public let unpricedReasonCounts: UnpricedReasonCounts
     public let bucket: SessionBucket
     public let hasSubagents: Bool
     public let subagentCount: Int
@@ -41,7 +42,8 @@ public struct CodexSessionDTO: Identifiable, Hashable, Sendable {
         eventCount: Int = 0,
         tokens: TokenBreakdown = .zero,
         estimatedCost: MoneyNanoUSD = .zero,
-        pricingStatus: PricingStatus = .unpricedUnknownModel,
+        pricingStatus: AggregatePricingStatus = .fullyUnpriced,
+        unpricedReasonCounts: UnpricedReasonCounts = .zero,
         bucket: SessionBucket = .active,
         hasSubagents: Bool = false,
         subagentCount: Int = 0
@@ -61,6 +63,7 @@ public struct CodexSessionDTO: Identifiable, Hashable, Sendable {
         self.tokens = tokens
         self.estimatedCost = estimatedCost
         self.pricingStatus = pricingStatus
+        self.unpricedReasonCounts = unpricedReasonCounts
         self.bucket = bucket
         self.hasSubagents = hasSubagents
         self.subagentCount = subagentCount
@@ -240,19 +243,22 @@ public struct ModelUsageSummaryDTO: Identifiable, Hashable, Sendable {
     public let estimatedCost: MoneyNanoUSD
     public let eventCount: Int
     public let unpricedCount: Int
+    public let unpricedReasonCounts: UnpricedReasonCounts
 
     public init(
         modelCanonical: String,
         tokens: TokenBreakdown,
         estimatedCost: MoneyNanoUSD,
         eventCount: Int,
-        unpricedCount: Int = 0
+        unpricedCount: Int = 0,
+        unpricedReasonCounts: UnpricedReasonCounts = .zero
     ) {
         self.modelCanonical = modelCanonical
         self.tokens = tokens
         self.estimatedCost = estimatedCost
         self.eventCount = eventCount
         self.unpricedCount = unpricedCount
+        self.unpricedReasonCounts = unpricedReasonCounts
     }
 }
 
@@ -269,6 +275,7 @@ public struct DayUsageSummaryDTO: Identifiable, Hashable, Sendable {
     public let modelSummaries: [ModelUsageSummaryDTO]
     public let unpricedEventCount: Int
     public let unpricedTokenCount: Int64
+    public let unpricedReasonCounts: UnpricedReasonCounts
 
     public init(
         dayKey: LocalDayKey,
@@ -279,7 +286,8 @@ public struct DayUsageSummaryDTO: Identifiable, Hashable, Sendable {
         sessionCount: Int = 0,
         modelSummaries: [ModelUsageSummaryDTO] = [],
         unpricedEventCount: Int = 0,
-        unpricedTokenCount: Int64 = 0
+        unpricedTokenCount: Int64 = 0,
+        unpricedReasonCounts: UnpricedReasonCounts = .zero
     ) {
         self.dayKey = dayKey
         self.date = date
@@ -290,6 +298,7 @@ public struct DayUsageSummaryDTO: Identifiable, Hashable, Sendable {
         self.modelSummaries = modelSummaries
         self.unpricedEventCount = unpricedEventCount
         self.unpricedTokenCount = unpricedTokenCount
+        self.unpricedReasonCounts = unpricedReasonCounts
     }
 }
 
@@ -360,6 +369,7 @@ public struct DashboardMetricsDTO: Sendable {
     public let eventPricingCoverage: Double
     public let tokenPricingCoverage: Double
     public let costForecastCoverage: Double
+    public let unpricedReasonCounts: UnpricedReasonCounts
 
     public init(
         totalTokens: TokenBreakdown = .zero,
@@ -375,7 +385,8 @@ public struct DashboardMetricsDTO: Sendable {
         pricingCoverage: PricingCoverage = .fullyPriced,
         eventPricingCoverage: Double = 1.0,
         tokenPricingCoverage: Double = 1.0,
-        costForecastCoverage: Double = 1.0
+        costForecastCoverage: Double = 1.0,
+        unpricedReasonCounts: UnpricedReasonCounts = .zero
     ) {
         self.totalTokens = totalTokens
         self.totalCost = totalCost
@@ -391,6 +402,7 @@ public struct DashboardMetricsDTO: Sendable {
         self.eventPricingCoverage = eventPricingCoverage
         self.tokenPricingCoverage = tokenPricingCoverage
         self.costForecastCoverage = costForecastCoverage
+        self.unpricedReasonCounts = unpricedReasonCounts
     }
 }
 
@@ -453,6 +465,8 @@ public struct UsageDiagnosticsDTO: Codable, Sendable {
     public let unknownModelEvents: Int
     public let genericGPT56Events: Int
     public let unpricedEvents: Int
+    public let unpricedTokens: Int64
+    public let unpricedReasonCounts: UnpricedReasonCounts
     public let fallbackTimestampEvents: Int
     public let totalEvents: Int
     public let activePricingCatalogVersion: String?
@@ -466,6 +480,15 @@ public struct UsageDiagnosticsDTO: Codable, Sendable {
     public let foreignKeyViolationCount: Int
     public let invariantViolationCount: Int
     public let pricingRepriceGeneration: Int64
+    public let pricingRepriceStatus: String
+    public let pricingRepriceLastRowID: Int64
+    public let pricingRepriceProcessedEvents: Int
+    public let pricingRepriceTotalEvents: Int
+    public let usageAggregationTimeZoneID: String?
+    public let usageAggregationGeneration: Int64
+    public let parserRebuildStatus: String
+    public let parserRebuildGeneration: Int64
+    public let skippedNonRolloutJSONLCount: Int
 
     public init(
         sourcesDiscovered: Int = 0,
@@ -474,6 +497,8 @@ public struct UsageDiagnosticsDTO: Codable, Sendable {
         unknownModelEvents: Int = 0,
         genericGPT56Events: Int = 0,
         unpricedEvents: Int = 0,
+        unpricedTokens: Int64 = 0,
+        unpricedReasonCounts: UnpricedReasonCounts = .zero,
         fallbackTimestampEvents: Int = 0,
         totalEvents: Int = 0,
         activePricingCatalogVersion: String? = nil,
@@ -486,7 +511,16 @@ public struct UsageDiagnosticsDTO: Codable, Sendable {
         integrityCheckPassed: Bool = true,
         foreignKeyViolationCount: Int = 0,
         invariantViolationCount: Int = 0,
-        pricingRepriceGeneration: Int64 = 0
+        pricingRepriceGeneration: Int64 = 0,
+        pricingRepriceStatus: String = "completed",
+        pricingRepriceLastRowID: Int64 = 0,
+        pricingRepriceProcessedEvents: Int = 0,
+        pricingRepriceTotalEvents: Int = 0,
+        usageAggregationTimeZoneID: String? = nil,
+        usageAggregationGeneration: Int64 = 0,
+        parserRebuildStatus: String = "completed",
+        parserRebuildGeneration: Int64 = 0,
+        skippedNonRolloutJSONLCount: Int = 0
     ) {
         self.sourcesDiscovered = sourcesDiscovered
         self.sourcesIndexed = sourcesIndexed
@@ -494,6 +528,8 @@ public struct UsageDiagnosticsDTO: Codable, Sendable {
         self.unknownModelEvents = unknownModelEvents
         self.genericGPT56Events = genericGPT56Events
         self.unpricedEvents = unpricedEvents
+        self.unpricedTokens = unpricedTokens
+        self.unpricedReasonCounts = unpricedReasonCounts
         self.fallbackTimestampEvents = fallbackTimestampEvents
         self.totalEvents = totalEvents
         self.activePricingCatalogVersion = activePricingCatalogVersion
@@ -507,6 +543,15 @@ public struct UsageDiagnosticsDTO: Codable, Sendable {
         self.foreignKeyViolationCount = foreignKeyViolationCount
         self.invariantViolationCount = invariantViolationCount
         self.pricingRepriceGeneration = pricingRepriceGeneration
+        self.pricingRepriceStatus = pricingRepriceStatus
+        self.pricingRepriceLastRowID = pricingRepriceLastRowID
+        self.pricingRepriceProcessedEvents = pricingRepriceProcessedEvents
+        self.pricingRepriceTotalEvents = pricingRepriceTotalEvents
+        self.usageAggregationTimeZoneID = usageAggregationTimeZoneID
+        self.usageAggregationGeneration = usageAggregationGeneration
+        self.parserRebuildStatus = parserRebuildStatus
+        self.parserRebuildGeneration = parserRebuildGeneration
+        self.skippedNonRolloutJSONLCount = skippedNonRolloutJSONLCount
     }
 }
 

@@ -132,6 +132,27 @@ final class ImporterRecoveryTests: XCTestCase {
         XCTAssertEqual(incremental.cost, rebuilt.cost)
     }
 
+    func testSkippedNonRolloutJSONLIsPersistedAsScanDiagnosticWithoutTombstone() async throws {
+        let root = try makeTemporaryDirectory(named: "QuotaLensScanDiagnostics")
+        let paths = CodexHistoryPaths(rootURL: root)
+        try FileManager.default.createDirectory(at: paths.sessionsURL, withIntermediateDirectories: true)
+        let skipped = paths.sessionsURL.appendingPathComponent("notes.jsonl")
+        try overwriteFile(skipped, with: "{\"type\":\"metadata\",\"message\":\"not a rollout\"}\n")
+        let database = try makeMigratedDatabase(in: root)
+        let importer = CodexUsageImportActor(database: database)
+
+        let summary = try await importer.importCodexHistory(paths: paths)
+
+        XCTAssertEqual(summary.sourcesScanned, 0)
+        XCTAssertEqual(try database.intScalar(sql: "SELECT COUNT(*) FROM codex_import_sources;"), 0)
+        XCTAssertEqual(try database.intScalar(
+            sql: "SELECT COUNT(*) FROM codex_scan_diagnostics WHERE diagnostic_code = 'non_rollout_jsonl_probe_miss';"
+        ), 1)
+        let diagnostics = try UsageAnalyticsRepository(database: database).fetchDiagnostics()
+        XCTAssertEqual(diagnostics.skippedNonRolloutJSONLCount, 1)
+        XCTAssertEqual(diagnostics.parserRebuildStatus, "completed")
+    }
+
     func testPartialEOFIsResumedWithoutReplayingCommittedEvent() async throws {
         let root = try makeTemporaryDirectory(named: "QuotaLensImporterPartial")
         let paths = CodexHistoryPaths(rootURL: root)
@@ -252,6 +273,20 @@ final class ImporterRecoveryTests: XCTestCase {
                 sql: "SELECT error_message FROM codex_import_runs ORDER BY started_at DESC LIMIT 1;"
             )).contains("sessions: enumerator failed")
         )
+        XCTAssertEqual(
+            try database.stringScalar(sql: "SELECT value FROM app_metadata WHERE key = 'codex_parser_rebuild_status';"),
+            "failed"
+        )
+
+        let sessionID = "77777777-7777-7777-7777-777777777777"
+        let file = paths.sessionsURL.appendingPathComponent("rollout-2026-08-20T12-00-00-\(sessionID).jsonl")
+        try overwriteFile(file, with: rolloutText(sessionId: sessionID, input: 4, output: 1))
+        _ = try await CodexUsageImportActor(database: database).importCodexHistory(paths: paths)
+        XCTAssertEqual(
+            try database.stringScalar(sql: "SELECT value FROM app_metadata WHERE key = 'codex_parser_rebuild_status';"),
+            "completed"
+        )
+        XCTAssertEqual(try database.intScalar(sql: "SELECT COUNT(*) FROM codex_sessions WHERE session_id = ?;", bindings: [sessionID]), 1)
     }
 
     func testSuccessfulRootTombstonesOnlyItsBucketWhenOtherRootFails() async throws {

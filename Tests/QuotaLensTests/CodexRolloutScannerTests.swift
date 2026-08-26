@@ -81,6 +81,42 @@ final class CodexRolloutScannerTests: XCTestCase {
         ])
     }
 
+    func testNonCanonicalJSONLProbeCoversDeepMetadataAndReportsMisses() throws {
+        let root = try makeTemporaryDirectory(named: "RolloutScannerDeepProbe")
+        let paths = CodexHistoryPaths(rootURL: root)
+        try FileManager.default.createDirectory(at: paths.sessionsURL, withIntermediateDirectories: true)
+
+        let validRollout = "{\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"last_token_usage\":{\"input_tokens\":1}}}}\n"
+        let afterTwentyOne = paths.sessionsURL.appendingPathComponent("after-line-21.jsonl")
+        try overwriteFile(
+            afterTwentyOne,
+            with: Array(repeating: "{\"type\":\"metadata\"}", count: 25).joined(separator: "\n") + "\n" + validRollout
+        )
+
+        let after64KB = paths.sessionsURL.appendingPathComponent("after-64kb.jsonl")
+        let largeMetadata = "{\"type\":\"metadata\",\"padding\":\"\(String(repeating: "x", count: 70 * 1024))\"}\n"
+        try overwriteFile(after64KB, with: largeMetadata + validRollout)
+
+        let damagedFirst = paths.sessionsURL.appendingPathComponent("damaged-first.jsonl")
+        try overwriteFile(damagedFirst, with: "{not-json\n" + validRollout)
+
+        let outsideWindow = paths.sessionsURL.appendingPathComponent("outside-window.jsonl")
+        try overwriteFile(
+            outsideWindow,
+            with: Array(repeating: "{\"type\":\"metadata\"}", count: 200).joined(separator: "\n") + "\n" + validRollout
+        )
+
+        let outcome = CodexRolloutScanner.scan(paths: paths, scanArchived: false)
+        XCTAssertEqual(outcome.active, .success)
+        XCTAssertEqual(Set(outcome.sources.map(\.fileURL.lastPathComponent)), [
+            "after-line-21.jsonl",
+            "after-64kb.jsonl",
+            "damaged-first.jsonl"
+        ])
+        XCTAssertEqual(outcome.diagnostics.map(\.fileURL.lastPathComponent), ["outside-window.jsonl"])
+        XCTAssertEqual(outcome.diagnostics.first?.code, "non_rollout_jsonl_probe_miss")
+    }
+
     func testPerFileProbeFailureMarksRootIncomplete() throws {
         let root = try makeTemporaryDirectory(named: "RolloutScannerFileFailure")
         let paths = CodexHistoryPaths(rootURL: root)

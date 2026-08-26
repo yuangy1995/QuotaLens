@@ -52,9 +52,10 @@ public final class UsageAnalyticsRepository: Sendable {
         cost: MoneyNanoUSD,
         eventCount: Int,
         sessions: Set<String>,
-        models: [String: (tokens: TokenBreakdown, cost: MoneyNanoUSD, count: Int)],
+        models: [String: (tokens: TokenBreakdown, cost: MoneyNanoUSD, count: Int, reasons: UnpricedReasonCounts)],
         unpriced: Int,
-        unpricedTokens: Int64
+        unpricedTokens: Int64,
+        reasons: UnpricedReasonCounts
     )
 
     /// One already-aggregated session/model/day slice. Normal queries read
@@ -69,6 +70,7 @@ public final class UsageAnalyticsRepository: Sendable {
         let eventCount: Int
         let unpricedCount: Int
         let unpricedTokens: Int64
+        let unpricedReasonCounts: UnpricedReasonCounts
     }
 
     public init(
@@ -188,7 +190,13 @@ public final class UsageAnalyticsRepository: Sendable {
             created_at, updated_at, last_event_at, event_count, total_tokens, input_tokens,
             cached_input_tokens, cache_write_input_tokens, output_tokens,
             reasoning_output_tokens, estimated_cost_usd_nano,
-            pricing_status, bucket, has_subagents, agent_type
+            pricing_status, bucket, has_subagents, agent_type,
+            unpriced_unknown_model_event_count, unpriced_unknown_model_token_count,
+            unpriced_unsupported_tier_event_count, unpriced_unsupported_tier_token_count,
+            unpriced_historical_rule_missing_event_count, unpriced_historical_rule_missing_token_count,
+            unpriced_unsupported_context_event_count, unpriced_unsupported_context_token_count,
+            unpriced_invalid_record_event_count, unpriced_invalid_record_token_count,
+            unpriced_overflow_event_count, unpriced_overflow_token_count
         FROM codex_sessions
         \(whereClause)
         \(orderClause)
@@ -218,7 +226,13 @@ public final class UsageAnalyticsRepository: Sendable {
             created_at, updated_at, last_event_at, event_count, total_tokens, input_tokens,
             cached_input_tokens, cache_write_input_tokens, output_tokens,
             reasoning_output_tokens, estimated_cost_usd_nano,
-            pricing_status, bucket, has_subagents, agent_type
+            pricing_status, bucket, has_subagents, agent_type,
+            unpriced_unknown_model_event_count, unpriced_unknown_model_token_count,
+            unpriced_unsupported_tier_event_count, unpriced_unsupported_tier_token_count,
+            unpriced_historical_rule_missing_event_count, unpriced_historical_rule_missing_token_count,
+            unpriced_unsupported_context_event_count, unpriced_unsupported_context_token_count,
+            unpriced_invalid_record_event_count, unpriced_invalid_record_token_count,
+            unpriced_overflow_event_count, unpriced_overflow_token_count
         FROM codex_sessions
         WHERE session_id = ?;
         """
@@ -246,7 +260,13 @@ public final class UsageAnalyticsRepository: Sendable {
             created_at, updated_at, last_event_at, event_count, total_tokens, input_tokens,
             cached_input_tokens, cache_write_input_tokens, output_tokens,
             reasoning_output_tokens, estimated_cost_usd_nano,
-            pricing_status, bucket, has_subagents, agent_type
+            pricing_status, bucket, has_subagents, agent_type,
+            unpriced_unknown_model_event_count, unpriced_unknown_model_token_count,
+            unpriced_unsupported_tier_event_count, unpriced_unsupported_tier_token_count,
+            unpriced_historical_rule_missing_event_count, unpriced_historical_rule_missing_token_count,
+            unpriced_unsupported_context_event_count, unpriced_unsupported_context_token_count,
+            unpriced_invalid_record_event_count, unpriced_invalid_record_token_count,
+            unpriced_overflow_event_count, unpriced_overflow_token_count
         FROM codex_sessions
         WHERE parent_session_id = ?
         ORDER BY created_at ASC;
@@ -265,7 +285,19 @@ public final class UsageAnalyticsRepository: Sendable {
             SUM(total_tokens),
             SUM(estimated_cost_usd_nano),
             SUM(event_count),
-            SUM(unpriced_event_count)
+            SUM(unpriced_event_count),
+            SUM(unpriced_unknown_model_event_count),
+            SUM(unpriced_unknown_model_token_count),
+            SUM(unpriced_unsupported_tier_event_count),
+            SUM(unpriced_unsupported_tier_token_count),
+            SUM(unpriced_historical_rule_missing_event_count),
+            SUM(unpriced_historical_rule_missing_token_count),
+            SUM(unpriced_unsupported_context_event_count),
+            SUM(unpriced_unsupported_context_token_count),
+            SUM(unpriced_invalid_record_event_count),
+            SUM(unpriced_invalid_record_token_count),
+            SUM(unpriced_overflow_event_count),
+            SUM(unpriced_overflow_token_count)
         FROM codex_session_summaries
         WHERE session_id = ?
         GROUP BY model_canonical
@@ -292,7 +324,8 @@ public final class UsageAnalyticsRepository: Sendable {
                 tokens: tokens,
                 estimatedCost: cost,
                 eventCount: eventCount,
-                unpricedCount: unpriced
+                unpricedCount: unpriced,
+                unpricedReasonCounts: Self.unpricedReasonCounts(from: stmt, start: 10)
             )
         }
 
@@ -541,7 +574,8 @@ public final class UsageAnalyticsRepository: Sendable {
                 sessions: [],
                 models: [:],
                 unpriced: 0,
-                unpricedTokens: 0
+                unpricedTokens: 0,
+                reasons: .zero
             )
 
             entry.tokens = entry.tokens + slice.tokens
@@ -550,11 +584,13 @@ public final class UsageAnalyticsRepository: Sendable {
             entry.sessions.insert(slice.sessionId)
             entry.unpriced += slice.unpricedCount
             entry.unpricedTokens += slice.unpricedTokens
+            entry.reasons = entry.reasons + slice.unpricedReasonCounts
 
-            var mEntry = entry.models[slice.model] ?? (tokens: .zero, cost: .zero, count: 0)
+            var mEntry = entry.models[slice.model] ?? (tokens: .zero, cost: .zero, count: 0, reasons: .zero)
             mEntry.tokens = mEntry.tokens + slice.tokens
             mEntry.cost = mEntry.cost + slice.cost
             mEntry.count += slice.eventCount
+            mEntry.reasons = mEntry.reasons + slice.unpricedReasonCounts
             entry.models[slice.model] = mEntry
 
             daysMap[slice.dayKey] = entry
@@ -571,14 +607,17 @@ public final class UsageAnalyticsRepository: Sendable {
                 sessions: Set<String>(),
                 models: [:],
                 unpriced: 0,
-                unpricedTokens: 0
+                unpricedTokens: 0,
+                reasons: .zero
             )
             let modelSummaries = val.models.map { modelKey, mVal in
                 ModelUsageSummaryDTO(
                     modelCanonical: modelKey,
                     tokens: mVal.tokens,
                     estimatedCost: mVal.cost,
-                    eventCount: mVal.count
+                    eventCount: mVal.count,
+                    unpricedCount: mVal.reasons.totalEvents,
+                    unpricedReasonCounts: mVal.reasons
                 )
             }.sorted { $0.tokens.canonicalTotalTokens > $1.tokens.canonicalTotalTokens }
 
@@ -592,7 +631,8 @@ public final class UsageAnalyticsRepository: Sendable {
                     sessionCount: val.sessions.count,
                     modelSummaries: modelSummaries,
                     unpricedEventCount: val.unpriced,
-                    unpricedTokenCount: val.unpricedTokens
+                    unpricedTokenCount: val.unpricedTokens,
+                    unpricedReasonCounts: val.reasons
                 )
             )
             guard let next = calendar.date(byAdding: .day, value: 1, to: cursorDate) else { break }
@@ -622,6 +662,7 @@ public final class UsageAnalyticsRepository: Sendable {
             let cost: MoneyNanoUSD
             let unpricedCount: Int
             let unpricedTokenCount: Int64
+            let unpricedReasonCounts: UnpricedReasonCounts
         }
 
         let aggregateSlices = try fetchUsageAggregateSlices(
@@ -634,31 +675,35 @@ public final class UsageAnalyticsRepository: Sendable {
             tokens: TokenBreakdown,
             cost: MoneyNanoUSD,
             unpricedCount: Int,
-            unpricedTokens: Int64
+            unpricedTokens: Int64,
+            reasons: UnpricedReasonCounts
         )] = [:]
         var modelAggregates: [String: (
             eventCount: Int,
             tokens: TokenBreakdown,
             cost: MoneyNanoUSD,
-            unpricedCount: Int
+            unpricedCount: Int,
+            reasons: UnpricedReasonCounts
         )] = [:]
 
         for aggregate in aggregateSlices {
             var session = sessionAggregates[aggregate.sessionId]
-                ?? (0, .zero, .zero, 0, 0)
+                ?? (0, .zero, .zero, 0, 0, .zero)
             session.eventCount += aggregate.eventCount
             session.tokens = session.tokens + aggregate.tokens
             session.cost = session.cost + aggregate.cost
             session.unpricedCount += aggregate.unpricedCount
             session.unpricedTokens += aggregate.unpricedTokens
+            session.reasons = session.reasons + aggregate.unpricedReasonCounts
             sessionAggregates[aggregate.sessionId] = session
 
             var model = modelAggregates[aggregate.model]
-                ?? (0, .zero, .zero, 0)
+                ?? (0, .zero, .zero, 0, .zero)
             model.eventCount += aggregate.eventCount
             model.tokens = model.tokens + aggregate.tokens
             model.cost = model.cost + aggregate.cost
             model.unpricedCount += aggregate.unpricedCount
+            model.reasons = model.reasons + aggregate.unpricedReasonCounts
             modelAggregates[aggregate.model] = model
         }
 
@@ -669,7 +714,8 @@ public final class UsageAnalyticsRepository: Sendable {
                 tokens: aggregate.tokens,
                 cost: aggregate.cost,
                 unpricedCount: aggregate.unpricedCount,
-                unpricedTokenCount: aggregate.unpricedTokens
+                unpricedTokenCount: aggregate.unpricedTokens,
+                unpricedReasonCounts: aggregate.reasons
             )
         }.sorted {
             if $0.tokens.canonicalTotalTokens != $1.tokens.canonicalTotalTokens {
@@ -684,7 +730,8 @@ public final class UsageAnalyticsRepository: Sendable {
                 tokens: aggregate.tokens,
                 estimatedCost: aggregate.cost,
                 eventCount: aggregate.eventCount,
-                unpricedCount: aggregate.unpricedCount
+                unpricedCount: aggregate.unpricedCount,
+                unpricedReasonCounts: aggregate.reasons
             )
         }.sorted { $0.tokens.canonicalTotalTokens > $1.tokens.canonicalTotalTokens }
 
@@ -702,6 +749,7 @@ public final class UsageAnalyticsRepository: Sendable {
         var totalEvents = 0
         var totalUnpriced = 0
         var totalUnpricedTokens: Int64 = 0
+        var totalUnpricedReasons = UnpricedReasonCounts.zero
 
         let sessionsById = try fetchSessionsById(ids: sessionRows.map(\.sessionId))
 
@@ -711,6 +759,7 @@ public final class UsageAnalyticsRepository: Sendable {
             totalEvents += row.eventCount
             totalUnpriced += row.unpricedCount
             totalUnpricedTokens += row.unpricedTokenCount
+            totalUnpricedReasons = totalUnpricedReasons + row.unpricedReasonCounts
 
             guard let session = sessionsById[row.sessionId] else { continue }
             slices.append(
@@ -734,7 +783,8 @@ public final class UsageAnalyticsRepository: Sendable {
                 sessionCount: sessionRows.count,
                 modelSummaries: modelSummaries,
                 unpricedEventCount: totalUnpriced,
-                unpricedTokenCount: totalUnpricedTokens
+                unpricedTokenCount: totalUnpricedTokens,
+                unpricedReasonCounts: totalUnpricedReasons
             ),
             sessions: slices,
             totalEventCount: eventPage.totalEventCount,
@@ -774,9 +824,10 @@ public final class UsageAnalyticsRepository: Sendable {
         var totalTokens = TokenBreakdown.zero
         var totalCost = MoneyNanoUSD.zero
         var totalEvents = 0
-        var modelsAgg: [String: (tokens: TokenBreakdown, cost: MoneyNanoUSD, count: Int, unpriced: Int)] = [:]
+        var modelsAgg: [String: (tokens: TokenBreakdown, cost: MoneyNanoUSD, count: Int, unpriced: Int, reasons: UnpricedReasonCounts)] = [:]
         var unpricedTotal = 0
         var unpricedTokenTotal: Int64 = 0
+        var unpricedReasons = UnpricedReasonCounts.zero
         var sessions = Set<String>()
         var daysMap: [LocalDayKey: DayAggregate] = [:]
 
@@ -787,12 +838,14 @@ public final class UsageAnalyticsRepository: Sendable {
             sessions.insert(slice.sessionId)
             unpricedTotal += slice.unpricedCount
             unpricedTokenTotal += slice.unpricedTokens
+            unpricedReasons = unpricedReasons + slice.unpricedReasonCounts
 
-            var modelEntry = modelsAgg[slice.model] ?? (tokens: .zero, cost: .zero, count: 0, unpriced: 0)
+            var modelEntry = modelsAgg[slice.model] ?? (tokens: .zero, cost: .zero, count: 0, unpriced: 0, reasons: .zero)
             modelEntry.tokens = modelEntry.tokens + slice.tokens
             modelEntry.cost = modelEntry.cost + slice.cost
             modelEntry.count += slice.eventCount
             modelEntry.unpriced += slice.unpricedCount
+            modelEntry.reasons = modelEntry.reasons + slice.unpricedReasonCounts
             modelsAgg[slice.model] = modelEntry
 
             var dayEntry = daysMap[slice.dayKey] ?? (
@@ -802,7 +855,8 @@ public final class UsageAnalyticsRepository: Sendable {
                 sessions: [],
                 models: [:],
                 unpriced: 0,
-                unpricedTokens: 0
+                unpricedTokens: 0,
+                reasons: .zero
             )
             dayEntry.tokens = dayEntry.tokens + slice.tokens
             dayEntry.cost = dayEntry.cost + slice.cost
@@ -810,10 +864,12 @@ public final class UsageAnalyticsRepository: Sendable {
             dayEntry.sessions.insert(slice.sessionId)
             dayEntry.unpriced += slice.unpricedCount
             dayEntry.unpricedTokens += slice.unpricedTokens
-            var dayModelEntry = dayEntry.models[slice.model] ?? (tokens: .zero, cost: .zero, count: 0)
+            dayEntry.reasons = dayEntry.reasons + slice.unpricedReasonCounts
+            var dayModelEntry = dayEntry.models[slice.model] ?? (tokens: .zero, cost: .zero, count: 0, reasons: .zero)
             dayModelEntry.tokens = dayModelEntry.tokens + slice.tokens
             dayModelEntry.cost = dayModelEntry.cost + slice.cost
             dayModelEntry.count += slice.eventCount
+            dayModelEntry.reasons = dayModelEntry.reasons + slice.unpricedReasonCounts
             dayEntry.models[slice.model] = dayModelEntry
             daysMap[slice.dayKey] = dayEntry
         }
@@ -824,7 +880,8 @@ public final class UsageAnalyticsRepository: Sendable {
                 tokens: val.tokens,
                 estimatedCost: val.cost,
                 eventCount: val.count,
-                unpricedCount: val.unpriced
+                unpricedCount: val.unpriced,
+                unpricedReasonCounts: val.reasons
             )
         }.sorted { $0.tokens.canonicalTotalTokens > $1.tokens.canonicalTotalTokens }
 
@@ -863,7 +920,8 @@ public final class UsageAnalyticsRepository: Sendable {
             pricingCoverage: pricingCoverage,
             eventPricingCoverage: eventPricingCoverage,
             tokenPricingCoverage: tokenPricingCoverage,
-            costForecastCoverage: tokenPricingCoverage
+            costForecastCoverage: tokenPricingCoverage,
+            unpricedReasonCounts: unpricedReasons
         )
     }
 
@@ -992,6 +1050,10 @@ public final class UsageAnalyticsRepository: Sendable {
         let unknownModelEvents = try database.intScalar(sql: "SELECT COUNT(*) FROM codex_usage_events WHERE model_canonical = 'unknown' AND is_child_replay = 0;")
         let genericGPT56Events = try database.intScalar(sql: "SELECT COUNT(*) FROM codex_usage_events WHERE model_canonical = 'gpt-5.6' AND is_child_replay = 0;")
         let unpricedEvents = try database.intScalar(sql: "SELECT COUNT(*) FROM codex_usage_events WHERE pricing_status != 'priced' AND is_child_replay = 0;")
+        let unpricedTokens = try database.int64Scalar(
+            sql: "SELECT COALESCE(SUM(total_tokens), 0) FROM codex_usage_events WHERE pricing_status != 'priced' AND is_child_replay = 0;"
+        ) ?? 0
+        let eventReasonCounts = try fetchEventUnpricedReasonCounts()
         let fallbackTimestampEvents = try database.intScalar(
             sql: "SELECT COUNT(*) FROM codex_usage_events WHERE timestamp_quality != 'event_timestamp' AND is_child_replay = 0;"
         )
@@ -1044,6 +1106,43 @@ public final class UsageAnalyticsRepository: Sendable {
            OR unpriced_token_count < 0
            OR unpriced_token_count > total_tokens;
         """)
+        let reasonCoverageViolations = try database.intScalar(sql: """
+        SELECT COUNT(*) FROM codex_session_summaries
+        WHERE unpriced_event_count != (
+                unpriced_unknown_model_event_count
+                + unpriced_unsupported_tier_event_count
+                + unpriced_historical_rule_missing_event_count
+                + unpriced_unsupported_context_event_count
+                + unpriced_invalid_record_event_count
+                + unpriced_overflow_event_count
+            )
+           OR unpriced_token_count != (
+                unpriced_unknown_model_token_count
+                + unpriced_unsupported_tier_token_count
+                + unpriced_historical_rule_missing_token_count
+                + unpriced_unsupported_context_token_count
+                + unpriced_invalid_record_token_count
+                + unpriced_overflow_token_count
+            );
+        """) + database.intScalar(sql: """
+        SELECT COUNT(*) FROM codex_daily_usage_summaries
+        WHERE unpriced_event_count != (
+                unpriced_unknown_model_event_count
+                + unpriced_unsupported_tier_event_count
+                + unpriced_historical_rule_missing_event_count
+                + unpriced_unsupported_context_event_count
+                + unpriced_invalid_record_event_count
+                + unpriced_overflow_event_count
+            )
+           OR unpriced_token_count != (
+                unpriced_unknown_model_token_count
+                + unpriced_unsupported_tier_token_count
+                + unpriced_historical_rule_missing_token_count
+                + unpriced_unsupported_context_token_count
+                + unpriced_invalid_record_token_count
+                + unpriced_overflow_token_count
+            );
+        """)
         let parentCycleViolations = try database.intScalar(sql: """
         WITH RECURSIVE chain(start_id, current_id, path, is_cycle, hops) AS (
             SELECT session_id, parent_session_id, '|' || session_id || '|', 0, 0
@@ -1063,6 +1162,7 @@ public final class UsageAnalyticsRepository: Sendable {
             + dailySummaryViolations
             + invalidValueViolations
             + summaryCoverageViolations
+            + reasonCoverageViolations
             + parentCycleViolations
         let activeCatalog = try database.stringScalar(
             sql: "SELECT catalog_version FROM codex_pricing_catalogs WHERE is_active = 1 ORDER BY published_at DESC LIMIT 1;"
@@ -1082,6 +1182,33 @@ public final class UsageAnalyticsRepository: Sendable {
         let repriceGeneration = try database.int64Scalar(
             sql: "SELECT value FROM app_metadata WHERE key = 'pricing_reprice_generation';"
         ) ?? 0
+        let repriceStatus = try database.stringScalar(
+            sql: "SELECT value FROM app_metadata WHERE key = 'pricing_reprice_status';"
+        ) ?? "completed"
+        let repriceLastRowID = try database.int64Scalar(
+            sql: "SELECT value FROM app_metadata WHERE key = 'pricing_reprice_last_rowid';"
+        ) ?? 0
+        let repriceProcessed = try database.intScalar(
+            sql: "SELECT value FROM app_metadata WHERE key = 'pricing_reprice_processed_events';"
+        )
+        let repriceTotal = try database.intScalar(
+            sql: "SELECT value FROM app_metadata WHERE key = 'pricing_reprice_total_events';"
+        )
+        let aggregationTimeZoneID = try database.stringScalar(
+            sql: "SELECT value FROM app_metadata WHERE key = 'usage_aggregation_timezone_id';"
+        )
+        let aggregationGeneration = try database.int64Scalar(
+            sql: "SELECT value FROM app_metadata WHERE key = 'usage_aggregation_timezone_generation';"
+        ) ?? 0
+        let parserRebuildStatus = try database.stringScalar(
+            sql: "SELECT value FROM app_metadata WHERE key = 'codex_parser_rebuild_status';"
+        ) ?? "completed"
+        let parserRebuildGeneration = try database.int64Scalar(
+            sql: "SELECT value FROM app_metadata WHERE key = 'codex_parser_rebuild_generation';"
+        ) ?? 0
+        let skippedNonRolloutJSONLCount = try database.intScalar(
+            sql: "SELECT COUNT(*) FROM codex_scan_diagnostics WHERE diagnostic_code = 'non_rollout_jsonl_probe_miss';"
+        )
 
         return UsageDiagnosticsDTO(
             sourcesDiscovered: sourcesDiscovered,
@@ -1090,6 +1217,8 @@ public final class UsageAnalyticsRepository: Sendable {
             unknownModelEvents: unknownModelEvents,
             genericGPT56Events: genericGPT56Events,
             unpricedEvents: unpricedEvents,
+            unpricedTokens: unpricedTokens,
+            unpricedReasonCounts: eventReasonCounts,
             fallbackTimestampEvents: fallbackTimestampEvents,
             totalEvents: totalEvents,
             activePricingCatalogVersion: activeCatalog,
@@ -1102,8 +1231,60 @@ public final class UsageAnalyticsRepository: Sendable {
             integrityCheckPassed: integrityCheckPassed,
             foreignKeyViolationCount: foreignKeyViolationCount,
             invariantViolationCount: invariantViolationCount,
-            pricingRepriceGeneration: repriceGeneration
+            pricingRepriceGeneration: repriceGeneration,
+            pricingRepriceStatus: repriceStatus,
+            pricingRepriceLastRowID: repriceLastRowID,
+            pricingRepriceProcessedEvents: repriceProcessed,
+            pricingRepriceTotalEvents: repriceTotal,
+            usageAggregationTimeZoneID: aggregationTimeZoneID,
+            usageAggregationGeneration: aggregationGeneration,
+            parserRebuildStatus: parserRebuildStatus,
+            parserRebuildGeneration: parserRebuildGeneration,
+            skippedNonRolloutJSONLCount: skippedNonRolloutJSONLCount
         )
+    }
+
+    private func fetchEventUnpricedReasonCounts() throws -> UnpricedReasonCounts {
+        let rows = try database.executeQuery(
+            sql: """
+            SELECT pricing_status, COUNT(*), COALESCE(SUM(total_tokens), 0)
+            FROM codex_usage_events
+            WHERE pricing_status != 'priced' AND is_child_replay = 0
+            GROUP BY pricing_status;
+            """
+        ) { stmt -> (PricingStatus, Int, Int64) in
+            (
+                PricingStatus(rawValue: String(cString: sqlite3_column_text(stmt, 0))) ?? .unpricedUnknownModel,
+                Int(sqlite3_column_int(stmt, 1)),
+                sqlite3_column_int64(stmt, 2)
+            )
+        }
+        var counts = UnpricedReasonCounts.zero
+        for row in rows {
+            switch row.0 {
+            case .priced:
+                continue
+            case .unpricedUnknownModel:
+                counts.unknownModelEvents += row.1
+                counts.unknownModelTokens += row.2
+            case .unpricedHistoricalRuleMissing:
+                counts.historicalRuleMissingEvents += row.1
+                counts.historicalRuleMissingTokens += row.2
+            case .unpricedUnsupportedServiceMode:
+                counts.unsupportedTierEvents += row.1
+                counts.unsupportedTierTokens += row.2
+            case .unpricedUnsupportedContextLength:
+                counts.unsupportedContextEvents += row.1
+                counts.unsupportedContextTokens += row.2
+            case .unpricedInvalidTokenRecord:
+                counts.invalidRecordEvents += row.1
+                counts.invalidRecordTokens += row.2
+            case .unpricedCalculationOverflow:
+                counts.overflowEvents += row.1
+                counts.overflowTokens += row.2
+            }
+        }
+        return counts
     }
 
     private func fetchEventPage(
@@ -1182,7 +1363,13 @@ public final class UsageAnalyticsRepository: Sendable {
                     created_at, updated_at, last_event_at, event_count, total_tokens, input_tokens,
                     cached_input_tokens, cache_write_input_tokens, output_tokens,
                     reasoning_output_tokens, estimated_cost_usd_nano,
-                    pricing_status, bucket, has_subagents, agent_type
+                    pricing_status, bucket, has_subagents, agent_type,
+                    unpriced_unknown_model_event_count, unpriced_unknown_model_token_count,
+                    unpriced_unsupported_tier_event_count, unpriced_unsupported_tier_token_count,
+                    unpriced_historical_rule_missing_event_count, unpriced_historical_rule_missing_token_count,
+                    unpriced_unsupported_context_event_count, unpriced_unsupported_context_token_count,
+                    unpriced_invalid_record_event_count, unpriced_invalid_record_token_count,
+                    unpriced_overflow_event_count, unpriced_overflow_token_count
                 FROM codex_sessions
                 WHERE session_id IN (\(placeholders));
                 """,
@@ -1252,6 +1439,23 @@ public final class UsageAnalyticsRepository: Sendable {
             .replacingOccurrences(of: "_", with: "\\_")
     }
 
+    private static func unpricedReasonCounts(from stmt: OpaquePointer, start: Int32) -> UnpricedReasonCounts {
+        UnpricedReasonCounts(
+            unknownModelEvents: Int(sqlite3_column_int(stmt, start)),
+            unknownModelTokens: sqlite3_column_int64(stmt, start + 1),
+            unsupportedTierEvents: Int(sqlite3_column_int(stmt, start + 2)),
+            unsupportedTierTokens: sqlite3_column_int64(stmt, start + 3),
+            historicalRuleMissingEvents: Int(sqlite3_column_int(stmt, start + 4)),
+            historicalRuleMissingTokens: sqlite3_column_int64(stmt, start + 5),
+            unsupportedContextEvents: Int(sqlite3_column_int(stmt, start + 6)),
+            unsupportedContextTokens: sqlite3_column_int64(stmt, start + 7),
+            invalidRecordEvents: Int(sqlite3_column_int(stmt, start + 8)),
+            invalidRecordTokens: sqlite3_column_int64(stmt, start + 9),
+            overflowEvents: Int(sqlite3_column_int(stmt, start + 10)),
+            overflowTokens: sqlite3_column_int64(stmt, start + 11)
+        )
+    }
+
     /// Reads full calendar days from the compact aggregate table and only
     /// touches raw ledger events for the two partial boundary days. A fallback
     /// keeps manually-created and legacy databases working when summaries have
@@ -1317,7 +1521,13 @@ public final class UsageAnalyticsRepository: Sendable {
                 session_id, day_start_ms, model_canonical, event_count, total_tokens,
                 uncached_input_tokens, cached_input_tokens, cache_write_input_tokens, output_tokens,
                 reasoning_output_tokens, estimated_cost_usd_nano, unpriced_event_count,
-                unpriced_token_count
+                unpriced_token_count,
+                unpriced_unknown_model_event_count, unpriced_unknown_model_token_count,
+                unpriced_unsupported_tier_event_count, unpriced_unsupported_tier_token_count,
+                unpriced_historical_rule_missing_event_count, unpriced_historical_rule_missing_token_count,
+                unpriced_unsupported_context_event_count, unpriced_unsupported_context_token_count,
+                unpriced_invalid_record_event_count, unpriced_invalid_record_token_count,
+                unpriced_overflow_event_count, unpriced_overflow_token_count
             FROM codex_daily_usage_summaries
             WHERE day_start_ms >= ? AND day_start_ms < ?
             ORDER BY day_start_ms ASC, session_id ASC, model_canonical ASC;
@@ -1347,7 +1557,8 @@ public final class UsageAnalyticsRepository: Sendable {
                 sessionId: String(cString: sqlite3_column_text(statement, 0)),
                 eventCount: Int(sqlite3_column_int(statement, 3)),
                 unpricedCount: unpriced,
-                unpricedTokens: sqlite3_column_int64(statement, 12)
+                unpricedTokens: sqlite3_column_int64(statement, 12),
+                unpricedReasonCounts: Self.unpricedReasonCounts(from: statement, start: 13)
             )
         }
 
@@ -1395,6 +1606,8 @@ public final class UsageAnalyticsRepository: Sendable {
             let pricingStatus = PricingStatus(
                 rawValue: String(cString: sqlite3_column_text(statement, 3))
             ) ?? .unpricedUnknownModel
+            var reasons = UnpricedReasonCounts.zero
+            reasons.add(status: pricingStatus, tokenCount: total)
             return UsageAggregateSlice(
                 dayKey: LocalDayKey(
                     date: Date(timeIntervalSince1970: Double(timestampMs) / 1_000.0),
@@ -1413,7 +1626,8 @@ public final class UsageAnalyticsRepository: Sendable {
                 sessionId: String(cString: sqlite3_column_text(statement, 2)),
                 eventCount: 1,
                 unpricedCount: pricingStatus.isPriced ? 0 : 1,
-                unpricedTokens: pricingStatus.isPriced ? 0 : total
+                unpricedTokens: pricingStatus.isPriced ? 0 : total,
+                unpricedReasonCounts: reasons
             )
         }
     }
@@ -1435,14 +1649,17 @@ public final class UsageAnalyticsRepository: Sendable {
                 sessions: Set<String>(),
                 models: [:],
                 unpriced: 0,
-                unpricedTokens: 0
+                unpricedTokens: 0,
+                reasons: .zero
             )
             let modelSummaries = val.models.map { modelKey, mVal in
                 ModelUsageSummaryDTO(
                     modelCanonical: modelKey,
                     tokens: mVal.tokens,
                     estimatedCost: mVal.cost,
-                    eventCount: mVal.count
+                    eventCount: mVal.count,
+                    unpricedCount: mVal.reasons.totalEvents,
+                    unpricedReasonCounts: mVal.reasons
                 )
             }.sorted { $0.tokens.canonicalTotalTokens > $1.tokens.canonicalTotalTokens }
 
@@ -1456,7 +1673,8 @@ public final class UsageAnalyticsRepository: Sendable {
                     sessionCount: val.sessions.count,
                     modelSummaries: modelSummaries,
                     unpricedEventCount: val.unpriced,
-                    unpricedTokenCount: val.unpricedTokens
+                    unpricedTokenCount: val.unpricedTokens,
+                    unpricedReasonCounts: val.reasons
                 )
             )
             guard let next = calendar.date(byAdding: .day, value: 1, to: cursor) else { break }
@@ -1495,6 +1713,9 @@ public final class UsageAnalyticsRepository: Sendable {
         let hasSubagents = sqlite3_column_int(stmt, 20) != 0
         let agentType = sqlite3_column_type(stmt, 21) != SQLITE_NULL && sqlite3_column_text(stmt, 21) != nil
             ? String(cString: sqlite3_column_text(stmt, 21)!) : nil
+        let reasonCounts = sqlite3_column_count(stmt) >= 34
+            ? Self.unpricedReasonCounts(from: stmt, start: 22)
+            : .zero
 
         return CodexSessionDTO(
             sessionId: sid,
@@ -1518,7 +1739,8 @@ public final class UsageAnalyticsRepository: Sendable {
                 sourceTotalTokens: totalTokens
             ),
             estimatedCost: MoneyNanoUSD(costNano),
-            pricingStatus: PricingStatus(rawValue: pricingStr) ?? .unpricedUnknownModel,
+            pricingStatus: AggregatePricingStatus(storedValue: pricingStr),
+            unpricedReasonCounts: reasonCounts,
             bucket: SessionBucket(rawValue: bucketStr) ?? .active,
             hasSubagents: hasSubagents,
             subagentCount: 0

@@ -31,6 +31,28 @@ public struct RolloutDiscoveredSource: Hashable, Sendable {
     }
 }
 
+public struct RolloutScanDiagnostic: Hashable, Sendable {
+    public let fileURL: URL
+    public let relativePath: String
+    public let bucket: SessionBucket
+    public let code: String
+    public let message: String
+
+    public init(
+        fileURL: URL,
+        relativePath: String,
+        bucket: SessionBucket,
+        code: String,
+        message: String
+    ) {
+        self.fileURL = fileURL
+        self.relativePath = relativePath
+        self.bucket = bucket
+        self.code = code
+        self.message = message
+    }
+}
+
 public enum RootScanStatus: Hashable, Sendable {
     case success
     case notFound
@@ -48,15 +70,18 @@ public struct ScanOutcome: Sendable {
     public let active: RootScanStatus
     public let archived: RootScanStatus
     public let sources: [RolloutDiscoveredSource]
+    public let diagnostics: [RolloutScanDiagnostic]
 
     public init(
         active: RootScanStatus,
         archived: RootScanStatus,
-        sources: [RolloutDiscoveredSource]
+        sources: [RolloutDiscoveredSource],
+        diagnostics: [RolloutScanDiagnostic] = []
     ) {
         self.active = active
         self.archived = archived
         self.sources = sources
+        self.diagnostics = diagnostics
     }
 
     public func status(for bucket: SessionBucket) -> RootScanStatus {
@@ -96,9 +121,7 @@ public enum CodexRolloutScanner {
         )
     }
 
-    /// Internal injection point used by deterministic fault tests. A probe
-    /// error makes the containing root scan incomplete, which prevents stale
-    /// source tombstoning for that root.
+    /// 确定性故障测试使用的内部注入点；单文件探测错误会让对应根目录扫描不完整，从而阻止该根目录 tombstone 旧源。
     static func scan(
         paths: CodexHistoryPaths,
         scanArchived: Bool = true,
@@ -106,6 +129,7 @@ public enum CodexRolloutScanner {
         fileProbe: @escaping FileProbe
     ) -> ScanOutcome {
         var results: [RolloutDiscoveredSource] = []
+        var diagnostics: [RolloutScanDiagnostic] = []
         let fileManager = FileManager.default
 
         let active = scanRoot(
@@ -117,8 +141,9 @@ public enum CodexRolloutScanner {
             fileProbe: fileProbe
         )
         results.append(contentsOf: active.sources)
+        diagnostics.append(contentsOf: active.diagnostics)
 
-        let archived: (status: RootScanStatus, sources: [RolloutDiscoveredSource])
+        let archived: (status: RootScanStatus, sources: [RolloutDiscoveredSource], diagnostics: [RolloutScanDiagnostic])
         if scanArchived {
             archived = scanRoot(
                 paths.archivedSessionsURL,
@@ -129,8 +154,9 @@ public enum CodexRolloutScanner {
                 fileProbe: fileProbe
             )
             results.append(contentsOf: archived.sources)
+            diagnostics.append(contentsOf: archived.diagnostics)
         } else {
-            archived = (.disabled, [])
+            archived = (.disabled, [], [])
         }
 
         // 稳定排序：按 mtime 倒序，同时间按相对路径排序
@@ -140,7 +166,17 @@ public enum CodexRolloutScanner {
             }
             return $0.relativePath < $1.relativePath
         }
-        return ScanOutcome(active: active.status, archived: archived.status, sources: sorted)
+        return ScanOutcome(
+            active: active.status,
+            archived: archived.status,
+            sources: sorted,
+            diagnostics: diagnostics.sorted { lhs, rhs in
+                if lhs.bucket != rhs.bucket {
+                    return lhs.bucket.rawValue < rhs.bucket.rawValue
+                }
+                return lhs.relativePath < rhs.relativePath
+            }
+        )
     }
 
     public static func scanSources(paths: CodexHistoryPaths, scanArchived: Bool = true) -> [RolloutDiscoveredSource] {
@@ -154,16 +190,16 @@ public enum CodexRolloutScanner {
         fileManager: FileManager,
         enumeratorFactory: EnumeratorFactory?,
         fileProbe: @escaping FileProbe
-    ) -> (status: RootScanStatus, sources: [RolloutDiscoveredSource]) {
+    ) -> (status: RootScanStatus, sources: [RolloutDiscoveredSource], diagnostics: [RolloutScanDiagnostic]) {
         var isDirectory: ObjCBool = false
         guard fileManager.fileExists(atPath: directoryURL.path, isDirectory: &isDirectory) else {
-            return (.notFound, [])
+            return (.notFound, [], [])
         }
         guard isDirectory.boolValue else {
-            return (.failed("Not a directory"), [])
+            return (.failed("Not a directory"), [], [])
         }
         guard fileManager.isReadableFile(atPath: directoryURL.path) else {
-            return (.inaccessible, [])
+            return (.inaccessible, [], [])
         }
 
         var traversalError: Error?
@@ -187,7 +223,7 @@ public enum CodexRolloutScanner {
             options,
             errorHandler
         ) else {
-            return (.failed("Enumerator unavailable"), [])
+            return (.failed("Enumerator unavailable"), [], [])
         }
 
         let directoryScan = scanDirectory(
@@ -198,12 +234,12 @@ public enum CodexRolloutScanner {
             fileProbe: fileProbe
         )
         if let traversalError {
-            return (.failed(traversalError.localizedDescription), directoryScan.sources)
+            return (.failed(traversalError.localizedDescription), directoryScan.sources, directoryScan.diagnostics)
         }
         if let fileFailure = directoryScan.failureDescription {
-            return (.failed(fileFailure), directoryScan.sources)
+            return (.failed(fileFailure), directoryScan.sources, directoryScan.diagnostics)
         }
-        return (.success, directoryScan.sources)
+        return (.success, directoryScan.sources, directoryScan.diagnostics)
     }
 
     private static func scanDirectory(
@@ -212,17 +248,33 @@ public enum CodexRolloutScanner {
         baseRootURL: URL,
         bucket: SessionBucket,
         fileProbe: @escaping FileProbe
-    ) -> (sources: [RolloutDiscoveredSource], failureDescription: String?) {
+    ) -> (sources: [RolloutDiscoveredSource], diagnostics: [RolloutScanDiagnostic], failureDescription: String?) {
         var list: [RolloutDiscoveredSource] = []
+        var diagnostics: [RolloutScanDiagnostic] = []
         var failureDescription: String?
         let baseRootPath = baseRootURL.path
 
         for case let url as URL in enumerator {
             guard url.pathExtension == "jsonl" else { continue }
             let fileName = url.lastPathComponent
+            let relPath = url.path.hasPrefix(baseRootPath)
+                ? String(url.path.dropFirst(baseRootPath.count)).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+                : url.lastPathComponent
+            let hasCanonicalName = isCanonicalRolloutFileName(fileName)
             let metadata: RolloutFileMetadata
             do {
-                guard let probed = try fileProbe(url, isCanonicalRolloutFileName(fileName)) else {
+                guard let probed = try fileProbe(url, hasCanonicalName) else {
+                    if !hasCanonicalName {
+                        diagnostics.append(
+                            RolloutScanDiagnostic(
+                                fileURL: url,
+                                relativePath: relPath,
+                                bucket: bucket,
+                                code: "non_rollout_jsonl_probe_miss",
+                                message: "非标准 JSONL 在 1 MiB / 200 个非空行探测窗口内未发现 Codex rollout 结构，已跳过。"
+                            )
+                        )
+                    }
                     continue
                 }
                 metadata = probed
@@ -232,10 +284,6 @@ public enum CodexRolloutScanner {
                 }
                 continue
             }
-
-            let relPath = url.path.hasPrefix(baseRootPath)
-                ? String(url.path.dropFirst(baseRootPath.count)).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-                : url.lastPathComponent
 
             let sessionId = extractSessionId(from: fileName, relativePath: relPath)
 
@@ -252,7 +300,7 @@ public enum CodexRolloutScanner {
             )
         }
 
-        return (list, failureDescription)
+        return (list, diagnostics, failureDescription)
     }
 
     private static func isCanonicalRolloutFileName(_ fileName: String) -> Bool {
@@ -300,11 +348,15 @@ public enum CodexRolloutScanner {
     private static func containsRolloutStructure(fileURL: URL) throws -> Bool {
         let handle = try FileHandle(forReadingFrom: fileURL)
         defer { try? handle.close() }
-        let data = try handle.read(upToCount: 64 * 1024) ?? Data()
+        let data = try handle.read(upToCount: 1024 * 1024) ?? Data()
         guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return false }
-        for rawLine in text.split(separator: "\n", omittingEmptySubsequences: true).prefix(20) {
+        var nonEmptyLines = 0
+        for rawLine in text.split(separator: "\n", omittingEmptySubsequences: true) {
             let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !line.isEmpty, let lineData = line.data(using: .utf8),
+            guard !line.isEmpty else { continue }
+            nonEmptyLines += 1
+            guard nonEmptyLines <= 200 else { break }
+            guard let lineData = line.data(using: .utf8),
                   let json = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any] else {
                 continue
             }
@@ -332,9 +384,8 @@ public enum CodexRolloutScanner {
             ? String(fileName.dropLast(".jsonl".count))
             : fileName
 
-        // Current Codex rollout names are usually
-        // rollout-<timestamp>-<session-uuid>.jsonl. The metadata stores only
-        // the UUID, so prefer the last UUID-looking segment over the full stem.
+        // 当前 Codex rollout 文件名通常是 rollout-<timestamp>-<session-uuid>.jsonl。
+        // 元数据只保存 UUID，因此优先使用末尾 UUID 形态片段，而不是完整文件名 stem。
         if let uuidRange = nameWithoutExtension.range(
             of: #"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"#,
             options: .regularExpression

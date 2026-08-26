@@ -81,6 +81,51 @@ final class QueryAndForecastTests: XCTestCase {
         }
     }
 
+    func testUsageDayBucketerUsesExplicitTimeZoneAcrossDSTMidnightAndZoneSwitch() throws {
+        let losAngeles = try XCTUnwrap(TimeZone(identifier: "America/Los_Angeles"))
+        let laCalendar = UsageDayBucketer.calendar(timeZone: losAngeles)
+        let beforeSpringForward = Int64(try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-03-08T09:59:59Z")).timeIntervalSince1970 * 1_000)
+        let afterSpringForward = Int64(try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-03-08T10:00:00Z")).timeIntervalSince1970 * 1_000)
+        let nextMidnight = Int64(try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-03-09T07:00:00Z")).timeIntervalSince1970 * 1_000)
+
+        let beforeBucket = UsageDayBucketer.bucket(
+            timestampMs: beforeSpringForward,
+            calendar: laCalendar,
+            timeZone: losAngeles
+        )
+        let afterBucket = UsageDayBucketer.bucket(
+            timestampMs: afterSpringForward,
+            calendar: laCalendar,
+            timeZone: losAngeles
+        )
+        let midnightBucket = UsageDayBucketer.bucket(
+            timestampMs: nextMidnight,
+            calendar: laCalendar,
+            timeZone: losAngeles
+        )
+
+        XCTAssertEqual(beforeBucket.dayKey.yyyyMMdd, "2026-03-08")
+        XCTAssertEqual(afterBucket.dayKey.yyyyMMdd, "2026-03-08")
+        XCTAssertEqual(beforeBucket.dayStartMs, afterBucket.dayStartMs)
+        XCTAssertEqual(midnightBucket.dayKey.yyyyMMdd, "2026-03-09")
+        XCTAssertGreaterThan(midnightBucket.dayStartMs, afterBucket.dayStartMs)
+
+        let utc = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        let timestamp = Int64(try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-08-20T02:00:00Z")).timeIntervalSince1970 * 1_000)
+        let utcBucket = UsageDayBucketer.bucket(
+            timestampMs: timestamp,
+            calendar: UsageDayBucketer.calendar(timeZone: utc),
+            timeZone: utc
+        )
+        let laBucket = UsageDayBucketer.bucket(
+            timestampMs: timestamp,
+            calendar: laCalendar,
+            timeZone: losAngeles
+        )
+        XCTAssertEqual(utcBucket.dayKey.yyyyMMdd, "2026-08-20")
+        XCTAssertEqual(laBucket.dayKey.yyyyMMdd, "2026-08-19")
+    }
+
     func testDashboardRollingRangeScopesEveryMetricAndDayDetailDrillsToEvents() throws {
         let directory = try makeTemporaryDirectory()
         let database = try makeMigratedDatabase(in: directory)

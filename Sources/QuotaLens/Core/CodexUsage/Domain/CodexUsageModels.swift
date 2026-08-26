@@ -206,6 +206,180 @@ public enum PricingStatus: String, Hashable, Sendable, Codable {
     }
 }
 
+// MARK: - 聚合计价状态
+public enum AggregatePricingStatus: String, Hashable, Sendable, Codable {
+    case fullyPriced
+    case partiallyPriced
+    case fullyUnpriced
+
+    public var isPriced: Bool { self == .fullyPriced }
+
+    public init(eventCount: Int, unpricedEventCount: Int) {
+        if eventCount <= 0 {
+            self = .fullyUnpriced
+        } else if unpricedEventCount <= 0 {
+            self = .fullyPriced
+        } else if unpricedEventCount >= eventCount {
+            self = .fullyUnpriced
+        } else {
+            self = .partiallyPriced
+        }
+    }
+
+    public init(storedValue: String?) {
+        guard let storedValue else {
+            self = .fullyUnpriced
+            return
+        }
+        if let status = AggregatePricingStatus(rawValue: storedValue) {
+            self = status
+            return
+        }
+        let legacy = PricingStatus(rawValue: storedValue)
+        self = legacy?.isPriced == true ? .fullyPriced : .fullyUnpriced
+    }
+
+    public var localizedDescription: String {
+        switch self {
+        case .fullyPriced:
+            return L10n.text("已全部计价", "Fully priced")
+        case .partiallyPriced:
+            return L10n.text("部分事件未计价", "Partially priced")
+        case .fullyUnpriced:
+            return L10n.text("全部事件未计价", "Fully unpriced")
+        }
+    }
+}
+
+// MARK: - 未计价原因分布
+public struct UnpricedReasonCounts: Hashable, Sendable, Codable {
+    public var unknownModelEvents: Int
+    public var unknownModelTokens: Int64
+    public var unsupportedTierEvents: Int
+    public var unsupportedTierTokens: Int64
+    public var historicalRuleMissingEvents: Int
+    public var historicalRuleMissingTokens: Int64
+    public var unsupportedContextEvents: Int
+    public var unsupportedContextTokens: Int64
+    public var invalidRecordEvents: Int
+    public var invalidRecordTokens: Int64
+    public var overflowEvents: Int
+    public var overflowTokens: Int64
+
+    public init(
+        unknownModelEvents: Int = 0,
+        unknownModelTokens: Int64 = 0,
+        unsupportedTierEvents: Int = 0,
+        unsupportedTierTokens: Int64 = 0,
+        historicalRuleMissingEvents: Int = 0,
+        historicalRuleMissingTokens: Int64 = 0,
+        unsupportedContextEvents: Int = 0,
+        unsupportedContextTokens: Int64 = 0,
+        invalidRecordEvents: Int = 0,
+        invalidRecordTokens: Int64 = 0,
+        overflowEvents: Int = 0,
+        overflowTokens: Int64 = 0
+    ) {
+        self.unknownModelEvents = unknownModelEvents
+        self.unknownModelTokens = unknownModelTokens
+        self.unsupportedTierEvents = unsupportedTierEvents
+        self.unsupportedTierTokens = unsupportedTierTokens
+        self.historicalRuleMissingEvents = historicalRuleMissingEvents
+        self.historicalRuleMissingTokens = historicalRuleMissingTokens
+        self.unsupportedContextEvents = unsupportedContextEvents
+        self.unsupportedContextTokens = unsupportedContextTokens
+        self.invalidRecordEvents = invalidRecordEvents
+        self.invalidRecordTokens = invalidRecordTokens
+        self.overflowEvents = overflowEvents
+        self.overflowTokens = overflowTokens
+    }
+
+    public static let zero = UnpricedReasonCounts()
+
+    public var totalEvents: Int {
+        unknownModelEvents
+            + unsupportedTierEvents
+            + historicalRuleMissingEvents
+            + unsupportedContextEvents
+            + invalidRecordEvents
+            + overflowEvents
+    }
+
+    public var totalTokens: Int64 {
+        unknownModelTokens
+            + unsupportedTierTokens
+            + historicalRuleMissingTokens
+            + unsupportedContextTokens
+            + invalidRecordTokens
+            + overflowTokens
+    }
+
+    public var isEmpty: Bool {
+        totalEvents == 0 && totalTokens == 0
+    }
+
+    public static func + (lhs: UnpricedReasonCounts, rhs: UnpricedReasonCounts) -> UnpricedReasonCounts {
+        UnpricedReasonCounts(
+            unknownModelEvents: lhs.unknownModelEvents + rhs.unknownModelEvents,
+            unknownModelTokens: lhs.unknownModelTokens + rhs.unknownModelTokens,
+            unsupportedTierEvents: lhs.unsupportedTierEvents + rhs.unsupportedTierEvents,
+            unsupportedTierTokens: lhs.unsupportedTierTokens + rhs.unsupportedTierTokens,
+            historicalRuleMissingEvents: lhs.historicalRuleMissingEvents + rhs.historicalRuleMissingEvents,
+            historicalRuleMissingTokens: lhs.historicalRuleMissingTokens + rhs.historicalRuleMissingTokens,
+            unsupportedContextEvents: lhs.unsupportedContextEvents + rhs.unsupportedContextEvents,
+            unsupportedContextTokens: lhs.unsupportedContextTokens + rhs.unsupportedContextTokens,
+            invalidRecordEvents: lhs.invalidRecordEvents + rhs.invalidRecordEvents,
+            invalidRecordTokens: lhs.invalidRecordTokens + rhs.invalidRecordTokens,
+            overflowEvents: lhs.overflowEvents + rhs.overflowEvents,
+            overflowTokens: lhs.overflowTokens + rhs.overflowTokens
+        )
+    }
+
+    public mutating func add(status: PricingStatus, tokenCount: Int64) {
+        guard !status.isPriced else { return }
+        let tokens = max(0, tokenCount)
+        switch status {
+        case .priced:
+            return
+        case .unpricedUnknownModel:
+            unknownModelEvents += 1
+            unknownModelTokens += tokens
+        case .unpricedHistoricalRuleMissing:
+            historicalRuleMissingEvents += 1
+            historicalRuleMissingTokens += tokens
+        case .unpricedUnsupportedServiceMode:
+            unsupportedTierEvents += 1
+            unsupportedTierTokens += tokens
+        case .unpricedUnsupportedContextLength:
+            unsupportedContextEvents += 1
+            unsupportedContextTokens += tokens
+        case .unpricedInvalidTokenRecord:
+            invalidRecordEvents += 1
+            invalidRecordTokens += tokens
+        case .unpricedCalculationOverflow:
+            overflowEvents += 1
+            overflowTokens += tokens
+        }
+    }
+
+    public var localizedSummary: String {
+        let parts = [
+            (unknownModelEvents, L10n.text("未知模型", "unknown model")),
+            (unsupportedTierEvents, L10n.text("不支持层级", "unsupported tier")),
+            (historicalRuleMissingEvents, L10n.text("缺少历史规则", "missing historical rule")),
+            (unsupportedContextEvents, L10n.text("不支持上下文", "unsupported context")),
+            (invalidRecordEvents, L10n.text("无效记录", "invalid record")),
+            (overflowEvents, L10n.text("数值溢出", "overflow"))
+        ]
+        .filter { $0.0 > 0 }
+        .map { "\($0.0) \($0.1)" }
+        guard !parts.isEmpty else {
+            return L10n.text("无未计价原因", "No unpriced reasons")
+        }
+        return parts.joined(separator: " · ")
+    }
+}
+
 // MARK: - 计价覆盖率
 public enum PricingCoverage: Hashable, Sendable {
     case fullyPriced

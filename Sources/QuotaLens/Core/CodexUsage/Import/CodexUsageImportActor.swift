@@ -60,10 +60,28 @@ public actor CodexUsageImportActor {
         try PricingCatalogService.shared.ensureCatalogInstalled(database: database)
         let pricingSnapshot = try PricingCatalogService.shared.loadSnapshot(database: database)
         let scanGeneration = try nextScanGeneration()
+        var parserRebuildDidFinish = false
+        defer {
+            if !parserRebuildDidFinish {
+                try? updateParserRebuildMetadata(
+                    status: "failed",
+                    generation: scanGeneration,
+                    error: "import interrupted before completion"
+                )
+            }
+        }
+        try updateParserRebuildMetadata(status: "running", generation: scanGeneration, error: nil)
+        let aggregationTimeZone = TimeZone.current
+        let forceRebuildForTimeZone = try prepareUsageAggregationTimeZone(
+            timeZone: aggregationTimeZone,
+            generation: scanGeneration
+        )
+        let effectiveForceRebuild = forceRebuild || forceRebuildForTimeZone
 
         // 1. 扫描文件源
         onProgress?(0.05, L10n.text("正在扫描 Codex 会话文件…", "Scanning Codex session files..."))
         let scanOutcome = scanHistory(paths, UsageFeatureFlags.shared.isScanArchivedSessionsEnabled)
+        try persistScanDiagnostics(scanOutcome.diagnostics, scanGeneration: scanGeneration)
         let scanIssueMessage = [
             Self.scanIssue(root: "sessions", status: scanOutcome.active),
             Self.scanIssue(root: "archived_sessions", status: scanOutcome.archived)
@@ -105,7 +123,7 @@ public actor CodexUsageImportActor {
                     source: source,
                     resolvedSession: resolvedSessions[source.sessionId],
                     pricingSnapshot: pricingSnapshot,
-                    forceRebuild: forceRebuild,
+                    forceRebuild: effectiveForceRebuild,
                     scanGeneration: scanGeneration
                 )
             }
@@ -129,6 +147,12 @@ public actor CodexUsageImportActor {
         let completedAtMs = Self.unixMillis()
         let duration = max(0.001, CFAbsoluteTimeGetCurrent() - monotonicStart)
         let runStatus = scanIssueMessage.isEmpty ? "success" : "partial"
+        try updateParserRebuildMetadata(
+            status: scanIssueMessage.isEmpty ? "completed" : "failed",
+            generation: scanGeneration,
+            error: scanIssueMessage.isEmpty ? nil : scanIssueMessage
+        )
+        parserRebuildDidFinish = true
 
         let runId = "run_\(Int64(Date().timeIntervalSince1970 * 1000))"
         try? database.executeUpdate(
@@ -198,6 +222,7 @@ public actor CodexUsageImportActor {
         var estimatedCost = MoneyNanoUSD.zero
         var unpricedEventCount = 0
         var unpricedTokenCount: Int64 = 0
+        var unpricedReasonCounts = UnpricedReasonCounts.zero
         var firstEventAtMs: Int64?
         var lastEventAtMs: Int64?
 
@@ -211,6 +236,10 @@ public actor CodexUsageImportActor {
                     event.tokens.canonicalTotalTokens
                 )
                 unpricedTokenCount = overflow ? Int64.max : sum
+                unpricedReasonCounts.add(
+                    status: price.pricingStatus,
+                    tokenCount: event.tokens.canonicalTotalTokens
+                )
             }
             if let current = firstEventAtMs {
                 firstEventAtMs = min(current, event.timestampMs)
@@ -263,7 +292,8 @@ public actor CodexUsageImportActor {
         mutating func add(
             event: CodexParsedUsageEvent,
             price: PricingEvaluationResult,
-            calendar: Calendar
+            calendar: Calendar,
+            timeZone: TimeZone
         ) {
             guard !event.isChildReplay else { return }
             session.add(event: event, price: price)
@@ -273,12 +303,14 @@ public actor CodexUsageImportActor {
             modelAgg.add(event: event, price: price)
             models[event.modelCanonical] = modelAgg
 
-            let eventDate = Date(timeIntervalSince1970: Double(event.timestampMs) / 1000.0)
-            let dayKey = LocalDayKey(date: eventDate, calendar: calendar)
-            let dayStartMs = Int64(dayKey.date(calendar: calendar).timeIntervalSince1970 * 1000.0)
+            let bucket = UsageDayBucketer.bucket(
+                timestampMs: event.timestampMs,
+                calendar: calendar,
+                timeZone: timeZone
+            )
             let key = DailyAggregateKey(
-                dayKey: dayKey.yyyyMMdd,
-                dayStartMs: dayStartMs,
+                dayKey: bucket.dayKey.yyyyMMdd,
+                dayStartMs: bucket.dayStartMs,
                 modelCanonical: event.modelCanonical
             )
             var dayAgg = days[key] ?? UsageAggregate()
@@ -573,7 +605,8 @@ public actor CodexUsageImportActor {
         var reducerState = CodexUsageReducer.ReducerState(checkpoint: initialCheckpoint)
         var aggregation = SourceAggregation()
         let memoryBudget = ImportMemoryBudget.current()
-        let calendar = Calendar.current
+        let timeZone = TimeZone.current
+        let calendar = UsageDayBucketer.calendar(timeZone: timeZone)
         var totalInserted = 0
         var eventsSinceMemoryCheck = 0
         var hasCommittedChunks = false
@@ -602,7 +635,12 @@ public actor CodexUsageImportActor {
                         timestampMs: parsedEvent.timestampMs,
                         tokens: parsedEvent.tokens
                     )
-                    aggregation.add(event: parsedEvent, price: priceResult, calendar: calendar)
+                    aggregation.add(
+                        event: parsedEvent,
+                        price: priceResult,
+                        calendar: calendar,
+                        timeZone: timeZone
+                    )
                     eventsSinceMemoryCheck += 1
 
                     if memoryBudget.shouldFlush(
@@ -785,7 +823,10 @@ public actor CodexUsageImportActor {
             ? metadataCreatedMs
             : (aggregation.session.firstEventAtMs ?? lastEventAt ?? sourceTimestampFallback(relativePath: relativePath))
         let updatedAtMs = max(Int64(metadata.updatedAt.timeIntervalSince1970 * 1000), lastEventAt ?? createdAtMs)
-        let pricingStatus: PricingStatus = totals.unpricedEventCount > 0 ? .unpricedUnknownModel : .priced
+        let pricingStatus = AggregatePricingStatus(
+            eventCount: totals.eventCount,
+            unpricedEventCount: totals.unpricedEventCount
+        )
 
         try database.executeUpdate(
             sql: """
@@ -794,8 +835,14 @@ public actor CodexUsageImportActor {
                 relative_path, bucket, title, project_name, cwd, created_at, updated_at,
                 last_event_at, event_count, total_tokens, input_tokens, cached_input_tokens,
                 cache_write_input_tokens, output_tokens, reasoning_output_tokens, estimated_cost_usd_nano,
-                pricing_status, metadata_fingerprint, has_subagents, agent_type
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?);
+                pricing_status, metadata_fingerprint, has_subagents, agent_type,
+                unpriced_unknown_model_event_count, unpriced_unknown_model_token_count,
+                unpriced_unsupported_tier_event_count, unpriced_unsupported_tier_token_count,
+                unpriced_historical_rule_missing_event_count, unpriced_historical_rule_missing_token_count,
+                unpriced_unsupported_context_event_count, unpriced_unsupported_context_token_count,
+                unpriced_invalid_record_event_count, unpriced_invalid_record_token_count,
+                unpriced_overflow_event_count, unpriced_overflow_token_count
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """,
             bindings: [
                 sessionId,
@@ -821,7 +868,19 @@ public actor CodexUsageImportActor {
                 totals.estimatedCost.rawValue,
                 pricingStatus.rawValue,
                 metadata.hasSubagents ? 1 : 0,
-                metadata.agentType
+                metadata.agentType,
+                totals.unpricedReasonCounts.unknownModelEvents,
+                totals.unpricedReasonCounts.unknownModelTokens,
+                totals.unpricedReasonCounts.unsupportedTierEvents,
+                totals.unpricedReasonCounts.unsupportedTierTokens,
+                totals.unpricedReasonCounts.historicalRuleMissingEvents,
+                totals.unpricedReasonCounts.historicalRuleMissingTokens,
+                totals.unpricedReasonCounts.unsupportedContextEvents,
+                totals.unpricedReasonCounts.unsupportedContextTokens,
+                totals.unpricedReasonCounts.invalidRecordEvents,
+                totals.unpricedReasonCounts.invalidRecordTokens,
+                totals.unpricedReasonCounts.overflowEvents,
+                totals.unpricedReasonCounts.overflowTokens
             ]
         )
     }
@@ -897,8 +956,14 @@ public actor CodexUsageImportActor {
                 session_id, model_canonical, event_count, total_tokens,
                 uncached_input_tokens, cached_input_tokens, cache_write_input_tokens,
                 output_tokens, reasoning_output_tokens,
-                estimated_cost_usd_nano, unpriced_event_count, unpriced_token_count
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                estimated_cost_usd_nano, unpriced_event_count, unpriced_token_count,
+                unpriced_unknown_model_event_count, unpriced_unknown_model_token_count,
+                unpriced_unsupported_tier_event_count, unpriced_unsupported_tier_token_count,
+                unpriced_historical_rule_missing_event_count, unpriced_historical_rule_missing_token_count,
+                unpriced_unsupported_context_event_count, unpriced_unsupported_context_token_count,
+                unpriced_invalid_record_event_count, unpriced_invalid_record_token_count,
+                unpriced_overflow_event_count, unpriced_overflow_token_count
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(session_id, model_canonical) DO UPDATE SET
                 event_count = event_count + excluded.event_count,
                 total_tokens = total_tokens + excluded.total_tokens,
@@ -909,7 +974,19 @@ public actor CodexUsageImportActor {
                 reasoning_output_tokens = reasoning_output_tokens + excluded.reasoning_output_tokens,
                 estimated_cost_usd_nano = estimated_cost_usd_nano + excluded.estimated_cost_usd_nano,
                 unpriced_event_count = unpriced_event_count + excluded.unpriced_event_count,
-                unpriced_token_count = unpriced_token_count + excluded.unpriced_token_count;
+                unpriced_token_count = unpriced_token_count + excluded.unpriced_token_count,
+                unpriced_unknown_model_event_count = unpriced_unknown_model_event_count + excluded.unpriced_unknown_model_event_count,
+                unpriced_unknown_model_token_count = unpriced_unknown_model_token_count + excluded.unpriced_unknown_model_token_count,
+                unpriced_unsupported_tier_event_count = unpriced_unsupported_tier_event_count + excluded.unpriced_unsupported_tier_event_count,
+                unpriced_unsupported_tier_token_count = unpriced_unsupported_tier_token_count + excluded.unpriced_unsupported_tier_token_count,
+                unpriced_historical_rule_missing_event_count = unpriced_historical_rule_missing_event_count + excluded.unpriced_historical_rule_missing_event_count,
+                unpriced_historical_rule_missing_token_count = unpriced_historical_rule_missing_token_count + excluded.unpriced_historical_rule_missing_token_count,
+                unpriced_unsupported_context_event_count = unpriced_unsupported_context_event_count + excluded.unpriced_unsupported_context_event_count,
+                unpriced_unsupported_context_token_count = unpriced_unsupported_context_token_count + excluded.unpriced_unsupported_context_token_count,
+                unpriced_invalid_record_event_count = unpriced_invalid_record_event_count + excluded.unpriced_invalid_record_event_count,
+                unpriced_invalid_record_token_count = unpriced_invalid_record_token_count + excluded.unpriced_invalid_record_token_count,
+                unpriced_overflow_event_count = unpriced_overflow_event_count + excluded.unpriced_overflow_event_count,
+                unpriced_overflow_token_count = unpriced_overflow_token_count + excluded.unpriced_overflow_token_count;
             """,
             bindings: aggregateBindings(prefix: [sessionId, modelCanonical], aggregate: aggregate)
         )
@@ -926,8 +1003,14 @@ public actor CodexUsageImportActor {
                 session_id, day_key, day_start_ms, model_canonical, event_count,
                 total_tokens, uncached_input_tokens, cached_input_tokens, cache_write_input_tokens,
                 output_tokens, reasoning_output_tokens,
-                estimated_cost_usd_nano, unpriced_event_count, unpriced_token_count
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                estimated_cost_usd_nano, unpriced_event_count, unpriced_token_count,
+                unpriced_unknown_model_event_count, unpriced_unknown_model_token_count,
+                unpriced_unsupported_tier_event_count, unpriced_unsupported_tier_token_count,
+                unpriced_historical_rule_missing_event_count, unpriced_historical_rule_missing_token_count,
+                unpriced_unsupported_context_event_count, unpriced_unsupported_context_token_count,
+                unpriced_invalid_record_event_count, unpriced_invalid_record_token_count,
+                unpriced_overflow_event_count, unpriced_overflow_token_count
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(session_id, day_key, model_canonical) DO UPDATE SET
                 day_start_ms = excluded.day_start_ms,
                 event_count = event_count + excluded.event_count,
@@ -939,7 +1022,19 @@ public actor CodexUsageImportActor {
                 reasoning_output_tokens = reasoning_output_tokens + excluded.reasoning_output_tokens,
                 estimated_cost_usd_nano = estimated_cost_usd_nano + excluded.estimated_cost_usd_nano,
                 unpriced_event_count = unpriced_event_count + excluded.unpriced_event_count,
-                unpriced_token_count = unpriced_token_count + excluded.unpriced_token_count;
+                unpriced_token_count = unpriced_token_count + excluded.unpriced_token_count,
+                unpriced_unknown_model_event_count = unpriced_unknown_model_event_count + excluded.unpriced_unknown_model_event_count,
+                unpriced_unknown_model_token_count = unpriced_unknown_model_token_count + excluded.unpriced_unknown_model_token_count,
+                unpriced_unsupported_tier_event_count = unpriced_unsupported_tier_event_count + excluded.unpriced_unsupported_tier_event_count,
+                unpriced_unsupported_tier_token_count = unpriced_unsupported_tier_token_count + excluded.unpriced_unsupported_tier_token_count,
+                unpriced_historical_rule_missing_event_count = unpriced_historical_rule_missing_event_count + excluded.unpriced_historical_rule_missing_event_count,
+                unpriced_historical_rule_missing_token_count = unpriced_historical_rule_missing_token_count + excluded.unpriced_historical_rule_missing_token_count,
+                unpriced_unsupported_context_event_count = unpriced_unsupported_context_event_count + excluded.unpriced_unsupported_context_event_count,
+                unpriced_unsupported_context_token_count = unpriced_unsupported_context_token_count + excluded.unpriced_unsupported_context_token_count,
+                unpriced_invalid_record_event_count = unpriced_invalid_record_event_count + excluded.unpriced_invalid_record_event_count,
+                unpriced_invalid_record_token_count = unpriced_invalid_record_token_count + excluded.unpriced_invalid_record_token_count,
+                unpriced_overflow_event_count = unpriced_overflow_event_count + excluded.unpriced_overflow_event_count,
+                unpriced_overflow_token_count = unpriced_overflow_token_count + excluded.unpriced_overflow_token_count;
             """,
             bindings: aggregateBindings(
                 prefix: [sessionId, key.dayKey, key.dayStartMs, key.modelCanonical],
@@ -959,13 +1054,31 @@ public actor CodexUsageImportActor {
             aggregate.tokens.reasoningOutputTokens,
             aggregate.estimatedCost.rawValue,
             aggregate.unpricedEventCount,
-            aggregate.unpricedTokenCount
+            aggregate.unpricedTokenCount,
+            aggregate.unpricedReasonCounts.unknownModelEvents,
+            aggregate.unpricedReasonCounts.unknownModelTokens,
+            aggregate.unpricedReasonCounts.unsupportedTierEvents,
+            aggregate.unpricedReasonCounts.unsupportedTierTokens,
+            aggregate.unpricedReasonCounts.historicalRuleMissingEvents,
+            aggregate.unpricedReasonCounts.historicalRuleMissingTokens,
+            aggregate.unpricedReasonCounts.unsupportedContextEvents,
+            aggregate.unpricedReasonCounts.unsupportedContextTokens,
+            aggregate.unpricedReasonCounts.invalidRecordEvents,
+            aggregate.unpricedReasonCounts.invalidRecordTokens,
+            aggregate.unpricedReasonCounts.overflowEvents,
+            aggregate.unpricedReasonCounts.overflowTokens
         ]
     }
 
     private func loadSessionTotalsFromSummaries(
         sessionId: String
-    ) throws -> (eventCount: Int, tokens: TokenBreakdown, estimatedCost: MoneyNanoUSD, unpricedEventCount: Int) {
+    ) throws -> (
+        eventCount: Int,
+        tokens: TokenBreakdown,
+        estimatedCost: MoneyNanoUSD,
+        unpricedEventCount: Int,
+        unpricedReasonCounts: UnpricedReasonCounts
+    ) {
         try database.executeQuery(
             sql: """
             SELECT
@@ -977,7 +1090,19 @@ public actor CodexUsageImportActor {
                 COALESCE(SUM(output_tokens), 0),
                 COALESCE(SUM(reasoning_output_tokens), 0),
                 COALESCE(SUM(estimated_cost_usd_nano), 0),
-                COALESCE(SUM(unpriced_event_count), 0)
+                COALESCE(SUM(unpriced_event_count), 0),
+                COALESCE(SUM(unpriced_unknown_model_event_count), 0),
+                COALESCE(SUM(unpriced_unknown_model_token_count), 0),
+                COALESCE(SUM(unpriced_unsupported_tier_event_count), 0),
+                COALESCE(SUM(unpriced_unsupported_tier_token_count), 0),
+                COALESCE(SUM(unpriced_historical_rule_missing_event_count), 0),
+                COALESCE(SUM(unpriced_historical_rule_missing_token_count), 0),
+                COALESCE(SUM(unpriced_unsupported_context_event_count), 0),
+                COALESCE(SUM(unpriced_unsupported_context_token_count), 0),
+                COALESCE(SUM(unpriced_invalid_record_event_count), 0),
+                COALESCE(SUM(unpriced_invalid_record_token_count), 0),
+                COALESCE(SUM(unpriced_overflow_event_count), 0),
+                COALESCE(SUM(unpriced_overflow_token_count), 0)
             FROM codex_session_summaries
             WHERE session_id = ?;
             """,
@@ -997,9 +1122,23 @@ public actor CodexUsageImportActor {
                     sourceTotalTokens: sqlite3_column_int64(stmt, 1)
                 ),
                 estimatedCost: MoneyNanoUSD(sqlite3_column_int64(stmt, 7)),
-                unpricedEventCount: Int(sqlite3_column_int(stmt, 8))
+                unpricedEventCount: Int(sqlite3_column_int(stmt, 8)),
+                unpricedReasonCounts: UnpricedReasonCounts(
+                    unknownModelEvents: Int(sqlite3_column_int(stmt, 9)),
+                    unknownModelTokens: sqlite3_column_int64(stmt, 10),
+                    unsupportedTierEvents: Int(sqlite3_column_int(stmt, 11)),
+                    unsupportedTierTokens: sqlite3_column_int64(stmt, 12),
+                    historicalRuleMissingEvents: Int(sqlite3_column_int(stmt, 13)),
+                    historicalRuleMissingTokens: sqlite3_column_int64(stmt, 14),
+                    unsupportedContextEvents: Int(sqlite3_column_int(stmt, 15)),
+                    unsupportedContextTokens: sqlite3_column_int64(stmt, 16),
+                    invalidRecordEvents: Int(sqlite3_column_int(stmt, 17)),
+                    invalidRecordTokens: sqlite3_column_int64(stmt, 18),
+                    overflowEvents: Int(sqlite3_column_int(stmt, 19)),
+                    overflowTokens: sqlite3_column_int64(stmt, 20)
+                )
             )
-        }.first ?? (0, .zero, .zero, 0)
+        }.first ?? (0, .zero, .zero, 0, .zero)
     }
 
     private func maxOptional(_ lhs: Int64?, _ rhs: Int64?) -> Int64? {
@@ -1025,6 +1164,82 @@ public actor CodexUsageImportActor {
             bindings: [String(next)]
         )
         return next
+    }
+
+    private func updateParserRebuildMetadata(
+        status: String,
+        generation: Int64,
+        error: String?
+    ) throws {
+        try database.executeUpdate(
+            sql: "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES ('codex_parser_rebuild_status', ?, unixepoch());",
+            bindings: [status]
+        )
+        try database.executeUpdate(
+            sql: "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES ('codex_parser_rebuild_generation', ?, unixepoch());",
+            bindings: [String(generation)]
+        )
+        if let error, !error.isEmpty {
+            try database.executeUpdate(
+                sql: "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES ('codex_parser_rebuild_error', ?, unixepoch());",
+                bindings: [error]
+            )
+        } else {
+            try database.executeUpdate(sql: "DELETE FROM app_metadata WHERE key = 'codex_parser_rebuild_error';", bindings: [])
+        }
+    }
+
+    private func prepareUsageAggregationTimeZone(timeZone: TimeZone, generation: Int64) throws -> Bool {
+        let previousID = try database.stringScalar(
+            sql: "SELECT value FROM app_metadata WHERE key = 'usage_aggregation_timezone_id';"
+        )
+        let changed = previousID != nil && previousID != timeZone.identifier
+        try database.executeUpdate(
+            sql: "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES ('usage_aggregation_timezone_id', ?, unixepoch());",
+            bindings: [timeZone.identifier]
+        )
+        if changed {
+            try database.executeUpdate(
+                sql: "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES ('usage_aggregation_timezone_generation', ?, unixepoch());",
+                bindings: [String(generation)]
+            )
+        } else {
+            try database.executeUpdate(
+                sql: "INSERT OR IGNORE INTO app_metadata (key, value, updated_at) VALUES ('usage_aggregation_timezone_generation', '0', unixepoch());",
+                bindings: []
+            )
+        }
+        return changed
+    }
+
+    private func persistScanDiagnostics(
+        _ diagnostics: [RolloutScanDiagnostic],
+        scanGeneration: Int64
+    ) throws {
+        try database.transaction {
+            try database.executeUpdate(
+                sql: "DELETE FROM codex_scan_diagnostics;",
+                bindings: []
+            )
+            for diagnostic in diagnostics {
+                try database.executeUpdate(
+                    sql: """
+                    INSERT INTO codex_scan_diagnostics (
+                        source_path, relative_path, bucket, diagnostic_code,
+                        message, scan_generation, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, unixepoch());
+                    """,
+                    bindings: [
+                        diagnostic.fileURL.path,
+                        diagnostic.relativePath,
+                        diagnostic.bucket.rawValue,
+                        diagnostic.code,
+                        diagnostic.message,
+                        scanGeneration
+                    ]
+                )
+            }
+        }
     }
 
     private func markSourceSeen(
