@@ -106,6 +106,7 @@ jobs:
           echo "RELEASE_TAG=${tag}" >> "${GITHUB_ENV}"
 
       - name: Import Developer ID certificate
+        if: ${{ secrets.DEVELOPER_ID_APPLICATION != '' && secrets.DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64 != '' }}
         shell: bash
         env:
           DEVELOPER_ID_APPLICATION: ${{ secrets.DEVELOPER_ID_APPLICATION }}
@@ -157,20 +158,23 @@ jobs:
             echo "Missing SPARKLE_PUBLIC_ED_KEY repository secret."
             exit 1
           fi
-          if [[ -z "${DEVELOPER_ID_APPLICATION}" ]]; then
-            echo "Missing DEVELOPER_ID_APPLICATION repository secret."
-            exit 1
+
+          if [[ -n "${DEVELOPER_ID_APPLICATION:-}" && -n "${APPLE_ID:-}" && -n "${APPLE_TEAM_ID:-}" && -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" ]]; then
+            echo "Building with Developer ID signing and Apple notarization..."
+            ./scripts/build_and_package.sh \
+              --arch "${{ matrix.arch }}" \
+              --version "${APP_VERSION}" \
+              --build-number "${GITHUB_RUN_NUMBER}" \
+              --signing-mode developer-id \
+              --notarize
+          else
+            echo "Building with ad-hoc signing..."
+            ./scripts/build_and_package.sh \
+              --arch "${{ matrix.arch }}" \
+              --version "${APP_VERSION}" \
+              --build-number "${GITHUB_RUN_NUMBER}" \
+              --signing-mode adhoc
           fi
-          if [[ -z "${APPLE_ID}" || -z "${APPLE_TEAM_ID}" || -z "${APPLE_APP_SPECIFIC_PASSWORD}" ]]; then
-            echo "Missing Apple notarization secrets."
-            exit 1
-          fi
-          ./scripts/build_and_package.sh \
-            --arch "${{ matrix.arch }}" \
-            --version "${APP_VERSION}" \
-            --build-number "${GITHUB_RUN_NUMBER}" \
-            --signing-mode developer-id \
-            --notarize
 
       - name: Generate architecture appcast
         if: matrix.arch != 'universal'
