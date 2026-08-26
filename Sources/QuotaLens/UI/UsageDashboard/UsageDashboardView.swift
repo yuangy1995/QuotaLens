@@ -129,9 +129,19 @@ public final class UsageDashboardStore: ObservableObject {
                 horizonDays: 7
             )
         } catch {
-            self.errorMessage = error.localizedDescription
+            self.errorMessage = Self.userFacingError(error)
         }
         isLoading = false
+    }
+
+    private static func userFacingError(_ error: Error) -> String {
+        if let description = (error as? SessionDeletionError)?.errorDescription {
+            return description
+        }
+        return L10n.text(
+            "暂时无法读取本地用量概览，请稍后重试。",
+            "Local usage overview could not be loaded right now. Try again later."
+        )
     }
 }
 
@@ -309,7 +319,7 @@ public struct UsageDashboardView: View {
             )
 
             DashboardKPICard(
-                title: L10n.text("API 等价价值 · Beta", "API Equivalent Value · Beta"),
+                title: L10n.text("费用估算（试用）", "Estimated cost (Beta)"),
                 value: UsageNumberFormatter.currencyUSD(metrics.totalCost),
                 caption: pricingCoverageCaption(metrics),
                 icon: "dollarsign.circle.fill",
@@ -427,15 +437,30 @@ public struct UsageDashboardView: View {
             metrics.tokenPricingCoverage * 100.0,
             maximumFractionDigits: 1
         )
-        let coverage = L10n.format(
-            "Token pricing coverage %@",
-            zhHans: "Token 定价覆盖率 %@",
-            percentage
+        let catalogPercentage = UsageNumberFormatter.percent(
+            metrics.currentCatalogCoverage * 100.0,
+            maximumFractionDigits: 1
         )
+        let coverage = L10n.format(
+            "Usage with cost estimates %@ · updated to latest public rates %@",
+            zhHans: "能估算费用的用量占比 %@ · 已按最新公开价格更新 %@",
+            percentage,
+            catalogPercentage
+        )
+        let legacyText = metrics.legacyAggregateCost.rawValue > 0 || metrics.legacyAggregateTokens > 0
+            ? L10n.format(
+                "historical amount %@",
+                zhHans: "历史金额（保留原记录）%@",
+                UsageNumberFormatter.currencyUSD(metrics.legacyAggregateCost)
+            )
+            : nil
+        let suffix: String
         guard !metrics.unpricedReasonCounts.isEmpty else {
-            return "\(coverage) · \(L10n.text("不是订阅账单金额", "Not a bill"))"
+            suffix = L10n.text("根据公开价格估算，并非实际扣款", "Estimated from public rates, not actual charges")
+            return [coverage, legacyText, suffix].compactMap { $0 }.joined(separator: " · ")
         }
-        return "\(coverage) · \(metrics.unpricedReasonCounts.localizedSummary)"
+        suffix = metrics.unpricedReasonCounts.localizedSummary
+        return [coverage, legacyText, suffix].compactMap { $0 }.joined(separator: " · ")
     }
 
     // MARK: - 3. 双重智能预测引擎
@@ -550,7 +575,7 @@ public struct UsageDashboardView: View {
                         }
 
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(L10n.text("预计 API 等价价值:", "Projected Value:"))
+                            Text(L10n.text("预计费用估算:", "Projected estimated cost:"))
                                 .font(.system(size: 10, design: .monospaced))
                                 .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
                             Text(lf.isCostForecastAvailable
@@ -564,8 +589,8 @@ public struct UsageDashboardView: View {
                     }
 
                     Text(L10n.format(
-                        "Token pricing coverage %.1f%% · event coverage %.1f%% · long-context pricing inferred from local token events",
-                        zhHans: "Token 价格覆盖率 %.1f%% · 事件覆盖率 %.1f%% · 长上下文价格按本地 Token 事件推断",
+                        "Usage with cost estimates %.1f%% · records with cost estimates %.1f%% · estimates use local usage records",
+                        zhHans: "能估算费用的用量占比 %.1f%% · 可估算记录 %.1f%% · 费用估算基于本地用量记录",
                         lf.tokenPricingCoverage * 100.0,
                         lf.eventPricingCoverage * 100.0
                     ))
@@ -926,6 +951,13 @@ public struct UsageDashboardView: View {
                 value: UsageNumberFormatter.currencyUSD(day.estimatedCost),
                 color: emerald
             )
+            if day.legacyAggregateCost.rawValue > 0 {
+                hoverMetricRow(
+                    label: L10n.text("历史金额", "Historical Amount"),
+                    value: UsageNumberFormatter.currencyUSD(day.legacyAggregateCost),
+                    color: AppTheme.accentAmber(for: colorScheme)
+                )
+            }
             hoverMetricRow(
                 label: L10n.text("会话", "Session Count"),
                 value: "\(day.sessionCount)",
@@ -971,6 +1003,13 @@ public struct UsageDashboardView: View {
                     value: UsageNumberFormatter.currencyUSD(cell.estimatedCost),
                     color: AppTheme.accentEmerald(for: colorScheme)
                 )
+                if cell.legacyAggregateCost.rawValue > 0 {
+                    hoverMetricRow(
+                        label: L10n.text("历史金额", "Historical Amount"),
+                        value: UsageNumberFormatter.currencyUSD(cell.legacyAggregateCost),
+                        color: AppTheme.accentAmber(for: colorScheme)
+                    )
+                }
                 hoverMetricRow(
                     label: L10n.text("调用", "Events"),
                     value: "\(cell.eventCount)",

@@ -45,7 +45,7 @@ private func addUnpricedReasonColumns(database: SQLiteDatabase, table: String) t
 }
 
 public struct SchemaMigrations {
-    public static let targetSchemaVersion = 12
+    public static let targetSchemaVersion = 13
 
     public static func migrate(database: SQLiteDatabase) throws {
         let currentVersion = try database.intScalar(sql: "PRAGMA user_version;")
@@ -76,7 +76,8 @@ public struct SchemaMigrations {
             V9CacheWriteAndParserV6Migration(),
             V10PricingRuleBoundsMigration(),
             V11ExactPricingCoverageMigration(),
-            V12AggregateReasonsAndRebuildStateMigration()
+            V12AggregateReasonsAndRebuildStateMigration(),
+            V13Round2ReliabilityMigration()
         ]
 
         for migration in migrations where migration.version > currentVersion {
@@ -87,6 +88,129 @@ public struct SchemaMigrations {
         }
 
         try V5AggregateOnlyUsageMigration.compactIfNeeded(database: database)
+    }
+}
+
+// MARK: - V13: 第二轮复审可靠性边界
+private struct V13Round2ReliabilityMigration: DatabaseMigration {
+    let version = 13
+    let name = "V13Round2Reliability"
+
+    func apply(database: SQLiteDatabase) throws {
+        for table in ["codex_sessions", "codex_session_summaries", "codex_daily_usage_summaries"] {
+            try addColumnIfMissing(
+                database: database,
+                table: table,
+                column: "summary_provenance",
+                definition: "TEXT NOT NULL DEFAULT 'eventLedger'"
+            )
+        }
+        try addColumnIfMissing(
+            database: database,
+            table: "codex_usage_events",
+            column: "timestamp_source",
+            definition: "TEXT NOT NULL DEFAULT 'top_level_timestamp'"
+        )
+        try addColumnIfMissing(
+            database: database,
+            table: "codex_usage_events",
+            column: "timestamp_conflict_count",
+            definition: "INTEGER NOT NULL DEFAULT 0"
+        )
+        try addColumnIfMissing(
+            database: database,
+            table: "codex_import_sources",
+            column: "timestamp_conflict_count",
+            definition: "INTEGER NOT NULL DEFAULT 0"
+        )
+
+        try database.execute(sql: """
+        UPDATE codex_usage_events
+        SET timestamp_source = CASE timestamp_quality
+            WHEN 'file_name_timestamp' THEN 'file_name'
+            WHEN 'session_timestamp' THEN 'session_metadata'
+            WHEN 'file_modification_time' THEN 'file_modification'
+            WHEN 'unresolved' THEN 'unresolved'
+            ELSE timestamp_source
+        END;
+
+        UPDATE codex_sessions
+        SET summary_provenance = 'legacyAggregate'
+        WHERE event_count > 0
+          AND NOT EXISTS (
+            SELECT 1
+            FROM codex_usage_events e
+            WHERE e.session_id = codex_sessions.session_id
+              AND e.is_child_replay = 0
+          );
+
+        UPDATE codex_session_summaries
+        SET summary_provenance = 'legacyAggregate'
+        WHERE session_id IN (
+            SELECT session_id FROM codex_sessions WHERE summary_provenance = 'legacyAggregate'
+        );
+
+        UPDATE codex_daily_usage_summaries
+        SET summary_provenance = 'legacyAggregate'
+        WHERE session_id IN (
+            SELECT session_id FROM codex_sessions WHERE summary_provenance = 'legacyAggregate'
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_codex_sessions_provenance
+            ON codex_sessions(summary_provenance);
+        CREATE INDEX IF NOT EXISTS idx_codex_session_summaries_provenance
+            ON codex_session_summaries(summary_provenance);
+        CREATE INDEX IF NOT EXISTS idx_codex_daily_summaries_provenance
+            ON codex_daily_usage_summaries(summary_provenance);
+        CREATE INDEX IF NOT EXISTS idx_codex_events_timestamp_source
+            ON codex_usage_events(timestamp_source, timestamp_conflict_count);
+
+        CREATE TABLE IF NOT EXISTS codex_session_deletion_journal (
+            deletion_id TEXT PRIMARY KEY,
+            requested_session_id TEXT NOT NULL,
+            root_session_id TEXT NOT NULL,
+            history_root_path TEXT NOT NULL,
+            staging_root_path TEXT NOT NULL,
+            status TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            error_message TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_codex_deletion_journal_status
+            ON codex_session_deletion_journal(status, updated_at);
+
+        CREATE TABLE IF NOT EXISTS codex_session_deletion_files (
+            deletion_id TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            source_path TEXT NOT NULL,
+            relative_path TEXT NOT NULL,
+            bucket TEXT NOT NULL,
+            original_path TEXT NOT NULL,
+            staging_path TEXT NOT NULL,
+            recovery_path TEXT,
+            state TEXT NOT NULL,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY(deletion_id, original_path),
+            FOREIGN KEY(deletion_id) REFERENCES codex_session_deletion_journal(deletion_id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_codex_deletion_files_state
+            ON codex_session_deletion_files(deletion_id, state);
+
+        INSERT OR REPLACE INTO app_metadata (key, value, updated_at)
+            VALUES ('codex_parser_version', '7', unixepoch());
+        INSERT OR REPLACE INTO app_metadata (key, value, updated_at)
+            VALUES ('codex_parser_rebuild_status', 'pending', unixepoch());
+        INSERT OR REPLACE INTO app_metadata (key, value, updated_at)
+            VALUES ('codex_parser_rebuild_generation', COALESCE((SELECT CAST(value AS INTEGER) + 1 FROM app_metadata WHERE key = 'codex_parser_rebuild_generation'), 1), unixepoch());
+        INSERT OR REPLACE INTO app_metadata (key, value, updated_at)
+            VALUES ('pricing_migration_state', 'fullyCurrent', unixepoch());
+        DELETE FROM app_metadata WHERE key = 'pricing_reprice_catalog_version';
+
+        UPDATE codex_import_sources
+            SET status = CASE WHEN status = 'tombstoned' THEN status ELSE 'stale' END,
+                error_message = CASE WHEN status = 'tombstoned' THEN error_message ELSE 'parser v7 rebuild pending' END
+        WHERE status != 'tombstoned';
+        """)
     }
 }
 
@@ -559,7 +683,8 @@ private struct V2CodexUsageCoreMigration: DatabaseMigration {
             estimated_cost_usd_nano INTEGER NOT NULL DEFAULT 0,
             pricing_status TEXT NOT NULL DEFAULT 'unpricedUnknownModel',
             metadata_fingerprint TEXT,
-            has_subagents INTEGER NOT NULL DEFAULT 0
+            has_subagents INTEGER NOT NULL DEFAULT 0,
+            summary_provenance TEXT NOT NULL DEFAULT 'eventLedger'
         );
         CREATE INDEX IF NOT EXISTS idx_codex_sessions_root ON codex_sessions(root_session_id);
         CREATE INDEX IF NOT EXISTS idx_codex_sessions_parent ON codex_sessions(parent_session_id);
@@ -585,7 +710,8 @@ private struct V2CodexUsageCoreMigration: DatabaseMigration {
             checkpoint_state_json TEXT,
             status TEXT NOT NULL DEFAULT 'discovered',
             last_imported_at INTEGER,
-            error_message TEXT
+            error_message TEXT,
+            timestamp_conflict_count INTEGER NOT NULL DEFAULT 0
         );
         CREATE INDEX IF NOT EXISTS idx_codex_sources_identity ON codex_import_sources(device_id, inode, birthtime_ns);
         CREATE INDEX IF NOT EXISTS idx_codex_sources_status ON codex_import_sources(status);
@@ -601,8 +727,10 @@ private struct V2CodexUsageCoreMigration: DatabaseMigration {
             model_raw TEXT NOT NULL,
             model_canonical TEXT NOT NULL,
             service_tier TEXT,
+            reasoning_effort TEXT,
             input_tokens INTEGER NOT NULL DEFAULT 0,
             cached_input_tokens INTEGER NOT NULL DEFAULT 0,
+            cache_write_input_tokens INTEGER NOT NULL DEFAULT 0,
             output_tokens INTEGER NOT NULL DEFAULT 0,
             reasoning_output_tokens INTEGER NOT NULL DEFAULT 0,
             total_tokens INTEGER NOT NULL DEFAULT 0,
@@ -617,7 +745,11 @@ private struct V2CodexUsageCoreMigration: DatabaseMigration {
             line_offset INTEGER NOT NULL DEFAULT 0,
             line_bytes INTEGER NOT NULL DEFAULT 0,
             payload_sha256 TEXT,
-            created_at INTEGER NOT NULL
+            created_at INTEGER NOT NULL,
+            timestamp_quality TEXT NOT NULL DEFAULT 'event_timestamp',
+            timestamp_source TEXT NOT NULL DEFAULT 'top_level_timestamp',
+            timestamp_conflict_count INTEGER NOT NULL DEFAULT 0,
+            pricing_catalog_version TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_codex_events_session_time ON codex_usage_events(session_id, timestamp_ms);
         CREATE INDEX IF NOT EXISTS idx_codex_events_root_time ON codex_usage_events(root_session_id, timestamp_ms);
@@ -681,10 +813,25 @@ private struct V3PricingAndSummariesMigration: DatabaseMigration {
             total_tokens INTEGER NOT NULL DEFAULT 0,
             uncached_input_tokens INTEGER NOT NULL DEFAULT 0,
             cached_input_tokens INTEGER NOT NULL DEFAULT 0,
+            cache_write_input_tokens INTEGER NOT NULL DEFAULT 0,
             output_tokens INTEGER NOT NULL DEFAULT 0,
             reasoning_output_tokens INTEGER NOT NULL DEFAULT 0,
             estimated_cost_usd_nano INTEGER NOT NULL DEFAULT 0,
             unpriced_event_count INTEGER NOT NULL DEFAULT 0,
+            unpriced_token_count INTEGER NOT NULL DEFAULT 0,
+            unpriced_unknown_model_event_count INTEGER NOT NULL DEFAULT 0,
+            unpriced_unknown_model_token_count INTEGER NOT NULL DEFAULT 0,
+            unpriced_unsupported_tier_event_count INTEGER NOT NULL DEFAULT 0,
+            unpriced_unsupported_tier_token_count INTEGER NOT NULL DEFAULT 0,
+            unpriced_historical_rule_missing_event_count INTEGER NOT NULL DEFAULT 0,
+            unpriced_historical_rule_missing_token_count INTEGER NOT NULL DEFAULT 0,
+            unpriced_unsupported_context_event_count INTEGER NOT NULL DEFAULT 0,
+            unpriced_unsupported_context_token_count INTEGER NOT NULL DEFAULT 0,
+            unpriced_invalid_record_event_count INTEGER NOT NULL DEFAULT 0,
+            unpriced_invalid_record_token_count INTEGER NOT NULL DEFAULT 0,
+            unpriced_overflow_event_count INTEGER NOT NULL DEFAULT 0,
+            unpriced_overflow_token_count INTEGER NOT NULL DEFAULT 0,
+            summary_provenance TEXT NOT NULL DEFAULT 'eventLedger',
             PRIMARY KEY(session_id, model_canonical)
         );
         CREATE INDEX IF NOT EXISTS idx_codex_summaries_session ON codex_session_summaries(session_id);
@@ -743,10 +890,25 @@ private struct V5AggregateOnlyUsageMigration: DatabaseMigration {
             total_tokens INTEGER NOT NULL DEFAULT 0,
             uncached_input_tokens INTEGER NOT NULL DEFAULT 0,
             cached_input_tokens INTEGER NOT NULL DEFAULT 0,
+            cache_write_input_tokens INTEGER NOT NULL DEFAULT 0,
             output_tokens INTEGER NOT NULL DEFAULT 0,
             reasoning_output_tokens INTEGER NOT NULL DEFAULT 0,
             estimated_cost_usd_nano INTEGER NOT NULL DEFAULT 0,
             unpriced_event_count INTEGER NOT NULL DEFAULT 0,
+            unpriced_token_count INTEGER NOT NULL DEFAULT 0,
+            unpriced_unknown_model_event_count INTEGER NOT NULL DEFAULT 0,
+            unpriced_unknown_model_token_count INTEGER NOT NULL DEFAULT 0,
+            unpriced_unsupported_tier_event_count INTEGER NOT NULL DEFAULT 0,
+            unpriced_unsupported_tier_token_count INTEGER NOT NULL DEFAULT 0,
+            unpriced_historical_rule_missing_event_count INTEGER NOT NULL DEFAULT 0,
+            unpriced_historical_rule_missing_token_count INTEGER NOT NULL DEFAULT 0,
+            unpriced_unsupported_context_event_count INTEGER NOT NULL DEFAULT 0,
+            unpriced_unsupported_context_token_count INTEGER NOT NULL DEFAULT 0,
+            unpriced_invalid_record_event_count INTEGER NOT NULL DEFAULT 0,
+            unpriced_invalid_record_token_count INTEGER NOT NULL DEFAULT 0,
+            unpriced_overflow_event_count INTEGER NOT NULL DEFAULT 0,
+            unpriced_overflow_token_count INTEGER NOT NULL DEFAULT 0,
+            summary_provenance TEXT NOT NULL DEFAULT 'eventLedger',
             PRIMARY KEY(session_id, day_key, model_canonical)
         );
         CREATE INDEX IF NOT EXISTS idx_codex_daily_day ON codex_daily_usage_summaries(day_start_ms, day_key);

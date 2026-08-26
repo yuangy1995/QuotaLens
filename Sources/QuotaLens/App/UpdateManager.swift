@@ -91,7 +91,10 @@ public final class UpdateManager: NSObject, ObservableObject, SPUUpdaterDelegate
             _ = updater.clearFeedURLFromUserDefaults()
         } catch {
             updateStatusText = L10n.text("在线升级不可用", "Online updates unavailable")
-            updateDetailText = error.localizedDescription
+            updateDetailText = L10n.text(
+                "暂时无法启动在线升级，请稍后再试。",
+                "Online updates could not start right now. Try again later."
+            )
         }
     }
 
@@ -142,7 +145,10 @@ public final class UpdateManager: NSObject, ObservableObject, SPUUpdaterDelegate
             showUpdateDialog(
                 kind: .failure,
                 title: L10n.text("在线升级不可用", "Online updates unavailable"),
-                message: L10n.text("当前构建未配置在线升级。", "This build is not configured for online updates."),
+                message: L10n.text(
+                    "当前版本暂不支持在线更新，请前往项目页面获取新版本。",
+                    "This version does not support online updates. Please visit the project page to get a newer version."
+                ),
                 primaryButtonTitle: L10n.text("知道了", "OK"),
                 primaryAction: { [weak self] in self?.dismissUpdateDialog() }
             )
@@ -255,7 +261,7 @@ public final class UpdateManager: NSObject, ObservableObject, SPUUpdaterDelegate
                 reply(.install)
                 self?.showProgress(
                     title: L10n.text("正在准备更新", "Preparing update"),
-                    message: L10n.text("Sparkle 正在准备下载或安装更新。", "Sparkle is preparing to download or install the update."),
+                    message: L10n.text("QuotaLens 正在准备下载或安装更新。", "QuotaLens is preparing to download or install the update."),
                     progress: nil
                 )
             },
@@ -285,7 +291,7 @@ public final class UpdateManager: NSObject, ObservableObject, SPUUpdaterDelegate
     fileprivate func showUpdaterError(error: NSError, acknowledgement: @escaping () -> Void) {
         isCheckingForUpdates = false
         updateStatusText = L10n.text("检查更新失败", "Update check failed")
-        updateDetailText = cleanUpdateErrorMessage(error.localizedDescription)
+        updateDetailText = cleanUpdateErrorMessage(error)
         showUpdateDialog(
             kind: .failure,
             title: L10n.text("无法检查更新", "Unable to Check for Updates"),
@@ -468,17 +474,12 @@ public final class UpdateManager: NSObject, ObservableObject, SPUUpdaterDelegate
         (error.userInfo[SPULatestAppcastItemFoundKey] as? SUAppcastItem)?.displayVersionString
     }
 
-    private func cleanUpdateErrorMessage(_ message: String) -> String {
-        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
-            return L10n.text("QuotaLens 未能完成更新检测，请稍后再试。", "QuotaLens could not complete the update check. Try again later.")
-        }
-        if trimmed.localizedCaseInsensitiveContains("http://")
-            || trimmed.localizedCaseInsensitiveContains("https://")
-            || trimmed.localizedCaseInsensitiveContains("appcast") {
-            return L10n.text("无法读取更新信息，请检查网络后重试。", "Update information could not be loaded. Check the network and try again.")
-        }
-        return trimmed
+    private func cleanUpdateErrorMessage(_ error: NSError) -> String {
+        _ = error
+        return L10n.text(
+            "QuotaLens 未能完成更新检测，请稍后再试。",
+            "QuotaLens could not complete the update check. Try again later."
+        )
     }
 
     nonisolated static func cleanReleaseNotes(_ raw: String?, version: String) -> String {

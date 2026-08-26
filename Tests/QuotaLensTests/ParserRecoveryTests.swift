@@ -232,13 +232,25 @@ final class ParserRecoveryTests: XCTestCase {
             sourcePath: "/tmp/child.jsonl"
         )
         var firstState = CodexUsageReducer.ReducerState()
+        _ = reducer.reduce(
+            event: RolloutWireEvent(
+                eventType: "session_meta",
+                timestampMs: 2,
+                replayBoundaryTimestampMs: 2,
+                sessionId: "child",
+                parentSessionId: "parent",
+                isChildSessionMeta: true
+            ),
+            lineRecord: lineRecord(index: 0),
+            state: &firstState
+        )
         let replay = try XCTUnwrap(reducer.reduce(
             event: RolloutWireEvent(
                 eventType: "token_count",
                 timestampMs: 1,
                 lastTokenUsage: RawTokenUsagePayload(inputTokens: 5)
             ),
-            lineRecord: lineRecord(index: 0),
+            lineRecord: lineRecord(index: 1),
             state: &firstState
         ))
         XCTAssertTrue(replay.isChildReplay)
@@ -246,16 +258,17 @@ final class ParserRecoveryTests: XCTestCase {
         var resumedState = CodexUsageReducer.ReducerState(checkpoint: firstState.makeCheckpoint())
         _ = reducer.reduce(
             event: RolloutWireEvent(eventType: "user_message", timestampMs: 2),
-            lineRecord: lineRecord(index: 1),
+            lineRecord: lineRecord(index: 2),
             state: &resumedState
         )
+        XCTAssertFalse(resumedState.makeCheckpoint().hasSeenFreshTurn)
         let fresh = try XCTUnwrap(reducer.reduce(
             event: RolloutWireEvent(
                 eventType: "token_count",
                 timestampMs: 3,
                 lastTokenUsage: RawTokenUsagePayload(inputTokens: 8)
             ),
-            lineRecord: lineRecord(index: 2),
+            lineRecord: lineRecord(index: 3),
             state: &resumedState
         ))
         XCTAssertFalse(fresh.isChildReplay)

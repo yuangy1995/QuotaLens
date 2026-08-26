@@ -270,10 +270,12 @@ final class ImporterRecoveryTests: XCTestCase {
         XCTAssertEqual(try database.intScalar(sql: "SELECT COUNT(*) FROM codex_sessions WHERE session_id = 'active-session';"), 1)
         XCTAssertEqual(try database.stringScalar(sql: "SELECT status FROM codex_import_runs ORDER BY started_at DESC LIMIT 1;"), "partial")
         XCTAssertEqual(try database.intScalar(sql: "SELECT COUNT(*) FROM codex_import_runs WHERE status = 'success';"), 0)
+        let runError = try XCTUnwrap(database.stringScalar(
+            sql: "SELECT error_message FROM codex_import_runs ORDER BY started_at DESC LIMIT 1;"
+        ))
         XCTAssertTrue(
-            try XCTUnwrap(database.stringScalar(
-                sql: "SELECT error_message FROM codex_import_runs ORDER BY started_at DESC LIMIT 1;"
-            )).contains("sessions: enumerator failed")
+            runError.contains("Some local records cannot be read right now")
+                || runError.contains("部分本地记录暂时无法读取")
         )
         XCTAssertEqual(
             try database.stringScalar(sql: "SELECT value FROM app_metadata WHERE key = 'codex_parser_rebuild_status';"),

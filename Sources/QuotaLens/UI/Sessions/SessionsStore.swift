@@ -11,6 +11,7 @@ public struct ProjectSessionGroup: Identifiable, Sendable {
     public let sessions: [CodexSessionDTO]
     public let totalTokens: Int64
     public let totalCost: MoneyNanoUSD
+    public let legacyAggregateCost: MoneyNanoUSD
     public let sessionCount: Int
 }
 
@@ -83,13 +84,19 @@ public final class SessionsStore: ObservableObject {
             let isUnnamed = key == "__unnamed__"
             let displayName = isUnnamed ? L10n.text("默认未命名项目", "Default / Unnamed") : key
             let totalTokens = list.reduce(Int64(0)) { $0 + $1.tokens.canonicalTotalTokens }
-            let totalCost = list.reduce(MoneyNanoUSD.zero) { $0 + $1.estimatedCost }
+            let totalCost = list.reduce(MoneyNanoUSD.zero) {
+                $1.summaryProvenance == .legacyAggregate ? $0 : $0 + $1.estimatedCost
+            }
+            let legacyCost = list.reduce(MoneyNanoUSD.zero) {
+                $1.summaryProvenance == .legacyAggregate ? $0 + $1.estimatedCost : $0
+            }
             return ProjectSessionGroup(
                 project: key,
                 displayName: displayName,
                 sessions: list,
                 totalTokens: totalTokens,
                 totalCost: totalCost,
+                legacyAggregateCost: legacyCost,
                 sessionCount: list.count
             )
         }
@@ -146,7 +153,7 @@ public final class SessionsStore: ObservableObject {
             }
         } catch {
             guard generation == queryGeneration else { return }
-            self.errorMessage = error.localizedDescription
+            self.errorMessage = Self.userFacingError(error)
         }
         if generation == queryGeneration {
             isLoading = false
@@ -174,7 +181,7 @@ public final class SessionsStore: ObservableObject {
             nextCursor = page.nextCursor
         } catch {
             guard generation == queryGeneration else { return }
-            errorMessage = error.localizedDescription
+            errorMessage = Self.userFacingError(error)
         }
     }
 
@@ -190,7 +197,7 @@ public final class SessionsStore: ObservableObject {
                 eventLimit: eventPageSize
             )
         } catch {
-            self.errorMessage = error.localizedDescription
+            self.errorMessage = Self.userFacingError(error)
         }
         isLoadingDetail = false
     }
@@ -228,7 +235,7 @@ public final class SessionsStore: ObservableObject {
                 totalSubagentCost: page.totalSubagentCost
             )
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = Self.userFacingError(error)
         }
     }
 
@@ -249,9 +256,19 @@ public final class SessionsStore: ObservableObject {
             await reloadSessions()
             return true
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = Self.userFacingError(error)
             return false
         }
+    }
+
+    private static func userFacingError(_ error: Error) -> String {
+        if let description = (error as? SessionDeletionError)?.errorDescription {
+            return description
+        }
+        return L10n.text(
+            "暂时无法读取本地用量记录，请稍后重试。",
+            "Local usage records could not be loaded right now. Try again later."
+        )
     }
 
     private func debounceSearch() {

@@ -376,7 +376,10 @@ public struct ResetCreditUseAlertModifier: ViewModifier {
                 withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
                     notice = ResetCreditUseNotice(
                         title: L10n.text("使用失败", "Use Failed"),
-                        message: error.localizedDescription
+                        message: L10n.text(
+                            "暂时无法使用这张重置卡，请稍后重试。",
+                            "This reset card cannot be used right now. Try again later."
+                        )
                     )
                 }
             }

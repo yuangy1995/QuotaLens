@@ -195,7 +195,7 @@ public struct SessionDetailView: View {
                 )
 
                 MetricHUDTile(
-                    title: L10n.text("API 等价价值 · Beta", "API Equivalent Value · Beta"),
+                    title: L10n.text("费用估算（试用）", "Estimated cost (Beta)"),
                     value: UsageNumberFormatter.currencyUSD(detail.session.estimatedCost),
                     caption: pricingCaption(for: detail.session),
                     icon: "dollarsign.circle.fill",
@@ -294,6 +294,16 @@ public struct SessionDetailView: View {
                         Text(model.modelCanonical)
                             .font(.system(size: 11.5, weight: .bold, design: .monospaced))
                             .foregroundStyle(cyan)
+
+                        if model.summaryProvenance == .legacyAggregate {
+                            Text(L10n.text("历史金额", "Historical"))
+                                .font(.system(size: 8.5, weight: .heavy, design: .monospaced))
+                                .foregroundStyle(AppTheme.accentAmber(for: colorScheme))
+                        } else if model.summaryProvenance == .reconstructed {
+                            Text(L10n.text("已更新", "Updated"))
+                                .font(.system(size: 8.5, weight: .heavy, design: .monospaced))
+                                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                        }
 
                         Spacer()
 
@@ -430,8 +440,14 @@ public struct SessionDetailView: View {
     }
 
     private func pricingCaption(for session: CodexSessionDTO) -> String {
+        if session.summaryProvenance == .legacyAggregate {
+            return L10n.text(
+                "历史金额（保留原记录）；根据公开价格估算，并非实际扣款",
+                "Historical amount kept from the original record; estimated costs are not actual charges"
+            )
+        }
         guard !session.pricingStatus.isPriced else {
-            return L10n.text("不是订阅账单金额", "Not a bill")
+            return L10n.text("根据公开价格估算，并非实际扣款", "Estimated from public rates, not actual charges")
         }
         guard !session.unpricedReasonCounts.isEmpty else {
             return session.pricingStatus.localizedDescription

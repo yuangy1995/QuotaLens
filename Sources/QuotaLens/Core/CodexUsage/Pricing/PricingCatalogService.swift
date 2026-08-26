@@ -139,49 +139,14 @@ public final class PricingCatalogService: Sendable {
         onProgress: (@Sendable (Double, String) -> Void)? = nil
     ) throws {
         let snapshot = try loadSnapshot(database: database)
-        let legacyAggregateOnlySessions = try database.intScalar(
-            sql: """
-            SELECT COUNT(*) FROM codex_sessions s
-            WHERE s.event_count > 0
-              AND EXISTS (
-                SELECT 1 FROM codex_import_sources source
-                WHERE (source.source_path = s.source_path OR source.relative_path = s.relative_path)
-                  AND source.status != 'tombstoned'
-                  AND (source.status = 'stale' OR source.parser_version != ?)
-              )
-              AND NOT EXISTS (
-                SELECT 1 FROM codex_usage_events e
-                WHERE e.session_id = s.session_id AND e.is_child_replay = 0
-              );
-            """,
-            bindings: [ParserCheckpoint.currentParserVersion]
-        )
-        // 早期版本仅保存汇总，无法由空账本恢复金额或日期；等待原件重建，禁止清空旧结果。
-        if legacyAggregateOnlySessions > 0 {
-            let message = L10n.format(
-                "%d legacy sessions require source logs before repricing; previous totals retained",
-                zhHans: "%d 个旧会话缺少事件明细，待原始日志重建后再计价；旧汇总已保留",
-                legacyAggregateOnlySessions
-            )
-            try database.transaction {
-                try database.executeUpdate(
-                    sql: "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES ('pricing_reprice_status', 'pending', unixepoch());",
-                    bindings: []
-                )
-                try database.executeUpdate(
-                    sql: "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES ('pricing_reprice_error', ?, unixepoch());",
-                    bindings: [message]
-                )
-            }
-            onProgress?(0, message)
-            return
-        }
+        try markLegacyAggregateRows(database: database)
+        try ensureLegacySessionOnlySummaries(database: database, timeZone: timeZone)
         let normalizedBatchSize = max(1, batchSize)
         let aggregationTimeZone = timeZone
         try ensureRepriceShadowTables(database: database)
         try prepareRepriceRunIfNeeded(database: database, catalogVersion: snapshot.catalogVersion)
         let totalEvents = try database.intScalar(sql: "SELECT COUNT(*) FROM codex_usage_events;")
-        onProgress?(0, L10n.text("正在重计价…", "Repricing usage..."))
+        onProgress?(0, L10n.text("正在更新费用估算…", "Updating cost estimates..."))
 
         do {
             while true {
@@ -197,29 +162,29 @@ public final class PricingCatalogService: Sendable {
 
                 var processed = 0
                 try database.transaction {
-                    for row in rows {
+                    try database.executePreparedUpdates(
+                        sql: """
+                        INSERT OR REPLACE INTO codex_usage_event_reprice_shadow (
+                            source_rowid, event_id, estimated_cost_usd_nano,
+                            pricing_rule_id, pricing_status, pricing_catalog_version
+                        ) VALUES (?, ?, ?, ?, ?, ?);
+                        """,
+                        values: rows
+                    ) { row in
                         let price = snapshot.evaluate(
                             modelCanonical: row.modelCanonical,
                             serviceTier: row.serviceTier,
                             timestampMs: row.timestampMs,
                             tokens: row.tokens
                         )
-                        try database.executeUpdate(
-                            sql: """
-                            INSERT OR REPLACE INTO codex_usage_event_reprice_shadow (
-                                source_rowid, event_id, estimated_cost_usd_nano,
-                                pricing_rule_id, pricing_status, pricing_catalog_version
-                            ) VALUES (?, ?, ?, ?, ?, ?);
-                            """,
-                            bindings: [
-                                row.rowID,
-                                row.eventID,
-                                price.estimatedCost.rawValue,
-                                price.pricingRuleId,
-                                price.pricingStatus.rawValue,
-                                price.catalogVersion
-                            ]
-                        )
+                        return [
+                            row.rowID,
+                            row.eventID,
+                            price.estimatedCost.rawValue,
+                            price.pricingRuleId,
+                            price.pricingStatus.rawValue,
+                            price.catalogVersion
+                        ]
                     }
                     let finalRowID = rows.last?.rowID ?? lastRowID
                     processed = try database.intScalar(
@@ -237,20 +202,20 @@ public final class PricingCatalogService: Sendable {
                 }
                 onProgress?(
                     0.7 * Double(processed) / Double(max(1, totalEvents)),
-                    L10n.format("Repricing %d/%d records", zhHans: "正在重计价 %d/%d 条记录", processed, totalEvents)
+                    L10n.format("Updating %d/%d records", zhHans: "正在更新 %d/%d 条记录", processed, totalEvents)
                 )
             }
 
             try validateRepriceCoverage(database: database, catalogVersion: snapshot.catalogVersion)
-            onProgress?(0.7, L10n.text("正在重建计价与日期汇总…", "Rebuilding pricing and daily summaries..."))
+            onProgress?(0.7, L10n.text("正在整理费用和日期汇总…", "Organizing cost and daily summaries..."))
             try rebuildShadowSummaries(database: database, timeZone: aggregationTimeZone)
-            onProgress?(0.9, L10n.text("正在提交新的计价结果…", "Publishing updated pricing..."))
+            onProgress?(0.9, L10n.text("正在保存更新后的费用估算…", "Saving updated cost estimates..."))
             try publishRepriceResults(
                 database: database,
                 catalogVersion: snapshot.catalogVersion,
                 timeZone: aggregationTimeZone
             )
-            onProgress?(1, L10n.text("重计价完成", "Repricing complete"))
+            onProgress?(1, L10n.text("费用已更新", "Costs updated"))
         } catch {
             try? updateRepriceMetadata(
                 database: database,
@@ -260,6 +225,10 @@ public final class PricingCatalogService: Sendable {
                 processedEvents: nil,
                 totalEvents: nil,
                 error: error.localizedDescription
+            )
+            try? database.executeUpdate(
+                sql: "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES ('pricing_migration_state', ?, unixepoch());",
+                bindings: [PricingMigrationState.failed.rawValue]
             )
             throw error
         }
@@ -353,6 +322,11 @@ public final class PricingCatalogService: Sendable {
         return PricingCatalogSnapshot(catalogVersion: activeCatalog, aliases: aliasMap, rulesByModel: rulesByModel)
     }
 
+    public func refreshPricingMigrationState(database: SQLiteDatabase) throws {
+        try markLegacyAggregateRows(database: database)
+        try updatePricingMigrationState(database: database)
+    }
+
     /// 使用已安装到 SQLite 的版本化价格目录评估单条事件。
     public func evaluate(
         database: SQLiteDatabase,
@@ -384,13 +358,24 @@ public final class PricingCatalogService: Sendable {
         timeZone: TimeZone
     ) throws -> Bool {
         let repricedCatalog = try database.stringScalar(
-            sql: "SELECT value FROM app_metadata WHERE key = 'pricing_reprice_catalog_version';"
+            sql: """
+            SELECT value FROM app_metadata WHERE key = 'pricing_reprice_target_catalog_version'
+            UNION ALL
+            SELECT value FROM app_metadata WHERE key = 'pricing_reprice_catalog_version'
+            LIMIT 1;
+            """
         )
         guard repricedCatalog == catalogVersion else { return true }
         let status = try database.stringScalar(
             sql: "SELECT value FROM app_metadata WHERE key = 'pricing_reprice_status';"
         )
         guard status == "completed" else { return true }
+        let migrationState = PricingMigrationState(
+            storedValue: try database.stringScalar(
+                sql: "SELECT value FROM app_metadata WHERE key = 'pricing_migration_state';"
+            )
+        )
+        guard migrationState != .failed else { return true }
         let aggregatedTimeZone = try database.stringScalar(
             sql: "SELECT value FROM app_metadata WHERE key = 'usage_aggregation_timezone_id';"
         )
@@ -458,7 +443,184 @@ public final class PricingCatalogService: Sendable {
         }
     }
 
+    private struct LegacyAggregateSessionRow {
+        let sessionId: String
+        let eventCount: Int
+        let totalTokens: Int64
+        let inputTokens: Int64
+        let cachedInputTokens: Int64
+        let cacheWriteInputTokens: Int64
+        let outputTokens: Int64
+        let reasoningOutputTokens: Int64
+        let estimatedCostNano: Int64
+        let activityMs: Int64
+    }
+
+    private func markLegacyAggregateRows(database: SQLiteDatabase) throws {
+        try database.execute(sql: """
+        UPDATE codex_sessions
+        SET summary_provenance = 'legacyAggregate'
+        WHERE event_count > 0
+          AND NOT EXISTS (
+            SELECT 1
+            FROM codex_usage_events e
+            WHERE e.session_id = codex_sessions.session_id
+              AND e.is_child_replay = 0
+          );
+
+        UPDATE codex_session_summaries
+        SET summary_provenance = 'legacyAggregate'
+        WHERE session_id IN (
+            SELECT session_id
+            FROM codex_sessions
+            WHERE summary_provenance = 'legacyAggregate'
+        )
+        AND NOT EXISTS (
+            SELECT 1
+            FROM codex_usage_events e
+            WHERE e.session_id = codex_session_summaries.session_id
+              AND e.is_child_replay = 0
+        );
+
+        UPDATE codex_daily_usage_summaries
+        SET summary_provenance = 'legacyAggregate'
+        WHERE session_id IN (
+            SELECT session_id
+            FROM codex_sessions
+            WHERE summary_provenance = 'legacyAggregate'
+        )
+        AND NOT EXISTS (
+            SELECT 1
+            FROM codex_usage_events e
+            WHERE e.session_id = codex_daily_usage_summaries.session_id
+              AND e.is_child_replay = 0
+        );
+        """)
+    }
+
+    private func ensureLegacySessionOnlySummaries(
+        database: SQLiteDatabase,
+        timeZone: TimeZone
+    ) throws {
+        let rows = try database.executeQuery(
+            sql: """
+            SELECT
+                session_id, event_count, total_tokens, input_tokens, cached_input_tokens,
+                cache_write_input_tokens, output_tokens, reasoning_output_tokens,
+                estimated_cost_usd_nano,
+                COALESCE(last_event_at, updated_at, created_at)
+            FROM codex_sessions
+            WHERE summary_provenance = 'legacyAggregate'
+              AND event_count > 0
+              AND NOT EXISTS (
+                SELECT 1
+                FROM codex_usage_events e
+                WHERE e.session_id = codex_sessions.session_id
+                  AND e.is_child_replay = 0
+              );
+            """
+        ) { stmt -> LegacyAggregateSessionRow in
+            LegacyAggregateSessionRow(
+                sessionId: String(cString: sqlite3_column_text(stmt, 0)),
+                eventCount: Int(sqlite3_column_int(stmt, 1)),
+                totalTokens: sqlite3_column_int64(stmt, 2),
+                inputTokens: sqlite3_column_int64(stmt, 3),
+                cachedInputTokens: sqlite3_column_int64(stmt, 4),
+                cacheWriteInputTokens: sqlite3_column_int64(stmt, 5),
+                outputTokens: sqlite3_column_int64(stmt, 6),
+                reasoningOutputTokens: sqlite3_column_int64(stmt, 7),
+                estimatedCostNano: sqlite3_column_int64(stmt, 8),
+                activityMs: sqlite3_column_int64(stmt, 9)
+            )
+        }
+        guard !rows.isEmpty else { return }
+
+        let calendar = UsageDayBucketer.calendar(timeZone: timeZone)
+        try database.transaction {
+            for row in rows {
+                let uncachedInput = max(0, row.inputTokens - row.cachedInputTokens - row.cacheWriteInputTokens)
+                let hasSessionSummary = try database.intScalar(
+                    sql: "SELECT COUNT(*) FROM codex_session_summaries WHERE session_id = ?;",
+                    bindings: [row.sessionId]
+                ) > 0
+                if !hasSessionSummary {
+                    try database.executeUpdate(
+                        sql: """
+                        INSERT INTO codex_session_summaries (
+                            session_id, model_canonical, event_count, total_tokens,
+                            uncached_input_tokens, cached_input_tokens, cache_write_input_tokens,
+                            output_tokens, reasoning_output_tokens, estimated_cost_usd_nano,
+                            unpriced_event_count, unpriced_token_count,
+                            unpriced_unknown_model_event_count, unpriced_unknown_model_token_count,
+                            unpriced_unsupported_tier_event_count, unpriced_unsupported_tier_token_count,
+                            unpriced_historical_rule_missing_event_count, unpriced_historical_rule_missing_token_count,
+                            unpriced_unsupported_context_event_count, unpriced_unsupported_context_token_count,
+                            unpriced_invalid_record_event_count, unpriced_invalid_record_token_count,
+                            unpriced_overflow_event_count, unpriced_overflow_token_count,
+                            summary_provenance
+                        ) VALUES (?, 'legacy-aggregate', ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 'legacyAggregate');
+                        """,
+                        bindings: [
+                            row.sessionId,
+                            row.eventCount,
+                            row.totalTokens,
+                            uncachedInput,
+                            row.cachedInputTokens,
+                            row.cacheWriteInputTokens,
+                            row.outputTokens,
+                            row.reasoningOutputTokens,
+                            row.estimatedCostNano
+                        ]
+                    )
+                }
+
+                let bucket = UsageDayBucketer.bucket(
+                    timestampMs: row.activityMs,
+                    calendar: calendar,
+                    timeZone: timeZone
+                )
+                let hasDailySummary = try database.intScalar(
+                    sql: "SELECT COUNT(*) FROM codex_daily_usage_summaries WHERE session_id = ?;",
+                    bindings: [row.sessionId]
+                ) > 0
+                if !hasDailySummary {
+                    try database.executeUpdate(
+                        sql: """
+                        INSERT INTO codex_daily_usage_summaries (
+                            session_id, day_key, day_start_ms, model_canonical, event_count,
+                            total_tokens, uncached_input_tokens, cached_input_tokens, cache_write_input_tokens,
+                            output_tokens, reasoning_output_tokens, estimated_cost_usd_nano,
+                            unpriced_event_count, unpriced_token_count,
+                            unpriced_unknown_model_event_count, unpriced_unknown_model_token_count,
+                            unpriced_unsupported_tier_event_count, unpriced_unsupported_tier_token_count,
+                            unpriced_historical_rule_missing_event_count, unpriced_historical_rule_missing_token_count,
+                            unpriced_unsupported_context_event_count, unpriced_unsupported_context_token_count,
+                            unpriced_invalid_record_event_count, unpriced_invalid_record_token_count,
+                            unpriced_overflow_event_count, unpriced_overflow_token_count,
+                            summary_provenance
+                        ) VALUES (?, ?, ?, 'legacy-aggregate', ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 'legacyAggregate');
+                        """,
+                        bindings: [
+                            row.sessionId,
+                            bucket.dayKey.yyyyMMdd,
+                            bucket.dayStartMs,
+                            row.eventCount,
+                            row.totalTokens,
+                            uncachedInput,
+                            row.cachedInputTokens,
+                            row.cacheWriteInputTokens,
+                            row.outputTokens,
+                            row.reasoningOutputTokens,
+                            row.estimatedCostNano
+                        ]
+                    )
+                }
+            }
+        }
+    }
+
     private func ensureRepriceShadowTables(database: SQLiteDatabase) throws {
+        try invalidateIncompatibleRepriceShadowTables(database: database)
         try database.execute(sql: """
         CREATE TABLE IF NOT EXISTS codex_usage_event_reprice_shadow (
             source_rowid INTEGER PRIMARY KEY,
@@ -494,6 +656,7 @@ public final class PricingCatalogService: Sendable {
             unpriced_invalid_record_token_count INTEGER NOT NULL DEFAULT 0,
             unpriced_overflow_event_count INTEGER NOT NULL DEFAULT 0,
             unpriced_overflow_token_count INTEGER NOT NULL DEFAULT 0,
+            summary_provenance TEXT NOT NULL DEFAULT 'reconstructed',
             PRIMARY KEY(session_id, model_canonical)
         );
 
@@ -524,9 +687,98 @@ public final class PricingCatalogService: Sendable {
             unpriced_invalid_record_token_count INTEGER NOT NULL DEFAULT 0,
             unpriced_overflow_event_count INTEGER NOT NULL DEFAULT 0,
             unpriced_overflow_token_count INTEGER NOT NULL DEFAULT 0,
+            summary_provenance TEXT NOT NULL DEFAULT 'reconstructed',
             PRIMARY KEY(session_id, day_key, model_canonical)
         );
         """)
+    }
+
+    private func invalidateIncompatibleRepriceShadowTables(database: SQLiteDatabase) throws {
+        let expectedColumns: [String: Set<String>] = [
+            "codex_usage_event_reprice_shadow": [
+                "source_rowid", "event_id", "estimated_cost_usd_nano",
+                "pricing_rule_id", "pricing_status", "pricing_catalog_version"
+            ],
+            "codex_session_summaries_reprice_shadow": [
+                "session_id", "model_canonical", "event_count", "total_tokens",
+                "uncached_input_tokens", "cached_input_tokens", "cache_write_input_tokens",
+                "output_tokens", "reasoning_output_tokens", "estimated_cost_usd_nano",
+                "unpriced_event_count", "unpriced_token_count",
+                "unpriced_unknown_model_event_count", "unpriced_unknown_model_token_count",
+                "unpriced_unsupported_tier_event_count", "unpriced_unsupported_tier_token_count",
+                "unpriced_historical_rule_missing_event_count", "unpriced_historical_rule_missing_token_count",
+                "unpriced_unsupported_context_event_count", "unpriced_unsupported_context_token_count",
+                "unpriced_invalid_record_event_count", "unpriced_invalid_record_token_count",
+                "unpriced_overflow_event_count", "unpriced_overflow_token_count",
+                "summary_provenance"
+            ],
+            "codex_daily_usage_summaries_reprice_shadow": [
+                "session_id", "day_key", "day_start_ms", "model_canonical",
+                "event_count", "total_tokens", "uncached_input_tokens",
+                "cached_input_tokens", "cache_write_input_tokens", "output_tokens",
+                "reasoning_output_tokens", "estimated_cost_usd_nano",
+                "unpriced_event_count", "unpriced_token_count",
+                "unpriced_unknown_model_event_count", "unpriced_unknown_model_token_count",
+                "unpriced_unsupported_tier_event_count", "unpriced_unsupported_tier_token_count",
+                "unpriced_historical_rule_missing_event_count", "unpriced_historical_rule_missing_token_count",
+                "unpriced_unsupported_context_event_count", "unpriced_unsupported_context_token_count",
+                "unpriced_invalid_record_event_count", "unpriced_invalid_record_token_count",
+                "unpriced_overflow_event_count", "unpriced_overflow_token_count",
+                "summary_provenance"
+            ]
+        ]
+
+        var shouldReset = false
+        for (table, expected) in expectedColumns {
+            guard try shadowTableExists(database: database, table: table) else { continue }
+            let columns = try shadowTableColumns(database: database, table: table)
+            if !expected.isSubset(of: columns) {
+                shouldReset = true
+                break
+            }
+        }
+        guard shouldReset else { return }
+
+        try database.transaction {
+            try database.execute(sql: """
+            DROP TABLE IF EXISTS codex_usage_event_reprice_shadow;
+            DROP TABLE IF EXISTS codex_session_summaries_reprice_shadow;
+            DROP TABLE IF EXISTS codex_daily_usage_summaries_reprice_shadow;
+            DELETE FROM app_metadata
+            WHERE key IN (
+                'pricing_reprice_catalog_version',
+                'pricing_reprice_target_catalog_version',
+                'pricing_reprice_target_catalog_sha256',
+                'pricing_reprice_last_rowid',
+                'pricing_reprice_processed_events',
+                'pricing_reprice_total_events',
+                'pricing_reprice_summary_last_rowid',
+                'pricing_reprice_summary_processed_events',
+                'pricing_reprice_summary_generation',
+                'pricing_reprice_summary_catalog_version',
+                'pricing_reprice_summary_timezone_id',
+                'pricing_reprice_summary_event_count',
+                'pricing_reprice_summary_max_rowid',
+                'pricing_reprice_error'
+            );
+            INSERT OR REPLACE INTO app_metadata (key, value, updated_at)
+                VALUES ('pricing_reprice_status', 'pending', unixepoch());
+            """)
+        }
+    }
+
+    private func shadowTableExists(database: SQLiteDatabase, table: String) throws -> Bool {
+        try database.intScalar(
+            sql: "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?;",
+            bindings: [table]
+        ) > 0
+    }
+
+    private func shadowTableColumns(database: SQLiteDatabase, table: String) throws -> Set<String> {
+        let columns = try database.executeQuery(sql: "PRAGMA table_info(\(table));") { stmt in
+            String(cString: sqlite3_column_text(stmt, 1))
+        }
+        return Set(columns)
     }
 
     private func prepareRepriceRunIfNeeded(database: SQLiteDatabase, catalogVersion: String) throws {
@@ -544,6 +796,9 @@ public final class PricingCatalogService: Sendable {
             sql: "SELECT value FROM app_metadata WHERE key = 'pricing_reprice_target_catalog_sha256';"
         )
         // 事件可能在上次中断后被删除或以新 rowid 重写，先移除无法再对应正式事件的影子结果。
+        let shadowEventCountBeforePrune = try database.intScalar(
+            sql: "SELECT COUNT(*) FROM codex_usage_event_reprice_shadow;"
+        )
         try database.executeUpdate(
             sql: """
             DELETE FROM codex_usage_event_reprice_shadow
@@ -558,8 +813,10 @@ public final class PricingCatalogService: Sendable {
         )
         let totalEvents = try database.intScalar(sql: "SELECT COUNT(*) FROM codex_usage_events;")
         let shadowEventCount = try database.intScalar(sql: "SELECT COUNT(*) FROM codex_usage_event_reprice_shadow;")
+        let shadowWasPruned = shadowEventCount < shadowEventCountBeforePrune
         let canResume = stateCatalog == catalogVersion && targetSHA == catalogSHA
             && (status == "failed" || status == "running")
+            && !shadowWasPruned
             && shadowEventCount > 0
         guard canResume == false else {
             let storedLastRowID = try database.int64Scalar(
@@ -598,6 +855,16 @@ public final class PricingCatalogService: Sendable {
             DELETE FROM codex_usage_event_reprice_shadow;
             DELETE FROM codex_session_summaries_reprice_shadow;
             DELETE FROM codex_daily_usage_summaries_reprice_shadow;
+            DELETE FROM app_metadata
+            WHERE key IN (
+                'pricing_reprice_summary_last_rowid',
+                'pricing_reprice_summary_processed_events',
+                'pricing_reprice_summary_generation',
+                'pricing_reprice_summary_catalog_version',
+                'pricing_reprice_summary_timezone_id',
+                'pricing_reprice_summary_event_count',
+                'pricing_reprice_summary_max_rowid'
+            );
             """)
             try database.executeUpdate(
                 sql: "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES ('pricing_reprice_target_catalog_sha256', ?, unixepoch());",
@@ -686,23 +953,83 @@ public final class PricingCatalogService: Sendable {
                 domain: "QuotaLens.PricingReprice",
                 code: 1002,
                 userInfo: [
-                    NSLocalizedDescriptionKey: "重计价期间事件集合发生变化，将保留旧汇总并在下次重试"
+                    NSLocalizedDescriptionKey: L10n.text(
+                        "费用更新期间本地记录发生变化；已保留原有结果，请稍后重试。",
+                        "Local records changed while costs were being updated. Existing results were kept; try again later."
+                    )
                 ]
             )
         }
     }
 
     private func rebuildShadowSummaries(database: SQLiteDatabase, timeZone: TimeZone) throws {
-        try database.execute(sql: """
-        DELETE FROM codex_session_summaries_reprice_shadow;
-        DELETE FROM codex_daily_usage_summaries_reprice_shadow;
-        """)
-
         let calendar = UsageDayBucketer.calendar(timeZone: timeZone)
-        var sessionSummaries: [RepriceSummaryKey: RepriceSummaryAggregate] = [:]
-        var dailySummaries: [RepriceDailySummaryKey: RepriceSummaryAggregate] = [:]
+        let currentGeneration = try database.int64Scalar(
+            sql: "SELECT value FROM app_metadata WHERE key = 'pricing_reprice_generation';"
+        ) ?? 0
+        let targetCatalog = try database.stringScalar(
+            sql: "SELECT value FROM app_metadata WHERE key = 'pricing_reprice_target_catalog_version';"
+        )
+        let shadowEventStats = try database.executeQuery(
+            sql: """
+            SELECT COUNT(*), COALESCE(MAX(source_rowid), 0)
+            FROM codex_usage_event_reprice_shadow;
+            """
+        ) { stmt -> (Int, Int64) in
+            (Int(sqlite3_column_int(stmt, 0)), sqlite3_column_int64(stmt, 1))
+        }.first ?? (0, 0)
+        let storedGeneration = try database.int64Scalar(
+            sql: "SELECT value FROM app_metadata WHERE key = 'pricing_reprice_summary_generation';"
+        )
+        let storedCatalog = try database.stringScalar(
+            sql: "SELECT value FROM app_metadata WHERE key = 'pricing_reprice_summary_catalog_version';"
+        )
+        let storedTimezone = try database.stringScalar(
+            sql: "SELECT value FROM app_metadata WHERE key = 'pricing_reprice_summary_timezone_id';"
+        )
+        let storedEventCount = try database.intScalar(
+            sql: "SELECT value FROM app_metadata WHERE key = 'pricing_reprice_summary_event_count';"
+        )
+        let storedMaxRowID = try database.int64Scalar(
+            sql: "SELECT value FROM app_metadata WHERE key = 'pricing_reprice_summary_max_rowid';"
+        ) ?? 0
+        let storedLastRowID = try database.int64Scalar(
+            sql: "SELECT value FROM app_metadata WHERE key = 'pricing_reprice_summary_last_rowid';"
+        ) ?? 0
+        let storedProcessedEvents = try database.intScalar(
+            sql: "SELECT value FROM app_metadata WHERE key = 'pricing_reprice_summary_processed_events';"
+        )
+        let summaryShadowRows = try database.intScalar(
+            sql: "SELECT COUNT(*) FROM codex_session_summaries_reprice_shadow;"
+        )
+        let canResumeSummary = storedGeneration == currentGeneration
+            && storedCatalog == targetCatalog
+            && storedTimezone == timeZone.identifier
+            && storedEventCount == shadowEventStats.0
+            && storedMaxRowID == shadowEventStats.1
+            && storedLastRowID > 0
+            && summaryShadowRows > 0
 
-        var lastRowID: Int64 = 0
+        var lastRowID = canResumeSummary ? storedLastRowID : 0
+        var processedEvents = canResumeSummary ? storedProcessedEvents : 0
+        if !canResumeSummary {
+            try database.transaction {
+                try database.execute(sql: """
+                DELETE FROM codex_session_summaries_reprice_shadow;
+                DELETE FROM codex_daily_usage_summaries_reprice_shadow;
+                DELETE FROM app_metadata
+                WHERE key IN (
+                    'pricing_reprice_summary_last_rowid',
+                    'pricing_reprice_summary_processed_events',
+                    'pricing_reprice_summary_generation',
+                    'pricing_reprice_summary_catalog_version',
+                    'pricing_reprice_summary_timezone_id',
+                    'pricing_reprice_summary_event_count',
+                    'pricing_reprice_summary_max_rowid'
+                );
+                """)
+            }
+        }
         while true {
             // 分页释放连接锁；日历计算在锁外进行。限定 rowid 路径，避免每页经时间索引全表排序。
             let rows = try database.executeQuery(sql: """
@@ -715,7 +1042,7 @@ public final class PricingCatalogService: Sendable {
             JOIN codex_usage_event_reprice_shadow r NOT INDEXED
               ON r.source_rowid = e.rowid AND r.event_id = e.event_id
             WHERE e.is_child_replay = 0 AND e.rowid > ?
-            ORDER BY e.rowid ASC LIMIT 2000;
+            ORDER BY e.rowid ASC LIMIT 5000;
             """, bindings: [lastRowID]) { stmt in
                 let tokens = TokenBreakdown(
                     inputTokens: sqlite3_column_int64(stmt, 4),
@@ -736,6 +1063,8 @@ public final class PricingCatalogService: Sendable {
                 )
             }
             guard let finalRow = rows.last else { break }
+            var sessionSummaries: [RepriceSummaryKey: RepriceSummaryAggregate] = [:]
+            var dailySummaries: [RepriceDailySummaryKey: RepriceSummaryAggregate] = [:]
             for row in rows {
                 let sessionKey = RepriceSummaryKey(
                     sessionId: row.sessionId,
@@ -760,15 +1089,53 @@ public final class PricingCatalogService: Sendable {
                 dailyAggregate.add(tokens: row.tokens, cost: row.cost, pricingStatus: row.status)
                 dailySummaries[dailyKey] = dailyAggregate
             }
+            processedEvents += rows.count
             lastRowID = finalRow.rowID
-        }
-
-        try database.transaction {
-            for (key, aggregate) in sessionSummaries {
-                try insertSessionSummaryShadow(database: database, key: key, aggregate: aggregate)
-            }
-            for (key, aggregate) in dailySummaries {
-                try insertDailySummaryShadow(database: database, key: key, aggregate: aggregate)
+            try database.transaction {
+                try database.executePreparedUpdates(
+                    sql: Self.sessionSummaryInsertSQL(table: "codex_session_summaries_reprice_shadow"),
+                    values: Array(sessionSummaries)
+                ) { key, aggregate in
+                    [key.sessionId, key.modelCanonical]
+                        + Self.summaryBindings(aggregate)
+                        + [SummaryProvenance.reconstructed.rawValue]
+                }
+                try database.executePreparedUpdates(
+                    sql: Self.dailySummaryInsertSQL(table: "codex_daily_usage_summaries_reprice_shadow"),
+                    values: Array(dailySummaries)
+                ) { key, aggregate in
+                    [key.sessionId, key.dayKey, key.dayStartMs, key.modelCanonical]
+                        + Self.summaryBindings(aggregate)
+                        + [SummaryProvenance.reconstructed.rawValue]
+                }
+                try database.executeUpdate(
+                    sql: "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES ('pricing_reprice_summary_last_rowid', ?, unixepoch());",
+                    bindings: [String(lastRowID)]
+                )
+                try database.executeUpdate(
+                    sql: "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES ('pricing_reprice_summary_processed_events', ?, unixepoch());",
+                    bindings: [String(processedEvents)]
+                )
+                try database.executeUpdate(
+                    sql: "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES ('pricing_reprice_summary_generation', ?, unixepoch());",
+                    bindings: [String(currentGeneration)]
+                )
+                try database.executeUpdate(
+                    sql: "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES ('pricing_reprice_summary_catalog_version', ?, unixepoch());",
+                    bindings: [targetCatalog]
+                )
+                try database.executeUpdate(
+                    sql: "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES ('pricing_reprice_summary_timezone_id', ?, unixepoch());",
+                    bindings: [timeZone.identifier]
+                )
+                try database.executeUpdate(
+                    sql: "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES ('pricing_reprice_summary_event_count', ?, unixepoch());",
+                    bindings: [String(shadowEventStats.0)]
+                )
+                try database.executeUpdate(
+                    sql: "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES ('pricing_reprice_summary_max_rowid', ?, unixepoch());",
+                    bindings: [String(shadowEventStats.1)]
+                )
             }
         }
     }
@@ -819,8 +1186,21 @@ public final class PricingCatalogService: Sendable {
                   AND r.event_id = codex_usage_events.event_id
             );
 
-            DELETE FROM codex_session_summaries;
-            DELETE FROM codex_daily_usage_summaries;
+            DELETE FROM codex_session_summaries
+            WHERE summary_provenance != 'legacyAggregate'
+               OR session_id IN (
+                    SELECT DISTINCT session_id
+                    FROM codex_usage_events
+                    WHERE is_child_replay = 0
+               );
+
+            DELETE FROM codex_daily_usage_summaries
+            WHERE summary_provenance != 'legacyAggregate'
+               OR session_id IN (
+                    SELECT DISTINCT session_id
+                    FROM codex_usage_events
+                    WHERE is_child_replay = 0
+               );
 
             INSERT INTO codex_session_summaries (
                 session_id, model_canonical, event_count, total_tokens,
@@ -832,7 +1212,8 @@ public final class PricingCatalogService: Sendable {
                 unpriced_historical_rule_missing_event_count, unpriced_historical_rule_missing_token_count,
                 unpriced_unsupported_context_event_count, unpriced_unsupported_context_token_count,
                 unpriced_invalid_record_event_count, unpriced_invalid_record_token_count,
-                unpriced_overflow_event_count, unpriced_overflow_token_count
+                unpriced_overflow_event_count, unpriced_overflow_token_count,
+                summary_provenance
             )
             SELECT
                 session_id, model_canonical, event_count, total_tokens,
@@ -844,7 +1225,8 @@ public final class PricingCatalogService: Sendable {
                 unpriced_historical_rule_missing_event_count, unpriced_historical_rule_missing_token_count,
                 unpriced_unsupported_context_event_count, unpriced_unsupported_context_token_count,
                 unpriced_invalid_record_event_count, unpriced_invalid_record_token_count,
-                unpriced_overflow_event_count, unpriced_overflow_token_count
+                unpriced_overflow_event_count, unpriced_overflow_token_count,
+                summary_provenance
             FROM codex_session_summaries_reprice_shadow;
 
             INSERT INTO codex_daily_usage_summaries (
@@ -857,7 +1239,8 @@ public final class PricingCatalogService: Sendable {
                 unpriced_historical_rule_missing_event_count, unpriced_historical_rule_missing_token_count,
                 unpriced_unsupported_context_event_count, unpriced_unsupported_context_token_count,
                 unpriced_invalid_record_event_count, unpriced_invalid_record_token_count,
-                unpriced_overflow_event_count, unpriced_overflow_token_count
+                unpriced_overflow_event_count, unpriced_overflow_token_count,
+                summary_provenance
             )
             SELECT
                 session_id, day_key, day_start_ms, model_canonical, event_count, total_tokens,
@@ -869,7 +1252,8 @@ public final class PricingCatalogService: Sendable {
                 unpriced_historical_rule_missing_event_count, unpriced_historical_rule_missing_token_count,
                 unpriced_unsupported_context_event_count, unpriced_unsupported_context_token_count,
                 unpriced_invalid_record_event_count, unpriced_invalid_record_token_count,
-                unpriced_overflow_event_count, unpriced_overflow_token_count
+                unpriced_overflow_event_count, unpriced_overflow_token_count,
+                summary_provenance
             FROM codex_daily_usage_summaries_reprice_shadow;
             """)
 
@@ -887,6 +1271,7 @@ public final class PricingCatalogService: Sendable {
                 sql: "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES ('pricing_reprice_catalog_version', ?, unixepoch());",
                 bindings: [catalogVersion]
             )
+            try updatePricingMigrationState(database: database)
             try database.executeUpdate(
                 sql: "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES ('usage_aggregation_timezone_id', ?, unixepoch());",
                 bindings: [currentTimezone]
@@ -899,45 +1284,157 @@ public final class PricingCatalogService: Sendable {
             DELETE FROM codex_usage_event_reprice_shadow;
             DELETE FROM codex_session_summaries_reprice_shadow;
             DELETE FROM codex_daily_usage_summaries_reprice_shadow;
+            DELETE FROM app_metadata
+            WHERE key IN (
+                'pricing_reprice_summary_last_rowid',
+                'pricing_reprice_summary_processed_events',
+                'pricing_reprice_summary_generation',
+                'pricing_reprice_summary_catalog_version',
+                'pricing_reprice_summary_timezone_id',
+                'pricing_reprice_summary_event_count',
+                'pricing_reprice_summary_max_rowid'
+            );
             """)
         }
     }
 
     private func updateSessionsFromSummaries(database: SQLiteDatabase) throws {
         try database.execute(sql: """
+        DROP TABLE IF EXISTS codex_session_update_totals;
+        CREATE TEMP TABLE codex_session_update_totals AS
+        SELECT
+            session_id,
+            event_count,
+            total_tokens,
+            input_tokens,
+            cached_input_tokens,
+            cache_write_input_tokens,
+            output_tokens,
+            reasoning_output_tokens,
+            estimated_cost_usd_nano,
+            unpriced_unknown_model_event_count,
+            unpriced_unknown_model_token_count,
+            unpriced_unsupported_tier_event_count,
+            unpriced_unsupported_tier_token_count,
+            unpriced_historical_rule_missing_event_count,
+            unpriced_historical_rule_missing_token_count,
+            unpriced_unsupported_context_event_count,
+            unpriced_unsupported_context_token_count,
+            unpriced_invalid_record_event_count,
+            unpriced_invalid_record_token_count,
+            unpriced_overflow_event_count,
+            unpriced_overflow_token_count,
+            CASE
+                WHEN event_count = 0 THEN 'fullyUnpriced'
+                WHEN unpriced_event_count = 0 THEN 'fullyPriced'
+                WHEN unpriced_event_count >= event_count THEN 'fullyUnpriced'
+                ELSE 'partiallyPriced'
+            END AS pricing_status,
+            CASE
+                WHEN non_legacy_summary_count = 0 THEN 'legacyAggregate'
+                WHEN reconstructed_summary_count > 0 THEN 'reconstructed'
+                ELSE 'eventLedger'
+            END AS summary_provenance
+        FROM (
+            SELECT
+                session_id,
+                COALESCE(SUM(event_count), 0) AS event_count,
+                COALESCE(SUM(total_tokens), 0) AS total_tokens,
+                COALESCE(SUM(uncached_input_tokens + cached_input_tokens + cache_write_input_tokens), 0) AS input_tokens,
+                COALESCE(SUM(cached_input_tokens), 0) AS cached_input_tokens,
+                COALESCE(SUM(cache_write_input_tokens), 0) AS cache_write_input_tokens,
+                COALESCE(SUM(output_tokens), 0) AS output_tokens,
+                COALESCE(SUM(reasoning_output_tokens), 0) AS reasoning_output_tokens,
+                COALESCE(SUM(estimated_cost_usd_nano), 0) AS estimated_cost_usd_nano,
+                COALESCE(SUM(unpriced_event_count), 0) AS unpriced_event_count,
+                COALESCE(SUM(unpriced_unknown_model_event_count), 0) AS unpriced_unknown_model_event_count,
+                COALESCE(SUM(unpriced_unknown_model_token_count), 0) AS unpriced_unknown_model_token_count,
+                COALESCE(SUM(unpriced_unsupported_tier_event_count), 0) AS unpriced_unsupported_tier_event_count,
+                COALESCE(SUM(unpriced_unsupported_tier_token_count), 0) AS unpriced_unsupported_tier_token_count,
+                COALESCE(SUM(unpriced_historical_rule_missing_event_count), 0) AS unpriced_historical_rule_missing_event_count,
+                COALESCE(SUM(unpriced_historical_rule_missing_token_count), 0) AS unpriced_historical_rule_missing_token_count,
+                COALESCE(SUM(unpriced_unsupported_context_event_count), 0) AS unpriced_unsupported_context_event_count,
+                COALESCE(SUM(unpriced_unsupported_context_token_count), 0) AS unpriced_unsupported_context_token_count,
+                COALESCE(SUM(unpriced_invalid_record_event_count), 0) AS unpriced_invalid_record_event_count,
+                COALESCE(SUM(unpriced_invalid_record_token_count), 0) AS unpriced_invalid_record_token_count,
+                COALESCE(SUM(unpriced_overflow_event_count), 0) AS unpriced_overflow_event_count,
+                COALESCE(SUM(unpriced_overflow_token_count), 0) AS unpriced_overflow_token_count,
+                COALESCE(SUM(CASE WHEN summary_provenance != 'legacyAggregate' THEN 1 ELSE 0 END), 0) AS non_legacy_summary_count,
+                COALESCE(SUM(CASE WHEN summary_provenance = 'reconstructed' THEN 1 ELSE 0 END), 0) AS reconstructed_summary_count
+            FROM codex_session_summaries
+            GROUP BY session_id
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_codex_session_update_totals_session
+            ON codex_session_update_totals(session_id);
+
         UPDATE codex_sessions
         SET
-            event_count = COALESCE((SELECT SUM(event_count) FROM codex_session_summaries s WHERE s.session_id = codex_sessions.session_id), 0),
-            total_tokens = COALESCE((SELECT SUM(total_tokens) FROM codex_session_summaries s WHERE s.session_id = codex_sessions.session_id), 0),
-            input_tokens = COALESCE((SELECT SUM(uncached_input_tokens + cached_input_tokens + cache_write_input_tokens) FROM codex_session_summaries s WHERE s.session_id = codex_sessions.session_id), 0),
-            cached_input_tokens = COALESCE((SELECT SUM(cached_input_tokens) FROM codex_session_summaries s WHERE s.session_id = codex_sessions.session_id), 0),
-            cache_write_input_tokens = COALESCE((SELECT SUM(cache_write_input_tokens) FROM codex_session_summaries s WHERE s.session_id = codex_sessions.session_id), 0),
-            output_tokens = COALESCE((SELECT SUM(output_tokens) FROM codex_session_summaries s WHERE s.session_id = codex_sessions.session_id), 0),
-            reasoning_output_tokens = COALESCE((SELECT SUM(reasoning_output_tokens) FROM codex_session_summaries s WHERE s.session_id = codex_sessions.session_id), 0),
-            estimated_cost_usd_nano = COALESCE((SELECT SUM(estimated_cost_usd_nano) FROM codex_session_summaries s WHERE s.session_id = codex_sessions.session_id), 0),
-            unpriced_unknown_model_event_count = COALESCE((SELECT SUM(unpriced_unknown_model_event_count) FROM codex_session_summaries s WHERE s.session_id = codex_sessions.session_id), 0),
-            unpriced_unknown_model_token_count = COALESCE((SELECT SUM(unpriced_unknown_model_token_count) FROM codex_session_summaries s WHERE s.session_id = codex_sessions.session_id), 0),
-            unpriced_unsupported_tier_event_count = COALESCE((SELECT SUM(unpriced_unsupported_tier_event_count) FROM codex_session_summaries s WHERE s.session_id = codex_sessions.session_id), 0),
-            unpriced_unsupported_tier_token_count = COALESCE((SELECT SUM(unpriced_unsupported_tier_token_count) FROM codex_session_summaries s WHERE s.session_id = codex_sessions.session_id), 0),
-            unpriced_historical_rule_missing_event_count = COALESCE((SELECT SUM(unpriced_historical_rule_missing_event_count) FROM codex_session_summaries s WHERE s.session_id = codex_sessions.session_id), 0),
-            unpriced_historical_rule_missing_token_count = COALESCE((SELECT SUM(unpriced_historical_rule_missing_token_count) FROM codex_session_summaries s WHERE s.session_id = codex_sessions.session_id), 0),
-            unpriced_unsupported_context_event_count = COALESCE((SELECT SUM(unpriced_unsupported_context_event_count) FROM codex_session_summaries s WHERE s.session_id = codex_sessions.session_id), 0),
-            unpriced_unsupported_context_token_count = COALESCE((SELECT SUM(unpriced_unsupported_context_token_count) FROM codex_session_summaries s WHERE s.session_id = codex_sessions.session_id), 0),
-            unpriced_invalid_record_event_count = COALESCE((SELECT SUM(unpriced_invalid_record_event_count) FROM codex_session_summaries s WHERE s.session_id = codex_sessions.session_id), 0),
-            unpriced_invalid_record_token_count = COALESCE((SELECT SUM(unpriced_invalid_record_token_count) FROM codex_session_summaries s WHERE s.session_id = codex_sessions.session_id), 0),
-            unpriced_overflow_event_count = COALESCE((SELECT SUM(unpriced_overflow_event_count) FROM codex_session_summaries s WHERE s.session_id = codex_sessions.session_id), 0),
-            unpriced_overflow_token_count = COALESCE((SELECT SUM(unpriced_overflow_token_count) FROM codex_session_summaries s WHERE s.session_id = codex_sessions.session_id), 0),
-            pricing_status = CASE
-                WHEN COALESCE((SELECT SUM(event_count) FROM codex_session_summaries s WHERE s.session_id = codex_sessions.session_id), 0) = 0
-                    THEN 'fullyUnpriced'
-                WHEN COALESCE((SELECT SUM(unpriced_event_count) FROM codex_session_summaries s WHERE s.session_id = codex_sessions.session_id), 0) = 0
-                    THEN 'fullyPriced'
-                WHEN COALESCE((SELECT SUM(unpriced_event_count) FROM codex_session_summaries s WHERE s.session_id = codex_sessions.session_id), 0)
-                    >= COALESCE((SELECT SUM(event_count) FROM codex_session_summaries s WHERE s.session_id = codex_sessions.session_id), 0)
-                    THEN 'fullyUnpriced'
-                ELSE 'partiallyPriced'
-            END;
+            event_count = (SELECT event_count FROM codex_session_update_totals t WHERE t.session_id = codex_sessions.session_id),
+            total_tokens = (SELECT total_tokens FROM codex_session_update_totals t WHERE t.session_id = codex_sessions.session_id),
+            input_tokens = (SELECT input_tokens FROM codex_session_update_totals t WHERE t.session_id = codex_sessions.session_id),
+            cached_input_tokens = (SELECT cached_input_tokens FROM codex_session_update_totals t WHERE t.session_id = codex_sessions.session_id),
+            cache_write_input_tokens = (SELECT cache_write_input_tokens FROM codex_session_update_totals t WHERE t.session_id = codex_sessions.session_id),
+            output_tokens = (SELECT output_tokens FROM codex_session_update_totals t WHERE t.session_id = codex_sessions.session_id),
+            reasoning_output_tokens = (SELECT reasoning_output_tokens FROM codex_session_update_totals t WHERE t.session_id = codex_sessions.session_id),
+            estimated_cost_usd_nano = (SELECT estimated_cost_usd_nano FROM codex_session_update_totals t WHERE t.session_id = codex_sessions.session_id),
+            unpriced_unknown_model_event_count = (SELECT unpriced_unknown_model_event_count FROM codex_session_update_totals t WHERE t.session_id = codex_sessions.session_id),
+            unpriced_unknown_model_token_count = (SELECT unpriced_unknown_model_token_count FROM codex_session_update_totals t WHERE t.session_id = codex_sessions.session_id),
+            unpriced_unsupported_tier_event_count = (SELECT unpriced_unsupported_tier_event_count FROM codex_session_update_totals t WHERE t.session_id = codex_sessions.session_id),
+            unpriced_unsupported_tier_token_count = (SELECT unpriced_unsupported_tier_token_count FROM codex_session_update_totals t WHERE t.session_id = codex_sessions.session_id),
+            unpriced_historical_rule_missing_event_count = (SELECT unpriced_historical_rule_missing_event_count FROM codex_session_update_totals t WHERE t.session_id = codex_sessions.session_id),
+            unpriced_historical_rule_missing_token_count = (SELECT unpriced_historical_rule_missing_token_count FROM codex_session_update_totals t WHERE t.session_id = codex_sessions.session_id),
+            unpriced_unsupported_context_event_count = (SELECT unpriced_unsupported_context_event_count FROM codex_session_update_totals t WHERE t.session_id = codex_sessions.session_id),
+            unpriced_unsupported_context_token_count = (SELECT unpriced_unsupported_context_token_count FROM codex_session_update_totals t WHERE t.session_id = codex_sessions.session_id),
+            unpriced_invalid_record_event_count = (SELECT unpriced_invalid_record_event_count FROM codex_session_update_totals t WHERE t.session_id = codex_sessions.session_id),
+            unpriced_invalid_record_token_count = (SELECT unpriced_invalid_record_token_count FROM codex_session_update_totals t WHERE t.session_id = codex_sessions.session_id),
+            unpriced_overflow_event_count = (SELECT unpriced_overflow_event_count FROM codex_session_update_totals t WHERE t.session_id = codex_sessions.session_id),
+            unpriced_overflow_token_count = (SELECT unpriced_overflow_token_count FROM codex_session_update_totals t WHERE t.session_id = codex_sessions.session_id),
+            pricing_status = (SELECT pricing_status FROM codex_session_update_totals t WHERE t.session_id = codex_sessions.session_id),
+            summary_provenance = (SELECT summary_provenance FROM codex_session_update_totals t WHERE t.session_id = codex_sessions.session_id)
+        WHERE EXISTS (
+            SELECT 1
+            FROM codex_session_update_totals t
+            WHERE t.session_id = codex_sessions.session_id
+        );
+        DROP TABLE IF EXISTS codex_session_update_totals;
         """)
+    }
+
+    private func updatePricingMigrationState(database: SQLiteDatabase) throws {
+        let repriceStatus = try database.stringScalar(
+            sql: "SELECT value FROM app_metadata WHERE key = 'pricing_reprice_status';"
+        )
+        let pendingSources = try database.intScalar(
+            sql: """
+            SELECT COUNT(*)
+            FROM codex_import_sources
+            WHERE status != 'tombstoned'
+              AND (status = 'stale' OR parser_version != ?);
+            """,
+            bindings: [ParserCheckpoint.currentParserVersion]
+        )
+        let legacySessions = try database.intScalar(
+            sql: """
+            SELECT COUNT(*)
+            FROM codex_sessions
+            WHERE summary_provenance = 'legacyAggregate'
+              AND event_count > 0;
+            """
+        )
+        let state: PricingMigrationState
+        if repriceStatus == "failed" {
+            state = .failed
+        } else if pendingSources > 0 {
+            state = .pendingSources
+        } else if legacySessions > 0 {
+            state = .mixedLegacy
+        } else {
+            state = .fullyCurrent
+        }
+        try database.executeUpdate(
+            sql: "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES ('pricing_migration_state', ?, unixepoch());",
+            bindings: [state.rawValue]
+        )
     }
 
     private func insertSessionSummaryShadow(
@@ -947,7 +1444,9 @@ public final class PricingCatalogService: Sendable {
     ) throws {
         try database.executeUpdate(
             sql: Self.sessionSummaryInsertSQL(table: "codex_session_summaries_reprice_shadow"),
-            bindings: [key.sessionId, key.modelCanonical] + Self.summaryBindings(aggregate)
+            bindings: [key.sessionId, key.modelCanonical]
+                + Self.summaryBindings(aggregate)
+                + [SummaryProvenance.reconstructed.rawValue]
         )
     }
 
@@ -958,7 +1457,9 @@ public final class PricingCatalogService: Sendable {
     ) throws {
         try database.executeUpdate(
             sql: Self.dailySummaryInsertSQL(table: "codex_daily_usage_summaries_reprice_shadow"),
-            bindings: [key.sessionId, key.dayKey, key.dayStartMs, key.modelCanonical] + Self.summaryBindings(aggregate)
+            bindings: [key.sessionId, key.dayKey, key.dayStartMs, key.modelCanonical]
+                + Self.summaryBindings(aggregate)
+                + [SummaryProvenance.reconstructed.rawValue]
         )
     }
 
@@ -1001,8 +1502,33 @@ public final class PricingCatalogService: Sendable {
             unpriced_historical_rule_missing_event_count, unpriced_historical_rule_missing_token_count,
             unpriced_unsupported_context_event_count, unpriced_unsupported_context_token_count,
             unpriced_invalid_record_event_count, unpriced_invalid_record_token_count,
-            unpriced_overflow_event_count, unpriced_overflow_token_count
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            unpriced_overflow_event_count, unpriced_overflow_token_count,
+            summary_provenance
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(session_id, model_canonical) DO UPDATE SET
+            event_count = event_count + excluded.event_count,
+            total_tokens = total_tokens + excluded.total_tokens,
+            uncached_input_tokens = uncached_input_tokens + excluded.uncached_input_tokens,
+            cached_input_tokens = cached_input_tokens + excluded.cached_input_tokens,
+            cache_write_input_tokens = cache_write_input_tokens + excluded.cache_write_input_tokens,
+            output_tokens = output_tokens + excluded.output_tokens,
+            reasoning_output_tokens = reasoning_output_tokens + excluded.reasoning_output_tokens,
+            estimated_cost_usd_nano = estimated_cost_usd_nano + excluded.estimated_cost_usd_nano,
+            unpriced_event_count = unpriced_event_count + excluded.unpriced_event_count,
+            unpriced_token_count = unpriced_token_count + excluded.unpriced_token_count,
+            unpriced_unknown_model_event_count = unpriced_unknown_model_event_count + excluded.unpriced_unknown_model_event_count,
+            unpriced_unknown_model_token_count = unpriced_unknown_model_token_count + excluded.unpriced_unknown_model_token_count,
+            unpriced_unsupported_tier_event_count = unpriced_unsupported_tier_event_count + excluded.unpriced_unsupported_tier_event_count,
+            unpriced_unsupported_tier_token_count = unpriced_unsupported_tier_token_count + excluded.unpriced_unsupported_tier_token_count,
+            unpriced_historical_rule_missing_event_count = unpriced_historical_rule_missing_event_count + excluded.unpriced_historical_rule_missing_event_count,
+            unpriced_historical_rule_missing_token_count = unpriced_historical_rule_missing_token_count + excluded.unpriced_historical_rule_missing_token_count,
+            unpriced_unsupported_context_event_count = unpriced_unsupported_context_event_count + excluded.unpriced_unsupported_context_event_count,
+            unpriced_unsupported_context_token_count = unpriced_unsupported_context_token_count + excluded.unpriced_unsupported_context_token_count,
+            unpriced_invalid_record_event_count = unpriced_invalid_record_event_count + excluded.unpriced_invalid_record_event_count,
+            unpriced_invalid_record_token_count = unpriced_invalid_record_token_count + excluded.unpriced_invalid_record_token_count,
+            unpriced_overflow_event_count = unpriced_overflow_event_count + excluded.unpriced_overflow_event_count,
+            unpriced_overflow_token_count = unpriced_overflow_token_count + excluded.unpriced_overflow_token_count,
+            summary_provenance = excluded.summary_provenance;
         """
     }
 
@@ -1018,8 +1544,34 @@ public final class PricingCatalogService: Sendable {
             unpriced_historical_rule_missing_event_count, unpriced_historical_rule_missing_token_count,
             unpriced_unsupported_context_event_count, unpriced_unsupported_context_token_count,
             unpriced_invalid_record_event_count, unpriced_invalid_record_token_count,
-            unpriced_overflow_event_count, unpriced_overflow_token_count
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            unpriced_overflow_event_count, unpriced_overflow_token_count,
+            summary_provenance
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(session_id, day_key, model_canonical) DO UPDATE SET
+            day_start_ms = excluded.day_start_ms,
+            event_count = event_count + excluded.event_count,
+            total_tokens = total_tokens + excluded.total_tokens,
+            uncached_input_tokens = uncached_input_tokens + excluded.uncached_input_tokens,
+            cached_input_tokens = cached_input_tokens + excluded.cached_input_tokens,
+            cache_write_input_tokens = cache_write_input_tokens + excluded.cache_write_input_tokens,
+            output_tokens = output_tokens + excluded.output_tokens,
+            reasoning_output_tokens = reasoning_output_tokens + excluded.reasoning_output_tokens,
+            estimated_cost_usd_nano = estimated_cost_usd_nano + excluded.estimated_cost_usd_nano,
+            unpriced_event_count = unpriced_event_count + excluded.unpriced_event_count,
+            unpriced_token_count = unpriced_token_count + excluded.unpriced_token_count,
+            unpriced_unknown_model_event_count = unpriced_unknown_model_event_count + excluded.unpriced_unknown_model_event_count,
+            unpriced_unknown_model_token_count = unpriced_unknown_model_token_count + excluded.unpriced_unknown_model_token_count,
+            unpriced_unsupported_tier_event_count = unpriced_unsupported_tier_event_count + excluded.unpriced_unsupported_tier_event_count,
+            unpriced_unsupported_tier_token_count = unpriced_unsupported_tier_token_count + excluded.unpriced_unsupported_tier_token_count,
+            unpriced_historical_rule_missing_event_count = unpriced_historical_rule_missing_event_count + excluded.unpriced_historical_rule_missing_event_count,
+            unpriced_historical_rule_missing_token_count = unpriced_historical_rule_missing_token_count + excluded.unpriced_historical_rule_missing_token_count,
+            unpriced_unsupported_context_event_count = unpriced_unsupported_context_event_count + excluded.unpriced_unsupported_context_event_count,
+            unpriced_unsupported_context_token_count = unpriced_unsupported_context_token_count + excluded.unpriced_unsupported_context_token_count,
+            unpriced_invalid_record_event_count = unpriced_invalid_record_event_count + excluded.unpriced_invalid_record_event_count,
+            unpriced_invalid_record_token_count = unpriced_invalid_record_token_count + excluded.unpriced_invalid_record_token_count,
+            unpriced_overflow_event_count = unpriced_overflow_event_count + excluded.unpriced_overflow_event_count,
+            unpriced_overflow_token_count = unpriced_overflow_token_count + excluded.unpriced_overflow_token_count,
+            summary_provenance = excluded.summary_provenance;
         """
     }
 

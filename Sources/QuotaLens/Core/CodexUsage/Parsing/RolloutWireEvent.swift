@@ -34,8 +34,14 @@ public struct RolloutWireEvent: Sendable {
     public let eventType: String
     public let timestampMs: Int64
     public let timestampQuality: TimestampQuality
+    public let timestampSource: TimestampSource
+    public let timestampConflictCount: Int
+    public let replayBoundaryTimestampMs: Int64?
+    public let taskStartedAtMs: Int64?
+    public let turnId: String?
     public let sessionId: String?
     public let parentSessionId: String?
+    public let isChildSessionMeta: Bool
     public let model: String?
     public let serviceTier: String?
     public let reasoningEffort: String?
@@ -49,8 +55,14 @@ public struct RolloutWireEvent: Sendable {
         eventType: String,
         timestampMs: Int64,
         timestampQuality: TimestampQuality = .eventTimestamp,
+        timestampSource: TimestampSource = .topLevelTimestamp,
+        timestampConflictCount: Int = 0,
+        replayBoundaryTimestampMs: Int64? = nil,
+        taskStartedAtMs: Int64? = nil,
+        turnId: String? = nil,
         sessionId: String? = nil,
         parentSessionId: String? = nil,
+        isChildSessionMeta: Bool = false,
         model: String? = nil,
         serviceTier: String? = nil,
         reasoningEffort: String? = nil,
@@ -63,8 +75,14 @@ public struct RolloutWireEvent: Sendable {
         self.eventType = eventType
         self.timestampMs = timestampMs
         self.timestampQuality = timestampQuality
+        self.timestampSource = timestampSource
+        self.timestampConflictCount = timestampConflictCount
+        self.replayBoundaryTimestampMs = replayBoundaryTimestampMs
+        self.taskStartedAtMs = taskStartedAtMs
+        self.turnId = turnId
         self.sessionId = sessionId
         self.parentSessionId = parentSessionId
+        self.isChildSessionMeta = isChildSessionMeta
         self.model = model
         self.serviceTier = serviceTier
         self.reasoningEffort = reasoningEffort
@@ -79,10 +97,16 @@ public struct RolloutWireEvent: Sendable {
 public enum RolloutLineDecoder {
     public static func mayContainUsageRelevantEvent(_ lineString: String) -> Bool {
         lineString.contains("token_count")
+            || lineString.contains("session_meta")
             || lineString.contains("turn_context")
             || lineString.contains("thread_settings_applied")
             || lineString.contains("task_started")
+            || lineString.contains("task_complete")
             || lineString.contains("user_message")
+            || lineString.contains("forked_from_id")
+            || lineString.contains("parent_session_id")
+            || lineString.contains("parent_thread_id")
+            || lineString.contains("subagent")
             || lineString.contains("last_token_usage")
             || lineString.contains("total_token_usage")
             || lineString.contains("cache_creation_input_tokens")
@@ -96,8 +120,9 @@ public enum RolloutLineDecoder {
         // This predicate is only applied to a complete line. It intentionally
         // does not assume compact JSON, key order, or a short prefix.
         let needles = [
-            "token_count", "turn_context", "thread_settings_applied",
-            "task_started", "user_message", "last_token_usage",
+            "token_count", "session_meta", "turn_context", "thread_settings_applied",
+            "task_started", "task_complete", "user_message", "forked_from_id",
+            "parent_session_id", "parent_thread_id", "subagent", "last_token_usage",
             "total_token_usage", "cache_creation_input_tokens",
             "cache_write_input_tokens", "reasoning_effort", "effort"
         ]
@@ -173,11 +198,35 @@ public enum RolloutLineDecoder {
             payload["parentSessionId"],
             payload["parent_id"],
             payload["forked_from_id"],
+            payload["parent_thread_id"],
             json["parent_session_id"],
             json["parentSessionId"],
             json["parent_id"],
-            json["forked_from_id"]
+            json["forked_from_id"],
+            json["parent_thread_id"]
         ])
+        let threadSource = firstString([payload["thread_source"], json["thread_source"]])?.lowercased()
+        let isChildSessionMeta = type == "session_meta"
+            && (parentSessionId != nil || threadSource == "subagent" || containsSubagentMarker(payload["source"]))
+        let taskObject = payload["task"] as? [String: Any]
+        let taskStartedAt = timestampFromAny(
+            payload["started_at"]
+                ?? payload["startedAt"]
+                ?? taskObject?["startedAt"]
+                ?? taskObject?["started_at"]
+                ?? json["started_at"]
+                ?? json["startedAt"]
+        )
+        let replayBoundaryTimestamp = firstTimestampCandidate([
+            payload["timestamp"],
+            info?["timestamp"],
+            metadata?["timestamp"],
+            json["started_at"],
+            payload["started_at"],
+            taskObject?["startedAt"],
+            taskObject?["started_at"]
+        ])
+        let turnId = firstString([payload["turn_id"], payload["turnId"], json["turn_id"], json["turnId"]])
 
         var lastUsage: RawTokenUsagePayload?
         if let lastDict = info?["last_token_usage"] as? [String: Any]
@@ -213,10 +262,12 @@ public enum RolloutLineDecoder {
         }
 
         let isRelevantType = [
+            "session_meta",
             "token_count",
             "turn_context",
             "thread_settings_applied",
             "task_started",
+            "task_complete",
             "user_message"
         ].contains(type)
         guard isRelevantType || lastUsage != nil || totalUsage != nil || model != nil || serviceTier != nil || reasoningEffort != nil else {
@@ -226,9 +277,15 @@ public enum RolloutLineDecoder {
         return RolloutWireEvent(
             eventType: type,
             timestampMs: timestamp.value,
-            timestampQuality: timestamp.quality,
+            timestampQuality: timestamp.source.quality,
+            timestampSource: timestamp.source,
+            timestampConflictCount: timestamp.conflictCount,
+            replayBoundaryTimestampMs: replayBoundaryTimestamp,
+            taskStartedAtMs: taskStartedAt,
+            turnId: turnId,
             sessionId: sessionId,
             parentSessionId: parentSessionId,
+            isChildSessionMeta: isChildSessionMeta,
             model: model,
             serviceTier: serviceTier,
             reasoningEffort: reasoningEffort,
@@ -240,26 +297,38 @@ public enum RolloutLineDecoder {
         )
     }
 
-    private static func extractTimestamp(from json: [String: Any]) -> (value: Int64, quality: TimestampQuality) {
-        if let ts = json["timestamp"] as? Int64 {
-            // 如果是毫秒 (> 10^11) 直接使用，否则作为秒转换
-            return (ts > 100_000_000_000 ? ts : ts * 1000, .eventTimestamp)
+    private struct TimestampCandidate {
+        let value: Int64
+        let source: TimestampSource
+    }
+
+    private static func extractTimestamp(from json: [String: Any]) -> (value: Int64, source: TimestampSource, conflictCount: Int) {
+        let payload = json["payload"] as? [String: Any]
+        let info = json["info"] as? [String: Any]
+        let payloadInfo = payload?["info"] as? [String: Any]
+        let metadata = json["metadata"] as? [String: Any]
+        let payloadMetadata = payload?["metadata"] as? [String: Any]
+        let task = payload?["task"] as? [String: Any]
+        let candidates: [TimestampCandidate] = [
+            timestampCandidate(json["timestamp"], source: .topLevelTimestamp),
+            timestampCandidate(payload?["timestamp"], source: .payloadTimestamp),
+            timestampCandidate(info?["timestamp"], source: .infoTimestamp),
+            timestampCandidate(payloadInfo?["timestamp"], source: .infoTimestamp),
+            timestampCandidate(metadata?["timestamp"], source: .metadataTimestamp),
+            timestampCandidate(payloadMetadata?["timestamp"], source: .metadataTimestamp),
+            timestampCandidate(json["created_at"] ?? json["createdAt"], source: .createdAt),
+            timestampCandidate(payload?["created_at"] ?? payload?["createdAt"], source: .createdAt),
+            timestampCandidate(json["started_at"] ?? json["startedAt"], source: .startedAt),
+            timestampCandidate(payload?["started_at"] ?? payload?["startedAt"], source: .startedAt),
+            timestampCandidate(task?["startedAt"] ?? task?["started_at"], source: .taskStartedAt)
+        ].compactMap { $0 }
+        guard let selected = candidates.first else {
+            return (0, .unresolved, 0)
         }
-        if let tsDouble = json["timestamp"] as? Double {
-            return (Int64(tsDouble > 100_000_000_000 ? tsDouble : tsDouble * 1000), .eventTimestamp)
-        }
-        if let tsStr = json["timestamp"] as? String {
-            if let intVal = Int64(tsStr) {
-                return (intVal > 100_000_000_000 ? intVal : intVal * 1000, .eventTimestamp)
-            }
-            if let date = dateFromISO8601(tsStr) {
-                return (Int64(date.timeIntervalSince1970 * 1000), .eventTimestamp)
-            }
-        }
-        if let createdAt = json["created_at"] as? Int64 {
-            return (createdAt > 100_000_000_000 ? createdAt : createdAt * 1000, .eventTimestamp)
-        }
-        return (0, .unresolved)
+        let conflictCount = candidates.dropFirst().filter {
+            abs($0.value - selected.value) > 60_000
+        }.count
+        return (selected.value, selected.source, conflictCount)
     }
 
     private static func parseTokenUsageDict(_ dict: [String: Any]) -> RawTokenUsagePayload {
@@ -289,6 +358,60 @@ public enum RolloutLineDecoder {
         return 0
     }
 
+    private static func firstTimestampCandidate(_ values: [Any?]) -> Int64? {
+        for value in values {
+            if let timestamp = timestampFromAny(value) {
+                return timestamp
+            }
+        }
+        return nil
+    }
+
+    private static func timestampCandidate(_ value: Any?, source: TimestampSource) -> TimestampCandidate? {
+        guard let timestamp = timestampFromAny(value) else { return nil }
+        return TimestampCandidate(value: timestamp, source: source)
+    }
+
+    private static func timestampFromAny(_ value: Any?) -> Int64? {
+        guard let value else { return nil }
+        if value is Bool { return nil }
+        if let intVal = value as? Int64 {
+            return normalizeEpochMilliseconds(Double(intVal))
+        }
+        if let intVal = value as? Int {
+            return normalizeEpochMilliseconds(Double(intVal))
+        }
+        if let doubleVal = value as? Double {
+            return normalizeEpochMilliseconds(doubleVal)
+        }
+        if let number = value as? NSNumber {
+            if CFGetTypeID(number) == CFBooleanGetTypeID() { return nil }
+            return normalizeEpochMilliseconds(number.doubleValue)
+        }
+        if let stringVal = value as? String {
+            let trimmed = stringVal.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return nil }
+            if let numeric = Double(trimmed) {
+                return normalizeEpochMilliseconds(numeric)
+            }
+            if let date = dateFromISO8601(trimmed) {
+                return normalizeEpochMilliseconds(date.timeIntervalSince1970)
+            }
+        }
+        return nil
+    }
+
+    private static func normalizeEpochMilliseconds(_ raw: Double) -> Int64? {
+        guard raw.isFinite, raw > 0 else { return nil }
+        let milliseconds = raw > 100_000_000_000 ? raw : raw * 1_000
+        guard milliseconds.isFinite,
+              milliseconds >= 1_500_000_000_000,
+              milliseconds <= 4_102_444_800_000 else {
+            return nil
+        }
+        return Int64(milliseconds.rounded())
+    }
+
     private static func firstString(_ values: [Any?]) -> String? {
         for value in values {
             guard let string = value as? String else { continue }
@@ -312,6 +435,15 @@ public enum RolloutLineDecoder {
             }
         }
         return false
+    }
+
+    private static func containsSubagentMarker(_ value: Any?) -> Bool {
+        guard let object = value as? [String: Any],
+              let subagent = object["subagent"] else {
+            return false
+        }
+        if subagent is NSNull { return false }
+        return true
     }
 
     private static func dateFromISO8601(_ value: String) -> Date? {

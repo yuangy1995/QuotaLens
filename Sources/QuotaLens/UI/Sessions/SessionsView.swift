@@ -55,8 +55,8 @@ public struct SessionsView: View {
             }
         } message: { _ in
             Text(L10n.text(
-                "无论点击的是主会话还是子 Agent，QuotaLens 都会删除对应主会话与全部子 Agent 的 Codex 源文件，并移到 macOS 废纸篓，可从废纸篓恢复。",
-                "Whether you clicked the main session or a child agent, QuotaLens will delete the main session and all child-agent Codex source files by moving them to the macOS Trash, where they can be restored."
+                "选中任一会话都会同时删除它所在的主会话和关联会话的 Codex 本地记录，并移到 macOS 废纸篓，可从废纸篓恢复。",
+                "Selecting any session deletes its main session and related Codex local records together by moving them to the macOS Trash, where they can be restored."
             ))
         }
         .alert(
@@ -296,6 +296,18 @@ public struct SessionsView: View {
                                         Text(UsageNumberFormatter.compactTokenCount(group.totalTokens))
                                             .font(.system(size: 9.5, weight: .bold, design: .monospaced))
                                             .foregroundStyle(cyan)
+
+                                        if group.totalCost.rawValue > 0 {
+                                            Text(UsageNumberFormatter.currencyUSD(group.totalCost))
+                                                .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                                                .foregroundStyle(AppTheme.accentEmerald(for: colorScheme))
+                                        }
+
+                                        if group.legacyAggregateCost.rawValue > 0 {
+                                            Text(L10n.text("历史金额", "Historical"))
+                                                .font(.system(size: 8.5, weight: .heavy, design: .monospaced))
+                                                .foregroundStyle(AppTheme.accentAmber(for: colorScheme))
+                                        }
                                     }
                                     .padding(.horizontal, 8)
                                     .padding(.vertical, 6)
@@ -489,6 +501,13 @@ private struct SessionSidebarRow: View {
                             .lineLimit(1)
                     }
 
+                    if session.summaryProvenance == .legacyAggregate {
+                        Text(L10n.text("历史金额", "Historical"))
+                            .font(.system(size: 8.5, weight: .heavy, design: .monospaced))
+                            .foregroundStyle(isSelected ? Color.white.opacity(0.9) : AppTheme.accentAmber(for: colorScheme))
+                            .lineLimit(1)
+                    }
+
                     Spacer()
 
                     // Token 统计徽标
@@ -500,7 +519,7 @@ private struct SessionSidebarRow: View {
                     if session.estimatedCost.rawValue > 0 {
                         Text(UsageNumberFormatter.currencyUSD(session.estimatedCost))
                             .font(.system(size: 9.5, weight: .bold, design: .monospaced))
-                            .foregroundStyle(isSelected ? Color.white : emerald)
+                            .foregroundStyle(isSelected ? Color.white : (session.summaryProvenance == .legacyAggregate ? AppTheme.accentAmber(for: colorScheme) : emerald))
                     }
                 }
             }

@@ -119,6 +119,55 @@ public enum CodexSessionMetadataStore {
         return result
     }
 
+    /// 扫描完整 rollout 中当前文件自身的 session_meta，捕获超出头部窗口的 fork/subagent 父链。
+    public static func loadFromRolloutLineage(
+        sources: [RolloutDiscoveredSource]
+    ) -> [String: CodexRawSessionMetadata] {
+        var result: [String: CodexRawSessionMetadata] = [:]
+        for source in sources {
+            var selectedMetadata: CodexRawSessionMetadata?
+            do {
+                _ = try StreamingJSONLReader.readLines(
+                    fileURL: source.fileURL,
+                    discardIrrelevantAfterPrefixBytes: 4_096,
+                    shouldIncludeLineData: RolloutLineDecoder.mayContainUsageRelevantEvent
+                ) { lineRecord in
+                    guard let event = RolloutLineDecoder.decodeLine(lineRecord.lineString),
+                          event.eventType == "session_meta" else {
+                        return
+                    }
+                    let sessionId = event.sessionId ?? source.sessionId
+                    guard sessionId == source.sessionId else {
+                        return
+                    }
+                    let timestamp = event.timestampMs > 0
+                        ? Date(timeIntervalSince1970: Double(event.timestampMs) / 1_000.0)
+                        : nil
+                    let incoming = CodexRawSessionMetadata(
+                        sessionId: sessionId,
+                        parentSessionId: event.parentSessionId,
+                        agentType: event.isChildSessionMeta ? "subagent" : nil,
+                        createdAt: timestamp,
+                        updatedAt: timestamp
+                    )
+                    selectedMetadata = mergeRolloutHeaderMetadata(
+                        existing: selectedMetadata,
+                        incoming: incoming
+                    )
+                }
+            } catch {
+                continue
+            }
+            if let selectedMetadata {
+                result[selectedMetadata.sessionId] = mergeRolloutHeaderMetadata(
+                    existing: result[selectedMetadata.sessionId],
+                    incoming: selectedMetadata
+                )
+            }
+        }
+        return result
+    }
+
     /// 从 session_index.jsonl 和 state_5.sqlite 加载并合并所有已知会话元数据
     public static func loadMetadata(paths: CodexHistoryPaths) -> [String: CodexRawSessionMetadata] {
         var metadataMap: [String: CodexRawSessionMetadata] = [:]
@@ -224,6 +273,8 @@ public enum CodexSessionMetadataStore {
         }
 
         var parsedLines = 0
+        var selectedSessionId: String?
+        var selectedMetadata: CodexRawSessionMetadata?
         for rawLine in text.split(separator: "\n", omittingEmptySubsequences: true) {
             guard parsedLines < maxLines else { break }
             parsedLines += 1
@@ -232,19 +283,25 @@ public enum CodexSessionMetadataStore {
             guard !trimmed.isEmpty,
                   let lineData = trimmed.data(using: .utf8),
                   let json = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
-                  (json["type"] as? String) == "session_meta",
                   let payload = json["payload"] as? [String: Any] else {
                 continue
             }
+            let outerType = (json["type"] as? String ?? json["event"] as? String ?? "").lowercased()
+            let payloadType = (payload["type"] as? String ?? "").lowercased()
+            let type = outerType == "event_msg" ? payloadType : outerType
+            guard type == "session_meta" else { continue }
 
-            let sessionId = nonEmptyString(payload["id"]) ?? source.sessionId
+            let sessionId = nonEmptyString(payload["id"])
+                ?? nonEmptyString(payload["session_id"])
+                ?? source.sessionId
+            guard !sessionId.isEmpty else { continue }
             let cwd = nonEmptyString(payload["cwd"])
             let parentId = resolvedParentSessionId(from: payload)
             let agentType = resolvedAgentType(from: payload)
             let timestamp = payload["timestamp"] ?? json["timestamp"]
             let createdAt = dateValue(from: timestamp)
             let projectName = cwd.map { extractProjectName(from: $0) }
-            let metadata = CodexRawSessionMetadata(
+            let incoming = CodexRawSessionMetadata(
                 sessionId: sessionId,
                 cwd: cwd,
                 projectName: projectName,
@@ -254,16 +311,72 @@ public enum CodexSessionMetadataStore {
                 updatedAt: createdAt
             )
 
+            if selectedSessionId == nil {
+                guard sessionId == source.sessionId || parentId != nil || source.sessionId.isEmpty else {
+                    // 子会话 rollout 可能先重放父 session_meta，不能用它改写文件身份。
+                    continue
+                }
+                selectedSessionId = sessionId
+                selectedMetadata = incoming
+                continue
+            }
+
+            if sessionId == selectedSessionId {
+                selectedMetadata = mergeRolloutHeaderMetadata(
+                    existing: selectedMetadata,
+                    incoming: incoming
+                )
+            } else if sessionId == source.sessionId {
+                selectedSessionId = sessionId
+                selectedMetadata = incoming
+            }
+        }
+
+        if let selectedSessionId {
             return CodexRolloutHeaderMetadata(
                 sourcePath: source.fileURL.path,
                 relativePath: source.relativePath,
                 sessionIdHint: source.sessionId,
-                sessionId: sessionId,
-                metadata: metadata
+                sessionId: selectedSessionId,
+                metadata: selectedMetadata
             )
         }
 
         return empty
+    }
+
+    private static func mergeRolloutHeaderMetadata(
+        existing: CodexRawSessionMetadata?,
+        incoming: CodexRawSessionMetadata
+    ) -> CodexRawSessionMetadata {
+        guard var merged = existing else { return incoming }
+        if merged.title == nil || merged.title?.isEmpty == true {
+            merged.title = incoming.title
+        }
+        if merged.cwd == nil || merged.cwd?.isEmpty == true {
+            merged.cwd = incoming.cwd
+            merged.projectName = incoming.projectName
+        }
+        if merged.projectName == nil || merged.projectName?.isEmpty == true {
+            merged.projectName = incoming.projectName
+        }
+        if let parent = incoming.parentSessionId, !parent.isEmpty {
+            merged.parentSessionId = parent
+        }
+        if merged.agentType == nil || merged.agentType?.isEmpty == true {
+            merged.agentType = incoming.agentType
+        }
+        if merged.createdAt == nil {
+            merged.createdAt = incoming.createdAt
+        }
+        if let updated = incoming.updatedAt {
+            if let existingUpdated = merged.updatedAt {
+                merged.updatedAt = max(existingUpdated, updated)
+            } else {
+                merged.updatedAt = updated
+            }
+        }
+        return merged
     }
 
     /// 安全只读读取 state_5.sqlite
@@ -303,11 +416,8 @@ public enum CodexSessionMetadataStore {
                 let parentId = sqlite3_column_type(stmt, 3) != SQLITE_NULL && sqlite3_column_text(stmt, 3) != nil
                     ? String(cString: sqlite3_column_text(stmt, 3)!) : nil
 
-                let createdMs = sqlite3_column_type(stmt, 4) != SQLITE_NULL ? sqlite3_column_int64(stmt, 4) : 0
-                let updatedMs = sqlite3_column_type(stmt, 5) != SQLITE_NULL ? sqlite3_column_int64(stmt, 5) : 0
-
-                let createdDate = createdMs > 0 ? Date(timeIntervalSince1970: Double(createdMs) / 1000.0) : nil
-                let updatedDate = updatedMs > 0 ? Date(timeIntervalSince1970: Double(updatedMs) / 1000.0) : nil
+                let createdDate = columnDate(stmt, 4)
+                let updatedDate = columnDate(stmt, 5)
                 let projectName = cwd.map { extractProjectName(from: $0) }
 
                 result[id] = CodexRawSessionMetadata(
@@ -402,6 +512,14 @@ public enum CodexSessionMetadataStore {
 
     private static func dateValue(from value: Any?) -> Date? {
         guard let value else { return nil }
+        if value is Bool { return nil }
+        if let date = value as? Date {
+            return normalizedDate(date)
+        }
+        if let number = value as? NSNumber {
+            if CFGetTypeID(number) == CFBooleanGetTypeID() { return nil }
+            return dateFromEpochNumber(number.doubleValue)
+        }
         if let intVal = value as? Int64 {
             return dateFromEpochNumber(Double(intVal))
         }
@@ -412,28 +530,43 @@ public enum CodexSessionMetadataStore {
             return dateFromEpochNumber(doubleVal)
         }
         if let stringVal = value as? String {
-            if let parsed = Double(stringVal) {
+            let trimmed = stringVal.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return nil }
+            if let parsed = Double(trimmed) {
                 return dateFromEpochNumber(parsed)
             }
-            return dateFromISO8601(stringVal)
+            return dateFromISO8601(trimmed)
         }
         return nil
     }
 
-    private static func dateFromEpochNumber(_ raw: Double) -> Date {
+    private static func dateFromEpochNumber(_ raw: Double) -> Date? {
+        guard raw.isFinite, raw > 0 else { return nil }
         let seconds = raw > 100_000_000_000 ? raw / 1000.0 : raw
-        return Date(timeIntervalSince1970: seconds)
+        return normalizedDate(Date(timeIntervalSince1970: seconds))
+    }
+
+    private static func normalizedDate(_ date: Date) -> Date? {
+        let seconds = date.timeIntervalSince1970
+        guard seconds.isFinite else { return nil }
+        let milliseconds = seconds * 1_000
+        guard milliseconds.isFinite,
+              milliseconds >= 1_500_000_000_000,
+              milliseconds <= 4_102_444_800_000 else {
+            return nil
+        }
+        return date
     }
 
     private static func dateFromISO8601(_ value: String) -> Date? {
         let fractional = ISO8601DateFormatter()
         fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         if let date = fractional.date(from: value) {
-            return date
+            return normalizedDate(date)
         }
         let plain = ISO8601DateFormatter()
         plain.formatOptions = [.withInternetDateTime]
-        return plain.date(from: value)
+        return plain.date(from: value).flatMap(normalizedDate)
     }
 
     private static func columnString(_ statement: OpaquePointer, _ index: Int32) -> String? {

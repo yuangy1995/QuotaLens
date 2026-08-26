@@ -114,13 +114,13 @@ public enum UsageDerivation: String, Hashable, Sendable, Codable {
     public var localizedDescription: String {
         switch self {
         case .explicitLastUsage:
-            return L10n.text("单步精确用量", "Exact step usage")
+            return L10n.text("单条用量记录", "Single usage record")
         case .totalUsageDelta:
-            return L10n.text("累计差分增量", "Cumulative delta")
+            return L10n.text("根据累计用量计算", "Calculated from cumulative usage")
         case .totalUsageRestart:
-            return L10n.text("计数器重启补偿", "Counter restart compensation")
+            return L10n.text("用量计数重置后计算", "Calculated after usage count reset")
         case .syntheticInitialSnapshot:
-            return L10n.text("初始基线快照", "Initial baseline snapshot")
+            return L10n.text("初始用量记录", "Initial usage record")
         }
     }
 }
@@ -174,6 +174,107 @@ public enum TimestampQuality: String, Hashable, Sendable, Codable {
     }
 }
 
+// MARK: - 时间戳来源
+public enum TimestampSource: String, Hashable, Sendable, Codable {
+    case topLevelTimestamp = "top_level_timestamp"
+    case payloadTimestamp = "payload_timestamp"
+    case infoTimestamp = "info_timestamp"
+    case metadataTimestamp = "metadata_timestamp"
+    case createdAt = "created_at"
+    case startedAt = "started_at"
+    case taskStartedAt = "task_started_at"
+    case fileName = "file_name"
+    case sessionMetadata = "session_metadata"
+    case fileModification = "file_modification"
+    case unresolved = "unresolved"
+
+    public var quality: TimestampQuality {
+        switch self {
+        case .topLevelTimestamp, .payloadTimestamp, .infoTimestamp, .metadataTimestamp, .createdAt, .startedAt, .taskStartedAt:
+            return .eventTimestamp
+        case .fileName:
+            return .fileNameTimestamp
+        case .sessionMetadata:
+            return .sessionTimestamp
+        case .fileModification:
+            return .fileModificationTime
+        case .unresolved:
+            return .unresolved
+        }
+    }
+}
+
+// MARK: - 汇总来源
+public enum SummaryProvenance: String, Hashable, Sendable, Codable {
+    case eventLedger = "eventLedger"
+    case legacyAggregate = "legacyAggregate"
+    case reconstructed = "reconstructed"
+
+    public init(storedValue: String?) {
+        guard let storedValue,
+              let value = SummaryProvenance(rawValue: storedValue) else {
+            self = .eventLedger
+            return
+        }
+        self = value
+    }
+
+    public var localizedDescription: String {
+        switch self {
+        case .eventLedger:
+            return L10n.text("事件账本", "Event ledger")
+        case .legacyAggregate:
+            return L10n.text("旧版聚合", "Legacy aggregate")
+        case .reconstructed:
+            return L10n.text("原始日志重建", "Reconstructed from source")
+        }
+    }
+}
+
+// MARK: - 价格迁移状态
+public enum PricingMigrationState: String, Hashable, Sendable, Codable {
+    case fullyCurrent = "fullyCurrent"
+    case mixedLegacy = "mixedLegacy"
+    case pendingSources = "pendingSources"
+    case failed = "failed"
+
+    public init(storedValue: String?) {
+        guard let storedValue else {
+            self = .fullyCurrent
+            return
+        }
+        if let value = PricingMigrationState(rawValue: storedValue) {
+            self = value
+            return
+        }
+        switch storedValue {
+        case "completed":
+            self = .fullyCurrent
+        case "pending":
+            self = .pendingSources
+        case "mixedLegacy":
+            self = .mixedLegacy
+        case "failed":
+            self = .failed
+        default:
+            self = .pendingSources
+        }
+    }
+
+    public var localizedDescription: String {
+        switch self {
+        case .fullyCurrent:
+            return L10n.text("费用已更新", "Costs updated")
+        case .mixedLegacy:
+            return L10n.text("部分历史记录保留原金额", "Some older records keep their original amounts")
+        case .pendingSources:
+            return L10n.text("部分记录暂时无法读取", "Some records cannot be read right now")
+        case .failed:
+            return L10n.text("费用更新未完成，请重试", "Cost update did not finish. Try again.")
+        }
+    }
+}
+
 // MARK: - 计价状态
 public enum PricingStatus: String, Hashable, Sendable, Codable {
     case priced = "priced"
@@ -189,19 +290,19 @@ public enum PricingStatus: String, Hashable, Sendable, Codable {
     public var localizedDescription: String {
         switch self {
         case .priced:
-            return L10n.text("已按官方列表价估算", "Estimated by official list price")
+            return L10n.text("已按公开价格估算", "Estimated from public rates")
         case .unpricedUnknownModel:
-            return L10n.text("未识别模型", "Unrecognized model")
+            return L10n.text("无法识别模型", "Model not recognized")
         case .unpricedHistoricalRuleMissing:
-            return L10n.text("缺少历史费率规则", "Missing historical rate rule")
+            return L10n.text("缺少当时价格", "Price at that time is unavailable")
         case .unpricedUnsupportedServiceMode:
-            return L10n.text("不支持的服务模式，未计价", "Unsupported service mode, not priced")
+            return L10n.text("该服务模式暂无法估算", "This service mode cannot be estimated yet")
         case .unpricedUnsupportedContextLength:
-            return L10n.text("该服务模式不支持此上下文长度，未计价", "Context length unsupported for this service mode, not priced")
+            return L10n.text("这类记录暂无法估算", "This kind of record cannot be estimated yet")
         case .unpricedInvalidTokenRecord:
-            return L10n.text("无效 Token 记录，未计价", "Invalid token record, not priced")
+            return L10n.text("记录不完整，无法估算", "Incomplete record, cannot estimate")
         case .unpricedCalculationOverflow:
-            return L10n.text("数值溢出", "Calculation overflow")
+            return L10n.text("数值异常，无法估算", "Unusual value, cannot estimate")
         }
     }
 }
@@ -242,11 +343,11 @@ public enum AggregatePricingStatus: String, Hashable, Sendable, Codable {
     public var localizedDescription: String {
         switch self {
         case .fullyPriced:
-            return L10n.text("已全部计价", "Fully priced")
+            return L10n.text("费用已估算", "Cost estimated")
         case .partiallyPriced:
-            return L10n.text("部分事件未计价", "Partially priced")
+            return L10n.text("部分费用无法估算", "Some costs cannot be estimated")
         case .fullyUnpriced:
-            return L10n.text("全部事件未计价", "Fully unpriced")
+            return L10n.text("费用无法估算", "Cost cannot be estimated")
         }
     }
 }
@@ -364,17 +465,17 @@ public struct UnpricedReasonCounts: Hashable, Sendable, Codable {
 
     public var localizedSummary: String {
         let parts = [
-            (unknownModelEvents, L10n.text("未知模型", "unknown model")),
-            (unsupportedTierEvents, L10n.text("不支持层级", "unsupported tier")),
-            (historicalRuleMissingEvents, L10n.text("缺少历史规则", "missing historical rule")),
-            (unsupportedContextEvents, L10n.text("不支持上下文", "unsupported context")),
-            (invalidRecordEvents, L10n.text("无效记录", "invalid record")),
-            (overflowEvents, L10n.text("数值溢出", "overflow"))
+            (unknownModelEvents, L10n.text("模型无法识别", "model not recognized")),
+            (unsupportedTierEvents, L10n.text("服务模式暂无法估算", "service mode cannot be estimated")),
+            (historicalRuleMissingEvents, L10n.text("缺少当时价格", "price at that time unavailable")),
+            (unsupportedContextEvents, L10n.text("记录规格暂无法估算", "record type cannot be estimated")),
+            (invalidRecordEvents, L10n.text("记录不完整", "incomplete record")),
+            (overflowEvents, L10n.text("数值异常", "unusual value"))
         ]
         .filter { $0.0 > 0 }
         .map { "\($0.0) \($0.1)" }
         guard !parts.isEmpty else {
-            return L10n.text("无未计价原因", "No unpriced reasons")
+            return L10n.text("没有无法估算的记录", "No records are missing estimates")
         }
         return parts.joined(separator: " · ")
     }

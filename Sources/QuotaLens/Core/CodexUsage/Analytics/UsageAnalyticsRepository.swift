@@ -2,42 +2,71 @@
 // 高性能 SQLite 只读参数化查询、Keyset 分页、日桶聚合、模型分布与画像统计
 
 import Foundation
+import CryptoKit
 import SQLite3
 
 public enum SessionDeletionError: LocalizedError, Sendable {
     case sessionNotFound
     case unsafeSourcePath(String)
     case sourceIsNotRegularFile(String)
+    case sourceUnavailable(String)
     case trashDestinationUnavailable(String)
     case rollbackFailed(String)
+    case recoveryBlocked(String)
+    case unsafeDeletionJournal(String)
 
     public var errorDescription: String? {
         switch self {
         case .sessionNotFound:
             return L10n.text("该会话已不存在。", "The session no longer exists.")
-        case .unsafeSourcePath(let path):
-            return L10n.format(
-                "QuotaLens refused to delete a source outside the Codex session folders: %@",
-                zhHans: "QuotaLens 已拒绝删除 Codex 会话目录之外的文件：%@",
-                path
+        case .unsafeSourcePath:
+            return L10n.text(
+                "无法删除：这条记录的位置不在 QuotaLens 可安全管理的范围内。",
+                "Cannot delete this item because it is outside the location QuotaLens can safely manage."
             )
-        case .sourceIsNotRegularFile(let path):
-            return L10n.format(
-                "The session source is not a regular file: %@",
-                zhHans: "会话源不是普通文件：%@",
-                path
+        case .sourceIsNotRegularFile:
+            return L10n.text(
+                "无法删除：这条记录对应的位置不是可安全移动的文件。",
+                "Cannot delete this item because its source is not a file QuotaLens can safely move."
             )
-        case .trashDestinationUnavailable(let path):
-            return L10n.format(
-                "The Trash did not return a recovery location for: %@",
-                zhHans: "废纸篓没有返回可恢复位置：%@",
-                path
+        case .sourceUnavailable:
+            return L10n.text(
+                "无法删除：这条记录暂时无法读取。请检查权限后重试。",
+                "Cannot delete this item because the record cannot be read right now. Check permissions and try again."
             )
-        case .rollbackFailed(let details):
-            return L10n.format(
-                "Session deletion failed and one or more source files could not be restored: %@",
-                zhHans: "会话删除失败，且一个或多个源文件无法恢复：%@",
-                details
+        case .trashDestinationUnavailable:
+            return L10n.text(
+                "删除未完成：系统没有确认文件可恢复的位置，QuotaLens 已停止继续删除。",
+                "Deletion did not finish because the system did not confirm a recoverable location. QuotaLens stopped before continuing."
+            )
+        case .rollbackFailed:
+            return L10n.text(
+                "删除未完成，部分文件需要先恢复或确认。处理前，本地用量更新会暂停。",
+                "Deletion did not finish. Some files need to be restored or confirmed before local usage updates can continue."
+            )
+        case .recoveryBlocked:
+            return L10n.text(
+                "上一次删除尚未完全处理；为避免数据不一致，本地用量更新已暂停。",
+                "A previous deletion is not fully resolved. Local usage updates are paused to avoid inconsistent data."
+            )
+        case .unsafeDeletionJournal:
+            return L10n.text(
+                "删除恢复信息未通过安全检查；QuotaLens 已停止自动恢复。",
+                "Deletion recovery information did not pass safety checks. QuotaLens stopped automatic recovery."
+            )
+        }
+    }
+}
+
+public enum MissingSourceCleanupError: LocalizedError, Sendable {
+    case stalePreview
+
+    public var errorDescription: String? {
+        switch self {
+        case .stalePreview:
+            return L10n.text(
+                "记录检查结果已过期；请重新预览后再确认清理。",
+                "The record check is out of date. Preview again before cleaning."
             )
         }
     }
@@ -47,15 +76,21 @@ public final class UsageAnalyticsRepository: Sendable {
     private let database: SQLiteDatabase
     private let trashSourceFile: @Sendable (URL) throws -> URL
     private let stageSourceFile: @Sendable (URL, URL) throws -> Void
+    private let deletionStagingRootProvider: @Sendable () throws -> URL
+    private let trustedDeletionStagingBaseRoots: [URL]
+    private let trustedDeletionStagingOperationRoots: [URL]
     private typealias DayAggregate = (
         tokens: TokenBreakdown,
         cost: MoneyNanoUSD,
         eventCount: Int,
         sessions: Set<String>,
-        models: [String: (tokens: TokenBreakdown, cost: MoneyNanoUSD, count: Int, reasons: UnpricedReasonCounts)],
+        models: [String: (tokens: TokenBreakdown, cost: MoneyNanoUSD, count: Int, reasons: UnpricedReasonCounts, provenance: SummaryProvenance)],
         unpriced: Int,
         unpricedTokens: Int64,
-        reasons: UnpricedReasonCounts
+        reasons: UnpricedReasonCounts,
+        legacyTokens: Int64,
+        legacyCost: MoneyNanoUSD,
+        legacyEvents: Int
     )
 
     /// One already-aggregated session/model/day slice. Normal queries read
@@ -71,6 +106,7 @@ public final class UsageAnalyticsRepository: Sendable {
         let unpricedCount: Int
         let unpricedTokens: Int64
         let unpricedReasonCounts: UnpricedReasonCounts
+        let summaryProvenance: SummaryProvenance
     }
 
     public init(
@@ -85,11 +121,19 @@ public final class UsageAnalyticsRepository: Sendable {
         },
         stageSourceFile: @escaping @Sendable (URL, URL) throws -> Void = { sourceURL, stagingURL in
             try FileManager.default.moveItem(at: sourceURL, to: stagingURL)
-        }
+        },
+        deletionStagingRootProvider: (@Sendable () throws -> URL)? = nil,
+        trustedDeletionStagingBaseRoots: [URL]? = nil,
+        trustedDeletionStagingOperationRoots: [URL] = []
     ) {
         self.database = database
         self.trashSourceFile = trashSourceFile
         self.stageSourceFile = stageSourceFile
+        self.deletionStagingRootProvider = deletionStagingRootProvider ?? UsageAnalyticsRepository.makeDeletionStagingDirectory
+        self.trustedDeletionStagingBaseRoots = (trustedDeletionStagingBaseRoots ?? [UsageAnalyticsRepository.defaultDeletionStagingBaseDirectory()])
+            .map(UsageAnalyticsRepository.canonicalFileURL)
+        self.trustedDeletionStagingOperationRoots = trustedDeletionStagingOperationRoots
+            .map(UsageAnalyticsRepository.canonicalFileURL)
     }
 
     // MARK: - 1. 会话列表查询 (支持 Keyset 分页、项目过滤与搜索)
@@ -196,7 +240,8 @@ public final class UsageAnalyticsRepository: Sendable {
             unpriced_historical_rule_missing_event_count, unpriced_historical_rule_missing_token_count,
             unpriced_unsupported_context_event_count, unpriced_unsupported_context_token_count,
             unpriced_invalid_record_event_count, unpriced_invalid_record_token_count,
-            unpriced_overflow_event_count, unpriced_overflow_token_count
+            unpriced_overflow_event_count, unpriced_overflow_token_count,
+            summary_provenance
         FROM codex_sessions
         \(whereClause)
         \(orderClause)
@@ -232,7 +277,8 @@ public final class UsageAnalyticsRepository: Sendable {
             unpriced_historical_rule_missing_event_count, unpriced_historical_rule_missing_token_count,
             unpriced_unsupported_context_event_count, unpriced_unsupported_context_token_count,
             unpriced_invalid_record_event_count, unpriced_invalid_record_token_count,
-            unpriced_overflow_event_count, unpriced_overflow_token_count
+            unpriced_overflow_event_count, unpriced_overflow_token_count,
+            summary_provenance
         FROM codex_sessions
         WHERE session_id = ?;
         """
@@ -266,7 +312,8 @@ public final class UsageAnalyticsRepository: Sendable {
             unpriced_historical_rule_missing_event_count, unpriced_historical_rule_missing_token_count,
             unpriced_unsupported_context_event_count, unpriced_unsupported_context_token_count,
             unpriced_invalid_record_event_count, unpriced_invalid_record_token_count,
-            unpriced_overflow_event_count, unpriced_overflow_token_count
+            unpriced_overflow_event_count, unpriced_overflow_token_count,
+            summary_provenance
         FROM codex_sessions
         WHERE parent_session_id = ?
         ORDER BY created_at ASC;
@@ -297,7 +344,14 @@ public final class UsageAnalyticsRepository: Sendable {
             SUM(unpriced_invalid_record_event_count),
             SUM(unpriced_invalid_record_token_count),
             SUM(unpriced_overflow_event_count),
-            SUM(unpriced_overflow_token_count)
+            SUM(unpriced_overflow_token_count),
+            CASE
+                WHEN SUM(CASE WHEN summary_provenance = 'legacyAggregate' THEN event_count ELSE 0 END) = SUM(event_count)
+                    THEN 'legacyAggregate'
+                WHEN SUM(CASE WHEN summary_provenance = 'reconstructed' THEN event_count ELSE 0 END) > 0
+                    THEN 'reconstructed'
+                ELSE 'eventLedger'
+            END
         FROM codex_session_summaries
         WHERE session_id = ?
         GROUP BY model_canonical
@@ -325,7 +379,13 @@ public final class UsageAnalyticsRepository: Sendable {
                 estimatedCost: cost,
                 eventCount: eventCount,
                 unpricedCount: unpriced,
-                unpricedReasonCounts: Self.unpricedReasonCounts(from: stmt, start: 10)
+                unpricedReasonCounts: Self.unpricedReasonCounts(from: stmt, start: 10),
+                summaryProvenance: SummaryProvenance(
+                    storedValue: sqlite3_column_type(stmt, 22) != SQLITE_NULL
+                        && sqlite3_column_text(stmt, 22) != nil
+                        ? String(cString: sqlite3_column_text(stmt, 22)!)
+                        : nil
+                )
             )
         }
 
@@ -376,24 +436,27 @@ public final class UsageAnalyticsRepository: Sendable {
         )
     }
 
-    /// Moves the rollout source for a session tree to the macOS Trash, then
-    /// removes its derived analytics rows so the deleted session disappears
-    /// immediately and is not re-imported on the next scan.
+    /// 删除会话树前先持久化 journal；提交前的唯一回滚依据始终保留在 staging_path。
     public func deleteSession(sessionId: String, historyRootURL: URL? = nil) throws {
         struct SourceRecord {
             let sessionId: String
             let sourcePath: String
             let relativePath: String
+            let bucket: SessionBucket
         }
-        struct StagedSource {
+
+        struct DeletionSource {
+            let record: SourceRecord
             let originalURL: URL
             let stagingURL: URL
-            var recoveryURL: URL?
+            let trashCandidateURL: URL
         }
+
+        try assertNoIncompleteSessionDeletionJournal(historyRootURL: historyRootURL)
 
         let records = try database.executeQuery(
             sql: """
-            SELECT session_id, source_path, relative_path
+            SELECT session_id, source_path, relative_path, bucket
             FROM codex_sessions
             WHERE session_id = ?
                OR root_session_id = (
@@ -407,7 +470,13 @@ public final class UsageAnalyticsRepository: Sendable {
             SourceRecord(
                 sessionId: String(cString: sqlite3_column_text(statement, 0)),
                 sourcePath: String(cString: sqlite3_column_text(statement, 1)),
-                relativePath: String(cString: sqlite3_column_text(statement, 2))
+                relativePath: String(cString: sqlite3_column_text(statement, 2)),
+                bucket: SessionBucket(
+                    rawValue: sqlite3_column_type(statement, 3) != SQLITE_NULL
+                        && sqlite3_column_text(statement, 3) != nil
+                        ? String(cString: sqlite3_column_text(statement, 3)!)
+                        : SessionBucket.active.rawValue
+                ) ?? .active
             )
         }
 
@@ -418,21 +487,35 @@ public final class UsageAnalyticsRepository: Sendable {
         let historyPaths = CodexHistoryPaths(
             rootURL: historyRootURL ?? CodexHistoryRootResolver.resolveRootURL()
         )
-        var sourceURLsByPath: [String: URL] = [:]
+        var sourceRecordsByPath: [String: (SourceRecord, URL)] = [:]
         for record in records {
             let sourceURL = try Self.safeSessionSourceURL(
                 sourcePath: record.sourcePath,
                 relativePath: record.relativePath,
                 historyPaths: historyPaths
             )
-            sourceURLsByPath[sourceURL.path] = sourceURL
+            sourceRecordsByPath[sourceURL.path] = (record, sourceURL)
         }
 
         let fileManager = FileManager.default
-        let sortedSources = sourceURLsByPath.values.sorted(by: { $0.path < $1.path })
-        for sourceURL in sortedSources {
-            guard fileManager.fileExists(atPath: sourceURL.path) else { continue }
-            let values = try sourceURL.resourceValues(forKeys: [.isRegularFileKey])
+        let sortedSources = sourceRecordsByPath.values.sorted(by: { $0.1.path < $1.1.path })
+        var initiallyMissingSourcePaths = Set<String>()
+        for (_, sourceURL) in sortedSources {
+            switch Self.filePresence(at: sourceURL) {
+            case .missing:
+                initiallyMissingSourcePaths.insert(sourceURL.path)
+                continue
+            case .inaccessible:
+                throw SessionDeletionError.sourceUnavailable(sourceURL.path)
+            case .exists:
+                break
+            }
+            let values: URLResourceValues
+            do {
+                values = try sourceURL.resourceValues(forKeys: [.isRegularFileKey])
+            } catch {
+                throw SessionDeletionError.sourceUnavailable(sourceURL.path)
+            }
             guard values.isRegularFile == true else {
                 throw SessionDeletionError.sourceIsNotRegularFile(sourceURL.path)
             }
@@ -440,109 +523,344 @@ public final class UsageAnalyticsRepository: Sendable {
 
         let sessionIDs = Set(records.map(\.sessionId))
         let sourceKeys = Set(records.map { "\($0.sourcePath)\u{1F}\($0.relativePath)" })
-        let stagingRoot = try Self.makeDeletionStagingDirectory()
-        var stagedSources: [StagedSource] = []
+        let rootSessionId = try database.stringScalar(
+            sql: "SELECT root_session_id FROM codex_sessions WHERE session_id = ?;",
+            bindings: [sessionId]
+        ) ?? sessionId
+        let deletionId = UUID().uuidString
+        let stagingRoot = try deletionStagingRootProvider()
+        guard Self.isSafeDeletionStagingRoot(
+            stagingRoot,
+            historyRoot: historyPaths.rootURL,
+            trustedBaseRoots: trustedDeletionStagingBaseRoots,
+            trustedOperationRoots: trustedDeletionStagingOperationRoots
+        ) else {
+            throw SessionDeletionError.unsafeDeletionJournal("unsafe staging root")
+        }
+        let deletionSources: [DeletionSource] = sortedSources.enumerated().map { index, item in
+            let (record, url) = item
+            let stagingURL = stagingRoot
+                .appendingPathComponent(String(index), isDirectory: true)
+                .appendingPathComponent(url.lastPathComponent)
+            let trashCandidateURL = stagingRoot
+                .appendingPathComponent("trash-\(index)", isDirectory: true)
+                .appendingPathComponent(url.lastPathComponent)
+            return DeletionSource(
+                record: record,
+                originalURL: url,
+                stagingURL: stagingURL,
+                trashCandidateURL: trashCandidateURL
+            )
+        }
+        try createDeletionJournal(
+            deletionId: deletionId,
+            requestedSessionId: sessionId,
+            rootSessionId: rootSessionId,
+            historyRoot: historyPaths.rootURL,
+            stagingRoot: stagingRoot,
+            sources: deletionSources.map { item in
+                return (
+                    sessionId: item.record.sessionId,
+                    sourcePath: item.record.sourcePath,
+                    relativePath: item.record.relativePath,
+                    bucket: item.record.bucket,
+                    originalURL: item.originalURL,
+                    stagingURL: item.stagingURL,
+                    initialState: initiallyMissingSourcePaths.contains(item.originalURL.path)
+                        ? "missingBeforeDelete"
+                        : "prepared"
+                )
+            }
+        )
 
-        func restoreStagedSources() -> [String] {
-            var failures: [String] = []
-            for staged in stagedSources.reversed() {
-                let recoveryURL = staged.recoveryURL ?? staged.stagingURL
-                guard fileManager.fileExists(atPath: recoveryURL.path) else {
-                    if !fileManager.fileExists(atPath: staged.originalURL.path) {
-                        failures.append("missing recovery source \(recoveryURL.path)")
-                    }
-                    continue
-                }
-                guard !fileManager.fileExists(atPath: staged.originalURL.path) else {
-                    failures.append("restore destination already exists \(staged.originalURL.path)")
-                    continue
-                }
-                do {
-                    try fileManager.createDirectory(
-                        at: staged.originalURL.deletingLastPathComponent(),
-                        withIntermediateDirectories: true
-                    )
-                    try fileManager.moveItem(at: recoveryURL, to: staged.originalURL)
-                } catch {
-                    failures.append("\(staged.originalURL.path): \(error.localizedDescription)")
-                }
+        func rollbackAndThrow(_ error: Error) throws {
+            guard let rollbackFailures = try? rollbackDeletionFiles(
+                deletionId: deletionId,
+                allowRecordedRecoveryCleanup: true
+            ) else {
+                try? markDeletionRollbackRequired(deletionId: deletionId, failures: [error.localizedDescription])
+                throw SessionDeletionError.rollbackFailed("recovery information could not be read")
+            }
+            if !rollbackFailures.isEmpty {
+                try? markDeletionRollbackRequired(deletionId: deletionId, failures: rollbackFailures)
+                throw SessionDeletionError.rollbackFailed(rollbackFailures.joined(separator: "; "))
             }
             try? fileManager.removeItem(at: stagingRoot)
-            return failures
+            try? updateDeletionJournalStatus(deletionId: deletionId, status: "finalized", error: error.localizedDescription)
+            throw error
         }
 
         do {
-            for (index, sourceURL) in sortedSources.enumerated() {
-                guard fileManager.fileExists(atPath: sourceURL.path) else { continue }
-                let stagingDirectory = stagingRoot.appendingPathComponent(String(index), isDirectory: true)
-                try fileManager.createDirectory(at: stagingDirectory, withIntermediateDirectories: true)
-                let stagingURL = stagingDirectory.appendingPathComponent(sourceURL.lastPathComponent)
-                try stageSourceFile(sourceURL, stagingURL)
-                stagedSources.append(StagedSource(
-                    originalURL: sourceURL,
-                    stagingURL: stagingURL,
-                    recoveryURL: nil
-                ))
+            for item in deletionSources {
+                switch Self.filePresence(at: item.originalURL) {
+                case .missing:
+                    if !initiallyMissingSourcePaths.contains(item.originalURL.path) {
+                        try updateDeletionFileState(
+                            deletionId: deletionId,
+                            originalPath: item.originalURL.path,
+                            state: "missingBeforeDelete",
+                            stagingPath: item.stagingURL.path,
+                            recoveryPath: nil
+                        )
+                    }
+                    continue
+                case .inaccessible:
+                    throw SessionDeletionError.sourceUnavailable(item.originalURL.path)
+                case .exists:
+                    break
+                }
+                try fileManager.createDirectory(
+                    at: item.stagingURL.deletingLastPathComponent(),
+                    withIntermediateDirectories: true
+                )
+                try stageSourceFile(item.originalURL, item.stagingURL)
+                try updateDeletionFileState(
+                    deletionId: deletionId,
+                    originalPath: item.originalURL.path,
+                    state: "staged",
+                    stagingPath: item.stagingURL.path,
+                    recoveryPath: nil
+                )
             }
+            try updateDeletionJournalStatus(deletionId: deletionId, status: "staged")
+            for item in deletionSources where fileManager.fileExists(atPath: item.stagingURL.path) {
+                try fileManager.createDirectory(
+                    at: item.trashCandidateURL.deletingLastPathComponent(),
+                    withIntermediateDirectories: true
+                )
+                if fileManager.fileExists(atPath: item.trashCandidateURL.path) {
+                    try fileManager.removeItem(at: item.trashCandidateURL)
+                }
+                // Trash 操作可能在返回恢复 URL 前崩溃；因此只移动 staging 的副本。
+                try fileManager.copyItem(at: item.stagingURL, to: item.trashCandidateURL)
+                try updateDeletionFileState(
+                    deletionId: deletionId,
+                    originalPath: item.originalURL.path,
+                    state: "trashPrepared",
+                    stagingPath: item.stagingURL.path,
+                    recoveryPath: nil
+                )
+                let trashURL = try trashSourceFile(item.trashCandidateURL)
+                try updateDeletionFileState(
+                    deletionId: deletionId,
+                    originalPath: item.originalURL.path,
+                    state: "trashed",
+                    stagingPath: item.stagingURL.path,
+                    recoveryPath: trashURL.path
+                )
+            }
+            try updateDeletionJournalStatus(deletionId: deletionId, status: "trashed")
         } catch {
-            let rollbackFailures = restoreStagedSources()
-            if !rollbackFailures.isEmpty {
-                throw SessionDeletionError.rollbackFailed(rollbackFailures.joined(separator: "; "))
-            }
-            throw error
+            try rollbackAndThrow(error)
         }
 
         do {
             try database.transaction {
-                for sessionID in sessionIDs {
-                    try database.executeUpdate(
-                        sql: "DELETE FROM codex_usage_events WHERE session_id = ? OR root_session_id = ?;",
-                        bindings: [sessionID, sessionID]
-                    )
-                    try database.executeUpdate(
-                        sql: "DELETE FROM codex_session_summaries WHERE session_id = ?;",
-                        bindings: [sessionID]
-                    )
-                    try database.executeUpdate(
-                        sql: "DELETE FROM codex_daily_usage_summaries WHERE session_id = ?;",
-                        bindings: [sessionID]
-                    )
-                }
-
-                for sourceKey in sourceKeys {
-                    let parts = sourceKey.split(separator: "\u{1F}", maxSplits: 1, omittingEmptySubsequences: false)
-                    let sourcePath = String(parts[0])
-                    let relativePath = parts.count > 1 ? String(parts[1]) : ""
-                    try database.executeUpdate(
-                        sql: "DELETE FROM codex_usage_events WHERE source_path = ? OR source_path = ?;",
-                        bindings: [sourcePath, relativePath]
-                    )
-                    try database.executeUpdate(
-                        sql: "DELETE FROM codex_import_sources WHERE source_path = ? OR relative_path = ?;",
-                        bindings: [sourcePath, relativePath]
-                    )
-                }
-
-                for sessionID in sessionIDs {
-                    try database.executeUpdate(
-                        sql: "DELETE FROM codex_sessions WHERE session_id = ?;",
-                        bindings: [sessionID]
-                    )
-                }
-
-                for index in stagedSources.indices {
-                    let trashURL = try trashSourceFile(stagedSources[index].stagingURL)
-                    stagedSources[index].recoveryURL = trashURL
-                }
+                try deleteSessionDerivedRows(sessionIDs: sessionIDs, sourceKeys: sourceKeys)
+                try updateDeletionJournalStatusInTransaction(
+                    deletionId: deletionId,
+                    status: "databaseCommitted"
+                )
             }
-            try? fileManager.removeItem(at: stagingRoot)
         } catch {
-            let rollbackFailures = restoreStagedSources()
-            if !rollbackFailures.isEmpty {
-                throw SessionDeletionError.rollbackFailed(rollbackFailures.joined(separator: "; "))
+            try rollbackAndThrow(error)
+        }
+
+        var finalized = false
+        do {
+            if fileManager.fileExists(atPath: stagingRoot.path) {
+                try fileManager.removeItem(at: stagingRoot)
+            }
+            try updateDeletionJournalStatus(deletionId: deletionId, status: "finalized")
+            finalized = true
+            try PricingCatalogService.shared.refreshPricingMigrationState(database: database)
+        } catch {
+            if !finalized {
+                try? updateDeletionJournalStatus(
+                    deletionId: deletionId,
+                    status: "databaseCommitted",
+                    error: error.localizedDescription
+                )
             }
             throw error
         }
+    }
+
+    public func previewMissingSourceCleanup(
+        historyRootURL: URL? = nil
+    ) throws -> MissingSourceCleanupPreviewDTO {
+        try assertNoIncompleteSessionDeletionJournal(historyRootURL: historyRootURL)
+        let items = try missingSourceCleanupItems(historyRootURL: historyRootURL)
+        let totalSessions = items.reduce(0) { $0 + $1.sessionCount }
+        let totalTokens = items.reduce(Int64(0)) { $0 + $1.totalTokens }
+        let totalCost = items.reduce(MoneyNanoUSD.zero) { $0 + $1.estimatedCost }
+        return MissingSourceCleanupPreviewDTO(
+            previewId: Self.missingSourcePreviewId(items: items),
+            items: items,
+            totalSessions: totalSessions,
+            totalTokens: totalTokens,
+            estimatedCost: totalCost
+        )
+    }
+
+    public func cleanupMissingSourceIndexes(
+        previewId: String,
+        historyRootURL: URL? = nil
+    ) throws -> MissingSourceCleanupResultDTO {
+        let preview = try previewMissingSourceCleanup(historyRootURL: historyRootURL)
+        guard preview.previewId == previewId else {
+            throw MissingSourceCleanupError.stalePreview
+        }
+
+        try database.transaction {
+            try assertNoIncompleteSessionDeletionJournal(historyRootURL: historyRootURL)
+            for item in preview.items {
+                try deleteDerivedRowsForSource(
+                    sourcePath: item.sourcePath,
+                    relativePath: item.relativePath
+                )
+                try database.executeUpdate(
+                    sql: """
+                    UPDATE codex_import_sources
+                    SET status = 'tombstoned',
+                        error_message = 'missing source index explicitly cleaned',
+                        scan_generation = COALESCE((SELECT CAST(value AS INTEGER) FROM app_metadata WHERE key = 'codex_usage_scan_generation'), scan_generation)
+                    WHERE source_path = ? OR relative_path = ?;
+                    """,
+                    bindings: [item.sourcePath, item.relativePath]
+                )
+            }
+        }
+        try PricingCatalogService.shared.refreshPricingMigrationState(database: database)
+
+        return MissingSourceCleanupResultDTO(
+            sourcesRemoved: preview.items.count,
+            sessionsRemoved: preview.totalSessions,
+            tokensRemoved: preview.totalTokens,
+            estimatedCostRemoved: preview.estimatedCost
+        )
+    }
+
+    public func assertNoIncompleteSessionDeletionJournal(
+        historyRootURL: URL? = nil
+    ) throws {
+        let rows = try database.executeQuery(
+            sql: """
+            SELECT deletion_id, status, history_root_path
+            FROM codex_session_deletion_journal
+            WHERE status != 'finalized'
+            ORDER BY created_at ASC
+            LIMIT 3;
+            """
+        ) { stmt -> (String, String, String) in
+            (
+                String(cString: sqlite3_column_text(stmt, 0)),
+                String(cString: sqlite3_column_text(stmt, 1)),
+                String(cString: sqlite3_column_text(stmt, 2))
+            )
+        }
+        guard rows.isEmpty else {
+            let details = rows
+                .map { "\($0.0):\($0.1)" }
+                .joined(separator: ", ")
+            throw SessionDeletionError.recoveryBlocked(details)
+        }
+        _ = historyRootURL
+    }
+
+    public func recoverIncompleteSessionDeletions(
+        historyRootURL: URL? = nil
+    ) throws -> SessionDeletionRecoverySummary {
+        let rows = try database.executeQuery(
+            sql: """
+            SELECT deletion_id, status, staging_root_path, history_root_path
+            FROM codex_session_deletion_journal
+            WHERE status != 'finalized'
+            ORDER BY created_at ASC;
+            """
+        ) { stmt -> (String, String, String, String) in
+            (
+                String(cString: sqlite3_column_text(stmt, 0)),
+                String(cString: sqlite3_column_text(stmt, 1)),
+                String(cString: sqlite3_column_text(stmt, 2)),
+                String(cString: sqlite3_column_text(stmt, 3))
+            )
+        }
+        guard !rows.isEmpty else {
+            return SessionDeletionRecoverySummary()
+        }
+
+        var finalized = 0
+        var rolledBack = 0
+        var rollbackRequired = 0
+        for row in rows {
+            if row.1 == "rollbackRequired" {
+                rollbackRequired += 1
+                continue
+            }
+
+            let safetyFailures = try validateDeletionJournalSafety(
+                deletionId: row.0,
+                status: row.1,
+                historyRootPath: row.3,
+                stagingRootPath: row.2,
+                historyRootURL: historyRootURL
+            )
+            if !safetyFailures.isEmpty {
+                try markDeletionRollbackRequired(deletionId: row.0, failures: safetyFailures)
+                rollbackRequired += 1
+                continue
+            }
+
+            if row.1 == "databaseCommitted" {
+                if FileManager.default.fileExists(atPath: row.2) {
+                    try FileManager.default.removeItem(atPath: row.2)
+                }
+                try updateDeletionJournalStatus(
+                    deletionId: row.0,
+                    status: "finalized"
+                )
+                finalized += 1
+                continue
+            }
+
+            let failures = try rollbackDeletionFiles(deletionId: row.0)
+            if failures.isEmpty {
+                if FileManager.default.fileExists(atPath: row.2) {
+                    try FileManager.default.removeItem(atPath: row.2)
+                }
+                try updateDeletionJournalStatus(
+                    deletionId: row.0,
+                    status: "finalized",
+                    error: "rolled back incomplete deletion"
+                )
+                rolledBack += 1
+            } else {
+                try markDeletionRollbackRequired(
+                    deletionId: row.0,
+                    failures: failures
+                )
+                rollbackRequired += 1
+            }
+        }
+        try PricingCatalogService.shared.refreshPricingMigrationState(database: database)
+        let message = rollbackRequired > 0
+            ? L10n.format(
+                "%d deletion(s) need attention before local usage updates can continue.",
+                zhHans: "%d 个删除操作需要处理后才能继续本地用量更新。",
+                rollbackRequired
+            )
+            : L10n.format(
+                "Resolved %d interrupted deletion(s).",
+                zhHans: "已处理 %d 个中断的删除操作。",
+                rolledBack + finalized
+            )
+        return SessionDeletionRecoverySummary(
+            finalizedCount: finalized,
+            rolledBackCount: rolledBack,
+            rollbackRequiredCount: rollbackRequired,
+            message: message
+        )
     }
 
     // MARK: - 3. 每日用量汇总 (History 列表)
@@ -575,22 +893,30 @@ public final class UsageAnalyticsRepository: Sendable {
                 models: [:],
                 unpriced: 0,
                 unpricedTokens: 0,
-                reasons: .zero
+                reasons: .zero,
+                legacyTokens: 0,
+                legacyCost: .zero,
+                legacyEvents: 0
             )
 
             entry.tokens = entry.tokens + slice.tokens
-            entry.cost = entry.cost + slice.cost
+            let isLegacy = slice.summaryProvenance == .legacyAggregate
+            entry.cost = isLegacy ? entry.cost : entry.cost + slice.cost
             entry.eventCount += slice.eventCount
             entry.sessions.insert(slice.sessionId)
-            entry.unpriced += slice.unpricedCount
-            entry.unpricedTokens += slice.unpricedTokens
-            entry.reasons = entry.reasons + slice.unpricedReasonCounts
+            entry.unpriced += isLegacy ? 0 : slice.unpricedCount
+            entry.unpricedTokens += isLegacy ? 0 : slice.unpricedTokens
+            entry.reasons = isLegacy ? entry.reasons : entry.reasons + slice.unpricedReasonCounts
+            entry.legacyTokens += isLegacy ? slice.tokens.canonicalTotalTokens : 0
+            entry.legacyCost = isLegacy ? entry.legacyCost + slice.cost : entry.legacyCost
+            entry.legacyEvents += isLegacy ? slice.eventCount : 0
 
-            var mEntry = entry.models[slice.model] ?? (tokens: .zero, cost: .zero, count: 0, reasons: .zero)
+            var mEntry = entry.models[slice.model] ?? (tokens: .zero, cost: .zero, count: 0, reasons: .zero, provenance: .eventLedger)
             mEntry.tokens = mEntry.tokens + slice.tokens
-            mEntry.cost = mEntry.cost + slice.cost
+            mEntry.cost = isLegacy ? mEntry.cost : mEntry.cost + slice.cost
             mEntry.count += slice.eventCount
-            mEntry.reasons = mEntry.reasons + slice.unpricedReasonCounts
+            mEntry.reasons = isLegacy ? mEntry.reasons : mEntry.reasons + slice.unpricedReasonCounts
+            mEntry.provenance = Self.combinedSummaryProvenance(mEntry.provenance, slice.summaryProvenance)
             entry.models[slice.model] = mEntry
 
             daysMap[slice.dayKey] = entry
@@ -608,7 +934,10 @@ public final class UsageAnalyticsRepository: Sendable {
                 models: [:],
                 unpriced: 0,
                 unpricedTokens: 0,
-                reasons: .zero
+                reasons: .zero,
+                legacyTokens: 0,
+                legacyCost: .zero,
+                legacyEvents: 0
             )
             let modelSummaries = val.models.map { modelKey, mVal in
                 ModelUsageSummaryDTO(
@@ -617,7 +946,8 @@ public final class UsageAnalyticsRepository: Sendable {
                     estimatedCost: mVal.cost,
                     eventCount: mVal.count,
                     unpricedCount: mVal.reasons.totalEvents,
-                    unpricedReasonCounts: mVal.reasons
+                    unpricedReasonCounts: mVal.reasons,
+                    summaryProvenance: mVal.provenance
                 )
             }.sorted { $0.tokens.canonicalTotalTokens > $1.tokens.canonicalTotalTokens }
 
@@ -632,7 +962,9 @@ public final class UsageAnalyticsRepository: Sendable {
                     modelSummaries: modelSummaries,
                     unpricedEventCount: val.unpriced,
                     unpricedTokenCount: val.unpricedTokens,
-                    unpricedReasonCounts: val.reasons
+                    unpricedReasonCounts: val.reasons,
+                    legacyAggregateTokens: val.legacyTokens,
+                    legacyAggregateCost: val.legacyCost
                 )
             )
             guard let next = calendar.date(byAdding: .day, value: 1, to: cursorDate) else { break }
@@ -663,6 +995,8 @@ public final class UsageAnalyticsRepository: Sendable {
             let unpricedCount: Int
             let unpricedTokenCount: Int64
             let unpricedReasonCounts: UnpricedReasonCounts
+            let legacyTokens: Int64
+            let legacyCost: MoneyNanoUSD
         }
 
         let aggregateSlices = try fetchUsageAggregateSlices(
@@ -676,7 +1010,9 @@ public final class UsageAnalyticsRepository: Sendable {
             cost: MoneyNanoUSD,
             unpricedCount: Int,
             unpricedTokens: Int64,
-            reasons: UnpricedReasonCounts
+            reasons: UnpricedReasonCounts,
+            legacyTokens: Int64,
+            legacyCost: MoneyNanoUSD
         )] = [:]
         var modelAggregates: [String: (
             eventCount: Int,
@@ -687,23 +1023,26 @@ public final class UsageAnalyticsRepository: Sendable {
         )] = [:]
 
         for aggregate in aggregateSlices {
+            let isLegacy = aggregate.summaryProvenance == .legacyAggregate
             var session = sessionAggregates[aggregate.sessionId]
-                ?? (0, .zero, .zero, 0, 0, .zero)
+                ?? (0, .zero, .zero, 0, 0, .zero, 0, .zero)
             session.eventCount += aggregate.eventCount
             session.tokens = session.tokens + aggregate.tokens
-            session.cost = session.cost + aggregate.cost
-            session.unpricedCount += aggregate.unpricedCount
-            session.unpricedTokens += aggregate.unpricedTokens
-            session.reasons = session.reasons + aggregate.unpricedReasonCounts
+            session.cost = isLegacy ? session.cost : session.cost + aggregate.cost
+            session.unpricedCount += isLegacy ? 0 : aggregate.unpricedCount
+            session.unpricedTokens += isLegacy ? 0 : aggregate.unpricedTokens
+            session.reasons = isLegacy ? session.reasons : session.reasons + aggregate.unpricedReasonCounts
+            session.legacyTokens += isLegacy ? aggregate.tokens.canonicalTotalTokens : 0
+            session.legacyCost = isLegacy ? session.legacyCost + aggregate.cost : session.legacyCost
             sessionAggregates[aggregate.sessionId] = session
 
             var model = modelAggregates[aggregate.model]
                 ?? (0, .zero, .zero, 0, .zero)
             model.eventCount += aggregate.eventCount
             model.tokens = model.tokens + aggregate.tokens
-            model.cost = model.cost + aggregate.cost
-            model.unpricedCount += aggregate.unpricedCount
-            model.reasons = model.reasons + aggregate.unpricedReasonCounts
+            model.cost = isLegacy ? model.cost : model.cost + aggregate.cost
+            model.unpricedCount += isLegacy ? 0 : aggregate.unpricedCount
+            model.reasons = isLegacy ? model.reasons : model.reasons + aggregate.unpricedReasonCounts
             modelAggregates[aggregate.model] = model
         }
 
@@ -715,7 +1054,9 @@ public final class UsageAnalyticsRepository: Sendable {
                 cost: aggregate.cost,
                 unpricedCount: aggregate.unpricedCount,
                 unpricedTokenCount: aggregate.unpricedTokens,
-                unpricedReasonCounts: aggregate.reasons
+                unpricedReasonCounts: aggregate.reasons,
+                legacyTokens: aggregate.legacyTokens,
+                legacyCost: aggregate.legacyCost
             )
         }.sorted {
             if $0.tokens.canonicalTotalTokens != $1.tokens.canonicalTotalTokens {
@@ -750,6 +1091,8 @@ public final class UsageAnalyticsRepository: Sendable {
         var totalUnpriced = 0
         var totalUnpricedTokens: Int64 = 0
         var totalUnpricedReasons = UnpricedReasonCounts.zero
+        var legacyAggregateTokens: Int64 = 0
+        var legacyAggregateCost = MoneyNanoUSD.zero
 
         let sessionsById = try fetchSessionsById(ids: sessionRows.map(\.sessionId))
 
@@ -760,6 +1103,8 @@ public final class UsageAnalyticsRepository: Sendable {
             totalUnpriced += row.unpricedCount
             totalUnpricedTokens += row.unpricedTokenCount
             totalUnpricedReasons = totalUnpricedReasons + row.unpricedReasonCounts
+            legacyAggregateTokens += row.legacyTokens
+            legacyAggregateCost = legacyAggregateCost + row.legacyCost
 
             guard let session = sessionsById[row.sessionId] else { continue }
             slices.append(
@@ -784,7 +1129,9 @@ public final class UsageAnalyticsRepository: Sendable {
                 modelSummaries: modelSummaries,
                 unpricedEventCount: totalUnpriced,
                 unpricedTokenCount: totalUnpricedTokens,
-                unpricedReasonCounts: totalUnpricedReasons
+                unpricedReasonCounts: totalUnpricedReasons,
+                legacyAggregateTokens: legacyAggregateTokens,
+                legacyAggregateCost: legacyAggregateCost
             ),
             sessions: slices,
             totalEventCount: eventPage.totalEventCount,
@@ -824,28 +1171,36 @@ public final class UsageAnalyticsRepository: Sendable {
         var totalTokens = TokenBreakdown.zero
         var totalCost = MoneyNanoUSD.zero
         var totalEvents = 0
-        var modelsAgg: [String: (tokens: TokenBreakdown, cost: MoneyNanoUSD, count: Int, unpriced: Int, reasons: UnpricedReasonCounts)] = [:]
+        var modelsAgg: [String: (tokens: TokenBreakdown, cost: MoneyNanoUSD, count: Int, unpriced: Int, reasons: UnpricedReasonCounts, provenance: SummaryProvenance)] = [:]
         var unpricedTotal = 0
         var unpricedTokenTotal: Int64 = 0
         var unpricedReasons = UnpricedReasonCounts.zero
         var sessions = Set<String>()
         var daysMap: [LocalDayKey: DayAggregate] = [:]
+        var legacyAggregateTokens: Int64 = 0
+        var legacyAggregateCost = MoneyNanoUSD.zero
+        var legacyAggregateEvents = 0
 
         for slice in slices {
+            let isLegacy = slice.summaryProvenance == .legacyAggregate
             totalTokens = totalTokens + slice.tokens
-            totalCost = totalCost + slice.cost
+            totalCost = isLegacy ? totalCost : totalCost + slice.cost
             totalEvents += slice.eventCount
             sessions.insert(slice.sessionId)
-            unpricedTotal += slice.unpricedCount
-            unpricedTokenTotal += slice.unpricedTokens
-            unpricedReasons = unpricedReasons + slice.unpricedReasonCounts
+            unpricedTotal += isLegacy ? 0 : slice.unpricedCount
+            unpricedTokenTotal += isLegacy ? 0 : slice.unpricedTokens
+            unpricedReasons = isLegacy ? unpricedReasons : unpricedReasons + slice.unpricedReasonCounts
+            legacyAggregateTokens += isLegacy ? slice.tokens.canonicalTotalTokens : 0
+            legacyAggregateCost = isLegacy ? legacyAggregateCost + slice.cost : legacyAggregateCost
+            legacyAggregateEvents += isLegacy ? slice.eventCount : 0
 
-            var modelEntry = modelsAgg[slice.model] ?? (tokens: .zero, cost: .zero, count: 0, unpriced: 0, reasons: .zero)
+            var modelEntry = modelsAgg[slice.model] ?? (tokens: .zero, cost: .zero, count: 0, unpriced: 0, reasons: .zero, provenance: .eventLedger)
             modelEntry.tokens = modelEntry.tokens + slice.tokens
-            modelEntry.cost = modelEntry.cost + slice.cost
+            modelEntry.cost = isLegacy ? modelEntry.cost : modelEntry.cost + slice.cost
             modelEntry.count += slice.eventCount
-            modelEntry.unpriced += slice.unpricedCount
-            modelEntry.reasons = modelEntry.reasons + slice.unpricedReasonCounts
+            modelEntry.unpriced += isLegacy ? 0 : slice.unpricedCount
+            modelEntry.reasons = isLegacy ? modelEntry.reasons : modelEntry.reasons + slice.unpricedReasonCounts
+            modelEntry.provenance = Self.combinedSummaryProvenance(modelEntry.provenance, slice.summaryProvenance)
             modelsAgg[slice.model] = modelEntry
 
             var dayEntry = daysMap[slice.dayKey] ?? (
@@ -856,20 +1211,27 @@ public final class UsageAnalyticsRepository: Sendable {
                 models: [:],
                 unpriced: 0,
                 unpricedTokens: 0,
-                reasons: .zero
+                reasons: .zero,
+                legacyTokens: 0,
+                legacyCost: .zero,
+                legacyEvents: 0
             )
             dayEntry.tokens = dayEntry.tokens + slice.tokens
-            dayEntry.cost = dayEntry.cost + slice.cost
+            dayEntry.cost = isLegacy ? dayEntry.cost : dayEntry.cost + slice.cost
             dayEntry.eventCount += slice.eventCount
             dayEntry.sessions.insert(slice.sessionId)
-            dayEntry.unpriced += slice.unpricedCount
-            dayEntry.unpricedTokens += slice.unpricedTokens
-            dayEntry.reasons = dayEntry.reasons + slice.unpricedReasonCounts
-            var dayModelEntry = dayEntry.models[slice.model] ?? (tokens: .zero, cost: .zero, count: 0, reasons: .zero)
+            dayEntry.unpriced += isLegacy ? 0 : slice.unpricedCount
+            dayEntry.unpricedTokens += isLegacy ? 0 : slice.unpricedTokens
+            dayEntry.reasons = isLegacy ? dayEntry.reasons : dayEntry.reasons + slice.unpricedReasonCounts
+            dayEntry.legacyTokens += isLegacy ? slice.tokens.canonicalTotalTokens : 0
+            dayEntry.legacyCost = isLegacy ? dayEntry.legacyCost + slice.cost : dayEntry.legacyCost
+            dayEntry.legacyEvents += isLegacy ? slice.eventCount : 0
+            var dayModelEntry = dayEntry.models[slice.model] ?? (tokens: .zero, cost: .zero, count: 0, reasons: .zero, provenance: .eventLedger)
             dayModelEntry.tokens = dayModelEntry.tokens + slice.tokens
-            dayModelEntry.cost = dayModelEntry.cost + slice.cost
+            dayModelEntry.cost = isLegacy ? dayModelEntry.cost : dayModelEntry.cost + slice.cost
             dayModelEntry.count += slice.eventCount
-            dayModelEntry.reasons = dayModelEntry.reasons + slice.unpricedReasonCounts
+            dayModelEntry.reasons = isLegacy ? dayModelEntry.reasons : dayModelEntry.reasons + slice.unpricedReasonCounts
+            dayModelEntry.provenance = Self.combinedSummaryProvenance(dayModelEntry.provenance, slice.summaryProvenance)
             dayEntry.models[slice.model] = dayModelEntry
             daysMap[slice.dayKey] = dayEntry
         }
@@ -881,7 +1243,8 @@ public final class UsageAnalyticsRepository: Sendable {
                 estimatedCost: val.cost,
                 eventCount: val.count,
                 unpricedCount: val.unpriced,
-                unpricedReasonCounts: val.reasons
+                unpricedReasonCounts: val.reasons,
+                summaryProvenance: val.provenance
             )
         }.sorted { $0.tokens.canonicalTotalTokens > $1.tokens.canonicalTotalTokens }
 
@@ -895,15 +1258,32 @@ public final class UsageAnalyticsRepository: Sendable {
         let todayKey = LocalDayKey(date: endDate, calendar: calendar)
         let todayBucket = dailyBuckets.first(where: { $0.dayKey == todayKey })
 
-        let pricingCoverage: PricingCoverage = unpricedTotal == 0
-            ? .fullyPriced
-            : (unpricedTotal == totalEvents ? .unpriced(totalEvents: totalEvents) : .partiallyPriced(coveredEvents: totalEvents - unpricedTotal, totalEvents: totalEvents))
-        let eventPricingCoverage = totalEvents > 0
-            ? max(0, min(1, Double(totalEvents - unpricedTotal) / Double(totalEvents)))
-            : 1.0
         let totalTokenCount = totalTokens.canonicalTotalTokens
+        let currentCatalogStats = try fetchCurrentCatalogCoverageStats(
+            rangeStart: startDate,
+            endExclusive: endDate
+        )
+        let coveredEvents = max(0, totalEvents - unpricedTotal - legacyAggregateEvents)
+        let pricingCoverage: PricingCoverage
+        if totalEvents == 0 || coveredEvents == totalEvents {
+            pricingCoverage = .fullyPriced
+        } else if coveredEvents == 0 {
+            pricingCoverage = .unpriced(totalEvents: totalEvents)
+        } else {
+            pricingCoverage = .partiallyPriced(
+                coveredEvents: coveredEvents,
+                totalEvents: totalEvents
+            )
+        }
+        let eventPricingCoverage = totalEvents > 0
+            ? max(0, min(1, Double(coveredEvents) / Double(totalEvents)))
+            : 1.0
+        let coveredTokenCount = max(0, totalTokenCount - unpricedTokenTotal - legacyAggregateTokens)
         let tokenPricingCoverage = totalTokenCount > 0
-            ? max(0, min(1, Double(max(0, totalTokenCount - unpricedTokenTotal)) / Double(totalTokenCount)))
+            ? max(0, min(1, Double(coveredTokenCount) / Double(totalTokenCount)))
+            : 1.0
+        let currentCatalogCoverage = totalTokenCount > 0
+            ? max(0, min(1, Double(min(totalTokenCount, currentCatalogStats.currentCatalogPricedTokens)) / Double(totalTokenCount)))
             : 1.0
 
         return DashboardMetricsDTO(
@@ -921,8 +1301,38 @@ public final class UsageAnalyticsRepository: Sendable {
             eventPricingCoverage: eventPricingCoverage,
             tokenPricingCoverage: tokenPricingCoverage,
             costForecastCoverage: tokenPricingCoverage,
-            unpricedReasonCounts: unpricedReasons
+            unpricedReasonCounts: unpricedReasons,
+            legacyAggregateTokens: legacyAggregateTokens,
+            legacyAggregateCost: legacyAggregateCost,
+            legacyAggregateEventCount: legacyAggregateEvents,
+            currentCatalogCoverage: currentCatalogCoverage
         )
+    }
+
+    private func fetchCurrentCatalogCoverageStats(
+        rangeStart startDate: Date,
+        endExclusive endDate: Date
+    ) throws -> (currentCatalogPricedEventCount: Int, currentCatalogPricedTokens: Int64) {
+        let startMs = Int64(startDate.timeIntervalSince1970 * 1_000)
+        let endMs = Int64(endDate.timeIntervalSince1970 * 1_000)
+        let activeCatalog = try database.stringScalar(
+            sql: "SELECT catalog_version FROM codex_pricing_catalogs WHERE is_active = 1 ORDER BY published_at DESC LIMIT 1;"
+        ) ?? BundledPricingCatalog.currentVersion
+        return try database.executeQuery(
+            sql: """
+            SELECT
+                COALESCE(SUM(CASE WHEN pricing_status = 'priced' AND pricing_catalog_version = ? THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN pricing_status = 'priced' AND pricing_catalog_version = ? THEN total_tokens ELSE 0 END), 0)
+            FROM codex_usage_events
+            WHERE is_child_replay = 0 AND timestamp_ms >= ? AND timestamp_ms < ?;
+            """,
+            bindings: [activeCatalog, activeCatalog, startMs, endMs]
+        ) { stmt -> (Int, Int64) in
+            (
+                Int(sqlite3_column_int(stmt, 0)),
+                sqlite3_column_int64(stmt, 1)
+            )
+        }.first ?? (0, 0)
     }
 
     // MARK: - 5. 额度预测快照
@@ -985,30 +1395,37 @@ public final class UsageAnalyticsRepository: Sendable {
             day_start_ms,
             SUM(total_tokens),
             SUM(event_count),
-            SUM(estimated_cost_usd_nano)
+            SUM(CASE WHEN summary_provenance = 'legacyAggregate' THEN 0 ELSE estimated_cost_usd_nano END),
+            SUM(CASE WHEN summary_provenance = 'legacyAggregate' THEN estimated_cost_usd_nano ELSE 0 END)
         FROM codex_daily_usage_summaries
         WHERE day_start_ms >= ? AND day_start_ms < ?
         GROUP BY day_key, day_start_ms;
         """
 
-        var tokenByDay: [LocalDayKey: (tokens: Int64, count: Int, cost: MoneyNanoUSD)] = [:]
+        var tokenByDay: [LocalDayKey: (tokens: Int64, count: Int, cost: MoneyNanoUSD, legacyCost: MoneyNanoUSD)] = [:]
         _ = try database.executeQuery(sql: sql, bindings: [startTs, endTs]) { stmt in
             let dayStartMs = sqlite3_column_int64(stmt, 1)
             let tok = sqlite3_column_int64(stmt, 2)
             let count = Int(sqlite3_column_int(stmt, 3))
             let cost = MoneyNanoUSD(sqlite3_column_int64(stmt, 4))
+            let legacyCost = MoneyNanoUSD(sqlite3_column_int64(stmt, 5))
             let date = Date(timeIntervalSince1970: Double(dayStartMs) / 1000.0)
             let dayKey = LocalDayKey(date: date, calendar: calendar)
 
-            let cur = tokenByDay[dayKey] ?? (0, 0, .zero)
-            tokenByDay[dayKey] = (cur.tokens + tok, cur.count + count, cur.cost + cost)
+            let cur = tokenByDay[dayKey] ?? (0, 0, .zero, .zero)
+            tokenByDay[dayKey] = (
+                cur.tokens + tok,
+                cur.count + count,
+                cur.cost + cost,
+                cur.legacyCost + legacyCost
+            )
         }
 
         var cells: [ActivityHeatmapCellDTO] = []
         var curDate = startDate
         while curDate <= endDate {
             let dayKey = LocalDayKey(date: curDate, calendar: calendar)
-            let data = tokenByDay[dayKey] ?? (tokens: 0, count: 0, cost: .zero)
+            let data = tokenByDay[dayKey] ?? (tokens: 0, count: 0, cost: .zero, legacyCost: .zero)
             let tokens = data.tokens
 
             let level: Int
@@ -1031,6 +1448,7 @@ public final class UsageAnalyticsRepository: Sendable {
                     tokenCount: tokens,
                     eventCount: data.count,
                     estimatedCost: data.cost,
+                    legacyAggregateCost: data.legacyCost,
                     intensityLevel: level
                 )
             )
@@ -1215,6 +1633,73 @@ public final class UsageAnalyticsRepository: Sendable {
         let skippedNonRolloutJSONLCount = try database.intScalar(
             sql: "SELECT COUNT(*) FROM codex_scan_diagnostics WHERE diagnostic_code = 'non_rollout_jsonl_probe_miss';"
         )
+        let pendingSourceCount = try database.intScalar(
+            sql: """
+            SELECT COUNT(*)
+            FROM codex_import_sources
+            WHERE status != 'tombstoned'
+              AND (status = 'stale' OR parser_version != ?);
+            """,
+            bindings: [ParserCheckpoint.currentParserVersion]
+        )
+        let sourcePresenceRows = try database.executeQuery(
+            sql: """
+            SELECT source_path, relative_path
+            FROM codex_import_sources
+            WHERE status != 'tombstoned';
+            """
+        ) { stmt -> (String, String) in
+            let sourcePath = sqlite3_column_type(stmt, 0) != SQLITE_NULL && sqlite3_column_text(stmt, 0) != nil
+                ? String(cString: sqlite3_column_text(stmt, 0)!)
+                : ""
+            let relativePath = sqlite3_column_type(stmt, 1) != SQLITE_NULL && sqlite3_column_text(stmt, 1) != nil
+                ? String(cString: sqlite3_column_text(stmt, 1)!)
+                : ""
+            return (sourcePath, relativePath)
+        }
+        let missingSourceCount = sourcePresenceRows.filter { sourcePath, relativePath in
+            let primary = Self.absoluteSourcePath(sourcePath)
+            let fallback = Self.absoluteSourcePath(relativePath)
+            return !FileManager.default.fileExists(atPath: primary)
+                && (fallback.isEmpty || !FileManager.default.fileExists(atPath: fallback))
+        }.count
+        let legacyAggregateSessionCount = try database.intScalar(
+            sql: "SELECT COUNT(*) FROM codex_sessions WHERE summary_provenance = 'legacyAggregate' AND event_count > 0;"
+        )
+        let legacyAggregateRow = try database.executeQuery(
+            sql: """
+            SELECT
+                COALESCE(SUM(event_count), 0),
+                COALESCE(SUM(total_tokens), 0),
+                COALESCE(SUM(estimated_cost_usd_nano), 0)
+            FROM codex_session_summaries
+            WHERE summary_provenance = 'legacyAggregate';
+            """
+        ) { stmt -> (Int, Int64, Int64) in
+            (
+                Int(sqlite3_column_int(stmt, 0)),
+                sqlite3_column_int64(stmt, 1),
+                sqlite3_column_int64(stmt, 2)
+            )
+        }.first ?? (0, 0, 0)
+        let timestampConflictCount = try database.intScalar(
+            sql: "SELECT COALESCE(SUM(timestamp_conflict_count), 0) FROM codex_import_sources;"
+        )
+        let pendingDeletionJournalCount = try database.intScalar(
+            sql: """
+            SELECT COUNT(*)
+            FROM codex_session_deletion_journal
+            WHERE status NOT IN ('finalized', 'rollbackRequired');
+            """
+        )
+        let rollbackRequiredDeletionJournalCount = try database.intScalar(
+            sql: "SELECT COUNT(*) FROM codex_session_deletion_journal WHERE status = 'rollbackRequired';"
+        )
+        let pricingMigrationState = PricingMigrationState(
+            storedValue: try database.stringScalar(
+                sql: "SELECT value FROM app_metadata WHERE key = 'pricing_migration_state';"
+            )
+        )
 
         return UsageDiagnosticsDTO(
             sourcesDiscovered: sourcesDiscovered,
@@ -1239,6 +1724,7 @@ public final class UsageAnalyticsRepository: Sendable {
             invariantViolationCount: invariantViolationCount,
             pricingRepriceGeneration: repriceGeneration,
             pricingRepriceStatus: repriceStatus,
+            pricingMigrationState: pricingMigrationState,
             pricingRepriceLastRowID: repriceLastRowID,
             pricingRepriceProcessedEvents: repriceProcessed,
             pricingRepriceTotalEvents: repriceTotal,
@@ -1248,7 +1734,16 @@ public final class UsageAnalyticsRepository: Sendable {
             parserRebuildGeneration: parserRebuildGeneration,
             parserRebuildProcessedSources: parserRebuildProcessedSources,
             parserRebuildTotalSources: parserRebuildTotalSources,
-            skippedNonRolloutJSONLCount: skippedNonRolloutJSONLCount
+            skippedNonRolloutJSONLCount: skippedNonRolloutJSONLCount,
+            pendingSourceCount: pendingSourceCount,
+            missingSourceCount: missingSourceCount,
+            legacyAggregateSessionCount: legacyAggregateSessionCount,
+            legacyAggregateEventCount: legacyAggregateRow.0,
+            legacyAggregateTokens: legacyAggregateRow.1,
+            legacyAggregateCost: MoneyNanoUSD(legacyAggregateRow.2),
+            timestampConflictCount: timestampConflictCount,
+            pendingDeletionJournalCount: pendingDeletionJournalCount,
+            rollbackRequiredDeletionJournalCount: rollbackRequiredDeletionJournalCount
         )
     }
 
@@ -1335,7 +1830,8 @@ public final class UsageAnalyticsRepository: Sendable {
                 input_tokens, cached_input_tokens, cache_write_input_tokens,
                 output_tokens, reasoning_output_tokens, total_tokens, estimated_cost_usd_nano,
                 pricing_rule_id, pricing_status, usage_derivation, attribution_quality,
-                is_child_replay, source_path, line_offset, timestamp_quality, pricing_catalog_version
+                is_child_replay, source_path, line_offset, timestamp_quality,
+                timestamp_source, timestamp_conflict_count, pricing_catalog_version
             FROM codex_usage_events
             WHERE \(combinedWhere)
             ORDER BY timestamp_ms DESC, line_offset DESC, event_id DESC
@@ -1377,7 +1873,8 @@ public final class UsageAnalyticsRepository: Sendable {
                     unpriced_historical_rule_missing_event_count, unpriced_historical_rule_missing_token_count,
                     unpriced_unsupported_context_event_count, unpriced_unsupported_context_token_count,
                     unpriced_invalid_record_event_count, unpriced_invalid_record_token_count,
-                    unpriced_overflow_event_count, unpriced_overflow_token_count
+                    unpriced_overflow_event_count, unpriced_overflow_token_count,
+                    summary_provenance
                 FROM codex_sessions
                 WHERE session_id IN (\(placeholders));
                 """,
@@ -1535,7 +2032,8 @@ public final class UsageAnalyticsRepository: Sendable {
                 unpriced_historical_rule_missing_event_count, unpriced_historical_rule_missing_token_count,
                 unpriced_unsupported_context_event_count, unpriced_unsupported_context_token_count,
                 unpriced_invalid_record_event_count, unpriced_invalid_record_token_count,
-                unpriced_overflow_event_count, unpriced_overflow_token_count
+                unpriced_overflow_event_count, unpriced_overflow_token_count,
+                summary_provenance
             FROM codex_daily_usage_summaries
             WHERE day_start_ms >= ? AND day_start_ms < ?
             ORDER BY day_start_ms ASC, session_id ASC, model_canonical ASC;
@@ -1566,7 +2064,13 @@ public final class UsageAnalyticsRepository: Sendable {
                 eventCount: Int(sqlite3_column_int(statement, 3)),
                 unpricedCount: unpriced,
                 unpricedTokens: sqlite3_column_int64(statement, 12),
-                unpricedReasonCounts: Self.unpricedReasonCounts(from: statement, start: 13)
+                unpricedReasonCounts: Self.unpricedReasonCounts(from: statement, start: 13),
+                summaryProvenance: SummaryProvenance(
+                    storedValue: sqlite3_column_type(statement, 25) != SQLITE_NULL
+                        && sqlite3_column_text(statement, 25) != nil
+                        ? String(cString: sqlite3_column_text(statement, 25)!)
+                        : nil
+                )
             )
         }
 
@@ -1635,7 +2139,8 @@ public final class UsageAnalyticsRepository: Sendable {
                 eventCount: 1,
                 unpricedCount: pricingStatus.isPriced ? 0 : 1,
                 unpricedTokens: pricingStatus.isPriced ? 0 : total,
-                unpricedReasonCounts: reasons
+                unpricedReasonCounts: reasons,
+                summaryProvenance: .eventLedger
             )
         }
     }
@@ -1658,7 +2163,10 @@ public final class UsageAnalyticsRepository: Sendable {
                 models: [:],
                 unpriced: 0,
                 unpricedTokens: 0,
-                reasons: .zero
+                reasons: .zero,
+                legacyTokens: 0,
+                legacyCost: .zero,
+                legacyEvents: 0
             )
             let modelSummaries = val.models.map { modelKey, mVal in
                 ModelUsageSummaryDTO(
@@ -1667,7 +2175,8 @@ public final class UsageAnalyticsRepository: Sendable {
                     estimatedCost: mVal.cost,
                     eventCount: mVal.count,
                     unpricedCount: mVal.reasons.totalEvents,
-                    unpricedReasonCounts: mVal.reasons
+                    unpricedReasonCounts: mVal.reasons,
+                    summaryProvenance: mVal.provenance
                 )
             }.sorted { $0.tokens.canonicalTotalTokens > $1.tokens.canonicalTotalTokens }
 
@@ -1682,13 +2191,25 @@ public final class UsageAnalyticsRepository: Sendable {
                     modelSummaries: modelSummaries,
                     unpricedEventCount: val.unpriced,
                     unpricedTokenCount: val.unpricedTokens,
-                    unpricedReasonCounts: val.reasons
+                    unpricedReasonCounts: val.reasons,
+                    legacyAggregateTokens: val.legacyTokens,
+                    legacyAggregateCost: val.legacyCost
                 )
             )
             guard let next = calendar.date(byAdding: .day, value: 1, to: cursor) else { break }
             cursor = next
         }
         return result.sorted { $0.dayKey > $1.dayKey }
+    }
+
+    private static func combinedSummaryProvenance(
+        _ current: SummaryProvenance,
+        _ incoming: SummaryProvenance
+    ) -> SummaryProvenance {
+        if current == incoming { return current }
+        if current == .legacyAggregate && incoming == .legacyAggregate { return .legacyAggregate }
+        if current == .eventLedger && incoming == .eventLedger { return .eventLedger }
+        return .reconstructed
     }
 
     // MARK: - Row Mappers
@@ -1724,6 +2245,11 @@ public final class UsageAnalyticsRepository: Sendable {
         let reasonCounts = sqlite3_column_count(stmt) >= 34
             ? Self.unpricedReasonCounts(from: stmt, start: 22)
             : .zero
+        let provenanceRaw = sqlite3_column_count(stmt) >= 35
+            && sqlite3_column_type(stmt, 34) != SQLITE_NULL
+            && sqlite3_column_text(stmt, 34) != nil
+            ? String(cString: sqlite3_column_text(stmt, 34)!)
+            : nil
 
         return CodexSessionDTO(
             sessionId: sid,
@@ -1748,6 +2274,7 @@ public final class UsageAnalyticsRepository: Sendable {
             ),
             estimatedCost: MoneyNanoUSD(costNano),
             pricingStatus: AggregatePricingStatus(storedValue: pricingStr),
+            summaryProvenance: SummaryProvenance(storedValue: provenanceRaw),
             unpricedReasonCounts: reasonCounts,
             bucket: SessionBucket(rawValue: bucketStr) ?? .active,
             hasSubagents: hasSubagents,
@@ -1763,19 +2290,613 @@ public final class UsageAnalyticsRepository: Sendable {
             .path
     }
 
-    private static func makeDeletionStagingDirectory() throws -> URL {
-        let base = try FileManager.default.url(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: true
+    private func deleteSessionDerivedRows(
+        sessionIDs: Set<String>,
+        sourceKeys: Set<String>
+    ) throws {
+        for sessionID in sessionIDs {
+            try database.executeUpdate(
+                sql: "DELETE FROM codex_usage_events WHERE session_id = ? OR root_session_id = ?;",
+                bindings: [sessionID, sessionID]
+            )
+            try database.executeUpdate(
+                sql: "DELETE FROM codex_session_summaries WHERE session_id = ?;",
+                bindings: [sessionID]
+            )
+            try database.executeUpdate(
+                sql: "DELETE FROM codex_daily_usage_summaries WHERE session_id = ?;",
+                bindings: [sessionID]
+            )
+        }
+
+        for sourceKey in sourceKeys {
+            let parts = sourceKey.split(separator: "\u{1F}", maxSplits: 1, omittingEmptySubsequences: false)
+            let sourcePath = String(parts[0])
+            let relativePath = parts.count > 1 ? String(parts[1]) : ""
+            try database.executeUpdate(
+                sql: "DELETE FROM codex_usage_events WHERE source_path = ? OR source_path = ?;",
+                bindings: [sourcePath, relativePath]
+            )
+            try database.executeUpdate(
+                sql: "DELETE FROM codex_import_sources WHERE source_path = ? OR relative_path = ?;",
+                bindings: [sourcePath, relativePath]
+            )
+        }
+
+        for sessionID in sessionIDs {
+            try database.executeUpdate(
+                sql: "DELETE FROM codex_sessions WHERE session_id = ?;",
+                bindings: [sessionID]
+            )
+        }
+    }
+
+    private func deleteDerivedRowsForSource(
+        sourcePath: String,
+        relativePath: String
+    ) throws {
+        let sessionIDs = try database.executeQuery(
+            sql: """
+            SELECT session_id
+            FROM codex_sessions
+            WHERE source_path = ? OR relative_path = ?;
+            """,
+            bindings: [sourcePath, relativePath]
+        ) { statement in
+            String(cString: sqlite3_column_text(statement, 0))
+        }
+
+        try database.executeUpdate(
+            sql: "DELETE FROM codex_usage_events WHERE source_path = ? OR source_path = ?;",
+            bindings: [sourcePath, relativePath]
         )
+        for sessionID in sessionIDs {
+            try database.executeUpdate(
+                sql: "DELETE FROM codex_session_summaries WHERE session_id = ?;",
+                bindings: [sessionID]
+            )
+            try database.executeUpdate(
+                sql: "DELETE FROM codex_daily_usage_summaries WHERE session_id = ?;",
+                bindings: [sessionID]
+            )
+            try database.executeUpdate(
+                sql: "DELETE FROM codex_sessions WHERE session_id = ?;",
+                bindings: [sessionID]
+            )
+        }
+    }
+
+    private func createDeletionJournal(
+        deletionId: String,
+        requestedSessionId: String,
+        rootSessionId: String,
+        historyRoot: URL,
+        stagingRoot: URL,
+        sources: [(
+            sessionId: String,
+            sourcePath: String,
+            relativePath: String,
+            bucket: SessionBucket,
+            originalURL: URL,
+            stagingURL: URL,
+            initialState: String
+        )]
+    ) throws {
+        let now = Self.unixSeconds()
+        try database.transaction {
+            try database.executeUpdate(
+                sql: """
+                INSERT INTO codex_session_deletion_journal (
+                    deletion_id, requested_session_id, root_session_id,
+                    history_root_path, staging_root_path, status, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, 'prepared', ?, ?);
+                """,
+                bindings: [
+                    deletionId,
+                    requestedSessionId,
+                    rootSessionId,
+                    historyRoot.path,
+                    stagingRoot.path,
+                    now,
+                    now
+                ]
+            )
+            for source in sources {
+                try database.executeUpdate(
+                    sql: """
+                    INSERT INTO codex_session_deletion_files (
+                        deletion_id, session_id, source_path, relative_path, bucket,
+                        original_path, staging_path, recovery_path, state, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?);
+                    """,
+                    bindings: [
+                        deletionId,
+                        source.sessionId,
+                        source.sourcePath,
+                        source.relativePath,
+                        source.bucket.rawValue,
+                        source.originalURL.path,
+                        source.stagingURL.path,
+                        source.initialState,
+                        now
+                    ]
+                )
+            }
+        }
+    }
+
+    private func updateDeletionJournalStatus(
+        deletionId: String,
+        status: String,
+        error: String? = nil
+    ) throws {
+        try updateDeletionJournalStatusInTransaction(
+            deletionId: deletionId,
+            status: status,
+            error: error
+        )
+    }
+
+    private func updateDeletionJournalStatusInTransaction(
+        deletionId: String,
+        status: String,
+        error: String? = nil
+    ) throws {
+        try database.executeUpdate(
+            sql: """
+            UPDATE codex_session_deletion_journal
+            SET status = ?, updated_at = ?, error_message = ?
+            WHERE deletion_id = ?;
+            """,
+            bindings: [status, Self.unixSeconds(), error, deletionId]
+        )
+    }
+
+    private func updateDeletionFileState(
+        deletionId: String,
+        originalPath: String,
+        state: String,
+        stagingPath: String,
+        recoveryPath: String?
+    ) throws {
+        try database.executeUpdate(
+            sql: """
+            UPDATE codex_session_deletion_files
+            SET state = ?, staging_path = ?, recovery_path = ?, updated_at = ?
+            WHERE deletion_id = ? AND original_path = ?;
+            """,
+            bindings: [
+                state,
+                stagingPath,
+                recoveryPath,
+                Self.unixSeconds(),
+                deletionId,
+                originalPath
+            ]
+        )
+    }
+
+    private func markDeletionRollbackRequired(
+        deletionId: String,
+        failures: [String]
+    ) throws {
+        try updateDeletionJournalStatus(
+            deletionId: deletionId,
+            status: "rollbackRequired",
+            error: failures.joined(separator: "; ")
+        )
+    }
+
+    private func rollbackDeletionFiles(
+        deletionId: String,
+        allowRecordedRecoveryCleanup: Bool = false
+    ) throws -> [String] {
+        let historyRoot = try database.stringScalar(
+            sql: "SELECT history_root_path FROM codex_session_deletion_journal WHERE deletion_id = ?;",
+            bindings: [deletionId]
+        ).map { Self.canonicalFileURL(URL(fileURLWithPath: $0)) }
+        let rows = try database.executeQuery(
+            sql: """
+            SELECT original_path, staging_path, recovery_path, state
+            FROM codex_session_deletion_files
+            WHERE deletion_id = ?
+            ORDER BY original_path DESC;
+            """,
+            bindings: [deletionId]
+        ) { stmt -> (String, String, String?, String) in
+            let recoveryPath = sqlite3_column_type(stmt, 2) != SQLITE_NULL
+                && sqlite3_column_text(stmt, 2) != nil
+                ? String(cString: sqlite3_column_text(stmt, 2)!)
+                : nil
+            return (
+                String(cString: sqlite3_column_text(stmt, 0)),
+                String(cString: sqlite3_column_text(stmt, 1)),
+                recoveryPath,
+                String(cString: sqlite3_column_text(stmt, 3))
+            )
+        }
+
+        let fileManager = FileManager.default
+        var failures: [String] = []
+        for row in rows {
+            if row.3 == "missingBeforeDelete" {
+                continue
+            }
+
+            let stagingExists = fileManager.fileExists(atPath: row.1)
+            let recoveryExists = row.2.map { fileManager.fileExists(atPath: $0) } ?? false
+            if fileManager.fileExists(atPath: row.0) {
+                if stagingExists || recoveryExists {
+                    failures.append("restore destination already exists \(row.0)")
+                }
+                continue
+            }
+
+            let sourcePath: String?
+            if stagingExists {
+                sourcePath = row.1
+            } else if recoveryExists, let recoveryPath = row.2, let historyRoot {
+                let recovery = Self.canonicalFileURL(URL(fileURLWithPath: recoveryPath))
+                let original = Self.canonicalFileURL(URL(fileURLWithPath: row.0))
+                if Self.isSafeDeletionRecoverySource(
+                    recovery,
+                    original: original,
+                    historyRoot: historyRoot
+                ) {
+                    sourcePath = recoveryPath
+                } else {
+                    failures.append("unsafe recovery source \(recovery.path)")
+                    continue
+                }
+            } else {
+                sourcePath = nil
+            }
+            guard let sourcePath else {
+                failures.append("missing recovery source \(row.1)")
+                continue
+            }
+            do {
+                let originalURL = URL(fileURLWithPath: row.0)
+                try fileManager.createDirectory(
+                    at: originalURL.deletingLastPathComponent(),
+                    withIntermediateDirectories: true
+                )
+                try fileManager.moveItem(
+                    at: URL(fileURLWithPath: sourcePath),
+                    to: originalURL
+                )
+                if let recoveryPath = row.2,
+                   recoveryPath != sourcePath,
+                   fileManager.fileExists(atPath: recoveryPath) {
+                    let mayRemoveRecordedRecovery = allowRecordedRecoveryCleanup
+                        || (historyRoot.map {
+                            Self.isSafeDeletionRecoverySource(
+                                Self.canonicalFileURL(URL(fileURLWithPath: recoveryPath)),
+                                original: Self.canonicalFileURL(originalURL),
+                                historyRoot: $0
+                            )
+                        } ?? false)
+                    if mayRemoveRecordedRecovery {
+                        try? fileManager.removeItem(atPath: recoveryPath)
+                    }
+                }
+                try updateDeletionFileState(
+                    deletionId: deletionId,
+                    originalPath: row.0,
+                    state: "rolledBack",
+                    stagingPath: row.1,
+                    recoveryPath: row.2
+                )
+            } catch {
+                failures.append("\(row.0): \(error.localizedDescription)")
+            }
+        }
+        return failures
+    }
+
+    private func validateDeletionJournalSafety(
+        deletionId: String,
+        status: String,
+        historyRootPath: String,
+        stagingRootPath: String,
+        historyRootURL: URL?
+    ) throws -> [String] {
+        let expectedHistoryRoot = Self.canonicalFileURL(historyRootURL ?? URL(fileURLWithPath: historyRootPath))
+        let storedHistoryRoot = Self.canonicalFileURL(URL(fileURLWithPath: historyRootPath))
+        var failures: [String] = []
+        if storedHistoryRoot.path != expectedHistoryRoot.path {
+            failures.append("history root mismatch \(storedHistoryRoot.path)")
+        }
+
+        let stagingRoot = Self.canonicalFileURL(URL(fileURLWithPath: stagingRootPath))
+        if !Self.isSafeDeletionStagingRoot(
+            stagingRoot,
+            historyRoot: storedHistoryRoot,
+            trustedBaseRoots: trustedDeletionStagingBaseRoots,
+            trustedOperationRoots: trustedDeletionStagingOperationRoots
+        ) {
+            failures.append("unsafe staging root \(stagingRoot.path)")
+        }
+
+        let paths = CodexHistoryPaths(rootURL: storedHistoryRoot)
+        let allowedRoots = [paths.sessionsURL, paths.archivedSessionsURL]
+            .map(Self.canonicalFileURL)
+        let fileRows = try database.executeQuery(
+            sql: """
+            SELECT original_path, staging_path, recovery_path
+            FROM codex_session_deletion_files
+            WHERE deletion_id = ?;
+            """,
+            bindings: [deletionId]
+        ) { stmt -> (String, String, String?) in
+            let recoveryPath = sqlite3_column_type(stmt, 2) != SQLITE_NULL
+                && sqlite3_column_text(stmt, 2) != nil
+                ? String(cString: sqlite3_column_text(stmt, 2)!)
+                : nil
+            return (
+                String(cString: sqlite3_column_text(stmt, 0)),
+                String(cString: sqlite3_column_text(stmt, 1)),
+                recoveryPath
+            )
+        }
+        let needsFileRecovery = status != "databaseCommitted"
+        for row in fileRows {
+            let original = Self.canonicalFileURL(URL(fileURLWithPath: row.0))
+            if !allowedRoots.contains(where: { Self.path(original.path, isInside: $0.path) }) {
+                failures.append("unsafe original path \(original.path)")
+            }
+            let staging = Self.canonicalFileURL(URL(fileURLWithPath: row.1))
+            if !Self.path(staging.path, isInside: stagingRoot.path) {
+                failures.append("unsafe staging path \(staging.path)")
+            }
+            if needsFileRecovery, let recoveryPath = row.2 {
+                let recovery = Self.canonicalFileURL(URL(fileURLWithPath: recoveryPath))
+                let stagingExists = FileManager.default.fileExists(atPath: staging.path)
+                if !stagingExists && !Self.isSafeDeletionRecoverySource(
+                    recovery,
+                    original: original,
+                    historyRoot: storedHistoryRoot
+                ) {
+                    failures.append("unexpected recovery file \(recovery.path)")
+                }
+            }
+        }
+        return failures
+    }
+
+    private static func unixSeconds() -> Int64 {
+        Int64(Date().timeIntervalSince1970)
+    }
+
+    private static func makeDeletionStagingDirectory() throws -> URL {
+        let base = defaultDeletionStagingBaseDirectory()
         let staging = base
-            .appendingPathComponent("QuotaLens", isDirectory: true)
-            .appendingPathComponent("DeletionStaging", isDirectory: true)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
         return staging
+    }
+
+    private static func defaultDeletionStagingBaseDirectory() -> URL {
+        let base = FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first!
+        return base
+            .appendingPathComponent("QuotaLens", isDirectory: true)
+            .appendingPathComponent("DeletionStaging", isDirectory: true)
+    }
+
+    private static func isSafeDeletionStagingRoot(
+        _ stagingRoot: URL,
+        historyRoot: URL,
+        trustedBaseRoots: [URL],
+        trustedOperationRoots: [URL]
+    ) -> Bool {
+        let stagingPath = canonicalFileURL(stagingRoot).path
+        let historyPath = canonicalFileURL(historyRoot).path
+        guard stagingPath != "/", stagingPath.count > 8 else { return false }
+        guard stagingPath != historyPath,
+              !path(historyPath, isInside: stagingPath),
+              !path(stagingPath, isInside: historyPath) else {
+            return false
+        }
+        if trustedOperationRoots.contains(where: { canonicalFileURL($0).path == stagingPath }) {
+            return true
+        }
+        return trustedBaseRoots.contains { root in
+            let rootPath = canonicalFileURL(root).path
+            guard stagingPath != rootPath,
+                  path(stagingPath, isInside: rootPath) else {
+                return false
+            }
+            let relative = stagingPath
+                .dropFirst(rootPath.count)
+                .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            return !relative.isEmpty && !relative.contains("/")
+        }
+    }
+
+    private static func path(_ child: String, isInside parent: String) -> Bool {
+        let normalizedChild = canonicalFileURL(URL(fileURLWithPath: child)).path
+        let normalizedParent = canonicalFileURL(URL(fileURLWithPath: parent)).path
+        let parentPrefix = normalizedParent == "/" ? "/" : normalizedParent + "/"
+        return normalizedChild == normalizedParent
+            || normalizedChild.hasPrefix(parentPrefix)
+    }
+
+    private static func isSafeDeletionRecoverySource(
+        _ recovery: URL,
+        original: URL,
+        historyRoot: URL
+    ) -> Bool {
+        let recoveryURL = canonicalFileURL(recovery)
+        let recoveryPath = recoveryURL.path
+        let originalURL = canonicalFileURL(original)
+        guard recoveryURL.lastPathComponent == originalURL.lastPathComponent,
+              !path(recoveryPath, isInside: canonicalFileURL(historyRoot).path) else {
+            return false
+        }
+        return deletionRecoveryTrashRoots().contains { root in
+            path(recoveryPath, isInside: root.path)
+        }
+    }
+
+    private static func deletionRecoveryTrashRoots() -> [URL] {
+        let homeTrash = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".Trash", isDirectory: true)
+        return [canonicalFileURL(homeTrash)]
+    }
+
+    private static func canonicalFileURL(_ url: URL) -> URL {
+        url.standardizedFileURL.resolvingSymlinksInPath()
+    }
+
+    private enum SourcePresence {
+        case exists
+        case missing
+        case inaccessible
+    }
+
+    private func missingSourceCleanupItems(
+        historyRootURL: URL? = nil
+    ) throws -> [MissingSourceCleanupItemDTO] {
+        let historyPaths = CodexHistoryPaths(
+            rootURL: historyRootURL ?? CodexHistoryRootResolver.resolveRootURL()
+        )
+        let rows = try database.executeQuery(
+            sql: """
+            SELECT source_path, relative_path, bucket, status
+            FROM codex_import_sources
+            WHERE status != 'tombstoned'
+            ORDER BY source_path ASC;
+            """
+        ) { stmt -> (String, String, SessionBucket, String) in
+            let sourcePath = sqlite3_column_type(stmt, 0) != SQLITE_NULL && sqlite3_column_text(stmt, 0) != nil
+                ? String(cString: sqlite3_column_text(stmt, 0)!)
+                : ""
+            let relativePath = sqlite3_column_type(stmt, 1) != SQLITE_NULL && sqlite3_column_text(stmt, 1) != nil
+                ? String(cString: sqlite3_column_text(stmt, 1)!)
+                : ""
+            let bucketRaw = sqlite3_column_type(stmt, 2) != SQLITE_NULL && sqlite3_column_text(stmt, 2) != nil
+                ? String(cString: sqlite3_column_text(stmt, 2)!)
+                : SessionBucket.active.rawValue
+            let status = sqlite3_column_type(stmt, 3) != SQLITE_NULL && sqlite3_column_text(stmt, 3) != nil
+                ? String(cString: sqlite3_column_text(stmt, 3)!)
+                : ""
+            return (
+                sourcePath,
+                relativePath,
+                SessionBucket(rawValue: bucketRaw) ?? .active,
+                status
+            )
+        }
+
+        var items: [MissingSourceCleanupItemDTO] = []
+        for row in rows {
+            guard Self.sourcePresence(
+                sourcePath: row.0,
+                relativePath: row.1,
+                historyPaths: historyPaths
+            ) == .missing else {
+                continue
+            }
+            let affected = try database.executeQuery(
+                sql: """
+                SELECT
+                    COUNT(*),
+                    COALESCE(SUM(total_tokens), 0),
+                    COALESCE(SUM(estimated_cost_usd_nano), 0)
+                FROM codex_sessions
+                WHERE source_path = ? OR relative_path = ?;
+                """,
+                bindings: [row.0, row.1]
+            ) { stmt -> (Int, Int64, Int64) in
+                (
+                    Int(sqlite3_column_int(stmt, 0)),
+                    sqlite3_column_int64(stmt, 1),
+                    sqlite3_column_int64(stmt, 2)
+                )
+            }.first ?? (0, 0, 0)
+            items.append(
+                MissingSourceCleanupItemDTO(
+                    sourcePath: row.0,
+                    relativePath: row.1,
+                    bucket: row.2,
+                    sessionCount: affected.0,
+                    totalTokens: affected.1,
+                    estimatedCost: MoneyNanoUSD(affected.2),
+                    status: row.3
+                )
+            )
+        }
+        return items
+    }
+
+    private static func sourcePresence(
+        sourcePath: String,
+        relativePath: String,
+        historyPaths: CodexHistoryPaths
+    ) -> SourcePresence {
+        let rootURL = historyPaths.rootURL.standardizedFileURL
+        let candidates: [URL] = [
+            sourcePath.isEmpty ? nil : (sourcePath.hasPrefix("/")
+                ? URL(fileURLWithPath: sourcePath)
+                : rootURL.appendingPathComponent(sourcePath)),
+            relativePath.isEmpty ? nil : rootURL.appendingPathComponent(relativePath)
+        ].compactMap { $0 }
+        guard !candidates.isEmpty else { return .missing }
+
+        var sawInaccessible = false
+        for candidate in candidates {
+            switch filePresence(at: candidate) {
+            case .exists:
+                return .exists
+            case .inaccessible:
+                sawInaccessible = true
+            case .missing:
+                continue
+            }
+        }
+        return sawInaccessible ? .inaccessible : .missing
+    }
+
+    private static func filePresence(at url: URL) -> SourcePresence {
+        let path = url.standardizedFileURL.path
+        if FileManager.default.fileExists(atPath: path) {
+            return .exists
+        }
+        do {
+            _ = try FileManager.default.attributesOfItem(atPath: path)
+            return .exists
+        } catch {
+            let nsError = error as NSError
+            if nsError.domain == NSCocoaErrorDomain,
+               (nsError.code == NSFileNoSuchFileError || nsError.code == NSFileReadNoSuchFileError) {
+                return .missing
+            }
+            if nsError.domain == NSPOSIXErrorDomain, nsError.code == ENOENT {
+                return .missing
+            }
+            return .inaccessible
+        }
+    }
+
+    private static func missingSourcePreviewId(items: [MissingSourceCleanupItemDTO]) -> String {
+        var payload = ""
+        for item in items.sorted(by: { $0.sourcePath < $1.sourcePath }) {
+            payload += [
+                item.sourcePath,
+                item.relativePath,
+                item.bucket.rawValue,
+                item.status,
+                String(item.sessionCount),
+                String(item.totalTokens),
+                String(item.estimatedCost.rawValue)
+            ].joined(separator: "\u{1F}") + "\n"
+        }
+        return SHA256.hash(data: Data(payload.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
     }
 
     private static func safeSessionSourceURL(
@@ -1850,8 +2971,12 @@ public final class UsageAnalyticsRepository: Sendable {
         let timestampQualityRaw = sqlite3_column_type(stmt, 24) != SQLITE_NULL && sqlite3_column_text(stmt, 24) != nil
             ? String(cString: sqlite3_column_text(stmt, 24)!)
             : TimestampQuality.eventTimestamp.rawValue
-        let catalogVersion = sqlite3_column_type(stmt, 25) != SQLITE_NULL && sqlite3_column_text(stmt, 25) != nil
+        let timestampSourceRaw = sqlite3_column_type(stmt, 25) != SQLITE_NULL && sqlite3_column_text(stmt, 25) != nil
             ? String(cString: sqlite3_column_text(stmt, 25)!)
+            : TimestampSource.topLevelTimestamp.rawValue
+        let timestampConflictCount = Int(sqlite3_column_int(stmt, 26))
+        let catalogVersion = sqlite3_column_type(stmt, 27) != SQLITE_NULL && sqlite3_column_text(stmt, 27) != nil
+            ? String(cString: sqlite3_column_text(stmt, 27)!)
             : nil
 
         return CodexUsageEventDTO(
@@ -1880,6 +3005,8 @@ public final class UsageAnalyticsRepository: Sendable {
             usageDerivation: UsageDerivation(rawValue: deriv) ?? .explicitLastUsage,
             attributionQuality: AttributionQuality(rawValue: attrib) ?? .sessionFallback,
             timestampQuality: TimestampQuality(rawValue: timestampQualityRaw) ?? .eventTimestamp,
+            timestampSource: TimestampSource(rawValue: timestampSourceRaw) ?? .topLevelTimestamp,
+            timestampConflictCount: timestampConflictCount,
             isChildReplay: isReplay,
             sourcePath: src,
             lineOffset: offset

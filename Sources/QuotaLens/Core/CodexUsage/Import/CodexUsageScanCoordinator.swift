@@ -101,14 +101,25 @@ public final class CodexUsageScanCoordinator: ObservableObject {
             self.dataGeneration &+= 1
             if let warning = summary.warningMessage {
                 self.lastError = warning
-                self.statusText = L10n.format("Scan partially complete: %@", zhHans: "扫描部分完成：%@", warning)
+                self.statusText = L10n.format("Usage update partially complete: %@", zhHans: "本地用量更新部分完成：%@", warning)
             } else {
-                self.statusText = L10n.format("Scan complete, indexed %d files, added %d records", zhHans: "扫描完成，已索引 %d 个文件，新增 %d 条记录", summary.sourcesScanned, summary.eventsInserted)
+                self.statusText = L10n.format("Usage update complete, read %d files, added %d records", zhHans: "本地用量更新完成，已读取 %d 个文件，新增 %d 条记录", summary.sourcesScanned, summary.eventsInserted)
             }
         } catch {
-            self.lastError = error.localizedDescription
-            self.statusText = L10n.format("Scan failed: %@", zhHans: "扫描失败: %@", error.localizedDescription)
+            let message = Self.userFacingError(error)
+            self.lastError = message
+            self.statusText = L10n.format("Usage update failed: %@", zhHans: "本地用量更新失败：%@", message)
         }
+    }
+
+    private static func userFacingError(_ error: Error) -> String {
+        if let description = (error as? SessionDeletionError)?.errorDescription {
+            return description
+        }
+        return L10n.text(
+            "本地用量更新未完成，请稍后重试。",
+            "Local usage update did not finish. Try again later."
+        )
     }
 
     private func publishProgressIfNeeded(progress: Double, status: String) {

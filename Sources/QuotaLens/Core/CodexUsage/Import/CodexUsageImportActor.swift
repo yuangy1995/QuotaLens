@@ -61,7 +61,9 @@ public actor CodexUsageImportActor {
         let monotonicStart = CFAbsoluteTimeGetCurrent()
         let startedAtMs = Self.unixMillis()
         let aggregationTimeZone = TimeZone.current
-        onProgress?(0.01, L10n.text("正在检查计价目录与日期口径…", "Checking pricing and day boundaries..."))
+        try UsageAnalyticsRepository(database: database)
+            .assertNoIncompleteSessionDeletionJournal(historyRootURL: paths.rootURL)
+        onProgress?(0.01, L10n.text("正在检查费用和日期设置…", "Checking cost and date settings..."))
         try PricingCatalogService.shared.ensureCatalogInstalled(database: database, timeZone: aggregationTimeZone) { progress, message in
             onProgress?(0.01 + 0.035 * progress, message)
         }
@@ -73,7 +75,10 @@ public actor CodexUsageImportActor {
                 try? updateParserRebuildMetadata(
                     status: "failed",
                     generation: scanGeneration,
-                    error: "import interrupted before completion"
+                    error: L10n.text(
+                        "本地用量更新未完成",
+                        "Local usage update did not finish"
+                    )
                 )
             }
         }
@@ -85,14 +90,14 @@ public actor CodexUsageImportActor {
             totalSources: 0
         )
         // 1. 扫描文件源
-        onProgress?(0.05, L10n.text("正在扫描 Codex 会话文件…", "Scanning Codex session files..."))
+        onProgress?(0.05, L10n.text("正在读取本地会话记录…", "Reading local session records..."))
         let scanOutcome = scanHistory(paths, UsageFeatureFlags.shared.isScanArchivedSessionsEnabled)
         try persistScanDiagnostics(scanOutcome.diagnostics, scanGeneration: scanGeneration)
-        let scanIssueMessage = [
+        let scanIssueMessage = Array(Set([
             Self.scanIssue(root: "sessions", status: scanOutcome.active),
             Self.scanIssue(root: "archived_sessions", status: scanOutcome.archived)
-        ]
-        .compactMap { $0 }
+        ].compactMap { $0 }))
+        .sorted()
         .joined(separator: "; ")
         let scannedSources = scanOutcome.sources
         let rolloutHeaders = CodexSessionMetadataStore.loadFromRolloutHeaders(sources: scannedSources)
@@ -108,10 +113,20 @@ public actor CodexUsageImportActor {
         )
 
         // 2. 加载元数据与构建会话树
-        onProgress?(0.15, L10n.text("正在解析会话元数据与父子关系…", "Resolving session metadata and tree..."))
-        var rawMeta = CodexSessionMetadataStore.loadMetadata(paths: paths)
+        onProgress?(0.15, L10n.text("正在整理会话信息…", "Organizing session details..."))
+        var rawMeta = try loadPersistedSessionMetadata(sessionIds: Set(discoveredSources.map(\.sessionId)))
+        for metadata in CodexSessionMetadataStore.loadMetadata(paths: paths).values {
+            mergeMetadata(metadata, into: &rawMeta)
+        }
         for header in rolloutHeaders.values {
             guard let metadata = header.metadata else { continue }
+            mergeMetadata(metadata, into: &rawMeta)
+        }
+        let lineageScanSources = try sourcesNeedingRolloutLineageScan(
+            sources: discoveredSources,
+            forceRebuild: forceRebuild
+        )
+        for metadata in CodexSessionMetadataStore.loadFromRolloutLineage(sources: lineageScanSources).values {
             mergeMetadata(metadata, into: &rawMeta)
         }
         let discoveredIds = Set(discoveredSources.map(\.sessionId))
@@ -128,8 +143,15 @@ public actor CodexUsageImportActor {
         let totalFiles = max(1, discoveredSources.count)
 
         for (index, source) in discoveredSources.enumerated() {
+            try UsageAnalyticsRepository(database: database)
+                .assertNoIncompleteSessionDeletionJournal(historyRootURL: paths.rootURL)
             let progressFraction = 0.20 + (Double(index) / Double(totalFiles)) * 0.75
-            onProgress?(progressFraction, L10n.format("Processing %d/%d: %@", zhHans: "正在处理 %d/%d: %@", index + 1, totalFiles, source.fileURL.lastPathComponent))
+            onProgress?(progressFraction, L10n.format(
+                "Reading %d/%d local records",
+                zhHans: "正在读取 %d/%d 条本地记录",
+                index + 1,
+                totalFiles
+            ))
 
             let result = try autoreleasepool {
                 try processSingleSource(
@@ -158,6 +180,8 @@ public actor CodexUsageImportActor {
         }
 
         // 4. 更新全局代数与导入历史
+        try UsageAnalyticsRepository(database: database)
+            .assertNoIncompleteSessionDeletionJournal(historyRootURL: paths.rootURL)
         try tombstoneMissingSources(
             currentSourcePaths: Set(discoveredSources.map { $0.fileURL.path }),
             currentSessionIds: Set(discoveredSources.map(\.sessionId)),
@@ -173,6 +197,7 @@ public actor CodexUsageImportActor {
                 onProgress?(0.95 + 0.04 * progress, message)
             }
         }
+        try PricingCatalogService.shared.refreshPricingMigrationState(database: database)
 
         let pendingSourceCount = try database.intScalar(
             sql: """
@@ -182,7 +207,11 @@ public actor CodexUsageImportActor {
             bindings: [ParserCheckpoint.currentParserVersion]
         )
         let pendingMessage = pendingSourceCount > 0
-            ? L10n.format("%d sources unavailable; previous index retained for retry", zhHans: "%d 个来源暂不可用，已保留旧索引，等待重试", pendingSourceCount)
+            ? L10n.format(
+                "%d records cannot be read right now; existing usage was kept for retry",
+                zhHans: "%d 个记录暂时无法读取，已保留现有用量，等待重试",
+                pendingSourceCount
+            )
             : ""
         let warningMessage = [scanIssueMessage, pendingMessage].filter { !$0.isEmpty }.joined(separator: "; ")
 
@@ -225,8 +254,8 @@ public actor CodexUsageImportActor {
         )
 
         let completionMessage = warningMessage.isEmpty
-            ? L10n.text("导入完成", "Import complete")
-            : L10n.text("导入完成（部分来源待重试）", "Import complete (some sources pending retry)")
+            ? L10n.text("本地用量更新完成", "Local usage update complete")
+            : L10n.text("本地用量更新完成（部分记录待重试）", "Local usage update complete (some records pending retry)")
         onProgress?(1.0, completionMessage)
 
         return ImportSummary(
@@ -240,11 +269,13 @@ public actor CodexUsageImportActor {
     }
 
     private static func scanIssue(root: String, status: RootScanStatus) -> String? {
+        _ = root
         switch status {
-        case .inaccessible:
-            return "\(root): inaccessible"
-        case .failed(let message):
-            return "\(root): \(message)"
+        case .inaccessible, .failed:
+            return L10n.text(
+                "部分本地记录暂时无法读取",
+                "Some local records cannot be read right now"
+            )
         case .success, .notFound, .disabled:
             return nil
         }
@@ -326,7 +357,22 @@ public actor CodexUsageImportActor {
         let malformedLineCount: Int
         let unresolvedTimestampCount: Int
         let unknownEventTypeCount: Int
+        let timestampConflictCount: Int
         let status: String
+    }
+
+    private struct ExistingSessionLineage {
+        let rootSessionId: String
+        let parentSessionId: String?
+        let depth: Int
+        let sourcePath: String
+        let relativePath: String
+        let bucket: SessionBucket
+        let hasSubagents: Bool
+        let agentType: String?
+        let title: String?
+        let projectName: String?
+        let cwd: String?
     }
 
     private enum PersistenceTarget: Equatable {
@@ -347,6 +393,10 @@ public actor CodexUsageImportActor {
 
         var dailySummariesTable: String {
             self == .live ? "codex_daily_usage_summaries" : "codex_daily_usage_summaries_parser_shadow"
+        }
+
+        var summaryProvenance: SummaryProvenance {
+            self == .live ? .eventLedger : .reconstructed
         }
     }
 
@@ -487,6 +537,114 @@ public actor CodexUsageImportActor {
         )
     }
 
+    private func loadPersistedSessionMetadata(
+        sessionIds: Set<String>
+    ) throws -> [String: CodexRawSessionMetadata] {
+        guard !sessionIds.isEmpty else { return [:] }
+        var result: [String: CodexRawSessionMetadata] = [:]
+        let sortedIds = Array(sessionIds).sorted()
+        for chunkStart in stride(from: 0, to: sortedIds.count, by: 500) {
+            let chunk = Array(sortedIds[chunkStart..<min(chunkStart + 500, sortedIds.count)])
+            let placeholders = Array(repeating: "?", count: chunk.count).joined(separator: ",")
+            let rows = try database.executeQuery(
+                sql: """
+                SELECT session_id, title, cwd, project_name, parent_session_id,
+                       agent_type, created_at, updated_at
+                FROM codex_sessions
+                WHERE session_id IN (\(placeholders));
+                """,
+                bindings: chunk
+            ) { stmt -> CodexRawSessionMetadata in
+                let sessionId = String(cString: sqlite3_column_text(stmt, 0))
+                let title = Self.columnString(stmt, 1)
+                let cwd = Self.columnString(stmt, 2)
+                let projectName = Self.columnString(stmt, 3)
+                let parent = Self.columnString(stmt, 4)
+                let agentType = Self.columnString(stmt, 5)
+                let created = sqlite3_column_type(stmt, 6) != SQLITE_NULL
+                    ? Self.safeDateFromEpochMilliseconds(sqlite3_column_int64(stmt, 6))
+                    : nil
+                let updated = sqlite3_column_type(stmt, 7) != SQLITE_NULL
+                    ? Self.safeDateFromEpochMilliseconds(sqlite3_column_int64(stmt, 7))
+                    : nil
+                return CodexRawSessionMetadata(
+                    sessionId: sessionId,
+                    title: title,
+                    cwd: cwd,
+                    projectName: projectName,
+                    parentSessionId: parent,
+                    agentType: agentType,
+                    createdAt: created,
+                    updatedAt: updated
+                )
+            }
+            for row in rows {
+                result[row.sessionId] = row
+            }
+        }
+        return result
+    }
+
+    private func sourcesNeedingRolloutLineageScan(
+        sources: [RolloutDiscoveredSource],
+        forceRebuild: Bool
+    ) throws -> [RolloutDiscoveredSource] {
+        guard !forceRebuild else { return sources }
+        var result: [RolloutDiscoveredSource] = []
+        for source in sources {
+            let existing = try database.executeQuery(
+                sql: """
+                SELECT file_size, mtime_ms, head_sha256, tail_sha256, parser_version, status
+                FROM codex_import_sources
+                WHERE source_path = ?
+                   OR (device_id = ? AND inode = ? AND birthtime_ns IS ?)
+                ORDER BY CASE WHEN source_path = ? THEN 0 ELSE 1 END
+                LIMIT 1;
+                """,
+                bindings: [
+                    source.fileURL.path,
+                    Int64(source.identity.device),
+                    Int64(source.identity.inode),
+                    source.identity.birthtimeNs,
+                    source.fileURL.path
+                ]
+            ) { stmt -> (Int64, Int64, String?, String?, Int, String) in
+                let head = sqlite3_column_type(stmt, 2) != SQLITE_NULL && sqlite3_column_text(stmt, 2) != nil
+                    ? String(cString: sqlite3_column_text(stmt, 2)!)
+                    : nil
+                let tail = sqlite3_column_type(stmt, 3) != SQLITE_NULL && sqlite3_column_text(stmt, 3) != nil
+                    ? String(cString: sqlite3_column_text(stmt, 3)!)
+                    : nil
+                return (
+                    sqlite3_column_int64(stmt, 0),
+                    sqlite3_column_int64(stmt, 1),
+                    head,
+                    tail,
+                    Int(sqlite3_column_int(stmt, 4)),
+                    String(cString: sqlite3_column_text(stmt, 5))
+                )
+            }.first
+
+            guard let existing else {
+                result.append(source)
+                continue
+            }
+            if existing.4 != ParserCheckpoint.currentParserVersion || existing.5 == "stale" {
+                result.append(source)
+                continue
+            }
+            if existing.0 != source.fileSize || existing.1 != source.mtimeMs {
+                result.append(source)
+                continue
+            }
+            let fingerprint = Self.fingerprint(fileURL: source.fileURL, fileSize: source.fileSize)
+            if existing.2 != fingerprint.headSHA256 || existing.3 != fingerprint.tailSHA256 {
+                result.append(source)
+            }
+        }
+        return result
+    }
+
     private func mergeMetadata(
         _ incoming: CodexRawSessionMetadata,
         into map: inout [String: CodexRawSessionMetadata]
@@ -501,7 +659,9 @@ public actor CodexUsageImportActor {
             if existing.projectName == nil || existing.projectName?.isEmpty == true {
                 existing.projectName = incoming.projectName
             }
-            if existing.parentSessionId == nil || existing.parentSessionId?.isEmpty == true {
+            if let parent = incoming.parentSessionId, !parent.isEmpty {
+                existing.parentSessionId = parent
+            } else if existing.parentSessionId == nil || existing.parentSessionId?.isEmpty == true {
                 existing.parentSessionId = incoming.parentSessionId
             }
             if existing.agentType == nil || existing.agentType?.isEmpty == true {
@@ -517,6 +677,101 @@ public actor CodexUsageImportActor {
         } else {
             map[incoming.sessionId] = incoming
         }
+    }
+
+    private static func columnString(_ statement: OpaquePointer, _ index: Int32) -> String? {
+        guard sqlite3_column_type(statement, index) != SQLITE_NULL,
+              let text = sqlite3_column_text(statement, index) else {
+            return nil
+        }
+        let value = String(cString: text).trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+
+    private func sessionLineageRebuildReason(
+        source: RolloutDiscoveredSource,
+        resolvedSession: CodexResolvedSessionMetadata
+    ) throws -> String? {
+        let existing = try database.executeQuery(
+            sql: """
+            SELECT root_session_id, parent_session_id, depth, source_path, relative_path,
+                   bucket, has_subagents, agent_type, title, project_name, cwd
+            FROM codex_sessions
+            WHERE session_id = ?
+            LIMIT 1;
+            """,
+            bindings: [resolvedSession.sessionId]
+        ) { statement -> ExistingSessionLineage in
+            func optionalText(_ index: Int32) -> String? {
+                guard sqlite3_column_type(statement, index) != SQLITE_NULL,
+                      let text = sqlite3_column_text(statement, index) else {
+                    return nil
+                }
+                let value = String(cString: text)
+                return value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : value
+            }
+            let bucketRaw = optionalText(5) ?? SessionBucket.active.rawValue
+            return ExistingSessionLineage(
+                rootSessionId: String(cString: sqlite3_column_text(statement, 0)),
+                parentSessionId: optionalText(1),
+                depth: Int(sqlite3_column_int(statement, 2)),
+                sourcePath: optionalText(3) ?? "",
+                relativePath: optionalText(4) ?? "",
+                bucket: SessionBucket(rawValue: bucketRaw) ?? .active,
+                hasSubagents: sqlite3_column_int(statement, 6) != 0,
+                agentType: optionalText(7),
+                title: optionalText(8),
+                projectName: optionalText(9),
+                cwd: optionalText(10)
+            )
+        }.first
+
+        guard let existing else {
+            return nil
+        }
+
+        if existing.rootSessionId != resolvedSession.rootSessionId
+            || existing.parentSessionId != Self.normalizedMetadataText(resolvedSession.parentSessionId)
+            || existing.depth != resolvedSession.depth {
+            return "session_lineage_changed"
+        }
+        if existing.sourcePath != source.fileURL.path
+            || existing.relativePath != source.relativePath
+            || existing.bucket != source.bucket {
+            return "session_source_metadata_changed"
+        }
+        if existing.hasSubagents != resolvedSession.hasSubagents {
+            return "session_child_state_changed"
+        }
+        if metadataFieldChanged(existing.agentType, resolvedSession.agentType)
+            || metadataFieldChanged(existing.title, resolvedSession.title)
+            || metadataFieldChanged(existing.projectName, resolvedSession.projectName)
+            || metadataFieldChanged(existing.cwd, resolvedSession.cwd) {
+            return "session_metadata_changed"
+        }
+
+        let mismatchedEvents = try database.intScalar(
+            sql: """
+            SELECT COUNT(*)
+            FROM codex_usage_events
+            WHERE session_id = ? AND root_session_id != ?;
+            """,
+            bindings: [resolvedSession.sessionId, resolvedSession.rootSessionId]
+        )
+        return mismatchedEvents > 0 ? "event_lineage_changed" : nil
+    }
+
+    private static func normalizedMetadataText(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func metadataFieldChanged(_ existing: String?, _ resolved: String?) -> Bool {
+        guard let resolved = Self.normalizedMetadataText(resolved) else {
+            return false
+        }
+        return Self.normalizedMetadataText(existing) != resolved
     }
 
     private func processSingleSource(
@@ -536,7 +791,8 @@ public actor CodexUsageImportActor {
                 source_path, relative_path,
                 last_imported_size, checkpoint_state_json, device_id, inode, birthtime_ns,
                 file_size, mtime_ms, head_sha256, tail_sha256, imported_tail_sha256, parser_version,
-                malformed_line_count, unresolved_timestamp_count, unknown_event_type_count, status
+                malformed_line_count, unresolved_timestamp_count, unknown_event_type_count,
+                timestamp_conflict_count, status
             FROM codex_import_sources
             WHERE source_path = ?
                OR (device_id = ? AND inode = ? AND birthtime_ns IS ?)
@@ -577,9 +833,12 @@ public actor CodexUsageImportActor {
                 malformedLineCount: Int(sqlite3_column_int(stmt, 13)),
                 unresolvedTimestampCount: Int(sqlite3_column_int(stmt, 14)),
                 unknownEventTypeCount: Int(sqlite3_column_int(stmt, 15)),
-                status: String(cString: sqlite3_column_text(stmt, 16))
+                timestampConflictCount: Int(sqlite3_column_int(stmt, 16)),
+                status: String(cString: sqlite3_column_text(stmt, 17))
             )
         }.first
+
+        let isChild = (resolvedSession?.depth ?? 0) > 0 || resolvedSession?.parentSessionId != nil
 
         if let existing = existingSourceState, existing.sourcePath != source.fileURL.path {
             try relocatePhysicalSource(
@@ -602,6 +861,15 @@ public actor CodexUsageImportActor {
             replaceExistingDerivedRows = true
             rebuildReason = rebuildReason ?? "session_source_replaced"
         }
+        if !replaceExistingDerivedRows,
+           let session = resolvedSession,
+           let reason = try sessionLineageRebuildReason(
+               source: source,
+               resolvedSession: session
+           ) {
+            replaceExistingDerivedRows = true
+            rebuildReason = reason
+        }
 
         if !forceRebuild, let existing = existingSourceState {
             let sameIdentity = existing.deviceID == Int64(source.identity.device)
@@ -612,7 +880,8 @@ public actor CodexUsageImportActor {
             let parserMatches = existing.parserVersion == ParserCheckpoint.currentParserVersion
                 && existing.status != "stale"
 
-            if source.fileSize == existing.lastImportedSize,
+            if !replaceExistingDerivedRows,
+               source.fileSize == existing.lastImportedSize,
                source.fileSize == existing.fileSize,
                source.mtimeMs == existing.mtimeMs,
                sameIdentity,
@@ -620,9 +889,11 @@ public actor CodexUsageImportActor {
                parserMatches {
                 try markSourceSeen(source: source, fingerprint: fingerprint, scanGeneration: scanGeneration)
                 return SingleSourceProcessResult(eventsInserted: 0, bytesRead: 0)
-            } else if source.fileSize > existing.lastImportedSize,
+            } else if !replaceExistingDerivedRows,
+                      source.fileSize > existing.lastImportedSize,
                       sameIdentity,
                       parserMatches,
+                      !isChild,
                       existing.headSHA256 == Self.hashWindow(
                         fileURL: source.fileURL,
                         startOffset: 0,
@@ -633,27 +904,41 @@ public actor CodexUsageImportActor {
                 startOffset = existing.lastImportedSize
                 if let json = existing.checkpointJSON,
                    let parsedCp = ParserCheckpoint.fromJsonString(json),
-                   parsedCp.parserVersion == ParserCheckpoint.currentParserVersion {
-                    initialCheckpoint = parsedCp
+                   parsedCp.canResumeIncrementally {
+                    if let reason = try Self.appendRequiresRootRebuild(
+                        fileURL: source.fileURL,
+                        startOffset: startOffset,
+                        endOffset: source.fileSize,
+                        expectedSessionId: source.sessionId,
+                        stableSessionId: parsedCp.stableSessionId
+                    ) {
+                        startOffset = 0
+                        initialCheckpoint = .initial
+                        replaceExistingDerivedRows = true
+                        rebuildReason = reason
+                    } else {
+                        initialCheckpoint = parsedCp
+                    }
                 } else {
                     startOffset = 0
                     initialCheckpoint = .initial
                     replaceExistingDerivedRows = true
+                    rebuildReason = "checkpoint_not_incremental_safe"
                 }
             } else {
                 startOffset = 0
                 initialCheckpoint = .initial
                 replaceExistingDerivedRows = true
                 if !parserMatches {
-                    rebuildReason = "parser_upgraded"
+                    rebuildReason = rebuildReason ?? "parser_upgraded"
                 } else if !sameIdentity {
-                    rebuildReason = "physical_identity_changed"
+                    rebuildReason = rebuildReason ?? "physical_identity_changed"
                 } else if source.fileSize < existing.lastImportedSize {
-                    rebuildReason = "file_truncated"
+                    rebuildReason = rebuildReason ?? "file_truncated"
                 } else if source.fileSize == existing.fileSize {
-                    rebuildReason = "same_size_rewrite"
+                    rebuildReason = rebuildReason ?? "same_size_rewrite"
                 } else {
-                    rebuildReason = "append_boundary_changed"
+                    rebuildReason = rebuildReason ?? "append_boundary_changed"
                 }
             }
         }
@@ -665,7 +950,7 @@ public actor CodexUsageImportActor {
                 throw NSError(
                     domain: "QuotaLens.CodexUsageImport",
                     code: 2001,
-                    userInfo: [NSLocalizedDescriptionKey: "无法解析会话元数据，已保留旧索引"]
+                    userInfo: [NSLocalizedDescriptionKey: "本地记录更新未完成，已保留原有结果"]
                 )
             }
             try prepareParserRebuildShadowTables()
@@ -676,7 +961,6 @@ public actor CodexUsageImportActor {
             }
         }
 
-        let isChild = (resolvedSession?.depth ?? 0) > 0
         let rootSessionId = resolvedSession?.rootSessionId ?? source.sessionId
         let timestampFallback = fallbackTimestamp(for: source, resolvedSession: resolvedSession)
 
@@ -702,6 +986,7 @@ public actor CodexUsageImportActor {
         var malformedLineCount = isResuming ? (existingSourceState?.malformedLineCount ?? 0) : 0
         var unresolvedTimestampCount = isResuming ? (existingSourceState?.unresolvedTimestampCount ?? 0) : 0
         var unknownEventTypeCount = isResuming ? (existingSourceState?.unknownEventTypeCount ?? 0) : 0
+        var timestampConflictCount = isResuming ? (existingSourceState?.timestampConflictCount ?? 0) : 0
 
         // 流式逐行读取
         let (finalOffset, _) = try StreamingJSONLReader.readLines(
@@ -711,6 +996,7 @@ public actor CodexUsageImportActor {
             shouldIncludeLineData: RolloutLineDecoder.mayContainUsageRelevantEvent
         ) { lineRecord in
             if let wireEvent = RolloutLineDecoder.decodeLine(lineRecord.lineString) {
+                timestampConflictCount += wireEvent.timestampConflictCount
                 if (wireEvent.lastTokenUsage != nil || wireEvent.totalTokenUsage != nil),
                    wireEvent.timestampMs <= 0,
                    !timestampFallback.1.isUsableForAnalytics {
@@ -760,7 +1046,8 @@ public actor CodexUsageImportActor {
                                     rebuildReason: rebuildReason,
                                     malformedLineCount: malformedLineCount,
                                     unresolvedTimestampCount: unresolvedTimestampCount,
-                                    unknownEventTypeCount: unknownEventTypeCount
+                                    unknownEventTypeCount: unknownEventTypeCount,
+                                    timestampConflictCount: timestampConflictCount
                                 )
                             }
                         }
@@ -782,6 +1069,13 @@ public actor CodexUsageImportActor {
 
         // 提交最终检查点与会话汇总
         let finalCheckpoint = reducerState.makeCheckpoint()
+        if persistenceTarget == .live, let reason = reducerState.requiresFullRebuildReason {
+            throw NSError(
+                domain: "QuotaLens.CodexUsageImport",
+                code: 2004,
+                userInfo: [NSLocalizedDescriptionKey: "增量尾部发现不稳定会话身份（\(reason)），已拒绝部分发布并将在下次全量重建"]
+            )
+        }
 
         if persistenceTarget == .rebuildShadow, let session = resolvedSession {
             try database.transaction {
@@ -816,7 +1110,8 @@ public actor CodexUsageImportActor {
                 rebuildReason: rebuildReason,
                 malformedLineCount: malformedLineCount,
                 unresolvedTimestampCount: unresolvedTimestampCount,
-                unknownEventTypeCount: unknownEventTypeCount
+                unknownEventTypeCount: unknownEventTypeCount,
+                timestampConflictCount: timestampConflictCount
             )
             rebuildShadowPublished = true
         } else {
@@ -832,7 +1127,8 @@ public actor CodexUsageImportActor {
                     rebuildReason: rebuildReason,
                     malformedLineCount: malformedLineCount,
                     unresolvedTimestampCount: unresolvedTimestampCount,
-                    unknownEventTypeCount: unknownEventTypeCount
+                    unknownEventTypeCount: unknownEventTypeCount,
+                    timestampConflictCount: timestampConflictCount
                 )
 
                 if let session = resolvedSession {
@@ -942,7 +1238,7 @@ public actor CodexUsageImportActor {
             throw NSError(
                 domain: "QuotaLens.CodexUsageImport",
                 code: 2002,
-                userInfo: [NSLocalizedDescriptionKey: "解析器影子索引一致性检查失败，已保留旧索引"]
+                userInfo: [NSLocalizedDescriptionKey: "本地记录更新未完成，已保留原有结果"]
             )
         }
     }
@@ -957,7 +1253,8 @@ public actor CodexUsageImportActor {
         rebuildReason: String?,
         malformedLineCount: Int,
         unresolvedTimestampCount: Int,
-        unknownEventTypeCount: Int
+        unknownEventTypeCount: Int,
+        timestampConflictCount: Int
     ) throws {
         try validateParserRebuildShadow(sessionId: sessionId)
         try database.transaction {
@@ -994,7 +1291,8 @@ public actor CodexUsageImportActor {
                 rebuildReason: rebuildReason,
                 malformedLineCount: malformedLineCount,
                 unresolvedTimestampCount: unresolvedTimestampCount,
-                unknownEventTypeCount: unknownEventTypeCount
+                unknownEventTypeCount: unknownEventTypeCount,
+                timestampConflictCount: timestampConflictCount
             )
             try clearParserRebuildShadowTables()
         }
@@ -1010,7 +1308,8 @@ public actor CodexUsageImportActor {
         rebuildReason: String?,
         malformedLineCount: Int,
         unresolvedTimestampCount: Int,
-        unknownEventTypeCount: Int
+        unknownEventTypeCount: Int,
+        timestampConflictCount: Int
     ) throws {
         let checkpointJson = checkpoint.toJsonString() ?? "{}"
         try database.executeUpdate(
@@ -1021,8 +1320,8 @@ public actor CodexUsageImportActor {
                 last_imported_sha256, checkpoint_state_json, status, last_imported_at,
                 error_message, head_sha256, tail_sha256, imported_tail_sha256,
                 parser_version, scan_generation, rebuild_reason, malformed_line_count,
-                unresolved_timestamp_count, unknown_event_type_count
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch(), NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                unresolved_timestamp_count, unknown_event_type_count, timestamp_conflict_count
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch(), NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """,
             bindings: [
                 source.fileURL.path,
@@ -1046,7 +1345,8 @@ public actor CodexUsageImportActor {
                 rebuildReason,
                 malformedLineCount,
                 unresolvedTimestampCount,
-                unknownEventTypeCount
+                unknownEventTypeCount,
+                timestampConflictCount
             ]
         )
     }
@@ -1098,11 +1398,11 @@ public actor CodexUsageImportActor {
             sqlite3_column_type(stmt, 0) != SQLITE_NULL ? sqlite3_column_int64(stmt, 0) : nil
         }.first ?? nil
         let lastEventAt = maxOptional(existingLastEventAt, aggregation.session.lastEventAtMs)
-        let metadataCreatedMs = Int64(metadata.createdAt.timeIntervalSince1970 * 1000)
-        let createdAtMs = metadataCreatedMs > 0
-            ? metadataCreatedMs
-            : (aggregation.session.firstEventAtMs ?? lastEventAt ?? sourceTimestampFallback(relativePath: relativePath))
-        let updatedAtMs = max(Int64(metadata.updatedAt.timeIntervalSince1970 * 1000), lastEventAt ?? createdAtMs)
+        let metadataCreatedMs = Self.safeEpochMilliseconds(from: metadata.createdAt)
+        let createdAtMs = metadataCreatedMs
+            ?? (aggregation.session.firstEventAtMs ?? lastEventAt ?? sourceTimestampFallback(relativePath: relativePath))
+        let metadataUpdatedMs = Self.safeEpochMilliseconds(from: metadata.updatedAt) ?? 0
+        let updatedAtMs = max(metadataUpdatedMs, lastEventAt ?? createdAtMs)
         let pricingStatus = AggregatePricingStatus(
             eventCount: totals.eventCount,
             unpricedEventCount: totals.unpricedEventCount
@@ -1121,8 +1421,9 @@ public actor CodexUsageImportActor {
                 unpriced_historical_rule_missing_event_count, unpriced_historical_rule_missing_token_count,
                 unpriced_unsupported_context_event_count, unpriced_unsupported_context_token_count,
                 unpriced_invalid_record_event_count, unpriced_invalid_record_token_count,
-                unpriced_overflow_event_count, unpriced_overflow_token_count
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                unpriced_overflow_event_count, unpriced_overflow_token_count,
+                summary_provenance
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """,
             bindings: [
                 sessionId,
@@ -1160,7 +1461,8 @@ public actor CodexUsageImportActor {
                 totals.unpricedReasonCounts.invalidRecordEvents,
                 totals.unpricedReasonCounts.invalidRecordTokens,
                 totals.unpricedReasonCounts.overflowEvents,
-                totals.unpricedReasonCounts.overflowTokens
+                totals.unpricedReasonCounts.overflowTokens,
+                target.summaryProvenance.rawValue
             ]
         )
     }
@@ -1207,8 +1509,9 @@ public actor CodexUsageImportActor {
                     total_tokens, uncached_input_tokens, estimated_cost_usd_nano,
                     pricing_rule_id, pricing_status, usage_derivation, attribution_quality,
                     is_child_replay, source_path, line_offset, line_bytes, payload_sha256,
-                    created_at, timestamp_quality, pricing_catalog_version
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?);
+                    created_at, timestamp_quality, timestamp_source, timestamp_conflict_count,
+                    pricing_catalog_version
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?);
                 """,
                 bindings: [
                     event.eventId,
@@ -1239,6 +1542,8 @@ public actor CodexUsageImportActor {
                     event.lineBytes,
                     Self.unixMillis(),
                     event.timestampQuality.rawValue,
+                    event.timestampSource.rawValue,
+                    event.timestampConflictCount,
                     price.catalogVersion
                 ]
             )
@@ -1263,8 +1568,9 @@ public actor CodexUsageImportActor {
                 unpriced_historical_rule_missing_event_count, unpriced_historical_rule_missing_token_count,
                 unpriced_unsupported_context_event_count, unpriced_unsupported_context_token_count,
                 unpriced_invalid_record_event_count, unpriced_invalid_record_token_count,
-                unpriced_overflow_event_count, unpriced_overflow_token_count
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                unpriced_overflow_event_count, unpriced_overflow_token_count,
+                summary_provenance
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(session_id, model_canonical) DO UPDATE SET
                 event_count = event_count + excluded.event_count,
                 total_tokens = total_tokens + excluded.total_tokens,
@@ -1287,9 +1593,11 @@ public actor CodexUsageImportActor {
                 unpriced_invalid_record_event_count = unpriced_invalid_record_event_count + excluded.unpriced_invalid_record_event_count,
                 unpriced_invalid_record_token_count = unpriced_invalid_record_token_count + excluded.unpriced_invalid_record_token_count,
                 unpriced_overflow_event_count = unpriced_overflow_event_count + excluded.unpriced_overflow_event_count,
-                unpriced_overflow_token_count = unpriced_overflow_token_count + excluded.unpriced_overflow_token_count;
+                unpriced_overflow_token_count = unpriced_overflow_token_count + excluded.unpriced_overflow_token_count,
+                summary_provenance = excluded.summary_provenance;
             """,
             bindings: aggregateBindings(prefix: [sessionId, modelCanonical], aggregate: aggregate)
+                + [target.summaryProvenance.rawValue]
         )
     }
 
@@ -1311,8 +1619,9 @@ public actor CodexUsageImportActor {
                 unpriced_historical_rule_missing_event_count, unpriced_historical_rule_missing_token_count,
                 unpriced_unsupported_context_event_count, unpriced_unsupported_context_token_count,
                 unpriced_invalid_record_event_count, unpriced_invalid_record_token_count,
-                unpriced_overflow_event_count, unpriced_overflow_token_count
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                unpriced_overflow_event_count, unpriced_overflow_token_count,
+                summary_provenance
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(session_id, day_key, model_canonical) DO UPDATE SET
                 day_start_ms = excluded.day_start_ms,
                 event_count = event_count + excluded.event_count,
@@ -1336,12 +1645,13 @@ public actor CodexUsageImportActor {
                 unpriced_invalid_record_event_count = unpriced_invalid_record_event_count + excluded.unpriced_invalid_record_event_count,
                 unpriced_invalid_record_token_count = unpriced_invalid_record_token_count + excluded.unpriced_invalid_record_token_count,
                 unpriced_overflow_event_count = unpriced_overflow_event_count + excluded.unpriced_overflow_event_count,
-                unpriced_overflow_token_count = unpriced_overflow_token_count + excluded.unpriced_overflow_token_count;
+                unpriced_overflow_token_count = unpriced_overflow_token_count + excluded.unpriced_overflow_token_count,
+                summary_provenance = excluded.summary_provenance;
             """,
             bindings: aggregateBindings(
                 prefix: [sessionId, key.dayKey, key.dayStartMs, key.modelCanonical],
                 aggregate: aggregate
-            )
+            ) + [target.summaryProvenance.rawValue]
         )
     }
 
@@ -1685,8 +1995,7 @@ public actor CodexUsageImportActor {
             return (fromFileName, .fileNameTimestamp)
         }
         if let resolvedSession {
-            let createdMs = Int64(resolvedSession.createdAt.timeIntervalSince1970 * 1000)
-            if createdMs > 0 {
+            if let createdMs = Self.safeEpochMilliseconds(from: resolvedSession.createdAt) {
                 return (createdMs, .sessionTimestamp)
             }
         }
@@ -1698,6 +2007,26 @@ public actor CodexUsageImportActor {
 
     private func sourceTimestampFallback(relativePath: String) -> Int64 {
         Self.timestampFromFilename((relativePath as NSString).lastPathComponent) ?? 0
+    }
+
+    private static func safeDateFromEpochMilliseconds(_ milliseconds: Int64) -> Date? {
+        guard milliseconds >= 1_500_000_000_000,
+              milliseconds <= 4_102_444_800_000 else {
+            return nil
+        }
+        return Date(timeIntervalSince1970: Double(milliseconds) / 1_000)
+    }
+
+    private static func safeEpochMilliseconds(from date: Date) -> Int64? {
+        let seconds = date.timeIntervalSince1970
+        guard seconds.isFinite else { return nil }
+        let milliseconds = seconds * 1_000
+        guard milliseconds.isFinite,
+              milliseconds >= 1_500_000_000_000,
+              milliseconds <= 4_102_444_800_000 else {
+            return nil
+        }
+        return Int64(milliseconds.rounded())
     }
 
     static func timestampFromFilename(_ fileName: String) -> Int64? {
@@ -1712,20 +2041,54 @@ public actor CodexUsageImportActor {
             formatter.timeZone = TimeZone(secondsFromGMT: 0)
             formatter.dateFormat = "yyyy-MM-dd'T'HH-mm-ss"
             if let date = formatter.date(from: String(matched)) {
-                return Int64(date.timeIntervalSince1970 * 1_000)
+                return safeEpochMilliseconds(from: date)
             }
         }
         if let range = fileName.range(of: #"\d{13}"#, options: .regularExpression),
            let value = Int64(fileName[range]),
-           value > 1_000_000_000_000 {
+           safeDateFromEpochMilliseconds(value) != nil {
             return value
         }
         if let range = fileName.range(of: #"\d{10}"#, options: .regularExpression),
-           let value = Int64(fileName[range]),
-           value > 1_000_000_000 {
-            return value * 1000
+           let value = Int64(fileName[range]) {
+            let multiplied = value.multipliedReportingOverflow(by: 1_000)
+            if !multiplied.overflow,
+               safeDateFromEpochMilliseconds(multiplied.partialValue) != nil {
+                return multiplied.partialValue
+            }
         }
         return nil
+    }
+
+    private static func appendRequiresRootRebuild(
+        fileURL: URL,
+        startOffset: Int64,
+        endOffset: Int64,
+        expectedSessionId: String,
+        stableSessionId: String?
+    ) throws -> String? {
+        var rebuildReason: String?
+        let expected = stableSessionId?.isEmpty == false ? stableSessionId! : expectedSessionId
+        _ = try StreamingJSONLReader.readLines(
+            fileURL: fileURL,
+            startOffset: startOffset,
+            endLimitOffset: endOffset,
+            shouldIncludeLineData: RolloutLineDecoder.mayContainUsageRelevantEvent
+        ) { lineRecord in
+            guard rebuildReason == nil,
+                  let event = RolloutLineDecoder.decodeLine(lineRecord.lineString),
+                  event.eventType == "session_meta" else {
+                return
+            }
+            if event.isChildSessionMeta || event.parentSessionId != nil {
+                rebuildReason = "append_child_or_fork_session_meta"
+                return
+            }
+            if let sessionId = event.sessionId, sessionId != expected {
+                rebuildReason = "append_session_identity_changed"
+            }
+        }
+        return rebuildReason
     }
 
     private static func isSyntacticallyValidJSON(_ line: String) -> Bool {

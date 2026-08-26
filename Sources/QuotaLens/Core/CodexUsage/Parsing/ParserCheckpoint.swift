@@ -3,9 +3,8 @@
 import Foundation
 
 public struct ParserCheckpoint: Codable, Sendable {
-    /// Bump whenever parsing or attribution semantics change. Import checkpoints
-    /// from older versions are deliberately rebuilt instead of being resumed.
-    public static let currentParserVersion = 6
+    /// 解析、归因或 Replay 边界语义变化时递增；旧版本检查点必须重建后再继续。
+    public static let currentParserVersion = 7
 
     public let lineOffset: Int64
     public let lineCount: Int
@@ -20,6 +19,11 @@ public struct ParserCheckpoint: Codable, Sendable {
     public let currentTurnIndex: Int
     public let currentCallIndex: Int
     public let hasSeenFreshTurn: Bool
+    public let isIncrementalRootEligible: Bool
+    public let childReplayGateKind: String?
+    public let childReplayGateTimestampMs: Int64?
+    public let hasSeenReplayedSessionMeta: Bool
+    public let stableSessionId: String?
     public let parserVersion: Int
 
     public init(
@@ -36,6 +40,11 @@ public struct ParserCheckpoint: Codable, Sendable {
         currentTurnIndex: Int = 0,
         currentCallIndex: Int = 0,
         hasSeenFreshTurn: Bool = false,
+        isIncrementalRootEligible: Bool = false,
+        childReplayGateKind: String? = nil,
+        childReplayGateTimestampMs: Int64? = nil,
+        hasSeenReplayedSessionMeta: Bool = false,
+        stableSessionId: String? = nil,
         parserVersion: Int = ParserCheckpoint.currentParserVersion
     ) {
         self.lineOffset = lineOffset
@@ -51,6 +60,11 @@ public struct ParserCheckpoint: Codable, Sendable {
         self.currentTurnIndex = currentTurnIndex
         self.currentCallIndex = currentCallIndex
         self.hasSeenFreshTurn = hasSeenFreshTurn
+        self.isIncrementalRootEligible = isIncrementalRootEligible
+        self.childReplayGateKind = childReplayGateKind
+        self.childReplayGateTimestampMs = childReplayGateTimestampMs
+        self.hasSeenReplayedSessionMeta = hasSeenReplayedSessionMeta
+        self.stableSessionId = stableSessionId
         self.parserVersion = parserVersion
     }
 
@@ -68,6 +82,11 @@ public struct ParserCheckpoint: Codable, Sendable {
         case currentTurnIndex
         case currentCallIndex
         case hasSeenFreshTurn
+        case isIncrementalRootEligible
+        case childReplayGateKind
+        case childReplayGateTimestampMs
+        case hasSeenReplayedSessionMeta
+        case stableSessionId
         case parserVersion
     }
 
@@ -86,7 +105,19 @@ public struct ParserCheckpoint: Codable, Sendable {
         self.currentTurnIndex = try container.decodeIfPresent(Int.self, forKey: .currentTurnIndex) ?? 0
         self.currentCallIndex = try container.decodeIfPresent(Int.self, forKey: .currentCallIndex) ?? 0
         self.hasSeenFreshTurn = try container.decodeIfPresent(Bool.self, forKey: .hasSeenFreshTurn) ?? false
+        self.isIncrementalRootEligible = try container.decodeIfPresent(Bool.self, forKey: .isIncrementalRootEligible) ?? false
+        self.childReplayGateKind = try container.decodeIfPresent(String.self, forKey: .childReplayGateKind)
+        self.childReplayGateTimestampMs = try container.decodeIfPresent(Int64.self, forKey: .childReplayGateTimestampMs)
+        self.hasSeenReplayedSessionMeta = try container.decodeIfPresent(Bool.self, forKey: .hasSeenReplayedSessionMeta) ?? false
+        self.stableSessionId = try container.decodeIfPresent(String.self, forKey: .stableSessionId)
         self.parserVersion = try container.decodeIfPresent(Int.self, forKey: .parserVersion) ?? 1
+    }
+
+    public var canResumeIncrementally: Bool {
+        parserVersion == Self.currentParserVersion
+            && isIncrementalRootEligible
+            && childReplayGateKind == nil
+            && stableSessionId?.isEmpty == false
     }
 
     public var lastCumulativeTokens: TokenBreakdown {

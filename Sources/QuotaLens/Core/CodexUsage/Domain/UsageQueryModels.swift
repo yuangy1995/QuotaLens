@@ -22,6 +22,7 @@ public struct CodexSessionDTO: Identifiable, Hashable, Sendable {
     public let tokens: TokenBreakdown
     public let estimatedCost: MoneyNanoUSD
     public let pricingStatus: AggregatePricingStatus
+    public let summaryProvenance: SummaryProvenance
     public let unpricedReasonCounts: UnpricedReasonCounts
     public let bucket: SessionBucket
     public let hasSubagents: Bool
@@ -43,6 +44,7 @@ public struct CodexSessionDTO: Identifiable, Hashable, Sendable {
         tokens: TokenBreakdown = .zero,
         estimatedCost: MoneyNanoUSD = .zero,
         pricingStatus: AggregatePricingStatus = .fullyUnpriced,
+        summaryProvenance: SummaryProvenance = .eventLedger,
         unpricedReasonCounts: UnpricedReasonCounts = .zero,
         bucket: SessionBucket = .active,
         hasSubagents: Bool = false,
@@ -63,6 +65,7 @@ public struct CodexSessionDTO: Identifiable, Hashable, Sendable {
         self.tokens = tokens
         self.estimatedCost = estimatedCost
         self.pricingStatus = pricingStatus
+        self.summaryProvenance = summaryProvenance
         self.unpricedReasonCounts = unpricedReasonCounts
         self.bucket = bucket
         self.hasSubagents = hasSubagents
@@ -183,6 +186,8 @@ public struct CodexUsageEventDTO: Identifiable, Hashable, Sendable {
     public let usageDerivation: UsageDerivation
     public let attributionQuality: AttributionQuality
     public let timestampQuality: TimestampQuality
+    public let timestampSource: TimestampSource
+    public let timestampConflictCount: Int
     public let isChildReplay: Bool
     public let sourcePath: String
     public let lineOffset: Int64
@@ -206,6 +211,8 @@ public struct CodexUsageEventDTO: Identifiable, Hashable, Sendable {
         usageDerivation: UsageDerivation,
         attributionQuality: AttributionQuality,
         timestampQuality: TimestampQuality = .eventTimestamp,
+        timestampSource: TimestampSource = .topLevelTimestamp,
+        timestampConflictCount: Int = 0,
         isChildReplay: Bool = false,
         sourcePath: String = "",
         lineOffset: Int64 = 0
@@ -228,6 +235,8 @@ public struct CodexUsageEventDTO: Identifiable, Hashable, Sendable {
         self.usageDerivation = usageDerivation
         self.attributionQuality = attributionQuality
         self.timestampQuality = timestampQuality
+        self.timestampSource = timestampSource
+        self.timestampConflictCount = timestampConflictCount
         self.isChildReplay = isChildReplay
         self.sourcePath = sourcePath
         self.lineOffset = lineOffset
@@ -244,6 +253,7 @@ public struct ModelUsageSummaryDTO: Identifiable, Hashable, Sendable {
     public let eventCount: Int
     public let unpricedCount: Int
     public let unpricedReasonCounts: UnpricedReasonCounts
+    public let summaryProvenance: SummaryProvenance
 
     public init(
         modelCanonical: String,
@@ -251,7 +261,8 @@ public struct ModelUsageSummaryDTO: Identifiable, Hashable, Sendable {
         estimatedCost: MoneyNanoUSD,
         eventCount: Int,
         unpricedCount: Int = 0,
-        unpricedReasonCounts: UnpricedReasonCounts = .zero
+        unpricedReasonCounts: UnpricedReasonCounts = .zero,
+        summaryProvenance: SummaryProvenance = .eventLedger
     ) {
         self.modelCanonical = modelCanonical
         self.tokens = tokens
@@ -259,6 +270,7 @@ public struct ModelUsageSummaryDTO: Identifiable, Hashable, Sendable {
         self.eventCount = eventCount
         self.unpricedCount = unpricedCount
         self.unpricedReasonCounts = unpricedReasonCounts
+        self.summaryProvenance = summaryProvenance
     }
 }
 
@@ -276,6 +288,8 @@ public struct DayUsageSummaryDTO: Identifiable, Hashable, Sendable {
     public let unpricedEventCount: Int
     public let unpricedTokenCount: Int64
     public let unpricedReasonCounts: UnpricedReasonCounts
+    public let legacyAggregateTokens: Int64
+    public let legacyAggregateCost: MoneyNanoUSD
 
     public init(
         dayKey: LocalDayKey,
@@ -287,7 +301,9 @@ public struct DayUsageSummaryDTO: Identifiable, Hashable, Sendable {
         modelSummaries: [ModelUsageSummaryDTO] = [],
         unpricedEventCount: Int = 0,
         unpricedTokenCount: Int64 = 0,
-        unpricedReasonCounts: UnpricedReasonCounts = .zero
+        unpricedReasonCounts: UnpricedReasonCounts = .zero,
+        legacyAggregateTokens: Int64 = 0,
+        legacyAggregateCost: MoneyNanoUSD = .zero
     ) {
         self.dayKey = dayKey
         self.date = date
@@ -299,6 +315,8 @@ public struct DayUsageSummaryDTO: Identifiable, Hashable, Sendable {
         self.unpricedEventCount = unpricedEventCount
         self.unpricedTokenCount = unpricedTokenCount
         self.unpricedReasonCounts = unpricedReasonCounts
+        self.legacyAggregateTokens = legacyAggregateTokens
+        self.legacyAggregateCost = legacyAggregateCost
     }
 }
 
@@ -370,6 +388,10 @@ public struct DashboardMetricsDTO: Sendable {
     public let tokenPricingCoverage: Double
     public let costForecastCoverage: Double
     public let unpricedReasonCounts: UnpricedReasonCounts
+    public let legacyAggregateTokens: Int64
+    public let legacyAggregateCost: MoneyNanoUSD
+    public let legacyAggregateEventCount: Int
+    public let currentCatalogCoverage: Double
 
     public init(
         totalTokens: TokenBreakdown = .zero,
@@ -386,7 +408,11 @@ public struct DashboardMetricsDTO: Sendable {
         eventPricingCoverage: Double = 1.0,
         tokenPricingCoverage: Double = 1.0,
         costForecastCoverage: Double = 1.0,
-        unpricedReasonCounts: UnpricedReasonCounts = .zero
+        unpricedReasonCounts: UnpricedReasonCounts = .zero,
+        legacyAggregateTokens: Int64 = 0,
+        legacyAggregateCost: MoneyNanoUSD = .zero,
+        legacyAggregateEventCount: Int = 0,
+        currentCatalogCoverage: Double = 1.0
     ) {
         self.totalTokens = totalTokens
         self.totalCost = totalCost
@@ -403,6 +429,10 @@ public struct DashboardMetricsDTO: Sendable {
         self.tokenPricingCoverage = tokenPricingCoverage
         self.costForecastCoverage = costForecastCoverage
         self.unpricedReasonCounts = unpricedReasonCounts
+        self.legacyAggregateTokens = legacyAggregateTokens
+        self.legacyAggregateCost = legacyAggregateCost
+        self.legacyAggregateEventCount = legacyAggregateEventCount
+        self.currentCatalogCoverage = currentCatalogCoverage
     }
 }
 
@@ -415,6 +445,7 @@ public struct ActivityHeatmapCellDTO: Identifiable, Hashable, Sendable {
     public let tokenCount: Int64
     public let eventCount: Int
     public let estimatedCost: MoneyNanoUSD
+    public let legacyAggregateCost: MoneyNanoUSD
     public let intensityLevel: Int // 0, 1, 2, 3, 4
 
     public init(
@@ -423,6 +454,7 @@ public struct ActivityHeatmapCellDTO: Identifiable, Hashable, Sendable {
         tokenCount: Int64,
         eventCount: Int,
         estimatedCost: MoneyNanoUSD = .zero,
+        legacyAggregateCost: MoneyNanoUSD = .zero,
         intensityLevel: Int
     ) {
         self.date = date
@@ -430,6 +462,7 @@ public struct ActivityHeatmapCellDTO: Identifiable, Hashable, Sendable {
         self.tokenCount = tokenCount
         self.eventCount = eventCount
         self.estimatedCost = estimatedCost
+        self.legacyAggregateCost = legacyAggregateCost
         self.intensityLevel = min(max(0, intensityLevel), 4)
     }
 }
@@ -481,6 +514,7 @@ public struct UsageDiagnosticsDTO: Codable, Sendable {
     public let invariantViolationCount: Int
     public let pricingRepriceGeneration: Int64
     public let pricingRepriceStatus: String
+    public let pricingMigrationState: PricingMigrationState
     public let pricingRepriceLastRowID: Int64
     public let pricingRepriceProcessedEvents: Int
     public let pricingRepriceTotalEvents: Int
@@ -491,6 +525,15 @@ public struct UsageDiagnosticsDTO: Codable, Sendable {
     public let parserRebuildProcessedSources: Int
     public let parserRebuildTotalSources: Int
     public let skippedNonRolloutJSONLCount: Int
+    public let pendingSourceCount: Int
+    public let missingSourceCount: Int
+    public let legacyAggregateSessionCount: Int
+    public let legacyAggregateEventCount: Int
+    public let legacyAggregateTokens: Int64
+    public let legacyAggregateCost: MoneyNanoUSD
+    public let timestampConflictCount: Int
+    public let pendingDeletionJournalCount: Int
+    public let rollbackRequiredDeletionJournalCount: Int
 
     public init(
         sourcesDiscovered: Int = 0,
@@ -515,6 +558,7 @@ public struct UsageDiagnosticsDTO: Codable, Sendable {
         invariantViolationCount: Int = 0,
         pricingRepriceGeneration: Int64 = 0,
         pricingRepriceStatus: String = "completed",
+        pricingMigrationState: PricingMigrationState = .fullyCurrent,
         pricingRepriceLastRowID: Int64 = 0,
         pricingRepriceProcessedEvents: Int = 0,
         pricingRepriceTotalEvents: Int = 0,
@@ -524,7 +568,16 @@ public struct UsageDiagnosticsDTO: Codable, Sendable {
         parserRebuildGeneration: Int64 = 0,
         parserRebuildProcessedSources: Int = 0,
         parserRebuildTotalSources: Int = 0,
-        skippedNonRolloutJSONLCount: Int = 0
+        skippedNonRolloutJSONLCount: Int = 0,
+        pendingSourceCount: Int = 0,
+        missingSourceCount: Int = 0,
+        legacyAggregateSessionCount: Int = 0,
+        legacyAggregateEventCount: Int = 0,
+        legacyAggregateTokens: Int64 = 0,
+        legacyAggregateCost: MoneyNanoUSD = .zero,
+        timestampConflictCount: Int = 0,
+        pendingDeletionJournalCount: Int = 0,
+        rollbackRequiredDeletionJournalCount: Int = 0
     ) {
         self.sourcesDiscovered = sourcesDiscovered
         self.sourcesIndexed = sourcesIndexed
@@ -548,6 +601,7 @@ public struct UsageDiagnosticsDTO: Codable, Sendable {
         self.invariantViolationCount = invariantViolationCount
         self.pricingRepriceGeneration = pricingRepriceGeneration
         self.pricingRepriceStatus = pricingRepriceStatus
+        self.pricingMigrationState = pricingMigrationState
         self.pricingRepriceLastRowID = pricingRepriceLastRowID
         self.pricingRepriceProcessedEvents = pricingRepriceProcessedEvents
         self.pricingRepriceTotalEvents = pricingRepriceTotalEvents
@@ -558,6 +612,109 @@ public struct UsageDiagnosticsDTO: Codable, Sendable {
         self.parserRebuildProcessedSources = parserRebuildProcessedSources
         self.parserRebuildTotalSources = parserRebuildTotalSources
         self.skippedNonRolloutJSONLCount = skippedNonRolloutJSONLCount
+        self.pendingSourceCount = pendingSourceCount
+        self.missingSourceCount = missingSourceCount
+        self.legacyAggregateSessionCount = legacyAggregateSessionCount
+        self.legacyAggregateEventCount = legacyAggregateEventCount
+        self.legacyAggregateTokens = legacyAggregateTokens
+        self.legacyAggregateCost = legacyAggregateCost
+        self.timestampConflictCount = timestampConflictCount
+        self.pendingDeletionJournalCount = pendingDeletionJournalCount
+        self.rollbackRequiredDeletionJournalCount = rollbackRequiredDeletionJournalCount
+    }
+}
+
+// MARK: - 缺失来源清理预览
+public struct MissingSourceCleanupItemDTO: Identifiable, Hashable, Codable, Sendable {
+    public var id: String { sourcePath }
+
+    public let sourcePath: String
+    public let relativePath: String
+    public let bucket: SessionBucket
+    public let sessionCount: Int
+    public let totalTokens: Int64
+    public let estimatedCost: MoneyNanoUSD
+    public let status: String
+
+    public init(
+        sourcePath: String,
+        relativePath: String,
+        bucket: SessionBucket,
+        sessionCount: Int,
+        totalTokens: Int64,
+        estimatedCost: MoneyNanoUSD,
+        status: String
+    ) {
+        self.sourcePath = sourcePath
+        self.relativePath = relativePath
+        self.bucket = bucket
+        self.sessionCount = sessionCount
+        self.totalTokens = totalTokens
+        self.estimatedCost = estimatedCost
+        self.status = status
+    }
+}
+
+public struct MissingSourceCleanupPreviewDTO: Hashable, Codable, Sendable {
+    public let previewId: String
+    public let generatedAt: Date
+    public let items: [MissingSourceCleanupItemDTO]
+    public let totalSessions: Int
+    public let totalTokens: Int64
+    public let estimatedCost: MoneyNanoUSD
+
+    public init(
+        previewId: String,
+        generatedAt: Date = Date(),
+        items: [MissingSourceCleanupItemDTO],
+        totalSessions: Int,
+        totalTokens: Int64,
+        estimatedCost: MoneyNanoUSD
+    ) {
+        self.previewId = previewId
+        self.generatedAt = generatedAt
+        self.items = items
+        self.totalSessions = totalSessions
+        self.totalTokens = totalTokens
+        self.estimatedCost = estimatedCost
+    }
+}
+
+public struct MissingSourceCleanupResultDTO: Hashable, Codable, Sendable {
+    public let sourcesRemoved: Int
+    public let sessionsRemoved: Int
+    public let tokensRemoved: Int64
+    public let estimatedCostRemoved: MoneyNanoUSD
+
+    public init(
+        sourcesRemoved: Int,
+        sessionsRemoved: Int,
+        tokensRemoved: Int64,
+        estimatedCostRemoved: MoneyNanoUSD
+    ) {
+        self.sourcesRemoved = sourcesRemoved
+        self.sessionsRemoved = sessionsRemoved
+        self.tokensRemoved = tokensRemoved
+        self.estimatedCostRemoved = estimatedCostRemoved
+    }
+}
+
+public struct SessionDeletionRecoverySummary: Hashable, Codable, Sendable {
+    public let finalizedCount: Int
+    public let rolledBackCount: Int
+    public let rollbackRequiredCount: Int
+    public let message: String?
+
+    public init(
+        finalizedCount: Int = 0,
+        rolledBackCount: Int = 0,
+        rollbackRequiredCount: Int = 0,
+        message: String? = nil
+    ) {
+        self.finalizedCount = finalizedCount
+        self.rolledBackCount = rolledBackCount
+        self.rollbackRequiredCount = rollbackRequiredCount
+        self.message = message
     }
 }
 

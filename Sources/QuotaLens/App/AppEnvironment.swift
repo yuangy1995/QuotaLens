@@ -72,33 +72,50 @@ public final class AppEnvironment: ObservableObject {
                 let recoveryDatabase = try SQLiteDatabase(path: fallbackPath)
                 try SchemaMigrations.migrate(database: recoveryDatabase)
                 initializedDatabase = recoveryDatabase
-                initializationWarning = L10n.format(
-                    "Local database initialization failed, using a temporary recovery database: %@",
-                    zhHans: "本地数据库初始化失败，已使用临时恢复数据库：%@",
-                    error.localizedDescription
+                initializationWarning = L10n.text(
+                    "暂时无法读取原有用量记录，本次只显示临时记录。",
+                    "Existing usage records cannot be read right now, so this launch will only show temporary records."
                 )
-            } catch let recoveryError {
+            } catch {
                 do {
                     let memoryDatabase = try SQLiteDatabase(path: ":memory:")
                     try SchemaMigrations.migrate(database: memoryDatabase)
                     initializedDatabase = memoryDatabase
-                    initializationWarning = L10n.format(
-                        "Persistent storage is unavailable; using an in-memory recovery database for this launch. Primary: %@ · Recovery: %@",
-                        zhHans: "持久化存储不可用；本次启动已使用内存恢复数据库。主库：%@ · 恢复库：%@",
-                        error.localizedDescription,
-                        recoveryError.localizedDescription
+                    initializationWarning = L10n.text(
+                        "本地记录本次暂时不能保存，请稍后重试。",
+                        "Local records cannot be saved for this launch. Try again later."
                     )
-                } catch let memoryError {
+                } catch {
                     initializedDatabase = SQLiteDatabase.disconnectedFallback()
-                    initializationWarning = L10n.format(
-                        "Local storage is unavailable; quota monitoring remains available without persistence. Primary: %@ · Recovery: %@ · Memory: %@",
-                        zhHans: "本地存储不可用；额度监控仍可继续，但本次不会持久化。主库：%@ · 恢复库：%@ · 内存库：%@",
-                        error.localizedDescription,
-                        recoveryError.localizedDescription,
-                        memoryError.localizedDescription
+                    initializationWarning = L10n.text(
+                        "本地存储暂时不可用，额度监控仍可运行，但本次不会保存本地用量记录。",
+                        "Local storage is temporarily unavailable. Quota monitoring can still run, but local usage records will not be saved for this launch."
                     )
                 }
             }
+        }
+        do {
+            let recovery = try UsageAnalyticsRepository(
+                database: initializedDatabase
+            ).recoverIncompleteSessionDeletions(
+                historyRootURL: CodexHistoryRootResolver.resolveRootURL()
+            )
+            if let message = recovery.message,
+               recovery.finalizedCount > 0
+                || recovery.rolledBackCount > 0
+                || recovery.rollbackRequiredCount > 0 {
+                initializationWarning = [initializationWarning, message]
+                    .compactMap { $0 }
+                    .joined(separator: "\n")
+            }
+        } catch {
+            let message = (error as? SessionDeletionError)?.errorDescription ?? L10n.text(
+                "上一次删除尚未完全处理；为避免数据不一致，本地用量更新已暂停。",
+                "A previous deletion is not fully resolved. Local usage updates are paused to avoid inconsistent data."
+            )
+            initializationWarning = [initializationWarning, message]
+                .compactMap { $0 }
+                .joined(separator: "\n")
         }
         self.database = initializedDatabase
         self.state.appInitializationWarningText = initializationWarning
@@ -298,7 +315,10 @@ public final class AppEnvironment: ObservableObject {
             refreshLoginItemState()
         } catch {
             refreshLoginItemState()
-            state.launchAtLoginStatusText = L10n.format("Failed: %@", zhHans: "设置失败：%@", error.localizedDescription)
+            state.launchAtLoginStatusText = L10n.text(
+                "设置失败，请检查系统权限后重试。",
+                "Setup failed. Check system permissions and try again."
+            )
         }
     }
 
@@ -458,7 +478,10 @@ public final class AppEnvironment: ObservableObject {
             guard isSubscriptionRequestCurrent(requestGeneration, accountKey: accountKeyAtStart) else {
                 return false
             }
-            state.markSubscriptionEntitlementUnavailable(error.localizedDescription)
+            state.markSubscriptionEntitlementUnavailable(L10n.text(
+                "订阅状态暂时无法读取，请稍后重试。",
+                "Subscription status cannot be read right now. Try again later."
+            ))
             if scheduleRetryOnFailure {
                 scheduleSubscriptionEntitlementRetry()
             }
@@ -778,7 +801,10 @@ public final class AppEnvironment: ObservableObject {
                 restoreResetCreditState(for: accountKey, snapshot: nil)
             }
             if !state.connectionStatus.isConnected {
-                state.connectionStatus = .failed(L10n.format("Quota refresh failed: %@", zhHans: "额度刷新失败：%@", error.localizedDescription))
+                state.connectionStatus = .failed(L10n.text(
+                    "额度刷新未完成，请稍后重试。",
+                    "Quota refresh did not finish. Try again later."
+                ))
             }
             if scheduleRetryOnFailure {
                 scheduleServerRecovery()
@@ -1330,6 +1356,20 @@ public final class AppEnvironment: ObservableObject {
     public func resetAllDataAndFactoryDefaults() async {
         state.isRefreshing = true
         defer { state.isRefreshing = false }
+
+        do {
+            try UsageAnalyticsRepository(database: database)
+                .assertNoIncompleteSessionDeletionJournal(
+                    historyRootURL: CodexHistoryRootResolver.resolveRootURL()
+                )
+        } catch {
+            state.appInitializationWarningText = (error as? SessionDeletionError)?.errorDescription
+                ?? L10n.text(
+                    "当前本地记录需要先完成恢复处理，暂时无法重置。",
+                    "Local records need recovery before reset can continue."
+                )
+            return
+        }
 
         // 1. 重置偏好设置 (UserDefaults)
         if let bundleID = Bundle.main.bundleIdentifier {

@@ -40,7 +40,7 @@ public final class HistoryStore: ObservableObject {
                 await loadSelectedDayDetail()
             }
         } catch {
-            self.errorMessage = error.localizedDescription
+            self.errorMessage = Self.userFacingError(error)
         }
         isLoading = false
     }
@@ -62,7 +62,7 @@ public final class HistoryStore: ObservableObject {
             guard selectedDayKey == dayKey else { return }
             selectedDayDetail = detail
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = Self.userFacingError(error)
         }
     }
 
@@ -84,8 +84,18 @@ public final class HistoryStore: ObservableObject {
             guard selectedDayKey == dayKey, let existing = selectedDayDetail else { return }
             selectedDayDetail = Self.mergeDayDetail(existing: existing, page: page)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = Self.userFacingError(error)
         }
+    }
+
+    private static func userFacingError(_ error: Error) -> String {
+        if let description = (error as? SessionDeletionError)?.errorDescription {
+            return description
+        }
+        return L10n.text(
+            "暂时无法读取本地历史记录，请稍后重试。",
+            "Local history could not be loaded right now. Try again later."
+        )
     }
 
     private static func mergeDayDetail(existing: DayDetailDTO, page: DayDetailDTO) -> DayDetailDTO {
@@ -289,7 +299,7 @@ public struct HistoryView: View {
                     )
 
                     MetricHUDTile(
-                        title: L10n.text("当日 API 等价价值 · Beta", "Day API Equivalent Value · Beta"),
+                        title: L10n.text("当日费用估算（试用）", "Day estimated cost (Beta)"),
                         value: UsageNumberFormatter.currencyUSD(day.estimatedCost),
                         caption: dayPricingCaption(day),
                         icon: "dollarsign.circle.fill",
@@ -545,18 +555,29 @@ public struct HistoryView: View {
 
     private func dayPricingCaption(_ day: DayUsageSummaryDTO) -> String {
         let totalTokens = day.tokens.canonicalTotalTokens
-        let coveredTokens = max(0, totalTokens - day.unpricedTokenCount)
+        let coveredTokens = max(0, totalTokens - day.unpricedTokenCount - day.legacyAggregateTokens)
         let ratio = totalTokens > 0 ? Double(coveredTokens) / Double(totalTokens) : 1.0
         let percentage = UsageNumberFormatter.percent(ratio * 100.0, maximumFractionDigits: 1)
         let coverage = L10n.format(
-            "Token pricing coverage %@",
-            zhHans: "Token 定价覆盖率 %@",
+            "Usage with cost estimates %@",
+            zhHans: "能估算费用的用量占比 %@",
             percentage
         )
+        let legacyText = day.legacyAggregateCost.rawValue > 0 || day.legacyAggregateTokens > 0
+            ? L10n.format(
+                "historical amount %@",
+                zhHans: "历史金额（保留原记录）%@",
+                UsageNumberFormatter.currencyUSD(day.legacyAggregateCost)
+            )
+            : nil
         guard !day.unpricedReasonCounts.isEmpty else {
-            return "\(coverage) · \(L10n.text("不是订阅账单金额", "Not a bill"))"
+            return [coverage, legacyText, L10n.text("根据公开价格估算，并非实际扣款", "Estimated from public rates, not actual charges")]
+                .compactMap { $0 }
+                .joined(separator: " · ")
         }
-        return "\(coverage) · \(day.unpricedReasonCounts.localizedSummary)"
+        return [coverage, legacyText, day.unpricedReasonCounts.localizedSummary]
+            .compactMap { $0 }
+            .joined(separator: " · ")
     }
 }
 
@@ -595,6 +616,11 @@ private struct DaySidebarRow: View {
                         Text(UsageNumberFormatter.currencyUSD(day.estimatedCost))
                             .font(.system(size: 9.5, weight: .bold, design: .monospaced))
                             .foregroundStyle(isSelected ? Color.white : emerald)
+                    }
+                    if day.legacyAggregateCost.rawValue > 0 || day.legacyAggregateTokens > 0 {
+                        Text(L10n.text("历史金额", "Historical"))
+                            .font(.system(size: 8.5, weight: .heavy, design: .monospaced))
+                            .foregroundStyle(isSelected ? Color.white.opacity(0.85) : AppTheme.accentAmber(for: colorScheme))
                     }
                 }
             }

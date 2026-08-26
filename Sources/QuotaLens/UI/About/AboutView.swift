@@ -67,7 +67,7 @@ public struct AboutView: View {
                 date: "2026-08-25",
                 changes: [
                     L10n.text("新增下载更新时实时显示下载进度条与百分比（从 0% 起始终保持滚动条展示）", "Enhanced in-app update downloading with persistent progress bar and percentage tracker from 0% onwards"),
-                    L10n.text("在设置「存储与诊断」新增「一键重置 App 与出厂设置」功能，支持安全清除本地数据、还原默认配置并自动重新索引", "Added one-click Factory Reset & Rescan in Settings storage pane with safety confirmation dialog"),
+                    L10n.text("在设置「存储与诊断」新增「一键重置 App 与出厂设置」功能，支持安全清除本地数据、还原默认配置并重新读取记录", "Added one-click Factory Reset & Read Again in Settings storage pane with safety confirmation dialog"),
                     L10n.text("彻底解决升级弹窗更新日志显示 HTML 标签乱码问题，并支持条目全语言多维度本地化翻译", "Fixed update dialog changelog HTML tag artifacts with automated multi-language localization"),
                     L10n.text("全面完善 10 种语言的多语言本地化翻译字典", "Comprehensive localized translation coverage across 10 supported languages")
                 ]
@@ -77,7 +77,7 @@ public struct AboutView: View {
                 version: "v1.0.11",
                 date: "2026-08-25",
                 changes: [
-                    L10n.text("全新重构「本地索引与数据诊断」卡片排版为现代化自适应 4 列网格，重点突出 12 项关键诊断指标并强化健康度感知", "Redesigned local index & diagnostics layout into a modern adaptive 4-column grid highlighting 12 key health metrics"),
+                    L10n.text("全新重构「本地记录与问题报告」卡片排版为现代化自适应 4 列网格，重点突出 12 项关键健康指标", "Redesigned local records and report layout into a modern adaptive 4-column grid highlighting 12 key health metrics"),
                     L10n.text("优化升级弹窗视觉细节，移除弹窗顶部横条，呈现纯净圆角卡片质感", "Polished update dialog visual aesthetics by removing top gradient bar for a sleek border design"),
                     L10n.text("修复更新日志在多语言环境下的刷新机制，所有非简体中文语言点击刷新均可拉取并自动本地化翻译", "Fixed changelog refresh for all supported non-Simplified-Chinese languages with instant localized translation"),
                     L10n.text("加固重置卡数据解析与容错逻辑，兼容多种服务端命名格式并增加空明细智能兜底", "Hardened reset card decoding resilience against varied payload formats with smart empty-state fallbacks")
@@ -91,7 +91,7 @@ public struct AboutView: View {
                     L10n.text("全新重构设置界面为 5 大分类 Tab 架构（常规外观、账号同步、悬浮挂件、Codex 环境、存储诊断），告别冗长滚动", "Restructured Settings view into a 5-tab layout (General, Account, Overlay, Codex, Storage) with persistent state and zero long-scrolling"),
                     L10n.text("升级弹窗全新高颜值重构，支持版本跃迁对比、安装包体积展示（如 📦 7.3 MB）与更新日志独立滚动面板", "Redesigned software update dialog with version transition badges, download package size, and scrollable release notes panel"),
                     L10n.text("新增模型推理级别（Reasoning Effort）深度解析，并在历史明细与会话详情中以高对比度渐变徽章醒目展示", "Parsed model reasoning effort levels from Codex sessions and displayed high-contrast reasoning badges in history and session views"),
-                    L10n.text("会话列表支持按项目（代码工作区）聚合分组与过滤筛选，支持一键折叠展开并统计项目消耗", "Added project-based session grouping, filtering chips, and expand/collapse support with aggregate tokens and cost analytics"),
+                    L10n.text("会话列表支持按项目（代码工作区）分组与过滤筛选，支持一键折叠展开并统计项目用量", "Added project-based session grouping, filtering chips, and expand/collapse support with project usage totals"),
                     L10n.text("新增 Prompt 缓存命中率与节约效益分析，并在主看板增加配额耗尽与重置卡智能建议横幅", "Added prompt cache hit rate efficiency analysis and smart suggestion banners for quota exhaustion and reset cards"),
                     L10n.text("优化当日无活动时的友好空状态展示，精简掉默认的 DEFAULT/STANDARD 服务层级标签", "Refined empty-day activity cards with user-friendly copy and removed redundant default service tier badges")
                 ]
@@ -101,7 +101,7 @@ public struct AboutView: View {
                 version: "v1.0.9",
                 date: "2026-08-25",
                 changes: [
-                    L10n.text("新增会话删除与安全清理能力，支持源文件移至废纸篓并自动级联清理本地索引与统计数据", "Session deletion with trash-move safety and automatic cascade cleanup of derived analytics"),
+                    L10n.text("新增会话删除与安全清理能力，支持将 Codex 本地记录移至废纸篓，并同步清理 QuotaLens 中的相关统计", "Session deletion with Trash support and matching cleanup of related QuotaLens summaries"),
                     L10n.text("新增配额耗尽（0% 配额）预警与专属状态展示，并在配额耗尽时智能静默预测", "Dedicated quota exhausted state handling and intelligent forecast suppression"),
                     L10n.text("全面升级全息悬浮窗交互，支持磁吸贴边、自由拖拽定位与置顶固定状态记忆", "Enhanced floating HUD overlay with magnetic edge snapping, dragging, and pin persistence"),
                     L10n.text("用量分析看板与年度热力图新增鼠标跟随悬浮详情卡片，并大幅优化历史全天汇总查询性能", "Pointer-following detail cards for usage charts and heatmap with faster compact summary queries"),
@@ -113,7 +113,7 @@ public struct AboutView: View {
                 version: "v1.0.8",
                 date: "2026-08-25",
                 changes: [
-                    L10n.text("新增 Codex 本地历史用量与 Rollout 审计日志实时追踪解析引擎，支持秒级流式索引", "Real-time parsing and streaming index for Codex local history & rollout audit logs"),
+                    L10n.text("新增 Codex 本地历史用量读取，支持快速更新 Token 统计与费用估算", "Added local Codex history reading for fast token summaries and estimated cost"),
                     L10n.text("新增配额消耗预测引擎（基于线性投影与历史会话特征预估周期耗尽时间与建议节奏）", "Quota consumption forecast engine with linear projection and runout estimation"),
                     L10n.text("新增「会话明细」与「历史用量」分析看板，支持按会话、模型、分支多维度聚合统计", "Interactive session breakdown and usage analytics dashboard"),
                     L10n.text("新增独立全息悬浮置顶窗与菜单栏交互增强，实时监控用量与重置倒计时", "Floating HUD overlay window and enhanced menu bar interactions"),
@@ -156,7 +156,7 @@ public struct AboutView: View {
                 version: "v1.0.4",
                 date: "2026-08-24",
                 changes: [
-                    L10n.text("移除构建次数显示，并去掉概览与设置页面的分块序号徽章", "Removed build count and section number tags across overview and settings"),
+                    L10n.text("简化版本信息与页面标记，让界面更清爽", "Simplified version information and page labels for a cleaner interface"),
                     L10n.text("更新日志与开源协议采用应用内可滚动弹窗展示，并支持一键复制", "In-app scrollable dialogs for changelog and license with one-click copy support"),
                     L10n.text("进一步优化全息卡片间距与界面精致度", "Refined card spacing and visual aesthetics")
                 ]
@@ -176,7 +176,7 @@ public struct AboutView: View {
                 version: "v1.0.2",
                 date: "2026-08-24",
                 changes: [
-                    L10n.text("修复 Sparkle 在线增量升级检测与版本比对流程", "Fixed Sparkle in-app delta update checking and version comparison"),
+                    L10n.text("修复在线升级检测与版本比对流程", "Fixed in-app update checking and version comparison"),
                     L10n.text("统一语言与偏好设置图标", "Unified language and preference setting icons")
                 ]
             ),
@@ -186,7 +186,7 @@ public struct AboutView: View {
                 date: "2026-08-24",
                 changes: [
                     L10n.text("新增轻量菜单栏模式与 Dock 隐藏支持", "Added menu bar compact mode and optional hidden Dock icon"),
-                    L10n.text("优化 ChatGPT 与 Codex 额度快照解析器", "Improved ChatGPT and Codex quota snapshot parsers")
+                    L10n.text("优化 ChatGPT 与 Codex 额度快照读取", "Improved ChatGPT and Codex quota snapshot reading")
                 ]
             ),
             ChangelogEntry(
@@ -249,7 +249,7 @@ public struct AboutView: View {
             FeatureItem(
                 icon: "arrow.triangle.2.circlepath.circle.fill",
                 title: L10n.text("无缝在线热更新", "Seamless In-App Updates"),
-                description: L10n.text("基于 Sparkle 框架的一键增量在线检测与平滑升级", "High-security delta updates and smooth installations powered by Sparkle."),
+                description: L10n.text("支持一键在线检测与平滑升级", "Supports one-click update checks and smooth installations."),
                 tintColor: cyan
             )
         ]
@@ -658,7 +658,7 @@ public struct AboutView: View {
     // MARK: - 底部版权与环境说明
     private var footerInfo: some View {
         VStack(spacing: 5) {
-            Text(L10n.text("专为 macOS 打造 · 基于 SwiftUI 构建", "Designed for macOS · Powered by SwiftUI"))
+            Text(L10n.text("专为 macOS 打造", "Designed for macOS"))
                 .font(.system(size: 10.5, weight: .medium))
                 .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
 

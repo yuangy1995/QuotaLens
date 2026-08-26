@@ -50,6 +50,28 @@ public actor UsageQueryFacade {
         try repository.deleteSession(sessionId: sessionId)
     }
 
+    public func previewMissingSourceCleanup(
+        historyRootURL: URL? = nil
+    ) throws -> MissingSourceCleanupPreviewDTO {
+        try repository.previewMissingSourceCleanup(historyRootURL: historyRootURL)
+    }
+
+    public func cleanupMissingSourceIndexes(
+        previewId: String,
+        historyRootURL: URL? = nil
+    ) throws -> MissingSourceCleanupResultDTO {
+        try repository.cleanupMissingSourceIndexes(
+            previewId: previewId,
+            historyRootURL: historyRootURL
+        )
+    }
+
+    public func recoverIncompleteSessionDeletions(
+        historyRootURL: URL? = nil
+    ) throws -> SessionDeletionRecoverySummary {
+        try repository.recoverIncompleteSessionDeletions(historyRootURL: historyRootURL)
+    }
+
     public func getHistoryDays(
         daysCount: Int = 30,
         calendar: Calendar = UsageDayBucketer.calendar(),

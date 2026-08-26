@@ -232,6 +232,32 @@ public final class SQLiteDatabase: @unchecked Sendable {
         return try body(stmt)
     }
 
+    /// 对同一条写入 SQL 复用预编译语句，避免大批量导入/重建时反复 prepare。
+    public func executePreparedUpdates<Value>(
+        sql: String,
+        values: [Value],
+        bindings: (Value) throws -> [Any?]
+    ) throws {
+        guard !values.isEmpty else { return }
+        try withPreparedStatement(sql: sql) { statement in
+            for value in values {
+                try bindParameters(stmt: statement, bindings: try bindings(value))
+                let stepResult = sqlite3_step(statement)
+                guard stepResult == SQLITE_DONE || stepResult == SQLITE_ROW else {
+                    let message = dbPointer.map { String(cString: sqlite3_errmsg($0)) }
+                        ?? "SQL 执行失败: \(stepResult)"
+                    throw NSError(
+                        domain: "SQLiteDatabase",
+                        code: Int(stepResult),
+                        userInfo: [NSLocalizedDescriptionKey: "Step 失败: \(message)"]
+                    )
+                }
+                sqlite3_reset(statement)
+                sqlite3_clear_bindings(statement)
+            }
+        }
+    }
+
     /// 使用 SQLite Online Backup API 备份数据库到指定目标
     public func backup(to destinationURL: URL) throws {
         lock.lock()

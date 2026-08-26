@@ -57,6 +57,11 @@ public struct SettingsView: View {
     @State private var autoDetectedBinaryResult: CodexBinaryLookupResult?
     @State private var usageDiagnostics: UsageDiagnosticsDTO?
     @State private var diagnosticsExportStatus: String?
+    @State private var missingSourceCleanupStatus: String?
+    @State private var missingSourceCleanupPreview: MissingSourceCleanupPreviewDTO?
+    @State private var showMissingSourceCleanupDialog: Bool = false
+    @State private var isPreparingMissingSourceCleanup: Bool = false
+    @State private var isCleaningMissingSources: Bool = false
     @State private var showResetConfirmDialog: Bool = false
     @State private var isResettingApp: Bool = false
     @ObservedObject private var overlayController = CodexUsageOverlayController.shared
@@ -106,7 +111,7 @@ public struct SettingsView: View {
             isPresented: $showResetConfirmDialog,
             titleVisibility: .visible
         ) {
-            Button(L10n.text("确认重置并重新索引", "Reset and Rescan"), role: .destructive) {
+            Button(L10n.text("确认重置并重新读取", "Reset and Read Again"), role: .destructive) {
                 isResettingApp = true
                 Task {
                     await env.resetAllDataAndFactoryDefaults()
@@ -115,7 +120,19 @@ public struct SettingsView: View {
             }
             Button(L10n.text("取消", "Cancel"), role: .cancel) {}
         } message: {
-            Text(L10n.text("此操作将清除所有本地索引与个性化设置，并重新扫描本地 Codex 数据。此操作不可撤销。", "This will clear all local index data and personalized settings, and rescan local Codex history. This cannot be undone."))
+            Text(L10n.text("此操作将清除所有本地用量记录与个性化设置，并重新读取本地 Codex 数据。此操作不可撤销。", "This will clear all local usage records and personalized settings, then read local Codex data again. This cannot be undone."))
+        }
+        .confirmationDialog(
+            L10n.text("清理本地记录？", "Clean Local Records?"),
+            isPresented: $showMissingSourceCleanupDialog,
+            titleVisibility: .visible
+        ) {
+            Button(L10n.text("确认清理本地记录", "Clean Local Records"), role: .destructive) {
+                performMissingSourceCleanup()
+            }
+            Button(L10n.text("取消", "Cancel"), role: .cancel) {}
+        } message: {
+            Text(missingSourceCleanupPreviewText)
         }
     }
 
@@ -237,7 +254,7 @@ public struct SettingsView: View {
                         Text(L10n.text("启用本地 Codex 用量分析", "Enable Local Codex Analytics"))
                             .font(.system(size: 13, weight: .bold))
                             .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
-                        Text(L10n.text("从本地 ~/.codex 解析会话日志，提供 Token 统计与 API 等价价值 · Beta", "Parses local session logs for tokens and API equivalent value · Beta"))
+                        Text(L10n.text("读取本机保存的会话记录，提供 Token 统计与费用估算（试用）", "Reads locally saved session records for tokens and estimated cost (Beta)"))
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
                     }
@@ -359,39 +376,71 @@ public struct SettingsView: View {
         return VStack(alignment: .leading, spacing: 14) {
             HStack {
                 CyberSectionHeader(
-                    title: L10n.text("本地索引与数据诊断", "Local Index & Diagnostics"),
+                    title: L10n.text("本地记录与问题报告", "Local Records & Reports"),
                     icon: "stethoscope"
                 )
 
                 Spacer()
 
-                Button {
-                    exportUsageDiagnostics(diagnostics)
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "square.and.arrow.up")
-                            .font(.system(size: 10, weight: .bold))
-                        Text(L10n.text("导出诊断 JSON", "Export Diagnostics JSON"))
-                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                HStack(spacing: 8) {
+                    Button {
+                        prepareMissingSourceCleanup()
+                    } label: {
+                        HStack(spacing: 5) {
+                            if isPreparingMissingSourceCleanup || isCleaningMissingSources {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Image(systemName: "tray.and.arrow.down.fill")
+                                    .font(.system(size: 10, weight: .bold))
+                            }
+                            Text(L10n.text("预览可清理记录", "Preview Cleanup"))
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(amber.opacity(colorScheme == .dark ? 0.16 : 0.12), in: RoundedRectangle(cornerRadius: 6))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .strokeBorder(amber.opacity(0.4), lineWidth: 0.8)
+                        )
+                        .foregroundStyle(amber)
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(cyan.opacity(colorScheme == .dark ? 0.16 : 0.12), in: RoundedRectangle(cornerRadius: 6))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .strokeBorder(cyan.opacity(0.4), lineWidth: 0.8)
-                    )
-                    .foregroundStyle(cyan)
+                    .buttonStyle(.plain)
+                    .disabled(diagnostics.missingSourceCount == 0 || isPreparingMissingSourceCleanup || isCleaningMissingSources)
+                    .help(L10n.text(
+                        "仅对已确认不存在的记录提供预览清理；权限或读取异常会保留记录。执行前会重新校验预览。",
+                        "Only records confirmed as no longer present can be previewed for cleanup. Records with permission or read errors are kept, and the preview is rechecked before cleanup."
+                    ))
+
+                    Button {
+                        exportUsageDiagnostics(diagnostics)
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "square.and.arrow.up")
+                                .font(.system(size: 10, weight: .bold))
+                            Text(L10n.text("导出问题报告", "Export Report"))
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(cyan.opacity(colorScheme == .dark ? 0.16 : 0.12), in: RoundedRectangle(cornerRadius: 6))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .strokeBorder(cyan.opacity(0.4), lineWidth: 0.8)
+                        )
+                        .foregroundStyle(cyan)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
 
             CyberDivider()
 
             LazyVGrid(columns: columns, spacing: 10) {
-                // Row 1: 索引与引擎
+                // Row 1: 用户可理解的读取与费用状态
                 DiagnosticMetricTile(
-                    title: L10n.text("文件索引", "Indexed Files"),
+                    title: L10n.text("本地记录", "Local Records"),
                     value: "\(diagnostics.sourcesIndexed) / \(diagnostics.sourcesDiscovered)",
                     icon: "folder.fill",
                     accentColor: cyan,
@@ -401,7 +450,7 @@ public struct SettingsView: View {
                 )
 
                 DiagnosticMetricTile(
-                    title: L10n.text("解析事件", "Total Events"),
+                    title: L10n.text("用量记录", "Usage Records"),
                     value: totalEventsFormatted,
                     icon: "bolt.fill",
                     accentColor: blue,
@@ -409,39 +458,56 @@ public struct SettingsView: View {
                 )
 
                 DiagnosticMetricTile(
-                    title: L10n.text("解析器版本", "Parser Version"),
-                    value: "v\(diagnostics.parserVersion)",
+                    title: L10n.text("数据读取", "Data Reading"),
+                    value: L10n.text("已启用", "On"),
                     icon: "gearshape.2.fill",
                     accentColor: purple,
-                    statusBadge: "ACTIVE",
+                    statusBadge: L10n.text("就绪", "Ready"),
                     colorScheme: colorScheme
                 )
 
                 DiagnosticMetricTile(
-                    title: L10n.text("价格目录", "Pricing Catalog"),
-                    value: diagnostics.activePricingCatalogVersion ?? BundledPricingCatalog.currentVersion,
+                    title: L10n.text("费用估算", "Cost Estimate"),
+                    value: L10n.text("公开价格", "Public rates"),
                     icon: "tag.fill",
                     accentColor: amber,
                     colorScheme: colorScheme
                 )
 
                 DiagnosticMetricTile(
-                    title: L10n.text("重计价进度", "Reprice Progress"),
-                    value: "\(diagnostics.pricingRepriceProcessedEvents) / \(diagnostics.pricingRepriceTotalEvents)",
+                    title: L10n.text("费用更新", "Cost Update"),
+                    value: diagnostics.pricingMigrationState.localizedDescription,
+                    icon: "arrow.triangle.branch",
+                    accentColor: diagnostics.pricingMigrationState == .fullyCurrent ? emerald : amber,
+                    statusBadge: pricingUpdateBadge(diagnostics),
+                    isSuccess: diagnostics.pricingMigrationState == .fullyCurrent,
+                    isWarning: diagnostics.pricingMigrationState != .fullyCurrent,
+                    colorScheme: colorScheme
+                )
+
+                DiagnosticMetricTile(
+                    title: L10n.text("费用更新进度", "Cost Update Progress"),
+                    value: progressText(
+                        processed: diagnostics.pricingRepriceProcessedEvents,
+                        total: diagnostics.pricingRepriceTotalEvents
+                    ),
                     icon: "arrow.triangle.2.circlepath.circle.fill",
                     accentColor: purple,
-                    statusBadge: diagnostics.pricingRepriceStatus.uppercased(),
+                    statusBadge: friendlyStatusLabel(diagnostics.pricingRepriceStatus),
                     isSuccess: diagnostics.pricingRepriceStatus == "completed",
                     isWarning: ["failed", "pending"].contains(diagnostics.pricingRepriceStatus),
                     colorScheme: colorScheme
                 )
 
                 DiagnosticMetricTile(
-                    title: L10n.text("解析器重建", "Parser Rebuild"),
-                    value: "\(diagnostics.parserRebuildProcessedSources) / \(diagnostics.parserRebuildTotalSources)",
+                    title: L10n.text("记录更新", "Record Update"),
+                    value: progressText(
+                        processed: diagnostics.parserRebuildProcessedSources,
+                        total: diagnostics.parserRebuildTotalSources
+                    ),
                     icon: "arrow.triangle.2.circlepath",
                     accentColor: ["failed", "pending"].contains(diagnostics.parserRebuildStatus) ? amber : cyan,
-                    statusBadge: diagnostics.parserRebuildStatus.uppercased(),
+                    statusBadge: friendlyStatusLabel(diagnostics.parserRebuildStatus),
                     isSuccess: diagnostics.parserRebuildStatus == "completed",
                     isWarning: ["failed", "pending"].contains(diagnostics.parserRebuildStatus),
                     colorScheme: colorScheme
@@ -449,18 +515,18 @@ public struct SettingsView: View {
 
                 // Row 2: 完整性与健康
                 DiagnosticMetricTile(
-                    title: L10n.text("SQLite 完整性", "SQLite Integrity"),
-                    value: diagnostics.integrityCheckPassed ? "OK" : L10n.text("异常", "Failed"),
+                    title: L10n.text("数据检查", "Data Check"),
+                    value: diagnostics.integrityCheckPassed ? L10n.text("通过", "Passed") : L10n.text("需要处理", "Needs attention"),
                     icon: "checkmark.shield.fill",
                     accentColor: emerald,
-                    statusBadge: diagnostics.integrityCheckPassed ? "PASSED" : "FAILED",
+                    statusBadge: diagnostics.integrityCheckPassed ? L10n.text("正常", "OK") : L10n.text("异常", "Issue"),
                     isSuccess: diagnostics.integrityCheckPassed,
                     isWarning: !diagnostics.integrityCheckPassed,
                     colorScheme: colorScheme
                 )
 
                 DiagnosticMetricTile(
-                    title: L10n.text("一致性违规", "Invariant Issues"),
+                    title: L10n.text("一致性检查", "Consistency Check"),
                     value: "\(violations)",
                     icon: "scalemass.fill",
                     accentColor: violations == 0 ? emerald : amber,
@@ -471,7 +537,7 @@ public struct SettingsView: View {
                 )
 
                 DiagnosticMetricTile(
-                    title: L10n.text("重建源文件", "Rebuilt Sources"),
+                    title: L10n.text("已恢复记录", "Restored Records"),
                     value: "\(diagnostics.rebuiltSourceCount)",
                     icon: "arrow.triangle.2.circlepath",
                     accentColor: cyan,
@@ -479,11 +545,34 @@ public struct SettingsView: View {
                 )
 
                 DiagnosticMetricTile(
-                    title: L10n.text("未计价事件", "Unpriced Events"),
+                    title: L10n.text("无法估算费用", "Cannot Estimate"),
                     value: "\(diagnostics.unpricedEvents)",
                     icon: "dollarsign.circle",
                     accentColor: diagnostics.unpricedEvents == 0 ? emerald : amber,
                     isWarning: diagnostics.unpricedEvents > 0,
+                    colorScheme: colorScheme
+                )
+
+                DiagnosticMetricTile(
+                    title: L10n.text("暂不可读记录", "Unreadable Records"),
+                    value: "\(diagnostics.missingSourceCount)",
+                    icon: "externaldrive.badge.questionmark",
+                    accentColor: diagnostics.missingSourceCount == 0 ? emerald : amber,
+                    statusBadge: diagnostics.pendingSourceCount > 0 ? L10n.text("待处理", "Pending") : nil,
+                    isSuccess: diagnostics.missingSourceCount == 0,
+                    isWarning: diagnostics.missingSourceCount > 0 || diagnostics.pendingSourceCount > 0,
+                    colorScheme: colorScheme
+                )
+
+                DiagnosticMetricTile(
+                    title: L10n.text("历史金额", "Historical Amounts"),
+                    value: diagnostics.legacyAggregateCost.rawValue > 0
+                        ? UsageNumberFormatter.currencyUSD(diagnostics.legacyAggregateCost)
+                        : UsageNumberFormatter.compactTokenCount(diagnostics.legacyAggregateTokens),
+                    icon: "archivebox.fill",
+                    accentColor: diagnostics.legacyAggregateEventCount == 0 ? blue : amber,
+                    statusBadge: diagnostics.legacyAggregateEventCount == 0 ? nil : "\(diagnostics.legacyAggregateEventCount)",
+                    isWarning: diagnostics.legacyAggregateEventCount > 0,
                     colorScheme: colorScheme
                 )
 
@@ -498,7 +587,7 @@ public struct SettingsView: View {
                 )
 
                 DiagnosticMetricTile(
-                    title: L10n.text("时间戳兜底", "Timestamp Fallbacks"),
+                    title: L10n.text("时间待确认", "Time Needs Review"),
                     value: "\(diagnostics.fallbackTimestampEvents)",
                     icon: "clock.badge.questionmark",
                     accentColor: diagnostics.fallbackTimestampEvents == 0 ? blue : amber,
@@ -507,7 +596,7 @@ public struct SettingsView: View {
                 )
 
                 DiagnosticMetricTile(
-                    title: L10n.text("损坏行记录", "Malformed Lines"),
+                    title: L10n.text("无法读取的记录", "Unreadable Entries"),
                     value: "\(diagnostics.malformedLineCount)",
                     icon: "exclamationmark.triangle.fill",
                     accentColor: diagnostics.malformedLineCount == 0 ? emerald : amber,
@@ -516,13 +605,68 @@ public struct SettingsView: View {
                 )
 
                 DiagnosticMetricTile(
-                    title: L10n.text("未解析时间", "Unresolved Time"),
+                    title: L10n.text("缺少时间", "Missing Time"),
                     value: "\(diagnostics.unresolvedTimestampCount)",
                     icon: "hourglass.badge.plus",
                     accentColor: diagnostics.unresolvedTimestampCount == 0 ? blue : amber,
                     isWarning: diagnostics.unresolvedTimestampCount > 0,
                     colorScheme: colorScheme
                 )
+
+                DiagnosticMetricTile(
+                    title: L10n.text("时间不一致", "Time Mismatch"),
+                    value: "\(diagnostics.timestampConflictCount)",
+                    icon: "clock.badge.exclamationmark",
+                    accentColor: diagnostics.timestampConflictCount == 0 ? blue : amber,
+                    isWarning: diagnostics.timestampConflictCount > 0,
+                    colorScheme: colorScheme
+                )
+
+                DiagnosticMetricTile(
+                    title: L10n.text("删除恢复", "Deletion Recovery"),
+                    value: "\(diagnostics.pendingDeletionJournalCount)",
+                    icon: "arrow.uturn.backward.circle.fill",
+                    accentColor: diagnostics.pendingDeletionJournalCount == 0
+                        && diagnostics.rollbackRequiredDeletionJournalCount == 0 ? emerald : amber,
+                    statusBadge: diagnostics.rollbackRequiredDeletionJournalCount > 0
+                        ? L10n.text("需处理", "Manual") : nil,
+                    isSuccess: diagnostics.pendingDeletionJournalCount == 0
+                        && diagnostics.rollbackRequiredDeletionJournalCount == 0,
+                    isWarning: diagnostics.pendingDeletionJournalCount > 0
+                        || diagnostics.rollbackRequiredDeletionJournalCount > 0,
+                    colorScheme: colorScheme
+                )
+            }
+
+            HStack(alignment: .top, spacing: 6) {
+                Image(systemName: diagnostics.missingSourceCount == 0 ? "checkmark.circle.fill" : "info.circle.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(diagnostics.missingSourceCount == 0 ? emerald : amber)
+                Text(diagnostics.missingSourceCount == 0
+                    ? L10n.text(
+                        "未发现需要清理的本地记录。",
+                        "No local records need cleanup."
+                    )
+                    : L10n.format(
+                        "%d 个记录暂时无法读取；QuotaLens 会保留现有用量。只有确认记录已不存在并通过预览后，才允许显式清理。",
+                        zhHans: "%d 个记录暂时无法读取；QuotaLens 会保留现有用量。只有确认记录已不存在并通过预览后，才允许显式清理。",
+                        diagnostics.missingSourceCount
+                    ))
+                    .font(.system(size: 10.5, weight: .medium, design: .rounded))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+            }
+            .padding(.top, 2)
+
+            if let missingSourceCleanupStatus {
+                HStack(spacing: 4) {
+                    Image(systemName: "info.circle.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(cyan)
+                    Text(missingSourceCleanupStatus)
+                        .font(.system(size: 10.5, weight: .medium, design: .rounded))
+                        .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                }
+                .padding(.top, 2)
             }
 
             if let diagnosticsExportStatus {
@@ -1074,7 +1218,7 @@ public struct SettingsView: View {
         .cyberCard(cornerRadius: 16, padding: 18)
     }
 
-    // MARK: - Codex 扫描与索引控制
+    // MARK: - Codex 扫描与记录控制
     private var codexScanHUDCard: some View {
         let cyan = AppTheme.accentCyan(for: colorScheme)
         let emerald = AppTheme.accentEmerald(for: colorScheme)
@@ -1083,7 +1227,7 @@ public struct SettingsView: View {
 
         return VStack(alignment: .leading, spacing: 14) {
             CyberSectionHeader(
-                title: L10n.text("日志扫描与价格索引", "Log Scanning & Pricing Index"),
+                title: L10n.text("本地用量读取与费用估算", "Local Usage & Estimated Cost"),
                 icon: "waveform.path.ecg"
             )
 
@@ -1093,7 +1237,7 @@ public struct SettingsView: View {
                 // 扫描归档会话
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(L10n.text("包含归档会话 (~/.codex/archived_sessions)", "Scan Archived Sessions"))
+                        Text(L10n.text("包含归档会话", "Scan Archived Sessions"))
                             .font(.system(size: 13, weight: .bold))
                             .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
                         Text(L10n.text("扫描并汇总已归档的历史会话", "Include archived sessions in total history"))
@@ -1115,7 +1259,7 @@ public struct SettingsView: View {
             // 索引状态与操作
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Text(L10n.format("价格目录版本: %@", zhHans: "价格目录版本: %@", BundledPricingCatalog.currentVersion))
+                    Text(L10n.text("费用按公开价格估算，并非实际扣款", "Costs are estimated from public rates, not actual charges"))
                         .font(.system(size: 11, weight: .bold, design: .monospaced))
                         .foregroundStyle(cyan)
 
@@ -1135,7 +1279,7 @@ public struct SettingsView: View {
                         HStack(spacing: 5) {
                             Image(systemName: "arrow.triangle.2.circlepath")
                                 .font(.system(size: 10, weight: .bold))
-                            Text(L10n.text("立即扫描", "Scan Now"))
+                            Text(L10n.text("立即读取", "Read Now"))
                                 .font(.system(size: 11, weight: .bold, design: .rounded))
                         }
                         .padding(.horizontal, 12)
@@ -1158,7 +1302,7 @@ public struct SettingsView: View {
                         HStack(spacing: 5) {
                             Image(systemName: "arrow.counterclockwise")
                                 .font(.system(size: 10, weight: .bold))
-                            Text(L10n.text("重新建立索引", "Re-index All"))
+                            Text(L10n.text("重新读取全部", "Read All Again"))
                                 .font(.system(size: 11, weight: .bold, design: .rounded))
                         }
                         .padding(.horizontal, 12)
@@ -1293,7 +1437,7 @@ public struct SettingsView: View {
                                 .font(.system(size: 13, weight: .bold))
                                 .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
                         }
-                        Text(L10n.text("清除本地 SQLite 数据库索引、重置偏好配置并重新开始扫描", "Clears local SQLite database index, resets all preferences, and rescans local data"))
+                        Text(L10n.text("清除本地用量记录、重置偏好配置并重新读取本地数据", "Clears local usage records, resets preferences, and reads local data again"))
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
                     }
@@ -1457,27 +1601,138 @@ public struct SettingsView: View {
         usageDiagnostics = try? await env.usageQueryFacade.getDiagnostics()
     }
 
+    private func progressText(processed: Int, total: Int) -> String {
+        guard total > 0 else { return L10n.text("就绪", "Ready") }
+        return "\(processed) / \(total)"
+    }
+
+    private func friendlyStatusLabel(_ status: String) -> String? {
+        switch status {
+        case "completed":
+            return L10n.text("完成", "Done")
+        case "running":
+            return L10n.text("进行中", "Running")
+        case "pending":
+            return L10n.text("待处理", "Pending")
+        case "failed":
+            return L10n.text("未完成", "Incomplete")
+        default:
+            return nil
+        }
+    }
+
+    private func pricingUpdateBadge(_ diagnostics: UsageDiagnosticsDTO) -> String? {
+        switch diagnostics.pricingMigrationState {
+        case .fullyCurrent:
+            return L10n.text("完成", "Done")
+        case .mixedLegacy:
+            return L10n.text("部分保留", "Partial")
+        case .pendingSources:
+            return L10n.text("待处理", "Pending")
+        case .failed:
+            return L10n.text("未完成", "Incomplete")
+        }
+    }
+
+    private func userFacingCleanupError(_ error: Error) -> String {
+        if let localized = (error as? MissingSourceCleanupError)?.errorDescription {
+            return localized
+        }
+        if let localized = (error as? SessionDeletionError)?.errorDescription {
+            return localized
+        }
+        return L10n.text(
+            "暂时无法完成这项操作。请稍后重试；如需排查，可导出问题报告。",
+            "This action cannot be completed right now. Try again later, or export a report for troubleshooting."
+        )
+    }
+
+    private var missingSourceCleanupPreviewText: String {
+        guard let preview = missingSourceCleanupPreview else {
+            return L10n.text(
+                "请先生成影响预览。",
+                "Generate the impact preview first."
+            )
+        }
+        return L10n.format(
+            "将清理 %d 个已确认不存在的本地记录，影响 %d 个会话、%@ Token 和 %@ 费用估算。执行前会重新校验；如果记录恢复或影响范围变化，本次清理会被拒绝。",
+            zhHans: "将清理 %d 个已确认不存在的本地记录，影响 %d 个会话、%@ Token 和 %@ 费用估算。执行前会重新校验；如果记录恢复或影响范围变化，本次清理会被拒绝。",
+            preview.items.count,
+            preview.totalSessions,
+            UsageNumberFormatter.compactTokenCount(preview.totalTokens),
+            UsageNumberFormatter.currencyUSD(preview.estimatedCost)
+        )
+    }
+
+    @MainActor
+    private func prepareMissingSourceCleanup() {
+        isPreparingMissingSourceCleanup = true
+        missingSourceCleanupStatus = nil
+        Task { @MainActor in
+            do {
+                let preview = try await env.usageQueryFacade.previewMissingSourceCleanup()
+                missingSourceCleanupPreview = preview
+                if preview.items.isEmpty {
+                    missingSourceCleanupStatus = L10n.text(
+                        "没有可清理的本地记录。",
+                        "There are no local records to clean."
+                    )
+                } else {
+                    showMissingSourceCleanupDialog = true
+                }
+            } catch {
+                missingSourceCleanupStatus = userFacingCleanupError(error)
+            }
+            isPreparingMissingSourceCleanup = false
+        }
+    }
+
+    @MainActor
+    private func performMissingSourceCleanup() {
+        guard let preview = missingSourceCleanupPreview else { return }
+        isCleaningMissingSources = true
+        missingSourceCleanupStatus = nil
+        Task { @MainActor in
+            do {
+                let result = try await env.usageQueryFacade.cleanupMissingSourceIndexes(
+                    previewId: preview.previewId
+                )
+                missingSourceCleanupStatus = L10n.format(
+                    "Cleaned %d local records, %d sessions, %@ tokens.",
+                    zhHans: "已清理 %d 个本地记录、%d 个会话、%@ Token。",
+                    result.sourcesRemoved,
+                    result.sessionsRemoved,
+                    UsageNumberFormatter.compactTokenCount(result.tokensRemoved)
+                )
+                missingSourceCleanupPreview = nil
+                await refreshUsageDiagnostics()
+            } catch {
+                missingSourceCleanupStatus = userFacingCleanupError(error)
+            }
+            isCleaningMissingSources = false
+        }
+    }
+
     @MainActor
     private func exportUsageDiagnostics(_ diagnostics: UsageDiagnosticsDTO) {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.json]
         panel.canCreateDirectories = true
-        panel.nameFieldStringValue = "QuotaLens-diagnostics-\(Self.diagnosticFileTimestamp()).json"
-        panel.title = L10n.text("导出本地用量诊断", "Export Local Usage Diagnostics")
+        panel.nameFieldStringValue = "QuotaLens-report-\(Self.diagnosticFileTimestamp()).json"
+        panel.title = L10n.text("导出问题报告", "Export Report")
 
         guard panel.runModal() == .OK, let destination = panel.url else { return }
         do {
             let report = UsageDiagnosticsExport(diagnostics: diagnostics)
             try report.jsonData().write(to: destination, options: .atomic)
             diagnosticsExportStatus = L10n.text(
-                "已导出聚合诊断；不包含对话内容或源文件路径。",
-                "Aggregate diagnostics exported without conversation content or source file paths."
+                "问题报告已导出；不包含对话内容或本地文件位置。",
+                "Report exported without conversation content or local file locations."
             )
         } catch {
-            diagnosticsExportStatus = L10n.format(
-                "Export failed: %@",
-                zhHans: "导出失败：%@",
-                error.localizedDescription
+            diagnosticsExportStatus = L10n.text(
+                "暂时无法导出问题报告，请稍后重试。",
+                "The report could not be exported right now. Try again later."
             )
         }
     }

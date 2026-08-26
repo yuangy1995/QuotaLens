@@ -11,6 +11,8 @@ public struct CodexParsedUsageEvent: Sendable {
     public let callIndex: Int
     public let timestampMs: Int64
     public let timestampQuality: TimestampQuality
+    public let timestampSource: TimestampSource
+    public let timestampConflictCount: Int
     public let modelRaw: String
     public let modelCanonical: String
     public let serviceTier: String?
@@ -31,6 +33,8 @@ public struct CodexParsedUsageEvent: Sendable {
         callIndex: Int,
         timestampMs: Int64,
         timestampQuality: TimestampQuality,
+        timestampSource: TimestampSource = .topLevelTimestamp,
+        timestampConflictCount: Int = 0,
         modelRaw: String,
         modelCanonical: String,
         serviceTier: String?,
@@ -50,6 +54,8 @@ public struct CodexParsedUsageEvent: Sendable {
         self.callIndex = callIndex
         self.timestampMs = timestampMs
         self.timestampQuality = timestampQuality
+        self.timestampSource = timestampSource
+        self.timestampConflictCount = timestampConflictCount
         self.modelRaw = modelRaw
         self.modelCanonical = modelCanonical
         self.serviceTier = serviceTier
@@ -105,6 +111,12 @@ public final class CodexUsageReducer: Sendable {
         public var totalLinesConsumed: Int
         public var lastOffset: Int64
         public var hasEncounteredChildFreshTurn: Bool
+        public var isIncrementalRootEligible: Bool
+        public var childReplayGateKind: String?
+        public var childReplayGateTimestampMs: Int64?
+        public var hasSeenReplayedSessionMeta: Bool
+        public var stableSessionId: String?
+        public var requiresFullRebuildReason: String?
 
         public init(
             checkpoint: ParserCheckpoint = .initial
@@ -118,6 +130,12 @@ public final class CodexUsageReducer: Sendable {
             self.totalLinesConsumed = checkpoint.lineCount
             self.lastOffset = checkpoint.lineOffset
             self.hasEncounteredChildFreshTurn = checkpoint.hasSeenFreshTurn
+            self.isIncrementalRootEligible = checkpoint.isIncrementalRootEligible
+            self.childReplayGateKind = checkpoint.childReplayGateKind
+            self.childReplayGateTimestampMs = checkpoint.childReplayGateTimestampMs
+            self.hasSeenReplayedSessionMeta = checkpoint.hasSeenReplayedSessionMeta
+            self.stableSessionId = checkpoint.stableSessionId
+            self.requiresFullRebuildReason = nil
         }
 
         public func makeCheckpoint(parserVersion: Int = ParserCheckpoint.currentParserVersion) -> ParserCheckpoint {
@@ -135,6 +153,11 @@ public final class CodexUsageReducer: Sendable {
                 currentTurnIndex: currentTurnIndex,
                 currentCallIndex: currentCallIndex,
                 hasSeenFreshTurn: hasEncounteredChildFreshTurn,
+                isIncrementalRootEligible: isIncrementalRootEligible,
+                childReplayGateKind: childReplayGateKind,
+                childReplayGateTimestampMs: childReplayGateTimestampMs,
+                hasSeenReplayedSessionMeta: hasSeenReplayedSessionMeta,
+                stableSessionId: stableSessionId,
                 parserVersion: parserVersion
             )
         }
@@ -177,18 +200,9 @@ public final class CodexUsageReducer: Sendable {
             state.currentCallIndex += 1
         }
 
-        // 子会话 Replay 判定：如果是子会话且包含重放的历史前缀
-        var isReplay = false
-        if isChildSession {
-            let isFreshTurnMarker = event.eventType == "task_started" || event.eventType == "user_message"
-            if isFreshTurnMarker {
-                state.hasEncounteredChildFreshTurn = true
-            } else if event.isReplayMarker {
-                isReplay = true
-            } else if !state.hasEncounteredChildFreshTurn {
-                isReplay = true
-            }
-        }
+        updateSessionIdentity(event: event, state: &state)
+
+        let isReplay = resolveReplayState(event: event, state: &state)
 
         // 2. Token 增量计算
         let resolvedModelRaw = state.activeModel ?? "unknown"
@@ -257,6 +271,8 @@ public final class CodexUsageReducer: Sendable {
                 callIndex: state.currentCallIndex,
                 timestampMs: timestamp,
                 timestampQuality: timestampQuality,
+                timestampSource: event.timestampMs > 0 ? event.timestampSource : timestampFallbackSource(),
+                timestampConflictCount: event.timestampConflictCount,
                 modelRaw: resolvedModelRaw,
                 modelCanonical: resolvedModelCanonical,
                 serviceTier: state.activeServiceTier,
@@ -338,6 +354,8 @@ public final class CodexUsageReducer: Sendable {
                     callIndex: state.currentCallIndex,
                     timestampMs: timestamp,
                     timestampQuality: timestampQuality,
+                    timestampSource: event.timestampMs > 0 ? event.timestampSource : timestampFallbackSource(),
+                    timestampConflictCount: event.timestampConflictCount,
                     modelRaw: resolvedModelRaw,
                     modelCanonical: resolvedModelCanonical,
                     serviceTier: state.activeServiceTier,
@@ -368,8 +386,134 @@ public final class CodexUsageReducer: Sendable {
         return nil
     }
 
+    private func updateSessionIdentity(event: RolloutWireEvent, state: inout ReducerState) {
+        guard event.eventType == "session_meta" else { return }
+        if state.stableSessionId == nil {
+            state.stableSessionId = event.sessionId ?? sessionId
+            state.isIncrementalRootEligible = !isChildSession
+                && !event.isChildSessionMeta
+                && event.parentSessionId == nil
+        } else if let eventSessionId = event.sessionId,
+                  let stableSessionId = state.stableSessionId,
+                  eventSessionId != stableSessionId {
+            state.isIncrementalRootEligible = false
+            if isChildSession || state.childReplayGateKind != nil {
+                state.hasSeenReplayedSessionMeta = true
+            } else {
+                state.requiresFullRebuildReason = "tail session_meta changed session id"
+            }
+        }
+
+        if event.isChildSessionMeta || event.parentSessionId != nil {
+            state.isIncrementalRootEligible = false
+            if !isChildSession {
+                state.requiresFullRebuildReason = "tail session_meta introduced child/fork lineage"
+            }
+        }
+
+        guard isChildSession, state.childReplayGateKind == nil, !state.hasEncounteredChildFreshTurn else {
+            return
+        }
+        if event.isChildSessionMeta || event.sessionId == sessionId || event.parentSessionId != nil {
+            state.childReplayGateKind = "childCreatedAt"
+            state.childReplayGateTimestampMs = event.replayBoundaryTimestampMs ?? event.timestampMs
+        }
+    }
+
+    private func resolveReplayState(event: RolloutWireEvent, state: inout ReducerState) -> Bool {
+        guard isChildSession else {
+            return event.isReplayMarker
+        }
+        if event.isReplayMarker {
+            return true
+        }
+
+        if state.childReplayGateKind == nil && !state.hasEncounteredChildFreshTurn {
+            state.childReplayGateKind = "firstSelfTimedTask"
+        }
+
+        if shouldClearChildReplayGate(event: event, state: state) {
+            state.childReplayGateKind = nil
+            state.childReplayGateTimestampMs = nil
+            state.hasEncounteredChildFreshTurn = true
+            return false
+        }
+
+        return !state.hasEncounteredChildFreshTurn
+    }
+
+    private func shouldClearChildReplayGate(event: RolloutWireEvent, state: ReducerState) -> Bool {
+        guard let gateKind = state.childReplayGateKind else {
+            return state.hasEncounteredChildFreshTurn
+        }
+        switch gateKind {
+        case "childCreatedAt":
+            guard let childCreatedAt = state.childReplayGateTimestampMs, childCreatedAt > 0 else {
+                return event.eventType == "task_started" && !state.hasSeenReplayedSessionMeta
+            }
+            if event.eventType == "task_started" {
+                if let taskStarted = event.taskStartedAtMs {
+                    return taskStarted >= childCreatedAt
+                }
+                if let turnStarted = Self.uuidV7TimestampMs(event.turnId) {
+                    return turnStarted >= childCreatedAt
+                }
+                guard event.timestampMs > 0 else { return false }
+                return state.hasSeenReplayedSessionMeta
+                    ? event.timestampMs > childCreatedAt
+                    : event.timestampMs >= childCreatedAt
+            }
+            guard event.lastTokenUsage != nil || event.totalTokenUsage != nil else { return false }
+            if let intrinsicTimestamp = event.replayBoundaryTimestampMs {
+                return intrinsicTimestamp > childCreatedAt
+            }
+            guard event.timestampMs > 0 else { return false }
+            return event.timestampMs > childCreatedAt
+
+        case "firstSelfTimedTask":
+            if event.eventType == "task_started" {
+                return event.taskStartedAtMs != nil || Self.uuidV7TimestampMs(event.turnId) != nil || !state.hasSeenReplayedSessionMeta
+            }
+            guard event.lastTokenUsage != nil || event.totalTokenUsage != nil else { return false }
+            guard !state.hasSeenReplayedSessionMeta else { return false }
+            return event.timestampMs > 0 || event.replayBoundaryTimestampMs != nil
+
+        default:
+            return false
+        }
+    }
+
+    private func timestampFallbackSource() -> TimestampSource {
+        switch fallbackTimestampQuality {
+        case .eventTimestamp:
+            return .topLevelTimestamp
+        case .fileNameTimestamp:
+            return .fileName
+        case .sessionTimestamp:
+            return .sessionMetadata
+        case .fileModificationTime:
+            return .fileModification
+        case .unresolved:
+            return .unresolved
+        }
+    }
+
     private func makeEventId(lineRecord: JSONLLineRecord, timestampMs: Int64) -> String {
         "evt_\(sessionId)_\(sourceEventKey)_\(lineRecord.startOffset)_\(lineRecord.lineBytes)_\(timestampMs)"
+    }
+
+    private static func uuidV7TimestampMs(_ value: String?) -> Int64? {
+        guard let value else { return nil }
+        let parts = value.split(separator: "-", omittingEmptySubsequences: false)
+        guard parts.count == 5,
+              parts[0].count == 8,
+              parts[1].count == 4,
+              parts[2].first == "7",
+              let milliseconds = UInt64(parts[0] + parts[1], radix: 16),
+              milliseconds <= UInt64(Int64.max) else {
+            return nil
+        }
+        return Int64(milliseconds)
     }
 
     private static func stableSourceKey(_ value: String) -> String {
