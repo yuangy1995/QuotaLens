@@ -106,7 +106,6 @@ jobs:
           echo "RELEASE_TAG=${tag}" >> "${GITHUB_ENV}"
 
       - name: Import Developer ID certificate
-        if: ${{ secrets.DEVELOPER_ID_APPLICATION != '' && secrets.DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64 != '' }}
         shell: bash
         env:
           DEVELOPER_ID_APPLICATION: ${{ secrets.DEVELOPER_ID_APPLICATION }}
@@ -115,17 +114,9 @@ jobs:
           BUILD_KEYCHAIN_PASSWORD: ${{ secrets.APPLE_BUILD_KEYCHAIN_PASSWORD }}
         run: |
           set -euo pipefail
-          if [[ -z "${DEVELOPER_ID_APPLICATION}" ]]; then
-            echo "Missing DEVELOPER_ID_APPLICATION repository secret."
-            exit 1
-          fi
-          if [[ -z "${DEVELOPER_ID_CERTIFICATE_BASE64}" || -z "${DEVELOPER_ID_CERTIFICATE_PASSWORD}" ]]; then
-            echo "Missing Developer ID certificate secrets."
-            exit 1
-          fi
-          if [[ -z "${BUILD_KEYCHAIN_PASSWORD}" ]]; then
-            echo "Missing APPLE_BUILD_KEYCHAIN_PASSWORD repository secret."
-            exit 1
+          if [[ -z "${DEVELOPER_ID_APPLICATION:-}" || -z "${DEVELOPER_ID_CERTIFICATE_BASE64:-}" || -z "${DEVELOPER_ID_CERTIFICATE_PASSWORD:-}" || -z "${BUILD_KEYCHAIN_PASSWORD:-}" ]]; then
+            echo "Developer ID signing secrets not configured. Skipping certificate import."
+            exit 0
           fi
 
           CERT_PATH="${RUNNER_TEMP}/developer-id.p12"
