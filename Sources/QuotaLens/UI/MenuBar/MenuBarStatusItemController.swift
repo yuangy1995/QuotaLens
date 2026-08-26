@@ -102,7 +102,7 @@ public final class MenuBarStatusItemController: NSObject {
     private func configurePopover() {
         popover.behavior = .transient
         updatePopoverAppearance()
-        popover.contentSize = NSSize(width: 340, height: 440)
+        popover.contentSize = NSSize(width: 340, height: 575)
         popover.contentViewController = NSHostingController(
             rootView: MenuBarContentView(
                 state: state,
@@ -214,6 +214,12 @@ public final class MenuBarStatusItemController: NSObject {
         if popover.isShown {
             popover.performClose(sender)
         } else {
+            if let hostingController = popover.contentViewController as? NSHostingController<MenuBarContentView> {
+                let fitting = hostingController.sizeThatFits(in: CGSize(width: 340, height: 1000))
+                popover.contentSize = NSSize(width: 340, height: max(fitting.height, 575))
+            } else {
+                popover.contentSize = NSSize(width: 340, height: 575)
+            }
             popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .minY)
             popover.contentViewController?.view.window?.makeKey()
         }

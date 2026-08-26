@@ -301,6 +301,30 @@ public struct SettingsView: View {
                 .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))
 
                 if flags.isOverlayEnabled {
+                    // 仅在前台使用时显示
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(L10n.text("仅在目标应用前台时显示", "Only Show When Target App is Active"))
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                            Text(L10n.text("切换至其他应用时自动隐藏挂件，避免干扰桌面操作", "Automatically hide overlay when switching to other applications"))
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                        }
+                        Spacer()
+                        Toggle("", isOn: Binding(
+                            get: { flags.isOverlayOnlyWhenActive },
+                            set: { enabled in
+                                flags.isOverlayOnlyWhenActive = enabled
+                                overlayController.updateVisibilityForFrontmostApp()
+                            }
+                        ))
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                    }
+                    .padding(12)
+                    .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))
+
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(L10n.text("精确窗口吸附（辅助功能）", "Precise Window Snapping (Accessibility)"))
@@ -322,6 +346,35 @@ public struct SettingsView: View {
                         ))
                         .labelsHidden()
                         .toggleStyle(.switch)
+                    }
+                    .padding(12)
+                    .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))
+
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(L10n.text("重置挂件吸附位置", "Reset Overlay Position"))
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                            Text(L10n.text("恢复挂件至默认吸附状态（屏幕右上角）", "Reset floating overlay to default top-right position"))
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                        }
+                        Spacer()
+                        Button(action: {
+                            overlayController.resetPinning()
+                        }) {
+                            Text(L10n.text("重置位置", "Reset"))
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 5)
+                                .background(AppTheme.accentCyan(for: colorScheme).opacity(colorScheme == .dark ? 0.18 : 0.12), in: RoundedRectangle(cornerRadius: 6))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .strokeBorder(AppTheme.accentCyan(for: colorScheme).opacity(0.4), lineWidth: 0.8)
+                                )
+                                .foregroundStyle(AppTheme.accentCyan(for: colorScheme))
+                        }
+                        .buttonStyle(.plain)
                     }
                     .padding(12)
                     .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))

@@ -53,6 +53,17 @@ public struct AboutView: View {
     private var defaultChangelogs: [ChangelogEntry] {
         [
             ChangelogEntry(
+                id: "v1.0.15",
+                version: "v1.0.15",
+                date: "2026-08-27",
+                changes: [
+                    L10n.text("全新升级全息悬浮挂件交互与智能感知：支持「仅在目标应用前台时显示」自动防打扰，并新增一键重置吸附位置", "Upgraded floating overlay interactions: added auto-hide when target app is inactive and one-click position reset"),
+                    L10n.text("优化悬浮挂件视觉排版与隐私保护模式提示，增强已用/可用配额视角的平滑切换", "Refined overlay layout and privacy-preserved mode indicator with smooth view switching between used and available quota"),
+                    L10n.text("重构用量看板预测卡片布局，实现自适应等高对齐并提升多分辨率下的展示美观度", "Restructured usage dashboard forecast cards with adaptive equal-height alignment for enhanced layout aesthetics across displays"),
+                    L10n.text("全面完善 10 种语言的多语言本地化翻译字典与更新日志多语言映射", "Comprehensive localization dictionary refinements and changelog translation mapping across 10 supported languages")
+                ]
+            ),
+            ChangelogEntry(
                 id: "v1.0.14",
                 version: "v1.0.14",
                 date: "2026-08-26",

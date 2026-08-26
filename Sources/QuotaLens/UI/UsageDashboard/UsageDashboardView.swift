@@ -471,7 +471,7 @@ public struct UsageDashboardView: View {
         let rose = AppTheme.accentRose(for: colorScheme)
         let isDark = colorScheme == .dark
 
-        return HStack(spacing: 14) {
+        return HStack(alignment: .top, spacing: 14) {
             // 左卡：服务器额度耗尽预测
             if let qf = store.quotaForecast {
                 VStack(alignment: .leading, spacing: 10) {
@@ -531,9 +531,11 @@ public struct UsageDashboardView: View {
                                 .minimumScaleFactor(0.82)
                         }
                     }
+
+                    Spacer(minLength: 0)
                 }
                 .padding(14)
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 12))
                 .overlay(
                     RoundedRectangle(cornerRadius: 12)
@@ -605,9 +607,11 @@ public struct UsageDashboardView: View {
                         .font(.system(size: 9.5, design: .rounded))
                         .foregroundStyle(amber)
                     }
+
+                    Spacer(minLength: 0)
                 }
                 .padding(14)
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 12))
                 .overlay(
                     RoundedRectangle(cornerRadius: 12)
@@ -615,6 +619,7 @@ public struct UsageDashboardView: View {
                 )
             }
         }
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private func quotaForecastSpeedText(_ forecast: QuotaForecastDTO) -> String {

@@ -254,6 +254,10 @@ public enum L10n {
     }
 
     public static let changelogZhToEnMap: [String: String] = [
+        "全新升级全息悬浮挂件交互与智能感知：支持「仅在目标应用前台时显示」自动防打扰，并新增一键重置吸附位置": "Upgraded floating overlay interactions: added auto-hide when target app is inactive and one-click position reset",
+        "优化悬浮挂件视觉排版与隐私保护模式提示，增强已用/可用配额视角的平滑切换": "Refined overlay layout and privacy-preserved mode indicator with smooth view switching between used and available quota",
+        "重构用量看板预测卡片布局，实现自适应等高对齐并提升多分辨率下的展示美观度": "Restructured usage dashboard forecast cards with adaptive equal-height alignment for enhanced layout aesthetics across displays",
+        "全面完善 10 种语言的多语言本地化翻译字典与更新日志多语言映射": "Comprehensive localization dictionary refinements and changelog translation mapping across 10 supported languages",
         "全新升级 Codex 计费与定价目录引擎，支持模型历史分段价格、缓存命中折算与多周期计费回溯": "Upgraded Codex pricing and catalog engine with historical tiered pricing, prompt cache savings, and multi-cycle cost auditing",
         "重构数据索引与数据库重建机制，增强原子化写入、损坏文件自动隔离与跨时区自然日精确对齐": "Restructured data indexing and database rebuild pipeline with atomic commits, corrupted file quarantine, and timezone alignment",
         "强化重置卡明细持久化与容错解析能力，在多账号切换与同步中提供平滑兜底与状态占位": "Hardened reset card persistence and lossy decoding resilience across account switches and syncing gaps",
@@ -341,6 +345,46 @@ public enum L10n {
 }
 
 private let keyedTranslations: [String: [AppLanguage: String]] = [
+    "Upgraded floating overlay interactions: added auto-hide when target app is inactive and one-click position reset": [
+        .traditionalChinese: "全新升級全息懸浮掛件互動與智慧感知：支援「僅在目標應用前台時顯示」自動防打擾，並新增一鍵重設吸附位置",
+        .japanese: "フローティングウィジェットの操作性と連携を刷新：「対象アプリが前面にある時のみ表示」の自動非表示と、位置リセット機能を追加",
+        .korean: "플로팅 위젯 상호작용 및 지능형 감지 기능 업그레이드: 「대상 앱이 전면에 있을 때만 표시」 자동 숨김 및 부착 위치 원클릭 초기화 지원",
+        .spanish: "Superposición flotante mejorada: ocultación automática cuando la aplicación no está activa y restablecimiento de posición con un clic",
+        .german: "Schwebendes Overlay verbessert: Automatisches Ausblenden bei inaktiver Ziel-App und Zurücksetzen der Position mit einem Klick",
+        .french: "Superposition flottante améliorée : masquage automatique lorsque l'application cible est inactive et réinitialisation de la position en un clic",
+        .portuguese: "Sobreposição flutuante melhorada: ocultação automática quando a aplicação de destino está inativa e reposição da posição com um clique",
+        .portugueseBrazil: "Sobreposição flutuante aprimorada: ocultação automática quando o aplicativo de destino está inativo e redefinição da posição com um clique"
+    ],
+    "Refined overlay layout and privacy-preserved mode indicator with smooth view switching between used and available quota": [
+        .traditionalChinese: "優化懸浮掛件視覺排版與隱私保護模式提示，增強已用/可用配額視角的平滑切換",
+        .japanese: "ウィジェットの視覚レイアウトとプライバシー保護モードの表示を改善し、使用量/残り配額の視点切り替えをスムーズに刷新",
+        .korean: "위젯 시각적 레이아웃 및 개인정보 보호 모드 표시를 개선하고 사용량/잔여량 보기 전환을 부드럽게 강화",
+        .spanish: "Diseño de superposición refinado e indicador de modo de privacidad con cambio fluido entre cuota usada y disponible",
+        .german: "Overlay-Layout und Datenschutzmodus-Anzeige verfeinert mit flüssigem Wechsel zwischen verbrauchtem und verfügbarem Kontingent",
+        .french: "Mise en page de la superposition et indicateur de confidentialité affinés avec basculement fluide entre quota utilisé et disponible",
+        .portuguese: "Esquema da sobreposição e indicador do modo de privacidade aperfeiçoados com alternância suave entre quota usada e disponível",
+        .portugueseBrazil: "Layout da sobreposição e indicador do modo de privacidade aprimorados com alternância suave entre cota usada e disponível"
+    ],
+    "Restructured usage dashboard forecast cards with adaptive equal-height alignment for enhanced layout aesthetics across displays": [
+        .traditionalChinese: "重構用量看板預測卡片佈局，實現自適應等高對齊並提升多解析度下的展示美觀度",
+        .japanese: "利用状況ダッシュボードの予測カードレイアウトを再構築し、適応型等高配置により様々な解像度での視認性と美しさを向上",
+        .korean: "사용량 대시보드 예측 카드 레이아웃을 개편하여 반응형 균등 높이 정렬 및 다중 해상도 표시 완성도 향상",
+        .spanish: "Tarjetas de previsión del panel de uso reestructuradas con alineación adaptativa de igual altura para mejor estética en distintas pantallas",
+        .german: "Prognosekarten im Verbrauchs-Dashboard mit adaptiver Höhenausrichtung für eine ansprechendere Darstellung auf verschiedenen Displays überarbeitet",
+        .french: "Cartes de prévision du tableau de bord d'utilisation restructurées avec alignement adaptatif de hauteur égale pour une meilleure lisibilité",
+        .portuguese: "Cartões de previsão do painel de utilização reestruturados com alinhamento adaptativo de altura igual para melhor apresentação em vários ecrãs",
+        .portugueseBrazil: "Cartões de previsão do painel de uso reestruturados com alinhamento adaptativo de altura igual para melhor apresentação em várias telas"
+    ],
+    "Comprehensive localization dictionary refinements and changelog translation mapping across 10 supported languages": [
+        .traditionalChinese: "全面完善 10 種語言的多語言本地化翻譯字典與更新日誌多語言對應",
+        .japanese: "サポートされる全 10 言語の翻訳辞書および更新履歴の多言語マッピングを網羅的に拡充",
+        .korean: "10개 지원 언어에 대한 현지화 번역 사전 및 업데이트 로그 다국어 매핑 완벽 보강",
+        .spanish: "Mejoras integrales en los diccionarios de localización y mapeo de traducciones del registro de cambios para los 10 idiomas compatibles",
+        .german: "Umfassende Lokalisierungs-Wörterbucherweiterungen und Changelog-Übersetzungszuordnung für alle 10 unterstützten Sprachen",
+        .french: "Enrichissement complet des dictionnaires de localisation et du mappage des traductions du journal des modifications pour les 10 langues",
+        .portuguese: "Aperfeiçoamento abrangente dos dicionários de localização e mapeamento de traduções do registo de alterações para os 10 idiomas",
+        .portugueseBrazil: "Aprimoramento abrangente dos dicionários de localização e mapeamento de traduções do registro de alterações para os 10 idiomas"
+    ],
     "Upgraded Codex pricing and catalog engine with historical tiered pricing, prompt cache savings, and multi-cycle cost auditing": [
         .traditionalChinese: "全新升級 Codex 計費與定價目錄引擎，支援模型歷史分段價格、快取命中折算與多週期計費回溯",
         .japanese: "Codex の価格・料金カタログエンジンを刷新し、履歴価格（段階料金）、キャッシュ節約計算、複数サイクルのコスト監査に対応",
@@ -4010,6 +4054,86 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .french: "Fixé sur %@",
         .portuguese: "Fixado em %@",
         .portugueseBrazil: "Fixado em %@"
+    ],
+    "Only Show When Target App is Active": [
+        .traditionalChinese: "僅在目標應用前台時顯示",
+        .japanese: "対象アプリが前面にある時のみ表示",
+        .korean: "대상 앱이 전면에 있을 때만 표시",
+        .spanish: "Mostrar solo cuando la aplicación objetivo esté activa",
+        .german: "Nur anzeigen, wenn die Ziel-App aktiv ist",
+        .french: "Afficher uniquement lorsque l'application cible est active",
+        .portuguese: "Mostrar apenas quando a aplicação de destino estiver ativa",
+        .portugueseBrazil: "Mostrar apenas quando o aplicativo de destino estiver ativo"
+    ],
+    "Automatically hide overlay when switching to other applications": [
+        .traditionalChinese: "切換至其他應用時自動隱藏掛件，避免干擾桌面操作",
+        .japanese: "他のアプリに切り替えた際にウィジェットを自動非表示にし、デスクトップ操作の妨げを防ぎます",
+        .korean: "다른 앱으로 전환할 때 위젯을 자동으로 숨겨 데스크톱 작업을 방해하지 않습니다",
+        .spanish: "Oculta automáticamente la superposición al cambiar a otras aplicaciones para evitar interferencias",
+        .german: "Blendet das Overlay beim Wechsel zu anderen Apps automatisch aus, um Störungen zu vermeiden",
+        .french: "Masque automatiquement la superposition lors du basculement vers d'autres applications",
+        .portuguese: "Oculta automaticamente a sobreposição ao alternar para outras aplicações para evitar interferências",
+        .portugueseBrazil: "Oculta automaticamente a sobreposição ao alternar para outros aplicativos para evitar interferências"
+    ],
+    "Reset Overlay Position": [
+        .traditionalChinese: "重設掛件吸附位置",
+        .japanese: "ウィジェットの吸着位置をリセット",
+        .korean: "위젯 부착 위치 초기화",
+        .spanish: "Restablecer posición de superposición",
+        .german: "Overlay-Position zurücksetzen",
+        .french: "Réinitialiser la position de la superposition",
+        .portuguese: "Repor posição da sobreposição",
+        .portugueseBrazil: "Redefinir posição da sobreposição"
+    ],
+    "Reset floating overlay to default top-right position": [
+        .traditionalChinese: "恢復掛件至預設吸附狀態（螢幕右上角）",
+        .japanese: "ウィジェットをデフォルトの吸着状態（画面右上）に戻します",
+        .korean: "위젯을 기본 부착 상태(화면 오른쪽 상단)로 복원합니다",
+        .spanish: "Restaura la superposición a la posición predeterminada (esquina superior derecha)",
+        .german: "Setzt das schwebende Overlay auf die standardmäßige Position oben rechts zurück",
+        .french: "Rétablit la superposition à sa position par défaut en haut à droite",
+        .portuguese: "Restaura a sobreposição para a posição predefinida no canto superior direito",
+        .portugueseBrazil: "Restaura a sobreposição para a posição padrão no canto superior direito"
+    ],
+    "Reset": [
+        .traditionalChinese: "重設",
+        .japanese: "リセット",
+        .korean: "초기화",
+        .spanish: "Restablecer",
+        .german: "Zurücksetzen",
+        .french: "Réinitialiser",
+        .portuguese: "Repor",
+        .portugueseBrazil: "Redefinir"
+    ],
+    "Precise mode · Window attached": [
+        .traditionalChinese: "精確貼邊 · 只讀取尺寸",
+        .japanese: "高精度吸着 · サイズのみ取得",
+        .korean: "정밀 부착 · 창 크기만 읽기",
+        .spanish: "Modo preciso · Ajuste a ventana",
+        .german: "Präziser Modus · Am Fenster fixiert",
+        .french: "Mode précis · Ajusté à la fenêtre",
+        .portuguese: "Modo preciso · Ajustado à janela",
+        .portugueseBrazil: "Modo preciso · Ajustado à janela"
+    ],
+    "Basic mode · Privacy preserved": [
+        .traditionalChinese: "基礎模式 · 保護隱私",
+        .japanese: "基本モード · プライバシー保護",
+        .korean: "기본 모드 · 개인정보 보호",
+        .spanish: "Modo básico · Privacidad protegida",
+        .german: "Basismodus · Datenschutz gewahrt",
+        .french: "Mode de base · Confidentialité préservée",
+        .portuguese: "Modo básico · Privacidade protegida",
+        .portugueseBrazil: "Modo básico · Privacidade protegida"
+    ],
+    "Click to toggle used/available view": [
+        .traditionalChinese: "點擊切換已用/可用視角",
+        .japanese: "クリックで使用量/残り表示を切り替え",
+        .korean: "클릭하여 사용량/잔여량 보기 전환",
+        .spanish: "Haz clic para alternar vista de usado/disponible",
+        .german: "Klicken, um zwischen Verbraucht/Verfügbar zu wechseln",
+        .french: "Cliquer pour basculer la vue utilisé/disponible",
+        .portuguese: "Clique para alternar entre usado e disponível",
+        .portugueseBrazil: "Clique para alternar entre usado e disponível"
     ]
 ]
 

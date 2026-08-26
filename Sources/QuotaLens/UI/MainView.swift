@@ -433,7 +433,7 @@ private struct UpdateCheckDialog: View {
 
         VStack(alignment: .leading, spacing: 16) {
             // 头部：图标 + 标题 + 版本与包大小胶囊
-                HStack(alignment: .top, spacing: 14) {
+                HStack(alignment: .center, spacing: 14) {
                     ZStack {
                         RoundedRectangle(cornerRadius: 15, style: .continuous)
                             .fill(iconBackgroundColor.opacity(isDark ? 0.18 : 0.12))
@@ -521,7 +521,7 @@ private struct UpdateCheckDialog: View {
                                 }
                             }
                             .padding(.top, 2)
-                        } else {
+                        } else if dialog.kind != .progress && dialog.kind != .installing && dialog.progress == nil {
                             Text(dialog.message)
                                 .font(.system(size: 12.5, weight: .medium))
                                 .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
