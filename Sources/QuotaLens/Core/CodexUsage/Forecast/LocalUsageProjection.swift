@@ -7,7 +7,7 @@ public enum LocalUsageProjection {
     public static func project(
         history: [DayUsageSummaryDTO],
         horizonDays: Int = 7,
-        calendar: Calendar = .current,
+        calendar: Calendar = UsageDayBucketer.calendar(),
         now: Date = Date()
     ) -> LocalUsageForecastDTO {
         let completeHistory = history.filter { $0.date < calendar.startOfDay(for: now) }

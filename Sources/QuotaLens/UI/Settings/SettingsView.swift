@@ -426,10 +426,24 @@ public struct SettingsView: View {
                 )
 
                 DiagnosticMetricTile(
-                    title: L10n.text("重计价代次", "Reprice Generation"),
-                    value: "\(diagnostics.pricingRepriceGeneration)",
+                    title: L10n.text("重计价进度", "Reprice Progress"),
+                    value: "\(diagnostics.pricingRepriceProcessedEvents) / \(diagnostics.pricingRepriceTotalEvents)",
                     icon: "arrow.triangle.2.circlepath.circle.fill",
                     accentColor: purple,
+                    statusBadge: diagnostics.pricingRepriceStatus.uppercased(),
+                    isSuccess: diagnostics.pricingRepriceStatus == "completed",
+                    isWarning: ["failed", "pending"].contains(diagnostics.pricingRepriceStatus),
+                    colorScheme: colorScheme
+                )
+
+                DiagnosticMetricTile(
+                    title: L10n.text("解析器重建", "Parser Rebuild"),
+                    value: "\(diagnostics.parserRebuildProcessedSources) / \(diagnostics.parserRebuildTotalSources)",
+                    icon: "arrow.triangle.2.circlepath",
+                    accentColor: ["failed", "pending"].contains(diagnostics.parserRebuildStatus) ? amber : cyan,
+                    statusBadge: diagnostics.parserRebuildStatus.uppercased(),
+                    isSuccess: diagnostics.parserRebuildStatus == "completed",
+                    isWarning: ["failed", "pending"].contains(diagnostics.parserRebuildStatus),
                     colorScheme: colorScheme
                 )
 

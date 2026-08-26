@@ -259,9 +259,9 @@ final class PricingTruthTests: XCTestCase {
         let token = TokenBreakdown(inputTokens: 1_000)
         let cases: [(model: String, releaseMs: Int64)] = [
             ("gpt-5", 1_754_524_800_000),
-            ("gpt-5-codex", 1_757_894_400_000),
+            ("gpt-5-codex", 1_758_585_600_000),
             ("gpt-5.1-codex", 1_762_992_000_000),
-            ("gpt-5.1-codex-max", 1_763_424_000_000),
+            ("gpt-5.1-codex-max", 1_764_806_400_000),
             ("gpt-5.1-codex-mini", 1_762_992_000_000),
             ("gpt-5.2", 1_765_411_200_000),
             ("gpt-5.2-codex", 1_768_348_800_000),
@@ -301,6 +301,31 @@ final class PricingTruthTests: XCTestCase {
             timestampMs: 1_765_411_200_000,
             tokens: token
         ).pricingStatus, .unpricedHistoricalRuleMissing)
+        for tier in ["flex", "fast"] {
+            XCTAssertEqual(PricingEvaluator.evaluate(
+                modelCanonical: "gpt-5.5", serviceTier: tier,
+                timestampMs: 1_776_988_800_000 - 1, tokens: token
+            ).pricingStatus, .unpricedHistoricalRuleMissing)
+        }
+    }
+
+    func testGPT56FastLongContextStartsAtOfficialAvailabilityBoundary() {
+        let boundary: Int64 = 1_785_888_000_000
+        for model in ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"] {
+            for tier in ["fast", "priority"] {
+                for input: Int64 in [272_000, 272_001] {
+                    let tokens = TokenBreakdown(inputTokens: input, cacheWriteInputTokens: 1, outputTokens: 1)
+                    let before = PricingEvaluator.evaluate(
+                        modelCanonical: model, serviceTier: tier, timestampMs: boundary - 1, tokens: tokens
+                    )
+                    let atBoundary = PricingEvaluator.evaluate(
+                        modelCanonical: model, serviceTier: tier, timestampMs: boundary, tokens: tokens
+                    )
+                    XCTAssertEqual(before.pricingStatus, input > 272_000 ? .unpricedUnsupportedContextLength : .priced)
+                    XCTAssertEqual(atBoundary.pricingStatus, .priced)
+                }
+            }
+        }
     }
 
     func testV5GoldenMatrixCoversBundledModelsTiersContextsAndTokenBuckets() {
@@ -770,10 +795,17 @@ final class PricingTruthTests: XCTestCase {
             bindings: [timestamp, timestamp]
         )
 
+        try database.execute(sql: """
+        CREATE TRIGGER fail_segmented_reprice
+        BEFORE INSERT ON codex_usage_event_reprice_shadow
+        WHEN NEW.source_rowid > 500
+        BEGIN
+            SELECT RAISE(ABORT, 'segmented reprice interruption');
+        END;
+        """)
         XCTAssertThrowsError(try PricingCatalogService.shared.repriceAllUsageEvents(
             database: database,
-            batchSize: 500,
-            simulatedFailureAfterBatches: 1
+            batchSize: 500
         ))
         XCTAssertEqual(
             try database.stringScalar(sql: "SELECT value FROM app_metadata WHERE key = 'pricing_reprice_status';"),
@@ -789,7 +821,8 @@ final class PricingTruthTests: XCTestCase {
             sql: "SELECT value FROM app_metadata WHERE key = 'pricing_reprice_processed_events';"
         ), 500)
 
-        try PricingCatalogService.shared.repriceAllUsageEvents(database: database, batchSize: 500)
+        try database.execute(sql: "DROP TRIGGER fail_segmented_reprice;")
+        try PricingCatalogService.shared.ensureCatalogInstalled(database: database)
 
         XCTAssertEqual(
             try database.stringScalar(sql: "SELECT value FROM app_metadata WHERE key = 'pricing_reprice_status';"),
@@ -808,6 +841,109 @@ final class PricingTruthTests: XCTestCase {
         XCTAssertEqual(try database.int64Scalar(
             sql: "SELECT SUM(estimated_cost_usd_nano) FROM codex_daily_usage_summaries WHERE session_id = 'segmented';"
         ), 2_400_000)
+    }
+
+    func testSegmentedRepriceRejectsStaleShadowWhenRowIDIsReused() throws {
+        let directory = try makeTemporaryDirectory(named: "RepriceRowIDReuse")
+        let database = try makeMigratedDatabase(in: directory)
+        try PricingCatalogService.shared.ensureCatalogInstalled(database: database)
+        let timestamp = BundledPricingCatalog.publishedAtMs
+
+        try database.executeUpdate(
+            sql: """
+            INSERT INTO codex_sessions (
+                session_id, root_session_id, parent_session_id, depth, source_path,
+                relative_path, bucket, title, project_name, cwd, created_at, updated_at,
+                last_event_at, event_count, total_tokens, input_tokens, cached_input_tokens,
+                cache_write_input_tokens, output_tokens, reasoning_output_tokens,
+                estimated_cost_usd_nano, pricing_status, metadata_fingerprint,
+                has_subagents, agent_type
+            ) VALUES (
+                'rowid-reuse', 'rowid-reuse', NULL, 0, '/tmp/rowid-reuse.jsonl',
+                'sessions/rowid-reuse.jsonl', 'active', 'RowID Reuse', 'Fixture', '/tmp',
+                ?, ?, ?, 600, 600, 600, 0, 0, 0, 0, 123, 'fullyUnpriced', NULL, 0, NULL
+            );
+            """,
+            bindings: [timestamp, timestamp, timestamp]
+        )
+        try database.executeUpdate(sql: """
+        WITH RECURSIVE sequence(value) AS (
+            VALUES(1)
+            UNION ALL
+            SELECT value + 1 FROM sequence WHERE value < 600
+        )
+        INSERT INTO codex_usage_events (
+            event_id, session_id, root_session_id, turn_index, call_index,
+            timestamp_ms, model_raw, model_canonical, service_tier, reasoning_effort,
+            input_tokens, cached_input_tokens, cache_write_input_tokens,
+            output_tokens, reasoning_output_tokens, total_tokens, uncached_input_tokens,
+            estimated_cost_usd_nano, pricing_rule_id, pricing_status,
+            usage_derivation, attribution_quality, is_child_replay, source_path,
+            line_offset, line_bytes, payload_sha256, created_at, timestamp_quality,
+            pricing_catalog_version
+        )
+        SELECT
+            printf('reuse-%04d', value), 'rowid-reuse', 'rowid-reuse', 0, value,
+            ?, 'gpt-5.6-terra', 'gpt-5.6-terra', NULL, NULL,
+            1, 0, 0, 0, 0, 1, 1,
+            0, NULL, 'unpricedUnknownModel', 'explicit_last_usage',
+            'direct_turn_context', 0, '/tmp/rowid-reuse.jsonl', value,
+            1, NULL, ?, 'event_timestamp', 'legacy-rowid'
+        FROM sequence;
+        """, bindings: [timestamp, timestamp])
+
+        try database.execute(sql: """
+        CREATE TRIGGER fail_rowid_reprice
+        BEFORE INSERT ON codex_usage_event_reprice_shadow
+        WHEN NEW.source_rowid > 500
+        BEGIN
+            SELECT RAISE(ABORT, 'rowid reprice interruption');
+        END;
+        """)
+        XCTAssertThrowsError(try PricingCatalogService.shared.repriceAllUsageEvents(
+            database: database,
+            batchSize: 500
+        ))
+        try database.execute(sql: "DROP TRIGGER fail_rowid_reprice;")
+        try database.executeUpdate(sql: "DELETE FROM codex_usage_events WHERE rowid >= 500;", bindings: [])
+        try database.executeUpdate(
+            sql: """
+            INSERT INTO codex_usage_events (
+                event_id, session_id, root_session_id, turn_index, call_index,
+                timestamp_ms, model_raw, model_canonical, service_tier, reasoning_effort,
+                input_tokens, cached_input_tokens, cache_write_input_tokens,
+                output_tokens, reasoning_output_tokens, total_tokens, uncached_input_tokens,
+                estimated_cost_usd_nano, pricing_rule_id, pricing_status,
+                usage_derivation, attribution_quality, is_child_replay, source_path,
+                line_offset, line_bytes, payload_sha256, created_at, timestamp_quality,
+                pricing_catalog_version
+            ) VALUES (
+                'replacement-rowid-500', 'rowid-reuse', 'rowid-reuse', 0, 500,
+                ?, 'gpt-5.6-terra', 'gpt-5.6-terra', NULL, NULL,
+                3, 0, 0, 0, 0, 3, 3,
+                0, NULL, 'unpricedUnknownModel', 'explicit_last_usage',
+                'direct_turn_context', 0, '/tmp/rowid-reuse.jsonl', 500,
+                1, NULL, ?, 'event_timestamp', 'legacy-replacement'
+            );
+            """,
+            bindings: [timestamp, timestamp]
+        )
+        XCTAssertEqual(try database.int64Scalar(
+            sql: "SELECT rowid FROM codex_usage_events WHERE event_id = 'replacement-rowid-500';"
+        ), 500)
+
+        try PricingCatalogService.shared.repriceAllUsageEvents(database: database, batchSize: 500)
+
+        XCTAssertEqual(try database.intScalar(
+            sql: "SELECT COUNT(*) FROM codex_usage_events WHERE pricing_catalog_version = ?;",
+            bindings: [BundledPricingCatalog.currentVersion]
+        ), 500)
+        XCTAssertEqual(try database.int64Scalar(
+            sql: "SELECT estimated_cost_usd_nano FROM codex_usage_events WHERE event_id = 'replacement-rowid-500';"
+        ), 6_000)
+        XCTAssertEqual(try database.int64Scalar(
+            sql: "SELECT estimated_cost_usd_nano FROM codex_sessions WHERE session_id = 'rowid-reuse';"
+        ), 1_004_000)
     }
 
     func testRepricePreservesUnpricedReasonCountsAcrossSummariesAndDiagnostics() throws {

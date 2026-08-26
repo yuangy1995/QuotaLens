@@ -12,7 +12,7 @@ public struct UsageDayBucket: Hashable, Sendable {
 public enum UsageDayBucketer {
     public static func bucket(
         timestampMs: Int64,
-        calendar: Calendar = .current,
+        calendar: Calendar = UsageDayBucketer.calendar(),
         timeZone: TimeZone = .current
     ) -> UsageDayBucket {
         var resolvedCalendar = calendar

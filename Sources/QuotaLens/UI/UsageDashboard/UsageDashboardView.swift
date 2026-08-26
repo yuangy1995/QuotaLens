@@ -311,7 +311,7 @@ public struct UsageDashboardView: View {
             DashboardKPICard(
                 title: L10n.text("API 等价价值 · Beta", "API Equivalent Value · Beta"),
                 value: UsageNumberFormatter.currencyUSD(metrics.totalCost),
-                caption: pricingCoverageCaption(metrics.pricingCoverage),
+                caption: pricingCoverageCaption(metrics),
                 icon: "dollarsign.circle.fill",
                 color: emerald
             )
@@ -422,15 +422,20 @@ public struct UsageDashboardView: View {
         return UsageNumberFormatter.percent(metrics.cacheHitRatio * 100.0, maximumFractionDigits: 1)
     }
 
-    private func pricingCoverageCaption(_ coverage: PricingCoverage) -> String {
-        switch coverage {
-        case .fullyPriced:
-            return L10n.text("不是订阅账单金额", "Not a bill")
-        case .partiallyPriced(let covered, let total):
-            return L10n.format("%d/%d priced events", zhHans: "%d/%d 条事件已计价", covered, total)
-        case .unpriced(let total):
-            return L10n.format("%d unpriced events", zhHans: "%d 条事件未计价", total)
+    private func pricingCoverageCaption(_ metrics: DashboardMetricsDTO) -> String {
+        let percentage = UsageNumberFormatter.percent(
+            metrics.tokenPricingCoverage * 100.0,
+            maximumFractionDigits: 1
+        )
+        let coverage = L10n.format(
+            "Token pricing coverage %@",
+            zhHans: "Token 定价覆盖率 %@",
+            percentage
+        )
+        guard !metrics.unpricedReasonCounts.isEmpty else {
+            return "\(coverage) · \(L10n.text("不是订阅账单金额", "Not a bill"))"
         }
+        return "\(coverage) · \(metrics.unpricedReasonCounts.localizedSummary)"
     }
 
     // MARK: - 3. 双重智能预测引擎
@@ -1214,6 +1219,7 @@ private struct DashboardKPICard: View {
                 .font(.system(size: 10, design: .monospaced))
                 .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
                 .lineLimit(1)
+                .help(caption)
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)

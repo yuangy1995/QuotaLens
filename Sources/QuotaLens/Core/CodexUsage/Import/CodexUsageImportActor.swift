@@ -12,19 +12,22 @@ public struct ImportSummary: Sendable {
     public let eventsInserted: Int
     public let bytesRead: Int64
     public let durationSeconds: Double
+    public let warningMessage: String?
 
     public init(
         sourcesScanned: Int = 0,
         sourcesUpdated: Int = 0,
         eventsInserted: Int = 0,
         bytesRead: Int64 = 0,
-        durationSeconds: Double = 0
+        durationSeconds: Double = 0,
+        warningMessage: String? = nil
     ) {
         self.sourcesScanned = sourcesScanned
         self.sourcesUpdated = sourcesUpdated
         self.eventsInserted = eventsInserted
         self.bytesRead = bytesRead
         self.durationSeconds = durationSeconds
+        self.warningMessage = warningMessage
     }
 }
 
@@ -57,7 +60,11 @@ public actor CodexUsageImportActor {
 
         let monotonicStart = CFAbsoluteTimeGetCurrent()
         let startedAtMs = Self.unixMillis()
-        try PricingCatalogService.shared.ensureCatalogInstalled(database: database)
+        let aggregationTimeZone = TimeZone.current
+        onProgress?(0.01, L10n.text("正在检查计价目录与日期口径…", "Checking pricing and day boundaries..."))
+        try PricingCatalogService.shared.ensureCatalogInstalled(database: database, timeZone: aggregationTimeZone) { progress, message in
+            onProgress?(0.01 + 0.035 * progress, message)
+        }
         let pricingSnapshot = try PricingCatalogService.shared.loadSnapshot(database: database)
         let scanGeneration = try nextScanGeneration()
         var parserRebuildDidFinish = false
@@ -70,14 +77,13 @@ public actor CodexUsageImportActor {
                 )
             }
         }
-        try updateParserRebuildMetadata(status: "running", generation: scanGeneration, error: nil)
-        let aggregationTimeZone = TimeZone.current
-        let forceRebuildForTimeZone = try prepareUsageAggregationTimeZone(
-            timeZone: aggregationTimeZone,
-            generation: scanGeneration
+        try updateParserRebuildMetadata(
+            status: "running",
+            generation: scanGeneration,
+            error: nil,
+            processedSources: 0,
+            totalSources: 0
         )
-        let effectiveForceRebuild = forceRebuild || forceRebuildForTimeZone
-
         // 1. 扫描文件源
         onProgress?(0.05, L10n.text("正在扫描 Codex 会话文件…", "Scanning Codex session files..."))
         let scanOutcome = scanHistory(paths, UsageFeatureFlags.shared.isScanArchivedSessionsEnabled)
@@ -93,6 +99,13 @@ public actor CodexUsageImportActor {
         let discoveredSources = scannedSources.map { source in
             canonicalizedSource(source, header: rolloutHeaders[source.fileURL.path])
         }
+        try updateParserRebuildMetadata(
+            status: "running",
+            generation: scanGeneration,
+            error: nil,
+            processedSources: 0,
+            totalSources: discoveredSources.count
+        )
 
         // 2. 加载元数据与构建会话树
         onProgress?(0.15, L10n.text("正在解析会话元数据与父子关系…", "Resolving session metadata and tree..."))
@@ -123,8 +136,9 @@ public actor CodexUsageImportActor {
                     source: source,
                     resolvedSession: resolvedSessions[source.sessionId],
                     pricingSnapshot: pricingSnapshot,
-                    forceRebuild: effectiveForceRebuild,
-                    scanGeneration: scanGeneration
+                    forceRebuild: forceRebuild,
+                    scanGeneration: scanGeneration,
+                    aggregationTimeZone: aggregationTimeZone
                 )
             }
             ImportMemoryBudget.relieveAllocatorPressure()
@@ -134,6 +148,13 @@ public actor CodexUsageImportActor {
                 totalEventsInserted += result.eventsInserted
                 totalBytesRead += result.bytesRead
             }
+            try updateParserRebuildMetadata(
+                status: "running",
+                generation: scanGeneration,
+                error: nil,
+                processedSources: index + 1,
+                totalSources: discoveredSources.count
+            )
         }
 
         // 4. 更新全局代数与导入历史
@@ -141,16 +162,39 @@ public actor CodexUsageImportActor {
             currentSourcePaths: Set(discoveredSources.map { $0.fileURL.path }),
             currentSessionIds: Set(discoveredSources.map(\.sessionId)),
             scanGeneration: scanGeneration,
-            scanOutcome: scanOutcome
+            scanOutcome: scanOutcome,
+            preserveMissingSources: forceRebuild
         )
+        if try database.stringScalar(
+            sql: "SELECT value FROM app_metadata WHERE key = 'pricing_reprice_status';"
+        ) == "pending" {
+            // 旧聚合索引在本轮恢复出事件后即可完成重计价，无需用户再启动一次扫描。
+            try PricingCatalogService.shared.ensureCatalogInstalled(database: database, timeZone: aggregationTimeZone) { progress, message in
+                onProgress?(0.95 + 0.04 * progress, message)
+            }
+        }
+
+        let pendingSourceCount = try database.intScalar(
+            sql: """
+            SELECT COUNT(*) FROM codex_import_sources
+            WHERE status != 'tombstoned' AND (parser_version != ? OR status = 'stale');
+            """,
+            bindings: [ParserCheckpoint.currentParserVersion]
+        )
+        let pendingMessage = pendingSourceCount > 0
+            ? L10n.format("%d sources unavailable; previous index retained for retry", zhHans: "%d 个来源暂不可用，已保留旧索引，等待重试", pendingSourceCount)
+            : ""
+        let warningMessage = [scanIssueMessage, pendingMessage].filter { !$0.isEmpty }.joined(separator: "; ")
 
         let completedAtMs = Self.unixMillis()
         let duration = max(0.001, CFAbsoluteTimeGetCurrent() - monotonicStart)
-        let runStatus = scanIssueMessage.isEmpty ? "success" : "partial"
+        let runStatus = warningMessage.isEmpty ? "success" : "partial"
         try updateParserRebuildMetadata(
-            status: scanIssueMessage.isEmpty ? "completed" : "failed",
+            status: !scanIssueMessage.isEmpty ? "failed" : (pendingSourceCount > 0 ? "pending" : "completed"),
             generation: scanGeneration,
-            error: scanIssueMessage.isEmpty ? nil : scanIssueMessage
+            error: warningMessage.isEmpty ? nil : warningMessage,
+            processedSources: discoveredSources.count,
+            totalSources: discoveredSources.count + pendingSourceCount
         )
         parserRebuildDidFinish = true
 
@@ -171,7 +215,7 @@ public actor CodexUsageImportActor {
                 totalEventsInserted,
                 totalBytesRead,
                 runStatus,
-                scanIssueMessage.isEmpty ? nil : scanIssueMessage
+                warningMessage.isEmpty ? nil : warningMessage
             ]
         )
 
@@ -180,9 +224,9 @@ public actor CodexUsageImportActor {
             bindings: []
         )
 
-        let completionMessage = scanIssueMessage.isEmpty
+        let completionMessage = warningMessage.isEmpty
             ? L10n.text("导入完成", "Import complete")
-            : L10n.text("导入完成（部分扫描失败）", "Import complete (partial scan failure)")
+            : L10n.text("导入完成（部分来源待重试）", "Import complete (some sources pending retry)")
         onProgress?(1.0, completionMessage)
 
         return ImportSummary(
@@ -190,7 +234,8 @@ public actor CodexUsageImportActor {
             sourcesUpdated: sourcesUpdated,
             eventsInserted: totalEventsInserted,
             bytesRead: totalBytesRead,
-            durationSeconds: duration
+            durationSeconds: duration,
+            warningMessage: warningMessage.isEmpty ? nil : warningMessage
         )
     }
 
@@ -281,6 +326,28 @@ public actor CodexUsageImportActor {
         let malformedLineCount: Int
         let unresolvedTimestampCount: Int
         let unknownEventTypeCount: Int
+        let status: String
+    }
+
+    private enum PersistenceTarget: Equatable {
+        case live
+        case rebuildShadow
+
+        var eventsTable: String {
+            self == .live ? "codex_usage_events" : "codex_usage_events_parser_shadow"
+        }
+
+        var sessionsTable: String {
+            self == .live ? "codex_sessions" : "codex_sessions_parser_shadow"
+        }
+
+        var sessionSummariesTable: String {
+            self == .live ? "codex_session_summaries" : "codex_session_summaries_parser_shadow"
+        }
+
+        var dailySummariesTable: String {
+            self == .live ? "codex_daily_usage_summaries" : "codex_daily_usage_summaries_parser_shadow"
+        }
     }
 
     private struct SourceAggregation {
@@ -457,7 +524,8 @@ public actor CodexUsageImportActor {
         resolvedSession: CodexResolvedSessionMetadata?,
         pricingSnapshot: PricingCatalogSnapshot,
         forceRebuild: Bool,
-        scanGeneration: Int64
+        scanGeneration: Int64,
+        aggregationTimeZone: TimeZone
     ) throws -> SingleSourceProcessResult {
         let fingerprint = Self.fingerprint(fileURL: source.fileURL, fileSize: source.fileSize)
 
@@ -468,7 +536,7 @@ public actor CodexUsageImportActor {
                 source_path, relative_path,
                 last_imported_size, checkpoint_state_json, device_id, inode, birthtime_ns,
                 file_size, mtime_ms, head_sha256, tail_sha256, imported_tail_sha256, parser_version,
-                malformed_line_count, unresolved_timestamp_count, unknown_event_type_count
+                malformed_line_count, unresolved_timestamp_count, unknown_event_type_count, status
             FROM codex_import_sources
             WHERE source_path = ?
                OR (device_id = ? AND inode = ? AND birthtime_ns IS ?)
@@ -508,7 +576,8 @@ public actor CodexUsageImportActor {
                 parserVersion: Int(sqlite3_column_int(stmt, 12)),
                 malformedLineCount: Int(sqlite3_column_int(stmt, 13)),
                 unresolvedTimestampCount: Int(sqlite3_column_int(stmt, 14)),
-                unknownEventTypeCount: Int(sqlite3_column_int(stmt, 15))
+                unknownEventTypeCount: Int(sqlite3_column_int(stmt, 15)),
+                status: String(cString: sqlite3_column_text(stmt, 16))
             )
         }.first
 
@@ -541,6 +610,7 @@ public actor CodexUsageImportActor {
             let sameContentEnvelope = existing.headSHA256 == fingerprint.headSHA256
                 && existing.tailSHA256 == fingerprint.tailSHA256
             let parserMatches = existing.parserVersion == ParserCheckpoint.currentParserVersion
+                && existing.status != "stale"
 
             if source.fileSize == existing.lastImportedSize,
                source.fileSize == existing.fileSize,
@@ -588,6 +658,24 @@ public actor CodexUsageImportActor {
             }
         }
 
+        let persistenceTarget: PersistenceTarget = replaceExistingDerivedRows ? .rebuildShadow : .live
+        var rebuildShadowPublished = false
+        if persistenceTarget == .rebuildShadow {
+            guard resolvedSession != nil else {
+                throw NSError(
+                    domain: "QuotaLens.CodexUsageImport",
+                    code: 2001,
+                    userInfo: [NSLocalizedDescriptionKey: "无法解析会话元数据，已保留旧索引"]
+                )
+            }
+            try prepareParserRebuildShadowTables()
+        }
+        defer {
+            if persistenceTarget == .rebuildShadow && !rebuildShadowPublished {
+                try? clearParserRebuildShadowTables()
+            }
+        }
+
         let isChild = (resolvedSession?.depth ?? 0) > 0
         let rootSessionId = resolvedSession?.rootSessionId ?? source.sessionId
         let timestampFallback = fallbackTimestamp(for: source, resolvedSession: resolvedSession)
@@ -605,7 +693,7 @@ public actor CodexUsageImportActor {
         var reducerState = CodexUsageReducer.ReducerState(checkpoint: initialCheckpoint)
         var aggregation = SourceAggregation()
         let memoryBudget = ImportMemoryBudget.current()
-        let timeZone = TimeZone.current
+        let timeZone = aggregationTimeZone
         let calendar = UsageDayBucketer.calendar(timeZone: timeZone)
         var totalInserted = 0
         var eventsSinceMemoryCheck = 0
@@ -657,21 +745,24 @@ public actor CodexUsageImportActor {
                                     sourcePath: source.fileURL.path,
                                     relativePath: source.relativePath,
                                     aggregation: aggregation,
-                                    replaceExisting: replaceExistingDerivedRows && !hasCommittedChunks
+                                    replaceExisting: replaceExistingDerivedRows && !hasCommittedChunks,
+                                    target: persistenceTarget
                                 )
                             }
-                            try persistSourceCheckpointInTransaction(
-                                source: source,
-                                importedSize: lineRecord.startOffset + Int64(lineRecord.lineBytes),
-                                checkpoint: checkpoint,
-                                status: "partial",
-                                fingerprint: fingerprint,
-                                scanGeneration: scanGeneration,
-                                rebuildReason: rebuildReason,
-                                malformedLineCount: malformedLineCount,
-                                unresolvedTimestampCount: unresolvedTimestampCount,
-                                unknownEventTypeCount: unknownEventTypeCount
-                            )
+                            if persistenceTarget == .live {
+                                try persistSourceCheckpointInTransaction(
+                                    source: source,
+                                    importedSize: lineRecord.startOffset + Int64(lineRecord.lineBytes),
+                                    checkpoint: checkpoint,
+                                    status: "partial",
+                                    fingerprint: fingerprint,
+                                    scanGeneration: scanGeneration,
+                                    rebuildReason: rebuildReason,
+                                    malformedLineCount: malformedLineCount,
+                                    unresolvedTimestampCount: unresolvedTimestampCount,
+                                    unknownEventTypeCount: unknownEventTypeCount
+                                )
+                            }
                         }
 
                         totalInserted += aggregation.session.eventCount
@@ -692,24 +783,9 @@ public actor CodexUsageImportActor {
         // 提交最终检查点与会话汇总
         let finalCheckpoint = reducerState.makeCheckpoint()
 
-        try database.transaction {
-            // 1. 更新文件源状态
-            try persistSourceCheckpointInTransaction(
-                source: source,
-                importedSize: finalOffset,
-                checkpoint: finalCheckpoint,
-                status: "indexed",
-                fingerprint: fingerprint,
-                scanGeneration: scanGeneration,
-                rebuildReason: rebuildReason,
-                malformedLineCount: malformedLineCount,
-                unresolvedTimestampCount: unresolvedTimestampCount,
-                unknownEventTypeCount: unknownEventTypeCount
-            )
-
-            // 2. 写入最终聚合结果。扫描过程不落事件明细，避免大文件导致持续写盘。
-            if let session = resolvedSession {
-                let shouldReplace = replaceExistingDerivedRows && !hasCommittedChunks
+        if persistenceTarget == .rebuildShadow, let session = resolvedSession {
+            try database.transaction {
+                let shouldReplace = !hasCommittedChunks
                 if !aggregation.isEmpty {
                     try persistAggregatesInTransaction(
                         sessionId: session.sessionId,
@@ -718,14 +794,68 @@ public actor CodexUsageImportActor {
                         sourcePath: source.fileURL.path,
                         relativePath: source.relativePath,
                         aggregation: aggregation,
-                        replaceExisting: shouldReplace
+                        replaceExisting: shouldReplace,
+                        target: .rebuildShadow
                     )
                 } else if shouldReplace {
                     try deleteDerivedRowsForSession(
                         sessionId: session.sessionId,
                         sourcePath: source.fileURL.path,
-                        relativePath: source.relativePath
+                        relativePath: source.relativePath,
+                        target: .rebuildShadow
                     )
+                }
+            }
+            try publishParserRebuildShadow(
+                sessionId: session.sessionId,
+                source: source,
+                importedSize: finalOffset,
+                checkpoint: finalCheckpoint,
+                fingerprint: fingerprint,
+                scanGeneration: scanGeneration,
+                rebuildReason: rebuildReason,
+                malformedLineCount: malformedLineCount,
+                unresolvedTimestampCount: unresolvedTimestampCount,
+                unknownEventTypeCount: unknownEventTypeCount
+            )
+            rebuildShadowPublished = true
+        } else {
+            try database.transaction {
+                // 增量导入可以逐批直接追加，最终原子更新正式检查点。
+                try persistSourceCheckpointInTransaction(
+                    source: source,
+                    importedSize: finalOffset,
+                    checkpoint: finalCheckpoint,
+                    status: "indexed",
+                    fingerprint: fingerprint,
+                    scanGeneration: scanGeneration,
+                    rebuildReason: rebuildReason,
+                    malformedLineCount: malformedLineCount,
+                    unresolvedTimestampCount: unresolvedTimestampCount,
+                    unknownEventTypeCount: unknownEventTypeCount
+                )
+
+                if let session = resolvedSession {
+                    let shouldReplace = replaceExistingDerivedRows && !hasCommittedChunks
+                    if !aggregation.isEmpty {
+                        try persistAggregatesInTransaction(
+                            sessionId: session.sessionId,
+                            metadata: session,
+                            bucket: source.bucket,
+                            sourcePath: source.fileURL.path,
+                            relativePath: source.relativePath,
+                            aggregation: aggregation,
+                            replaceExisting: shouldReplace,
+                            target: .live
+                        )
+                    } else if shouldReplace {
+                        try deleteDerivedRowsForSession(
+                            sessionId: session.sessionId,
+                            sourcePath: source.fileURL.path,
+                            relativePath: source.relativePath,
+                            target: .live
+                        )
+                    }
                 }
             }
         }
@@ -734,6 +864,140 @@ public actor CodexUsageImportActor {
         ImportMemoryBudget.relieveAllocatorPressure()
         let bytesRead = max(0, finalOffset - startOffset)
         return SingleSourceProcessResult(eventsInserted: totalInserted, bytesRead: bytesRead)
+    }
+
+    private func prepareParserRebuildShadowTables() throws {
+        try database.execute(sql: """
+        CREATE TEMP TABLE IF NOT EXISTS codex_usage_events_parser_shadow
+            AS SELECT * FROM codex_usage_events WHERE 0;
+        CREATE TEMP TABLE IF NOT EXISTS codex_sessions_parser_shadow
+            AS SELECT * FROM codex_sessions WHERE 0;
+        CREATE TEMP TABLE IF NOT EXISTS codex_session_summaries_parser_shadow
+            AS SELECT * FROM codex_session_summaries WHERE 0;
+        CREATE TEMP TABLE IF NOT EXISTS codex_daily_usage_summaries_parser_shadow
+            AS SELECT * FROM codex_daily_usage_summaries WHERE 0;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS temp.idx_parser_shadow_event_id
+            ON codex_usage_events_parser_shadow(event_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS temp.idx_parser_shadow_session_id
+            ON codex_sessions_parser_shadow(session_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS temp.idx_parser_shadow_session_model
+            ON codex_session_summaries_parser_shadow(session_id, model_canonical);
+        CREATE UNIQUE INDEX IF NOT EXISTS temp.idx_parser_shadow_daily_model
+            ON codex_daily_usage_summaries_parser_shadow(session_id, day_key, model_canonical);
+        """)
+        try clearParserRebuildShadowTables()
+    }
+
+    private func clearParserRebuildShadowTables() throws {
+        try database.execute(sql: """
+        DELETE FROM codex_usage_events_parser_shadow;
+        DELETE FROM codex_sessions_parser_shadow;
+        DELETE FROM codex_session_summaries_parser_shadow;
+        DELETE FROM codex_daily_usage_summaries_parser_shadow;
+        """)
+    }
+
+    private func validateParserRebuildShadow(sessionId: String) throws {
+        let eventCount = try database.intScalar(
+            sql: "SELECT COUNT(*) FROM codex_usage_events_parser_shadow WHERE session_id = ?;",
+            bindings: [sessionId]
+        )
+        let sessionCount = try database.intScalar(
+            sql: "SELECT COUNT(*) FROM codex_sessions_parser_shadow WHERE session_id = ?;",
+            bindings: [sessionId]
+        )
+        let summaryEventCount = try database.intScalar(
+            sql: "SELECT COALESCE(SUM(event_count), 0) FROM codex_session_summaries_parser_shadow WHERE session_id = ?;",
+            bindings: [sessionId]
+        )
+        let dailyEventCount = try database.intScalar(
+            sql: "SELECT COALESCE(SUM(event_count), 0) FROM codex_daily_usage_summaries_parser_shadow WHERE session_id = ?;",
+            bindings: [sessionId]
+        )
+        let eventTokens = try database.int64Scalar(
+            sql: "SELECT COALESCE(SUM(total_tokens), 0) FROM codex_usage_events_parser_shadow WHERE session_id = ?;",
+            bindings: [sessionId]
+        ) ?? 0
+        let summaryTokens = try database.int64Scalar(
+            sql: "SELECT COALESCE(SUM(total_tokens), 0) FROM codex_session_summaries_parser_shadow WHERE session_id = ?;",
+            bindings: [sessionId]
+        ) ?? 0
+        let dailyTokens = try database.int64Scalar(
+            sql: "SELECT COALESCE(SUM(total_tokens), 0) FROM codex_daily_usage_summaries_parser_shadow WHERE session_id = ?;",
+            bindings: [sessionId]
+        ) ?? 0
+        let sessionTokens = try database.int64Scalar(
+            sql: "SELECT total_tokens FROM codex_sessions_parser_shadow WHERE session_id = ?;",
+            bindings: [sessionId]
+        ) ?? 0
+
+        let expectedSessionCount = eventCount > 0 ? 1 : 0
+        guard sessionCount == expectedSessionCount,
+              summaryEventCount == eventCount,
+              dailyEventCount == eventCount,
+              summaryTokens == eventTokens,
+              dailyTokens == eventTokens,
+              sessionTokens == eventTokens else {
+            throw NSError(
+                domain: "QuotaLens.CodexUsageImport",
+                code: 2002,
+                userInfo: [NSLocalizedDescriptionKey: "解析器影子索引一致性检查失败，已保留旧索引"]
+            )
+        }
+    }
+
+    private func publishParserRebuildShadow(
+        sessionId: String,
+        source: RolloutDiscoveredSource,
+        importedSize: Int64,
+        checkpoint: ParserCheckpoint,
+        fingerprint: SourceContentFingerprint,
+        scanGeneration: Int64,
+        rebuildReason: String?,
+        malformedLineCount: Int,
+        unresolvedTimestampCount: Int,
+        unknownEventTypeCount: Int
+    ) throws {
+        try validateParserRebuildShadow(sessionId: sessionId)
+        try database.transaction {
+            try validateParserRebuildShadow(sessionId: sessionId)
+            try deleteDerivedRowsForSession(
+                sessionId: sessionId,
+                sourcePath: source.fileURL.path,
+                relativePath: source.relativePath,
+                target: .live
+            )
+            try database.executeUpdate(
+                sql: "INSERT INTO codex_sessions SELECT * FROM codex_sessions_parser_shadow WHERE session_id = ?;",
+                bindings: [sessionId]
+            )
+            try database.executeUpdate(
+                sql: "INSERT INTO codex_usage_events SELECT * FROM codex_usage_events_parser_shadow WHERE session_id = ?;",
+                bindings: [sessionId]
+            )
+            try database.executeUpdate(
+                sql: "INSERT INTO codex_session_summaries SELECT * FROM codex_session_summaries_parser_shadow WHERE session_id = ?;",
+                bindings: [sessionId]
+            )
+            try database.executeUpdate(
+                sql: "INSERT INTO codex_daily_usage_summaries SELECT * FROM codex_daily_usage_summaries_parser_shadow WHERE session_id = ?;",
+                bindings: [sessionId]
+            )
+            try persistSourceCheckpointInTransaction(
+                source: source,
+                importedSize: importedSize,
+                checkpoint: checkpoint,
+                status: "indexed",
+                fingerprint: fingerprint,
+                scanGeneration: scanGeneration,
+                rebuildReason: rebuildReason,
+                malformedLineCount: malformedLineCount,
+                unresolvedTimestampCount: unresolvedTimestampCount,
+                unknownEventTypeCount: unknownEventTypeCount
+            )
+            try clearParserRebuildShadowTables()
+        }
     }
 
     private func persistSourceCheckpointInTransaction(
@@ -794,25 +1058,41 @@ public actor CodexUsageImportActor {
         sourcePath: String,
         relativePath: String,
         aggregation: SourceAggregation,
-        replaceExisting: Bool
+        replaceExisting: Bool,
+        target: PersistenceTarget = .live
     ) throws {
         if replaceExisting {
-            try deleteDerivedRowsForSession(sessionId: sessionId, sourcePath: sourcePath, relativePath: relativePath)
+            try deleteDerivedRowsForSession(
+                sessionId: sessionId,
+                sourcePath: sourcePath,
+                relativePath: relativePath,
+                target: target
+            )
         }
 
-        try persistUsageEvents(aggregation.events)
+        try persistUsageEvents(aggregation.events, target: target)
 
         for (model, aggregate) in aggregation.models {
-            try upsertSessionModelSummary(sessionId: sessionId, modelCanonical: model, aggregate: aggregate)
+            try upsertSessionModelSummary(
+                sessionId: sessionId,
+                modelCanonical: model,
+                aggregate: aggregate,
+                target: target
+            )
         }
 
         for (key, aggregate) in aggregation.days {
-            try upsertDailySummary(sessionId: sessionId, key: key, aggregate: aggregate)
+            try upsertDailySummary(
+                sessionId: sessionId,
+                key: key,
+                aggregate: aggregate,
+                target: target
+            )
         }
 
-        let totals = try loadSessionTotalsFromSummaries(sessionId: sessionId)
+        let totals = try loadSessionTotalsFromSummaries(sessionId: sessionId, target: target)
         let existingLastEventAt: Int64? = replaceExisting ? nil : try database.executeQuery(
-            sql: "SELECT last_event_at FROM codex_sessions WHERE session_id = ?;",
+            sql: "SELECT last_event_at FROM \(target.sessionsTable) WHERE session_id = ?;",
             bindings: [sessionId]
         ) { stmt -> Int64? in
             sqlite3_column_type(stmt, 0) != SQLITE_NULL ? sqlite3_column_int64(stmt, 0) : nil
@@ -830,7 +1110,7 @@ public actor CodexUsageImportActor {
 
         try database.executeUpdate(
             sql: """
-            INSERT OR REPLACE INTO codex_sessions (
+            INSERT OR REPLACE INTO \(target.sessionsTable) (
                 session_id, root_session_id, parent_session_id, depth, source_path,
                 relative_path, bucket, title, project_name, cwd, created_at, updated_at,
                 last_event_at, event_count, total_tokens, input_tokens, cached_input_tokens,
@@ -885,21 +1165,41 @@ public actor CodexUsageImportActor {
         )
     }
 
-    private func deleteDerivedRowsForSession(sessionId: String, sourcePath: String, relativePath: String) throws {
-        try database.executeUpdate(sql: "DELETE FROM codex_usage_events WHERE session_id = ?;", bindings: [sessionId])
-        try database.executeUpdate(sql: "DELETE FROM codex_session_summaries WHERE session_id = ?;", bindings: [sessionId])
-        try database.executeUpdate(sql: "DELETE FROM codex_daily_usage_summaries WHERE session_id = ?;", bindings: [sessionId])
-        try database.executeUpdate(sql: "DELETE FROM codex_sessions WHERE session_id = ?;", bindings: [sessionId])
+    private func deleteDerivedRowsForSession(
+        sessionId: String,
+        sourcePath: String,
+        relativePath: String,
+        target: PersistenceTarget = .live
+    ) throws {
+        try database.executeUpdate(
+            sql: "DELETE FROM \(target.eventsTable) WHERE session_id = ?;",
+            bindings: [sessionId]
+        )
+        try database.executeUpdate(
+            sql: "DELETE FROM \(target.sessionSummariesTable) WHERE session_id = ?;",
+            bindings: [sessionId]
+        )
+        try database.executeUpdate(
+            sql: "DELETE FROM \(target.dailySummariesTable) WHERE session_id = ?;",
+            bindings: [sessionId]
+        )
+        try database.executeUpdate(
+            sql: "DELETE FROM \(target.sessionsTable) WHERE session_id = ?;",
+            bindings: [sessionId]
+        )
     }
 
-    private func persistUsageEvents(_ events: [PricedUsageEvent]) throws {
+    private func persistUsageEvents(
+        _ events: [PricedUsageEvent],
+        target: PersistenceTarget = .live
+    ) throws {
         guard !events.isEmpty else { return }
         for priced in events {
             let event = priced.event
             let price = priced.price
             try database.executeUpdate(
                 sql: """
-                INSERT OR REPLACE INTO codex_usage_events (
+                INSERT OR REPLACE INTO \(target.eventsTable) (
                     event_id, session_id, root_session_id, turn_index, call_index,
                     timestamp_ms, model_raw, model_canonical, service_tier, reasoning_effort,
                     input_tokens, cached_input_tokens, cache_write_input_tokens,
@@ -948,11 +1248,12 @@ public actor CodexUsageImportActor {
     private func upsertSessionModelSummary(
         sessionId: String,
         modelCanonical: String,
-        aggregate: UsageAggregate
+        aggregate: UsageAggregate,
+        target: PersistenceTarget = .live
     ) throws {
         try database.executeUpdate(
             sql: """
-            INSERT INTO codex_session_summaries (
+            INSERT INTO \(target.sessionSummariesTable) (
                 session_id, model_canonical, event_count, total_tokens,
                 uncached_input_tokens, cached_input_tokens, cache_write_input_tokens,
                 output_tokens, reasoning_output_tokens,
@@ -995,11 +1296,12 @@ public actor CodexUsageImportActor {
     private func upsertDailySummary(
         sessionId: String,
         key: DailyAggregateKey,
-        aggregate: UsageAggregate
+        aggregate: UsageAggregate,
+        target: PersistenceTarget = .live
     ) throws {
         try database.executeUpdate(
             sql: """
-            INSERT INTO codex_daily_usage_summaries (
+            INSERT INTO \(target.dailySummariesTable) (
                 session_id, day_key, day_start_ms, model_canonical, event_count,
                 total_tokens, uncached_input_tokens, cached_input_tokens, cache_write_input_tokens,
                 output_tokens, reasoning_output_tokens,
@@ -1071,7 +1373,8 @@ public actor CodexUsageImportActor {
     }
 
     private func loadSessionTotalsFromSummaries(
-        sessionId: String
+        sessionId: String,
+        target: PersistenceTarget = .live
     ) throws -> (
         eventCount: Int,
         tokens: TokenBreakdown,
@@ -1103,7 +1406,7 @@ public actor CodexUsageImportActor {
                 COALESCE(SUM(unpriced_invalid_record_token_count), 0),
                 COALESCE(SUM(unpriced_overflow_event_count), 0),
                 COALESCE(SUM(unpriced_overflow_token_count), 0)
-            FROM codex_session_summaries
+            FROM \(target.sessionSummariesTable)
             WHERE session_id = ?;
             """,
             bindings: [sessionId]
@@ -1169,7 +1472,9 @@ public actor CodexUsageImportActor {
     private func updateParserRebuildMetadata(
         status: String,
         generation: Int64,
-        error: String?
+        error: String?,
+        processedSources: Int? = nil,
+        totalSources: Int? = nil
     ) throws {
         try database.executeUpdate(
             sql: "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES ('codex_parser_rebuild_status', ?, unixepoch());",
@@ -1179,6 +1484,18 @@ public actor CodexUsageImportActor {
             sql: "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES ('codex_parser_rebuild_generation', ?, unixepoch());",
             bindings: [String(generation)]
         )
+        if let processedSources {
+            try database.executeUpdate(
+                sql: "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES ('codex_parser_rebuild_processed_sources', ?, unixepoch());",
+                bindings: [String(processedSources)]
+            )
+        }
+        if let totalSources {
+            try database.executeUpdate(
+                sql: "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES ('codex_parser_rebuild_total_sources', ?, unixepoch());",
+                bindings: [String(totalSources)]
+            )
+        }
         if let error, !error.isEmpty {
             try database.executeUpdate(
                 sql: "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES ('codex_parser_rebuild_error', ?, unixepoch());",
@@ -1187,29 +1504,6 @@ public actor CodexUsageImportActor {
         } else {
             try database.executeUpdate(sql: "DELETE FROM app_metadata WHERE key = 'codex_parser_rebuild_error';", bindings: [])
         }
-    }
-
-    private func prepareUsageAggregationTimeZone(timeZone: TimeZone, generation: Int64) throws -> Bool {
-        let previousID = try database.stringScalar(
-            sql: "SELECT value FROM app_metadata WHERE key = 'usage_aggregation_timezone_id';"
-        )
-        let changed = previousID != nil && previousID != timeZone.identifier
-        try database.executeUpdate(
-            sql: "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES ('usage_aggregation_timezone_id', ?, unixepoch());",
-            bindings: [timeZone.identifier]
-        )
-        if changed {
-            try database.executeUpdate(
-                sql: "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES ('usage_aggregation_timezone_generation', ?, unixepoch());",
-                bindings: [String(generation)]
-            )
-        } else {
-            try database.executeUpdate(
-                sql: "INSERT OR IGNORE INTO app_metadata (key, value, updated_at) VALUES ('usage_aggregation_timezone_generation', '0', unixepoch());",
-                bindings: []
-            )
-        }
-        return changed
     }
 
     private func persistScanDiagnostics(
@@ -1315,16 +1609,17 @@ public actor CodexUsageImportActor {
         currentSourcePaths: Set<String>,
         currentSessionIds: Set<String>,
         scanGeneration: Int64,
-        scanOutcome: ScanOutcome
+        scanOutcome: ScanOutcome,
+        preserveMissingSources: Bool
     ) throws {
         let staleSources = try database.executeQuery(
             sql: """
-            SELECT source_path, relative_path, bucket
+            SELECT source_path, relative_path, bucket, parser_version, status
             FROM codex_import_sources
             WHERE scan_generation < ? AND status != 'tombstoned';
             """,
             bindings: [scanGeneration]
-        ) { stmt -> (String, String, SessionBucket) in
+        ) { stmt -> (String, String, SessionBucket, Bool) in
             let path = String(cString: sqlite3_column_text(stmt, 0))
             let relative = sqlite3_column_type(stmt, 1) != SQLITE_NULL && sqlite3_column_text(stmt, 1) != nil
                 ? String(cString: sqlite3_column_text(stmt, 1)!)
@@ -1332,12 +1627,13 @@ public actor CodexUsageImportActor {
             let bucketRaw = sqlite3_column_type(stmt, 2) != SQLITE_NULL && sqlite3_column_text(stmt, 2) != nil
                 ? String(cString: sqlite3_column_text(stmt, 2)!)
                 : SessionBucket.active.rawValue
-            return (path, relative, SessionBucket(rawValue: bucketRaw) ?? .active)
+            let needsRebuild = Int(sqlite3_column_int(stmt, 3)) != ParserCheckpoint.currentParserVersion
+                || String(cString: sqlite3_column_text(stmt, 4)) == "stale"
+            return (path, relative, SessionBucket(rawValue: bucketRaw) ?? .active, needsRebuild)
         }
 
         for stale in staleSources {
             guard !currentSourcePaths.contains(stale.0) else { continue }
-            guard scanOutcome.status(for: stale.2).allowsTombstone else { continue }
             let sessions = try database.executeQuery(
                 sql: "SELECT session_id FROM codex_sessions WHERE source_path = ? OR relative_path = ?;",
                 bindings: [stale.0, stale.1]
@@ -1346,6 +1642,15 @@ public actor CodexUsageImportActor {
             }
 
             let movedSessionStillPresent = sessions.contains { currentSessionIds.contains($0) }
+            // 重建所需原件缺失时保留旧账本；只有明确已搬迁的旧路径才可直接作废。
+            if !movedSessionStillPresent && (preserveMissingSources || stale.3) {
+                try database.executeUpdate(
+                    sql: "UPDATE codex_import_sources SET status = 'stale', error_message = 'source unavailable; previous index retained' WHERE source_path = ?;",
+                    bindings: [stale.0]
+                )
+                continue
+            }
+            guard scanOutcome.status(for: stale.2).allowsTombstone else { continue }
             if !movedSessionStillPresent {
                 try deleteDerivedRowsForSource(sourcePath: stale.0, relativePath: stale.1)
             }

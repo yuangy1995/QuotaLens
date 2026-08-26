@@ -197,9 +197,7 @@ public struct SessionDetailView: View {
                 MetricHUDTile(
                     title: L10n.text("API 等价价值 · Beta", "API Equivalent Value · Beta"),
                     value: UsageNumberFormatter.currencyUSD(detail.session.estimatedCost),
-                    caption: detail.session.pricingStatus.isPriced
-                        ? L10n.text("不是订阅账单金额", "Not a bill")
-                        : detail.session.pricingStatus.localizedDescription,
+                    caption: pricingCaption(for: detail.session),
                     icon: "dollarsign.circle.fill",
                     accentColor: emerald
                 )
@@ -430,6 +428,16 @@ public struct SessionDetailView: View {
                 .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
         )
     }
+
+    private func pricingCaption(for session: CodexSessionDTO) -> String {
+        guard !session.pricingStatus.isPriced else {
+            return L10n.text("不是订阅账单金额", "Not a bill")
+        }
+        guard !session.unpricedReasonCounts.isEmpty else {
+            return session.pricingStatus.localizedDescription
+        }
+        return "\(session.pricingStatus.localizedDescription) · \(session.unpricedReasonCounts.localizedSummary)"
+    }
 }
 
 // MARK: - 单条事件明细行
@@ -524,6 +532,7 @@ private struct MetricHUDTile: View {
                 .font(.system(size: 9.5, design: .monospaced))
                 .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
                 .lineLimit(1)
+                .help(caption)
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)

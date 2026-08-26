@@ -151,6 +151,8 @@ final class ImporterRecoveryTests: XCTestCase {
         let diagnostics = try UsageAnalyticsRepository(database: database).fetchDiagnostics()
         XCTAssertEqual(diagnostics.skippedNonRolloutJSONLCount, 1)
         XCTAssertEqual(diagnostics.parserRebuildStatus, "completed")
+        XCTAssertEqual(diagnostics.parserRebuildProcessedSources, 0)
+        XCTAssertEqual(diagnostics.parserRebuildTotalSources, 0)
     }
 
     func testPartialEOFIsResumedWithoutReplayingCommittedEvent() async throws {
@@ -186,10 +188,10 @@ final class ImporterRecoveryTests: XCTestCase {
             sql: """
             INSERT INTO codex_import_sources (
                 source_path, relative_path, bucket, device_id, inode, file_size,
-                mtime_ms, scan_generation, status
-            ) VALUES (?, 'archived_sessions/rollout-2026-08-20T12-00-00-archived.jsonl', 'archived', 1, 2, 1, 1, 0, 'indexed');
+                mtime_ms, scan_generation, status, parser_version
+            ) VALUES (?, 'archived_sessions/rollout-2026-08-20T12-00-00-archived.jsonl', 'archived', 1, 2, 1, 1, 0, 'indexed', ?);
             """,
-            bindings: [archivedPath]
+            bindings: [archivedPath, ParserCheckpoint.currentParserVersion]
         )
         try database.executeUpdate(
             sql: """
@@ -232,10 +234,10 @@ final class ImporterRecoveryTests: XCTestCase {
             sql: """
             INSERT INTO codex_import_sources (
                 source_path, relative_path, bucket, device_id, inode, file_size,
-                mtime_ms, scan_generation, status
-            ) VALUES (?, 'sessions/rollout-2026-08-20T12-00-00-active.jsonl', 'active', 1, 2, 1, 1, 0, 'indexed');
+                mtime_ms, scan_generation, status, parser_version
+            ) VALUES (?, 'sessions/rollout-2026-08-20T12-00-00-active.jsonl', 'active', 1, 2, 1, 1, 0, 'indexed', ?);
             """,
-            bindings: [sourcePath]
+            bindings: [sourcePath, ParserCheckpoint.currentParserVersion]
         )
         try database.executeUpdate(
             sql: """
@@ -304,10 +306,10 @@ final class ImporterRecoveryTests: XCTestCase {
                 sql: """
                 INSERT INTO codex_import_sources (
                     source_path, relative_path, bucket, device_id, inode, file_size,
-                    mtime_ms, scan_generation, status
-                ) VALUES (?, ?, ?, 1, ?, 1, 1, 0, 'indexed');
+                    mtime_ms, scan_generation, status, parser_version
+                ) VALUES (?, ?, ?, 1, ?, 1, 1, 0, 'indexed', ?);
                 """,
-                bindings: [sourcePath, relativePath, bucket, inode]
+                bindings: [sourcePath, relativePath, bucket, inode, ParserCheckpoint.currentParserVersion]
             )
             try database.executeUpdate(
                 sql: """
@@ -347,6 +349,158 @@ final class ImporterRecoveryTests: XCTestCase {
         XCTAssertEqual(try database.intScalar(sql: "SELECT COUNT(*) FROM codex_sessions WHERE session_id = 'active-session';"), 0)
         XCTAssertEqual(try database.intScalar(sql: "SELECT COUNT(*) FROM codex_sessions WHERE session_id = 'archived-session';"), 1)
         XCTAssertEqual(try database.stringScalar(sql: "SELECT status FROM codex_import_runs LIMIT 1;"), "partial")
+    }
+
+    func testForcedRebuildPublishesFromShadowOnlyAfterCompleteSuccess() async throws {
+        let root = try makeTemporaryDirectory(named: "QuotaLensParserShadowRecovery")
+        let paths = CodexHistoryPaths(rootURL: root)
+        try FileManager.default.createDirectory(at: paths.sessionsURL, withIntermediateDirectories: true)
+        let database = try makeMigratedDatabase(in: root)
+        let importer = CodexUsageImportActor(database: database)
+        let sessionID = "88888888-8888-8888-8888-888888888888"
+        let file = paths.sessionsURL.appendingPathComponent(
+            "rollout-2026-08-20T12-00-00-\(sessionID).jsonl"
+        )
+
+        try overwriteFile(file, with: rolloutText(sessionId: sessionID, input: 10, output: 5))
+        _ = try await importer.importCodexHistory(paths: paths)
+        _ = try await importer.importCodexHistory(paths: paths, forceRebuild: true)
+
+        let originalTokens = try database.int64Scalar(
+            sql: "SELECT total_tokens FROM codex_sessions WHERE session_id = ?;",
+            bindings: [sessionID]
+        )
+        try overwriteFile(file, with: rolloutText(sessionId: sessionID, input: 40, output: 7))
+        try database.execute(sql: """
+        CREATE TEMP TRIGGER fail_parser_shadow_insert
+        BEFORE INSERT ON codex_usage_events_parser_shadow
+        BEGIN
+            SELECT RAISE(ABORT, 'simulated parser shadow failure');
+        END;
+        """)
+
+        do {
+            _ = try await importer.importCodexHistory(paths: paths, forceRebuild: true)
+            XCTFail("影子重建注入失败后不应成功")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("simulated parser shadow failure"))
+        }
+
+        XCTAssertEqual(try database.int64Scalar(
+            sql: "SELECT total_tokens FROM codex_sessions WHERE session_id = ?;",
+            bindings: [sessionID]
+        ), originalTokens)
+        XCTAssertEqual(try database.stringScalar(
+            sql: "SELECT value FROM app_metadata WHERE key = 'usage_aggregation_timezone_id';"
+        ), TimeZone.current.identifier)
+        XCTAssertEqual(try database.stringScalar(
+            sql: "SELECT value FROM app_metadata WHERE key = 'codex_parser_rebuild_status';"
+        ), "failed")
+        XCTAssertEqual(try database.intScalar(
+            sql: "SELECT value FROM app_metadata WHERE key = 'codex_parser_rebuild_processed_sources';"
+        ), 0)
+        XCTAssertEqual(try database.intScalar(
+            sql: "SELECT value FROM app_metadata WHERE key = 'codex_parser_rebuild_total_sources';"
+        ), 1)
+
+        try database.execute(sql: "DROP TRIGGER temp.fail_parser_shadow_insert;")
+        _ = try await importer.importCodexHistory(paths: paths, forceRebuild: true)
+
+        XCTAssertEqual(try database.int64Scalar(
+            sql: "SELECT total_tokens FROM codex_sessions WHERE session_id = ?;",
+            bindings: [sessionID]
+        ), 47)
+        XCTAssertEqual(try database.stringScalar(
+            sql: "SELECT value FROM app_metadata WHERE key = 'usage_aggregation_timezone_id';"
+        ), TimeZone.current.identifier)
+        XCTAssertEqual(try database.stringScalar(
+            sql: "SELECT value FROM app_metadata WHERE key = 'codex_parser_rebuild_status';"
+        ), "completed")
+        XCTAssertEqual(try database.intScalar(
+            sql: "SELECT value FROM app_metadata WHERE key = 'codex_parser_rebuild_processed_sources';"
+        ), 1)
+        XCTAssertEqual(try database.intScalar(
+            sql: "SELECT value FROM app_metadata WHERE key = 'codex_parser_rebuild_total_sources';"
+        ), 1)
+    }
+
+    func testMissingParserUpgradeSourceRetainsHistoryAndRetriesWhenRestored() async throws {
+        let root = try makeTemporaryDirectory(named: "QuotaLensMissingUpgradeSource")
+        let paths = CodexHistoryPaths(rootURL: root)
+        try FileManager.default.createDirectory(at: paths.sessionsURL, withIntermediateDirectories: true)
+        let database = try makeMigratedDatabase(in: root)
+        let importer = CodexUsageImportActor(database: database)
+        let sessionID = "99999999-9999-9999-9999-999999999999"
+        let file = paths.sessionsURL.appendingPathComponent("rollout-2026-08-20T12-00-00-\(sessionID).jsonl")
+        try overwriteFile(file, with: rolloutText(sessionId: sessionID, input: 10, output: 5))
+        _ = try await importer.importCodexHistory(paths: paths)
+        try database.execute(sql: "UPDATE codex_import_sources SET parser_version = 0, status = 'stale';")
+        try FileManager.default.removeItem(at: file)
+
+        for _ in 0..<2 {
+            let summary = try await importer.importCodexHistory(paths: paths)
+            XCTAssertNotNil(summary.warningMessage)
+            XCTAssertEqual(try sessionTotal(database, sessionID: sessionID), 15)
+            XCTAssertEqual(try database.intScalar(sql: "SELECT COUNT(*) FROM codex_usage_events;"), 1)
+            XCTAssertEqual(try database.stringScalar(
+                sql: "SELECT value FROM app_metadata WHERE key = 'codex_parser_rebuild_status';"
+            ), "pending")
+            XCTAssertEqual(try database.intScalar(
+                sql: "SELECT value FROM app_metadata WHERE key = 'codex_parser_rebuild_total_sources';"
+            ), 1)
+        }
+
+        try overwriteFile(file, with: rolloutText(sessionId: sessionID, input: 40, output: 7))
+        let retried = try await importer.importCodexHistory(paths: paths)
+        XCTAssertNil(retried.warningMessage)
+        XCTAssertEqual(try sessionTotal(database, sessionID: sessionID), 47)
+        XCTAssertEqual(try database.stringScalar(sql: "SELECT status FROM codex_import_sources LIMIT 1;"), "indexed")
+        XCTAssertEqual(try database.stringScalar(
+            sql: "SELECT value FROM app_metadata WHERE key = 'codex_parser_rebuild_status';"
+        ), "completed")
+    }
+
+    func testTimeZoneChangeUsesStoredLedgerAndPublishesAtomically() async throws {
+        let root = try makeTemporaryDirectory(named: "QuotaLensTimeZoneRecovery")
+        let paths = CodexHistoryPaths(rootURL: root)
+        try FileManager.default.createDirectory(at: paths.sessionsURL, withIntermediateDirectories: true)
+        let database = try makeMigratedDatabase(in: root)
+        let sessionID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        let file = paths.sessionsURL.appendingPathComponent("rollout-2026-08-20T12-00-00-\(sessionID).jsonl")
+        try overwriteFile(file, with: rolloutText(sessionId: sessionID, input: 10, output: 5))
+        _ = try await CodexUsageImportActor(database: database).importCodexHistory(paths: paths)
+        let service = PricingCatalogService.shared
+        let oldZone = try XCTUnwrap(TimeZone(identifier: "America/Los_Angeles"))
+        let newZone = try XCTUnwrap(TimeZone(identifier: "Pacific/Kiritimati"))
+        try service.ensureCatalogInstalled(database: database, timeZone: oldZone)
+        let previousDay = try database.stringScalar(sql: "SELECT day_key FROM codex_daily_usage_summaries;")
+        let previousCost = try database.int64Scalar(sql: "SELECT estimated_cost_usd_nano FROM codex_sessions;")
+        try FileManager.default.removeItem(at: file)
+        try database.execute(sql: """
+        CREATE TRIGGER fail_timezone_publish BEFORE DELETE ON codex_daily_usage_summaries
+        BEGIN
+            SELECT RAISE(ABORT, 'timezone publish interruption');
+        END;
+        """)
+
+        XCTAssertThrowsError(try service.ensureCatalogInstalled(database: database, timeZone: newZone))
+        XCTAssertEqual(try database.stringScalar(sql: "SELECT day_key FROM codex_daily_usage_summaries;"), previousDay)
+        XCTAssertEqual(try database.stringScalar(
+            sql: "SELECT value FROM app_metadata WHERE key = 'usage_aggregation_timezone_id';"
+        ), oldZone.identifier)
+        XCTAssertEqual(try database.int64Scalar(sql: "SELECT estimated_cost_usd_nano FROM codex_sessions;"), previousCost)
+
+        try database.execute(sql: "DROP TRIGGER fail_timezone_publish;")
+        try service.ensureCatalogInstalled(database: database, timeZone: newZone)
+        XCTAssertEqual(try database.stringScalar(sql: "SELECT day_key FROM codex_daily_usage_summaries;"), "2026-08-21")
+        XCTAssertEqual(try database.stringScalar(
+            sql: "SELECT value FROM app_metadata WHERE key = 'usage_aggregation_timezone_id';"
+        ), newZone.identifier)
+        XCTAssertEqual(try sessionTotal(database, sessionID: sessionID), 15)
+        XCTAssertEqual(try database.int64Scalar(sql: "SELECT estimated_cost_usd_nano FROM codex_sessions;"), previousCost)
+        let generation = try database.intScalar(sql: "SELECT value FROM app_metadata WHERE key = 'pricing_reprice_generation';")
+        try service.ensureCatalogInstalled(database: database, timeZone: newZone)
+        XCTAssertEqual(try database.intScalar(sql: "SELECT value FROM app_metadata WHERE key = 'pricing_reprice_generation';"), generation)
     }
 
     func testChildReplayIsExcludedAndFreshTurnIsCountedAfterResume() async throws {

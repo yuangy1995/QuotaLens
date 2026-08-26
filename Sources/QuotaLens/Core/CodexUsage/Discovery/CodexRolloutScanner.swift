@@ -349,7 +349,9 @@ public enum CodexRolloutScanner {
         let handle = try FileHandle(forReadingFrom: fileURL)
         defer { try? handle.close() }
         let data = try handle.read(upToCount: 1024 * 1024) ?? Data()
-        guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return false }
+        guard !data.isEmpty else { return false }
+        // 探测窗口可能正好截断多字节字符；容错解码可继续检查此前完整的 JSONL 行。
+        let text = String(decoding: data, as: UTF8.self)
         var nonEmptyLines = 0
         for rawLine in text.split(separator: "\n", omittingEmptySubsequences: true) {
             let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)

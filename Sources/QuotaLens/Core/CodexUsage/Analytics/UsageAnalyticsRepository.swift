@@ -548,7 +548,7 @@ public final class UsageAnalyticsRepository: Sendable {
     // MARK: - 3. 每日用量汇总 (History 列表)
     public func fetchHistoryDays(
         daysCount: Int = 30,
-        calendar: Calendar = .current,
+        calendar: Calendar = UsageDayBucketer.calendar(),
         now: Date = Date()
     ) throws -> [DayUsageSummaryDTO] {
         let normalizedDayCount = max(1, daysCount)
@@ -644,7 +644,7 @@ public final class UsageAnalyticsRepository: Sendable {
 
     public func fetchDayDetail(
         dayKey: LocalDayKey,
-        calendar: Calendar = .current,
+        calendar: Calendar = UsageDayBucketer.calendar(),
         eventLimit: Int = 500,
         eventCursor: String? = nil
     ) throws -> DayDetailDTO {
@@ -795,14 +795,14 @@ public final class UsageAnalyticsRepository: Sendable {
     }
 
     // MARK: - 4. 仪表盘全局指标 (Dashboard)
-    public func fetchDashboardMetrics(days: Int = 30, calendar: Calendar = .current) throws -> DashboardMetricsDTO {
+    public func fetchDashboardMetrics(days: Int = 30, calendar: Calendar = UsageDayBucketer.calendar()) throws -> DashboardMetricsDTO {
         let now = Date()
         let rangeSeconds = Double(max(1, days)) * 86_400.0
         let startDate = now.addingTimeInterval(-rangeSeconds)
         return try fetchDashboardMetrics(rangeStart: startDate, endExclusive: now, calendar: calendar)
     }
 
-    public func fetchTodayMetrics(calendar: Calendar = .current, now: Date = Date()) throws -> DashboardMetricsDTO {
+    public func fetchTodayMetrics(calendar: Calendar = UsageDayBucketer.calendar(), now: Date = Date()) throws -> DashboardMetricsDTO {
         try fetchDashboardMetrics(
             rangeStart: calendar.startOfDay(for: now),
             endExclusive: now,
@@ -813,7 +813,7 @@ public final class UsageAnalyticsRepository: Sendable {
     public func fetchDashboardMetrics(
         rangeStart startDate: Date,
         endExclusive endDate: Date,
-        calendar: Calendar = .current
+        calendar: Calendar = UsageDayBucketer.calendar()
     ) throws -> DashboardMetricsDTO {
         let slices = try fetchUsageAggregateSlices(
             rangeStart: startDate,
@@ -962,7 +962,7 @@ public final class UsageAnalyticsRepository: Sendable {
     }
 
     // MARK: - 6. 活动热力图与画像 (Activity Heatmap)
-    public func fetchActivityHeatmap(year: Int = Calendar.current.component(.year, from: Date()), calendar: Calendar = .current) throws -> [ActivityHeatmapCellDTO] {
+    public func fetchActivityHeatmap(year: Int = UsageDayBucketer.calendar().component(.year, from: Date()), calendar: Calendar = UsageDayBucketer.calendar()) throws -> [ActivityHeatmapCellDTO] {
         var startComps = DateComponents()
         startComps.year = year
         startComps.month = 1
@@ -1206,6 +1206,12 @@ public final class UsageAnalyticsRepository: Sendable {
         let parserRebuildGeneration = try database.int64Scalar(
             sql: "SELECT value FROM app_metadata WHERE key = 'codex_parser_rebuild_generation';"
         ) ?? 0
+        let parserRebuildProcessedSources = try database.intScalar(
+            sql: "SELECT value FROM app_metadata WHERE key = 'codex_parser_rebuild_processed_sources';"
+        )
+        let parserRebuildTotalSources = try database.intScalar(
+            sql: "SELECT value FROM app_metadata WHERE key = 'codex_parser_rebuild_total_sources';"
+        )
         let skippedNonRolloutJSONLCount = try database.intScalar(
             sql: "SELECT COUNT(*) FROM codex_scan_diagnostics WHERE diagnostic_code = 'non_rollout_jsonl_probe_miss';"
         )
@@ -1240,6 +1246,8 @@ public final class UsageAnalyticsRepository: Sendable {
             usageAggregationGeneration: aggregationGeneration,
             parserRebuildStatus: parserRebuildStatus,
             parserRebuildGeneration: parserRebuildGeneration,
+            parserRebuildProcessedSources: parserRebuildProcessedSources,
+            parserRebuildTotalSources: parserRebuildTotalSources,
             skippedNonRolloutJSONLCount: skippedNonRolloutJSONLCount
         )
     }

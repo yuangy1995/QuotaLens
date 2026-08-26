@@ -3,9 +3,9 @@ import XCTest
 @testable import QuotaLens
 
 final class PerformanceBenchmarkTests: XCTestCase {
-    func testOptionalHundredThousandEventRepriceBenchmark() throws {
+    func testOptionalMillionEventRepriceBenchmark() throws {
         guard ProcessInfo.processInfo.environment["QUOTALENS_RUN_PERF_BENCHMARK"] == "1" else {
-            throw XCTSkip("Set QUOTALENS_RUN_PERF_BENCHMARK=1 to run the 100k event reprice benchmark.")
+            throw XCTSkip("Set QUOTALENS_RUN_PERF_BENCHMARK=1 to run the million-event reprice benchmark.")
         }
 
         let directory = try makeTemporaryDirectory(named: "QuotaLensRepriceBenchmark")
@@ -25,7 +25,7 @@ final class PerformanceBenchmarkTests: XCTestCase {
             ) VALUES (
                 'benchmark-session', 'benchmark-session', NULL, 0, '/tmp/benchmark.jsonl',
                 'sessions/benchmark.jsonl', 'active', 'Benchmark', 'Fixture', '/tmp',
-                ?, ?, ?, 100000, 100000, 100000, 0, 0, 0, 0, 0,
+                ?, ?, ?, 1000000, 1000000, 1000000, 0, 0, 0, 0, 0,
                 'fullyUnpriced', NULL, 0, NULL
             );
             """,
@@ -37,7 +37,7 @@ final class PerformanceBenchmarkTests: XCTestCase {
             WITH RECURSIVE sequence(value) AS (
                 VALUES(1)
                 UNION ALL
-                SELECT value + 1 FROM sequence WHERE value < 100000
+                SELECT value + 1 FROM sequence WHERE value < 1000000
             )
             INSERT INTO codex_usage_events (
                 event_id, session_id, root_session_id, turn_index, call_index,
@@ -50,7 +50,7 @@ final class PerformanceBenchmarkTests: XCTestCase {
                 pricing_catalog_version
             )
             SELECT
-                printf('bench-%06d', value), 'benchmark-session', 'benchmark-session',
+                printf('bench-%07d', value), 'benchmark-session', 'benchmark-session',
                 0, value, ?, 'gpt-5.6-terra', 'gpt-5.6-terra', NULL, NULL,
                 1, 0, 0, 0, 0, 1, 1,
                 0, NULL, 'unpricedUnknownModel', 'explicit_last_usage',
@@ -62,17 +62,24 @@ final class PerformanceBenchmarkTests: XCTestCase {
         )
 
         let startedAt = CFAbsoluteTimeGetCurrent()
-        try PricingCatalogService.shared.repriceAllUsageEvents(database: database, batchSize: 1_000)
+        try PricingCatalogService.shared.repriceAllUsageEvents(database: database, batchSize: 1_000) { progress, message in
+            if progress == 0.7 || progress == 0.9 || progress == 1 {
+                let elapsed = CFAbsoluteTimeGetCurrent() - startedAt
+                let walPath = directory.appendingPathComponent("test.sqlite-wal").path
+                let walBytes = (try? FileManager.default.attributesOfItem(atPath: walPath)[.size] as? NSNumber)?.int64Value ?? 0
+                print(String(format: "重计价阶段 %.0f%%: %@，累计 %.3f 秒，WAL %.1f MiB", progress * 100, message, elapsed, Double(walBytes) / 1_048_576))
+            }
+        }
         let elapsed = CFAbsoluteTimeGetCurrent() - startedAt
 
-        XCTAssertEqual(try database.intScalar(sql: "SELECT COUNT(*) FROM codex_usage_events;"), 100_000)
+        XCTAssertEqual(try database.intScalar(sql: "SELECT COUNT(*) FROM codex_usage_events;"), 1_000_000)
         XCTAssertEqual(try database.intScalar(
             sql: "SELECT COUNT(*) FROM codex_usage_events WHERE pricing_catalog_version = ?;",
             bindings: [BundledPricingCatalog.currentVersion]
-        ), 100_000)
+        ), 1_000_000)
         XCTAssertEqual(try database.int64Scalar(
             sql: "SELECT estimated_cost_usd_nano FROM codex_sessions WHERE session_id = 'benchmark-session';"
-        ), 200_000_000)
-        print(String(format: "QuotaLens 100k reprice benchmark: %.3f seconds", elapsed))
+        ), 2_000_000_000)
+        print(String(format: "QuotaLens million-event reprice benchmark: %.3f seconds", elapsed))
     }
 }

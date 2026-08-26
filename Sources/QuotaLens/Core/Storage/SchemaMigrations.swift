@@ -130,6 +130,10 @@ private struct V12AggregateReasonsAndRebuildStateMigration: DatabaseMigration {
             VALUES ('codex_parser_rebuild_status', 'completed', unixepoch());
         INSERT OR IGNORE INTO app_metadata (key, value, updated_at)
             VALUES ('codex_parser_rebuild_generation', '0', unixepoch());
+        INSERT OR IGNORE INTO app_metadata (key, value, updated_at)
+            VALUES ('codex_parser_rebuild_processed_sources', '0', unixepoch());
+        INSERT OR IGNORE INTO app_metadata (key, value, updated_at)
+            VALUES ('codex_parser_rebuild_total_sources', '0', unixepoch());
         DELETE FROM app_metadata WHERE key = 'pricing_reprice_catalog_version';
         """)
     }

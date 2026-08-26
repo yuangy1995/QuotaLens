@@ -11,7 +11,11 @@ public final class PricingCatalogService: Sendable {
     public init() {}
 
     /// 确保当前版本的价格目录已完整安装至本地数据库
-    public func ensureCatalogInstalled(database: SQLiteDatabase) throws {
+    public func ensureCatalogInstalled(
+        database: SQLiteDatabase,
+        timeZone: TimeZone = .current,
+        onRepriceProgress: (@Sendable (Double, String) -> Void)? = nil
+    ) throws {
         let catalog = BundledPricingCatalog.defaultCatalog
         let rawJSON = try Self.rawJSONString(for: catalog)
         let catalogSHA = Self.sha256Hex(rawJSON)
@@ -19,7 +23,9 @@ public final class PricingCatalogService: Sendable {
             sql: "SELECT catalog_sha256 FROM codex_pricing_catalogs WHERE catalog_version = ?;",
             bindings: [catalog.catalogVersion]
         )
-        let repriceNeeded = try catalogNeedsReprice(database: database, catalogVersion: catalog.catalogVersion)
+        let repriceNeeded = try catalogNeedsReprice(
+            database: database, catalogVersion: catalog.catalogVersion, timeZone: timeZone
+        )
 
         if installedSHA == catalogSHA {
             try database.transaction {
@@ -33,7 +39,7 @@ public final class PricingCatalogService: Sendable {
                 )
             }
             if repriceNeeded {
-                try repriceAllUsageEvents(database: database)
+                try repriceAllUsageEvents(database: database, timeZone: timeZone, onProgress: onRepriceProgress)
             }
             return
         }
@@ -122,29 +128,74 @@ public final class PricingCatalogService: Sendable {
                 bindings: [catalog.catalogVersion]
             )
         }
-        try repriceAllUsageEvents(database: database)
+        try repriceAllUsageEvents(database: database, timeZone: timeZone, onProgress: onRepriceProgress)
     }
 
-    /// 可恢复的全量重计价入口；每个 batch 独立提交，最后短事务切换正式结果。
+    /// 可恢复的全量重计价入口；每批独立提交，最后用单个事务原子切换正式结果。
     public func repriceAllUsageEvents(
         database: SQLiteDatabase,
         batchSize: Int = 500,
-        simulatedFailureAfterBatches: Int? = nil
+        timeZone: TimeZone = .current,
+        onProgress: (@Sendable (Double, String) -> Void)? = nil
     ) throws {
         let snapshot = try loadSnapshot(database: database)
+        let legacyAggregateOnlySessions = try database.intScalar(
+            sql: """
+            SELECT COUNT(*) FROM codex_sessions s
+            WHERE s.event_count > 0
+              AND EXISTS (
+                SELECT 1 FROM codex_import_sources source
+                WHERE (source.source_path = s.source_path OR source.relative_path = s.relative_path)
+                  AND source.status != 'tombstoned'
+                  AND (source.status = 'stale' OR source.parser_version != ?)
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM codex_usage_events e
+                WHERE e.session_id = s.session_id AND e.is_child_replay = 0
+              );
+            """,
+            bindings: [ParserCheckpoint.currentParserVersion]
+        )
+        // 早期版本仅保存汇总，无法由空账本恢复金额或日期；等待原件重建，禁止清空旧结果。
+        if legacyAggregateOnlySessions > 0 {
+            let message = L10n.format(
+                "%d legacy sessions require source logs before repricing; previous totals retained",
+                zhHans: "%d 个旧会话缺少事件明细，待原始日志重建后再计价；旧汇总已保留",
+                legacyAggregateOnlySessions
+            )
+            try database.transaction {
+                try database.executeUpdate(
+                    sql: "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES ('pricing_reprice_status', 'pending', unixepoch());",
+                    bindings: []
+                )
+                try database.executeUpdate(
+                    sql: "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES ('pricing_reprice_error', ?, unixepoch());",
+                    bindings: [message]
+                )
+            }
+            onProgress?(0, message)
+            return
+        }
         let normalizedBatchSize = max(1, batchSize)
+        let aggregationTimeZone = timeZone
         try ensureRepriceShadowTables(database: database)
         try prepareRepriceRunIfNeeded(database: database, catalogVersion: snapshot.catalogVersion)
+        let totalEvents = try database.intScalar(sql: "SELECT COUNT(*) FROM codex_usage_events;")
+        onProgress?(0, L10n.text("正在重计价…", "Repricing usage..."))
 
         do {
-            var completedBatches = 0
             while true {
                 let lastRowID = try database.int64Scalar(
                     sql: "SELECT value FROM app_metadata WHERE key = 'pricing_reprice_last_rowid';"
                 ) ?? 0
-                let rows = try loadRepriceEventRows(database: database, lastRowID: lastRowID, limit: normalizedBatchSize)
+                let rows = try loadRepriceEventRows(
+                    database: database,
+                    lastRowID: lastRowID,
+                    limit: normalizedBatchSize
+                )
                 guard !rows.isEmpty else { break }
 
+                var processed = 0
                 try database.transaction {
                     for row in rows {
                         let price = snapshot.evaluate(
@@ -171,7 +222,7 @@ public final class PricingCatalogService: Sendable {
                         )
                     }
                     let finalRowID = rows.last?.rowID ?? lastRowID
-                    let processed = try database.intScalar(
+                    processed = try database.intScalar(
                         sql: "SELECT COUNT(*) FROM codex_usage_event_reprice_shadow;"
                     )
                     try updateRepriceMetadata(
@@ -184,19 +235,22 @@ public final class PricingCatalogService: Sendable {
                         error: nil
                     )
                 }
-
-                completedBatches += 1
-                if let simulatedFailureAfterBatches, completedBatches >= simulatedFailureAfterBatches {
-                    throw NSError(
-                        domain: "QuotaLens.PricingReprice",
-                        code: 1001,
-                        userInfo: [NSLocalizedDescriptionKey: "simulated reprice interruption"]
-                    )
-                }
+                onProgress?(
+                    0.7 * Double(processed) / Double(max(1, totalEvents)),
+                    L10n.format("Repricing %d/%d records", zhHans: "正在重计价 %d/%d 条记录", processed, totalEvents)
+                )
             }
 
-            try rebuildShadowSummaries(database: database)
-            try publishRepriceResults(database: database, catalogVersion: snapshot.catalogVersion)
+            try validateRepriceCoverage(database: database, catalogVersion: snapshot.catalogVersion)
+            onProgress?(0.7, L10n.text("正在重建计价与日期汇总…", "Rebuilding pricing and daily summaries..."))
+            try rebuildShadowSummaries(database: database, timeZone: aggregationTimeZone)
+            onProgress?(0.9, L10n.text("正在提交新的计价结果…", "Publishing updated pricing..."))
+            try publishRepriceResults(
+                database: database,
+                catalogVersion: snapshot.catalogVersion,
+                timeZone: aggregationTimeZone
+            )
+            onProgress?(1, L10n.text("重计价完成", "Repricing complete"))
         } catch {
             try? updateRepriceMetadata(
                 database: database,
@@ -324,11 +378,24 @@ public final class PricingCatalogService: Sendable {
         return BundledPricingCatalog.currentVersion
     }
 
-    private func catalogNeedsReprice(database: SQLiteDatabase, catalogVersion: String) throws -> Bool {
+    private func catalogNeedsReprice(
+        database: SQLiteDatabase,
+        catalogVersion: String,
+        timeZone: TimeZone
+    ) throws -> Bool {
         let repricedCatalog = try database.stringScalar(
             sql: "SELECT value FROM app_metadata WHERE key = 'pricing_reprice_catalog_version';"
         )
         guard repricedCatalog == catalogVersion else { return true }
+        let status = try database.stringScalar(
+            sql: "SELECT value FROM app_metadata WHERE key = 'pricing_reprice_status';"
+        )
+        guard status == "completed" else { return true }
+        let aggregatedTimeZone = try database.stringScalar(
+            sql: "SELECT value FROM app_metadata WHERE key = 'usage_aggregation_timezone_id';"
+        )
+        // 直接依据事件账本重建日汇总，原始日志缺失或归档扫描关闭时也能统一切换时区。
+        guard aggregatedTimeZone == timeZone.identifier else { return true }
         let staleEventCount = try database.intScalar(
             sql: """
             SELECT COUNT(*)
@@ -469,16 +536,56 @@ public final class PricingCatalogService: Sendable {
         let status = try database.stringScalar(
             sql: "SELECT value FROM app_metadata WHERE key = 'pricing_reprice_status';"
         )
+        let catalogSHA = try database.stringScalar(
+            sql: "SELECT catalog_sha256 FROM codex_pricing_catalogs WHERE catalog_version = ?;",
+            bindings: [catalogVersion]
+        ) ?? ""
+        let targetSHA = try database.stringScalar(
+            sql: "SELECT value FROM app_metadata WHERE key = 'pricing_reprice_target_catalog_sha256';"
+        )
+        // 事件可能在上次中断后被删除或以新 rowid 重写，先移除无法再对应正式事件的影子结果。
+        try database.executeUpdate(
+            sql: """
+            DELETE FROM codex_usage_event_reprice_shadow
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM codex_usage_events e
+                WHERE e.rowid = codex_usage_event_reprice_shadow.source_rowid
+                  AND e.event_id = codex_usage_event_reprice_shadow.event_id
+            );
+            """,
+            bindings: []
+        )
         let totalEvents = try database.intScalar(sql: "SELECT COUNT(*) FROM codex_usage_events;")
         let shadowEventCount = try database.intScalar(sql: "SELECT COUNT(*) FROM codex_usage_event_reprice_shadow;")
-        let canResume = stateCatalog == catalogVersion && (status == "failed" || status == "running")
+        let canResume = stateCatalog == catalogVersion && targetSHA == catalogSHA
+            && (status == "failed" || status == "running")
             && shadowEventCount > 0
         guard canResume == false else {
+            let storedLastRowID = try database.int64Scalar(
+                sql: "SELECT value FROM app_metadata WHERE key = 'pricing_reprice_last_rowid';"
+            ) ?? 0
+            let firstUnmatchedRowID = try database.int64Scalar(sql: """
+            SELECT MIN(e.rowid)
+            FROM codex_usage_events e
+            LEFT JOIN codex_usage_event_reprice_shadow r
+              ON r.source_rowid = e.rowid AND r.event_id = e.event_id
+            WHERE r.source_rowid IS NULL;
+            """)
+            let resumeLastRowID: Int64
+            if let firstUnmatchedRowID {
+                let rowBeforeFirstUnmatched = firstUnmatchedRowID > Int64.min
+                    ? firstUnmatchedRowID - 1
+                    : Int64.min
+                resumeLastRowID = min(storedLastRowID, rowBeforeFirstUnmatched)
+            } else {
+                resumeLastRowID = storedLastRowID
+            }
             try updateRepriceMetadata(
                 database: database,
                 status: "running",
                 catalogVersion: catalogVersion,
-                lastRowID: nil,
+                lastRowID: resumeLastRowID,
                 processedEvents: nil,
                 totalEvents: totalEvents,
                 error: nil
@@ -492,6 +599,10 @@ public final class PricingCatalogService: Sendable {
             DELETE FROM codex_session_summaries_reprice_shadow;
             DELETE FROM codex_daily_usage_summaries_reprice_shadow;
             """)
+            try database.executeUpdate(
+                sql: "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES ('pricing_reprice_target_catalog_sha256', ?, unixepoch());",
+                bindings: [catalogSHA]
+            )
             let previousGeneration = try database.int64Scalar(
                 sql: "SELECT value FROM app_metadata WHERE key = 'pricing_reprice_generation';"
             ) ?? 0
@@ -520,12 +631,14 @@ public final class PricingCatalogService: Sendable {
         try database.executeQuery(
             sql: """
             SELECT
-                rowid, event_id, model_canonical, service_tier, timestamp_ms,
-                input_tokens, cached_input_tokens, cache_write_input_tokens,
-                output_tokens, reasoning_output_tokens, total_tokens
-            FROM codex_usage_events
-            WHERE rowid > ?
-            ORDER BY rowid ASC
+                e.rowid, e.event_id, e.model_canonical, e.service_tier, e.timestamp_ms,
+                e.input_tokens, e.cached_input_tokens, e.cache_write_input_tokens,
+                e.output_tokens, e.reasoning_output_tokens, e.total_tokens
+            FROM codex_usage_events e
+            LEFT JOIN codex_usage_event_reprice_shadow r
+              ON r.source_rowid = e.rowid AND r.event_id = e.event_id
+            WHERE e.rowid > ? AND r.source_rowid IS NULL
+            ORDER BY e.rowid ASC
             LIMIT ?;
             """,
             bindings: [lastRowID, limit]
@@ -552,65 +665,102 @@ public final class PricingCatalogService: Sendable {
         }
     }
 
-    private func rebuildShadowSummaries(database: SQLiteDatabase) throws {
+    private func validateRepriceCoverage(database: SQLiteDatabase, catalogVersion: String) throws {
+        let liveEventCount = try database.intScalar(sql: "SELECT COUNT(*) FROM codex_usage_events;")
+        let matchedEventCount = try database.intScalar(
+            sql: """
+            SELECT COUNT(*)
+            FROM codex_usage_events e
+            JOIN codex_usage_event_reprice_shadow r
+              ON r.source_rowid = e.rowid AND r.event_id = e.event_id
+            WHERE r.pricing_catalog_version = ?;
+            """,
+            bindings: [catalogVersion]
+        )
+        let shadowEventCount = try database.intScalar(
+            sql: "SELECT COUNT(*) FROM codex_usage_event_reprice_shadow WHERE pricing_catalog_version = ?;",
+            bindings: [catalogVersion]
+        )
+        guard liveEventCount == matchedEventCount, matchedEventCount == shadowEventCount else {
+            throw NSError(
+                domain: "QuotaLens.PricingReprice",
+                code: 1002,
+                userInfo: [
+                    NSLocalizedDescriptionKey: "重计价期间事件集合发生变化，将保留旧汇总并在下次重试"
+                ]
+            )
+        }
+    }
+
+    private func rebuildShadowSummaries(database: SQLiteDatabase, timeZone: TimeZone) throws {
         try database.execute(sql: """
         DELETE FROM codex_session_summaries_reprice_shadow;
         DELETE FROM codex_daily_usage_summaries_reprice_shadow;
         """)
 
-        let timeZone = TimeZone.current
         let calendar = UsageDayBucketer.calendar(timeZone: timeZone)
         var sessionSummaries: [RepriceSummaryKey: RepriceSummaryAggregate] = [:]
         var dailySummaries: [RepriceDailySummaryKey: RepriceSummaryAggregate] = [:]
 
-        let rows = try database.executeQuery(
-            sql: """
+        var lastRowID: Int64 = 0
+        while true {
+            // 分页释放连接锁；日历计算在锁外进行。限定 rowid 路径，避免每页经时间索引全表排序。
+            let rows = try database.executeQuery(sql: """
             SELECT
-                e.session_id, e.model_canonical, e.timestamp_ms,
+                e.rowid, e.session_id, e.model_canonical, e.timestamp_ms,
                 e.input_tokens, e.cached_input_tokens, e.cache_write_input_tokens,
                 e.output_tokens, e.reasoning_output_tokens, e.total_tokens,
                 r.estimated_cost_usd_nano, r.pricing_status
-            FROM codex_usage_events e
-            JOIN codex_usage_event_reprice_shadow r ON r.source_rowid = e.rowid
-            WHERE e.is_child_replay = 0
-            ORDER BY e.rowid ASC;
-            """
-        ) { stmt -> (String, String, Int64, TokenBreakdown, Int64, PricingStatus) in
-            let total = sqlite3_column_int64(stmt, 8)
-            let status = PricingStatus(rawValue: String(cString: sqlite3_column_text(stmt, 10))) ?? .unpricedUnknownModel
-            return (
-                String(cString: sqlite3_column_text(stmt, 0)),
-                String(cString: sqlite3_column_text(stmt, 1)),
-                sqlite3_column_int64(stmt, 2),
-                TokenBreakdown(
-                    inputTokens: sqlite3_column_int64(stmt, 3),
-                    cachedInputTokens: sqlite3_column_int64(stmt, 4),
-                    cacheWriteInputTokens: sqlite3_column_int64(stmt, 5),
-                    outputTokens: sqlite3_column_int64(stmt, 6),
-                    reasoningOutputTokens: sqlite3_column_int64(stmt, 7),
-                    sourceTotalTokens: total
-                ),
-                sqlite3_column_int64(stmt, 9),
-                status
-            )
-        }
+            FROM codex_usage_events e NOT INDEXED
+            JOIN codex_usage_event_reprice_shadow r NOT INDEXED
+              ON r.source_rowid = e.rowid AND r.event_id = e.event_id
+            WHERE e.is_child_replay = 0 AND e.rowid > ?
+            ORDER BY e.rowid ASC LIMIT 2000;
+            """, bindings: [lastRowID]) { stmt in
+                let tokens = TokenBreakdown(
+                    inputTokens: sqlite3_column_int64(stmt, 4),
+                    cachedInputTokens: sqlite3_column_int64(stmt, 5),
+                    cacheWriteInputTokens: sqlite3_column_int64(stmt, 6),
+                    outputTokens: sqlite3_column_int64(stmt, 7),
+                    reasoningOutputTokens: sqlite3_column_int64(stmt, 8),
+                    sourceTotalTokens: sqlite3_column_int64(stmt, 9)
+                )
+                return (
+                    rowID: sqlite3_column_int64(stmt, 0),
+                    sessionId: String(cString: sqlite3_column_text(stmt, 1)),
+                    modelCanonical: String(cString: sqlite3_column_text(stmt, 2)),
+                    timestampMs: sqlite3_column_int64(stmt, 3),
+                    tokens: tokens,
+                    cost: sqlite3_column_int64(stmt, 10),
+                    status: PricingStatus(rawValue: String(cString: sqlite3_column_text(stmt, 11))) ?? .unpricedUnknownModel
+                )
+            }
+            guard let finalRow = rows.last else { break }
+            for row in rows {
+                let sessionKey = RepriceSummaryKey(
+                    sessionId: row.sessionId,
+                    modelCanonical: row.modelCanonical
+                )
+                var sessionAggregate = sessionSummaries[sessionKey] ?? RepriceSummaryAggregate()
+                sessionAggregate.add(tokens: row.tokens, cost: row.cost, pricingStatus: row.status)
+                sessionSummaries[sessionKey] = sessionAggregate
 
-        for row in rows {
-            let sessionKey = RepriceSummaryKey(sessionId: row.0, modelCanonical: row.1)
-            var sessionAggregate = sessionSummaries[sessionKey] ?? RepriceSummaryAggregate()
-            sessionAggregate.add(tokens: row.3, cost: row.4, pricingStatus: row.5)
-            sessionSummaries[sessionKey] = sessionAggregate
-
-            let bucket = UsageDayBucketer.bucket(timestampMs: row.2, calendar: calendar, timeZone: timeZone)
-            let dailyKey = RepriceDailySummaryKey(
-                sessionId: row.0,
-                dayKey: bucket.dayKey.yyyyMMdd,
-                dayStartMs: bucket.dayStartMs,
-                modelCanonical: row.1
-            )
-            var dailyAggregate = dailySummaries[dailyKey] ?? RepriceSummaryAggregate()
-            dailyAggregate.add(tokens: row.3, cost: row.4, pricingStatus: row.5)
-            dailySummaries[dailyKey] = dailyAggregate
+                let bucket = UsageDayBucketer.bucket(
+                    timestampMs: row.timestampMs,
+                    calendar: calendar,
+                    timeZone: timeZone
+                )
+                let dailyKey = RepriceDailySummaryKey(
+                    sessionId: row.sessionId,
+                    dayKey: bucket.dayKey.yyyyMMdd,
+                    dayStartMs: bucket.dayStartMs,
+                    modelCanonical: row.modelCanonical
+                )
+                var dailyAggregate = dailySummaries[dailyKey] ?? RepriceSummaryAggregate()
+                dailyAggregate.add(tokens: row.tokens, cost: row.cost, pricingStatus: row.status)
+                dailySummaries[dailyKey] = dailyAggregate
+            }
+            lastRowID = finalRow.rowID
         }
 
         try database.transaction {
@@ -623,11 +773,15 @@ public final class PricingCatalogService: Sendable {
         }
     }
 
-    private func publishRepriceResults(database: SQLiteDatabase, catalogVersion: String) throws {
+    private func publishRepriceResults(
+        database: SQLiteDatabase,
+        catalogVersion: String,
+        timeZone: TimeZone
+    ) throws {
         let previousTimezone = try database.stringScalar(
             sql: "SELECT value FROM app_metadata WHERE key = 'usage_aggregation_timezone_id';"
         )
-        let currentTimezone = TimeZone.current.identifier
+        let currentTimezone = timeZone.identifier
         let timezoneGeneration = try database.int64Scalar(
             sql: "SELECT value FROM app_metadata WHERE key = 'usage_aggregation_timezone_generation';"
         ) ?? 0
@@ -636,25 +790,34 @@ public final class PricingCatalogService: Sendable {
             : timezoneGeneration + 1
 
         try database.transaction {
+            try validateRepriceCoverage(database: database, catalogVersion: catalogVersion)
             try database.execute(sql: """
             UPDATE codex_usage_events
             SET estimated_cost_usd_nano = (
                     SELECT estimated_cost_usd_nano FROM codex_usage_event_reprice_shadow r
                     WHERE r.source_rowid = codex_usage_events.rowid
+                      AND r.event_id = codex_usage_events.event_id
                 ),
                 pricing_rule_id = (
                     SELECT pricing_rule_id FROM codex_usage_event_reprice_shadow r
                     WHERE r.source_rowid = codex_usage_events.rowid
+                      AND r.event_id = codex_usage_events.event_id
                 ),
                 pricing_status = (
                     SELECT pricing_status FROM codex_usage_event_reprice_shadow r
                     WHERE r.source_rowid = codex_usage_events.rowid
+                      AND r.event_id = codex_usage_events.event_id
                 ),
                 pricing_catalog_version = (
                     SELECT pricing_catalog_version FROM codex_usage_event_reprice_shadow r
                     WHERE r.source_rowid = codex_usage_events.rowid
+                      AND r.event_id = codex_usage_events.event_id
                 )
-            WHERE rowid IN (SELECT source_rowid FROM codex_usage_event_reprice_shadow);
+            WHERE EXISTS (
+                SELECT 1 FROM codex_usage_event_reprice_shadow r
+                WHERE r.source_rowid = codex_usage_events.rowid
+                  AND r.event_id = codex_usage_events.event_id
+            );
 
             DELETE FROM codex_session_summaries;
             DELETE FROM codex_daily_usage_summaries;
@@ -949,11 +1112,11 @@ public struct PricingCatalogSnapshot: Sendable {
         }
 
         let tier = Self.normalizedServiceTier(serviceTier)
-        let candidates = rules.filter { rule in
+        let tierRules = rules.filter { Self.normalizedServiceTier($0.serviceTier) == tier }
+        let candidates = tierRules.filter { rule in
             if timestampMs < rule.effectiveFromMs { return false }
             if let to = rule.effectiveToMs, timestampMs >= to { return false }
-            let ruleTier = Self.normalizedServiceTier(rule.serviceTier)
-            return ruleTier == tier
+            return true
         }
 
         let matchedRule = candidates.sorted { lhs, rhs in
@@ -966,7 +1129,7 @@ public struct PricingCatalogSnapshot: Sendable {
         guard let matchedRule else {
             return PricingEvaluationResult(
                 estimatedCost: .zero,
-                pricingStatus: tier == nil
+                pricingStatus: !tierRules.isEmpty
                     ? .unpricedHistoricalRuleMissing
                     : .unpricedUnsupportedServiceMode,
                 pricingRuleId: nil,

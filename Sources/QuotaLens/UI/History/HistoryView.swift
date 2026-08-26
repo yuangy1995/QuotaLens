@@ -291,9 +291,7 @@ public struct HistoryView: View {
                     MetricHUDTile(
                         title: L10n.text("当日 API 等价价值 · Beta", "Day API Equivalent Value · Beta"),
                         value: UsageNumberFormatter.currencyUSD(day.estimatedCost),
-                        caption: day.unpricedEventCount == 0
-                            ? L10n.text("不是订阅账单金额", "Not a bill")
-                            : L10n.format("%d unpriced events", zhHans: "%d 条未计价事件", day.unpricedEventCount),
+                        caption: dayPricingCaption(day),
                         icon: "dollarsign.circle.fill",
                         accentColor: emerald
                     )
@@ -492,6 +490,7 @@ public struct HistoryView: View {
                                         .font(.system(size: 9, weight: .bold, design: .monospaced))
                                         .foregroundStyle(event.pricingStatus.isPriced ? emerald : AppTheme.accentAmber(for: colorScheme))
                                         .frame(width: 66, alignment: .trailing)
+                                        .help(event.pricingStatus.localizedDescription)
                                 }
                                 .padding(.vertical, 2)
                             }
@@ -542,6 +541,22 @@ public struct HistoryView: View {
             RoundedRectangle(cornerRadius: 10)
                 .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
         )
+    }
+
+    private func dayPricingCaption(_ day: DayUsageSummaryDTO) -> String {
+        let totalTokens = day.tokens.canonicalTotalTokens
+        let coveredTokens = max(0, totalTokens - day.unpricedTokenCount)
+        let ratio = totalTokens > 0 ? Double(coveredTokens) / Double(totalTokens) : 1.0
+        let percentage = UsageNumberFormatter.percent(ratio * 100.0, maximumFractionDigits: 1)
+        let coverage = L10n.format(
+            "Token pricing coverage %@",
+            zhHans: "Token 定价覆盖率 %@",
+            percentage
+        )
+        guard !day.unpricedReasonCounts.isEmpty else {
+            return "\(coverage) · \(L10n.text("不是订阅账单金额", "Not a bill"))"
+        }
+        return "\(coverage) · \(day.unpricedReasonCounts.localizedSummary)"
     }
 }
 
@@ -630,6 +645,7 @@ private struct MetricHUDTile: View {
                 .font(.system(size: 9.5, design: .monospaced))
                 .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
                 .lineLimit(1)
+                .help(caption)
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)

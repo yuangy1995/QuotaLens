@@ -409,7 +409,7 @@ public struct LocalDayKey: Hashable, Comparable, Sendable, Codable, CustomString
         self.day = day
     }
 
-    public init(date: Date, calendar: Calendar = .current) {
+    public init(date: Date, calendar: Calendar = UsageDayBucketer.calendar()) {
         let comps = calendar.dateComponents([.year, .month, .day], from: date)
         self.year = comps.year ?? 1970
         self.month = comps.month ?? 1
@@ -428,7 +428,7 @@ public struct LocalDayKey: Hashable, Comparable, Sendable, Codable, CustomString
         return lhs.day < rhs.day
     }
 
-    public func date(calendar: Calendar = .current) -> Date {
+    public func date(calendar: Calendar = UsageDayBucketer.calendar()) -> Date {
         var comps = DateComponents()
         comps.year = year
         comps.month = month

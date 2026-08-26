@@ -95,13 +95,14 @@ public enum BundledPricingCatalog {
     public static let publishedAtMs: Int64 = 1787616000000 // 2026-08-25
     private static let gpt56ReleaseMs: Int64 = 1783555200000 // 2026-07-09
     private static let gpt56TerraLunaCutoverMs: Int64 = 1785369600000 // 2026-07-30
+    private static let gpt56FastLongContextFromMs: Int64 = 1785888000000 // 2026-08-05
     private static let gpt56SolPromotionalCutoverMs: Int64 = 1787340850000 // 2026-08-21T19:34:10Z
 
-    // OpenAI changelog / model docs 对旧模型多为日期粒度，统一使用该日期的 UTC 00:00:00 边界。
+    // 以官方 API 上线日为列表价起点，不混用 Codex 产品上线日；日期粒度统一取 UTC 零点。
     private static let gpt5APIReleaseMs: Int64 = 1754524800000 // 2025-08-07
-    private static let gpt5CodexReleaseMs: Int64 = 1757894400000 // 2025-09-15
+    private static let gpt5CodexReleaseMs: Int64 = 1758585600000 // 2025-09-23
     private static let gpt51ReleaseMs: Int64 = 1762992000000 // 2025-11-13
-    private static let gpt51CodexMaxReleaseMs: Int64 = 1763424000000 // 2025-11-18
+    private static let gpt51CodexMaxReleaseMs: Int64 = 1764806400000 // 2025-12-04
     private static let gpt52ReleaseMs: Int64 = 1765411200000 // 2025-12-11
     private static let gpt52CodexReleaseMs: Int64 = 1768348800000 // 2026-01-14
     private static let gpt53CodexReleaseMs: Int64 = 1771891200000 // 2026-02-24
@@ -122,7 +123,8 @@ public enum BundledPricingCatalog {
         serviceTier: String?,
         effectiveFromMs: Int64,
         effectiveToMs: Int64?,
-        rate: GPT56Rate
+        rate: GPT56Rate,
+        supportsLongContext: Bool = true
     ) -> PricingRuleEntry {
         let tierId = serviceTier ?? "std"
         return PricingRuleEntry(
@@ -134,9 +136,10 @@ public enum BundledPricingCatalog {
             cachedNanoUsdPerToken: rate.cached,
             cacheWriteNanoUsdPerToken: rate.cacheWrite,
             outputNanoUsdPerToken: rate.output,
-            longContextThresholdTokens: 272_000,
-            longContextInputMultiplierPpm: 2_000_000,
-            longContextOutputMultiplierPpm: 1_500_000
+            maximumInputTokens: supportsLongContext ? nil : 272_000,
+            longContextThresholdTokens: supportsLongContext ? 272_000 : nil,
+            longContextInputMultiplierPpm: supportsLongContext ? 2_000_000 : nil,
+            longContextOutputMultiplierPpm: supportsLongContext ? 1_500_000 : nil
         )
     }
 
@@ -162,8 +165,8 @@ public enum BundledPricingCatalog {
             ("launch-v5", gpt56ReleaseMs, currentFromMs, launch),
             ("current-v5", currentFromMs, nil, current)
         ]
-        return periods.flatMap { period in
-            [
+        return periods.flatMap { period -> [PricingRuleEntry] in
+            var rules = [
                 gpt56Rule(
                     modelKey: modelKey,
                     suffix: period.suffix,
@@ -179,16 +182,32 @@ public enum BundledPricingCatalog {
                     effectiveFromMs: period.from,
                     effectiveToMs: period.to,
                     rate: scaledGPT56Rate(period.rate, multiplierPpm: 500_000)
-                ),
-                gpt56Rule(
+                )
+            ]
+            let fastRate = scaledGPT56Rate(period.rate, multiplierPpm: 2_000_000)
+            // Fast 长上下文在 8 月 5 日才开放，不能将当前能力回填到此前的历史请求。
+            if period.from < gpt56FastLongContextFromMs {
+                rules.append(gpt56Rule(
+                    modelKey: modelKey,
+                    suffix: "\(period.suffix)-short",
+                    serviceTier: "fast",
+                    effectiveFromMs: period.from,
+                    effectiveToMs: min(period.to ?? gpt56FastLongContextFromMs, gpt56FastLongContextFromMs),
+                    rate: fastRate,
+                    supportsLongContext: false
+                ))
+            }
+            if period.to == nil || period.to! > gpt56FastLongContextFromMs {
+                rules.append(gpt56Rule(
                     modelKey: modelKey,
                     suffix: period.suffix,
                     serviceTier: "fast",
-                    effectiveFromMs: period.from,
+                    effectiveFromMs: max(period.from, gpt56FastLongContextFromMs),
                     effectiveToMs: period.to,
-                    rate: scaledGPT56Rate(period.rate, multiplierPpm: 2_000_000)
-                )
-            ]
+                    rate: fastRate
+                ))
+            }
+            return rules
         }
     }
 

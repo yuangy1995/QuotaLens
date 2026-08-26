@@ -100,6 +100,14 @@ final class CodexRolloutScannerTests: XCTestCase {
         let damagedFirst = paths.sessionsURL.appendingPathComponent("damaged-first.jsonl")
         try overwriteFile(damagedFirst, with: "{not-json\n" + validRollout)
 
+        let truncatedUnicode = paths.sessionsURL.appendingPathComponent("truncated-unicode-window.jsonl")
+        let probeLimit = 1024 * 1024
+        let paddingCount = probeLimit - validRollout.utf8.count - 1
+        try overwriteFile(
+            truncatedUnicode,
+            with: validRollout + String(repeating: "x", count: paddingCount) + "你"
+        )
+
         let outsideWindow = paths.sessionsURL.appendingPathComponent("outside-window.jsonl")
         try overwriteFile(
             outsideWindow,
@@ -111,7 +119,8 @@ final class CodexRolloutScannerTests: XCTestCase {
         XCTAssertEqual(Set(outcome.sources.map(\.fileURL.lastPathComponent)), [
             "after-line-21.jsonl",
             "after-64kb.jsonl",
-            "damaged-first.jsonl"
+            "damaged-first.jsonl",
+            "truncated-unicode-window.jsonl"
         ])
         XCTAssertEqual(outcome.diagnostics.map(\.fileURL.lastPathComponent), ["outside-window.jsonl"])
         XCTAssertEqual(outcome.diagnostics.first?.code, "non_rollout_jsonl_probe_miss")

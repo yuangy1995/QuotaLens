@@ -111,6 +111,12 @@ final class StorageResilienceTests: XCTestCase {
             try database.stringScalar(sql: "SELECT value FROM app_metadata WHERE key = 'codex_parser_version';"),
             String(ParserCheckpoint.currentParserVersion)
         )
+        try PricingCatalogService.shared.ensureCatalogInstalled(database: database)
+        XCTAssertEqual(try database.int64Scalar(sql: "SELECT total_tokens FROM codex_sessions WHERE session_id = 'legacy-session';"), 100)
+        XCTAssertEqual(try database.int64Scalar(sql: "SELECT estimated_cost_usd_nano FROM codex_sessions WHERE session_id = 'legacy-session';"), 123)
+        XCTAssertEqual(try database.stringScalar(
+            sql: "SELECT value FROM app_metadata WHERE key = 'pricing_reprice_status';"
+        ), "pending")
     }
 
     func testV10DeveloperDatabaseUpgradesToExactCoverageSchema() throws {

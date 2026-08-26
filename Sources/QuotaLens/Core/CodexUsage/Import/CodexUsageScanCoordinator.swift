@@ -99,7 +99,12 @@ public final class CodexUsageScanCoordinator: ObservableObject {
             self.lastScanSummary = summary
             self.lastScanTime = Date()
             self.dataGeneration &+= 1
-            self.statusText = L10n.format("Scan complete, indexed %d files, added %d records", zhHans: "扫描完成，已索引 %d 个文件，新增 %d 条记录", summary.sourcesScanned, summary.eventsInserted)
+            if let warning = summary.warningMessage {
+                self.lastError = warning
+                self.statusText = L10n.format("Scan partially complete: %@", zhHans: "扫描部分完成：%@", warning)
+            } else {
+                self.statusText = L10n.format("Scan complete, indexed %d files, added %d records", zhHans: "扫描完成，已索引 %d 个文件，新增 %d 条记录", summary.sourcesScanned, summary.eventsInserted)
+            }
         } catch {
             self.lastError = error.localizedDescription
             self.statusText = L10n.format("Scan failed: %@", zhHans: "扫描失败: %@", error.localizedDescription)

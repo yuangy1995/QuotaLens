@@ -488,6 +488,8 @@ public struct UsageDiagnosticsDTO: Codable, Sendable {
     public let usageAggregationGeneration: Int64
     public let parserRebuildStatus: String
     public let parserRebuildGeneration: Int64
+    public let parserRebuildProcessedSources: Int
+    public let parserRebuildTotalSources: Int
     public let skippedNonRolloutJSONLCount: Int
 
     public init(
@@ -520,6 +522,8 @@ public struct UsageDiagnosticsDTO: Codable, Sendable {
         usageAggregationGeneration: Int64 = 0,
         parserRebuildStatus: String = "completed",
         parserRebuildGeneration: Int64 = 0,
+        parserRebuildProcessedSources: Int = 0,
+        parserRebuildTotalSources: Int = 0,
         skippedNonRolloutJSONLCount: Int = 0
     ) {
         self.sourcesDiscovered = sourcesDiscovered
@@ -551,6 +555,8 @@ public struct UsageDiagnosticsDTO: Codable, Sendable {
         self.usageAggregationGeneration = usageAggregationGeneration
         self.parserRebuildStatus = parserRebuildStatus
         self.parserRebuildGeneration = parserRebuildGeneration
+        self.parserRebuildProcessedSources = parserRebuildProcessedSources
+        self.parserRebuildTotalSources = parserRebuildTotalSources
         self.skippedNonRolloutJSONLCount = skippedNonRolloutJSONLCount
     }
 }

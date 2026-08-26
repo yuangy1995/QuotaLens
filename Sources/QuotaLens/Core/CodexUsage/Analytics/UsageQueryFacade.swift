@@ -52,7 +52,7 @@ public actor UsageQueryFacade {
 
     public func getHistoryDays(
         daysCount: Int = 30,
-        calendar: Calendar = .current,
+        calendar: Calendar = UsageDayBucketer.calendar(),
         now: Date = Date()
     ) throws -> [DayUsageSummaryDTO] {
         try repository.fetchHistoryDays(daysCount: daysCount, calendar: calendar, now: now)
@@ -60,7 +60,7 @@ public actor UsageQueryFacade {
 
     public func getDayDetail(
         dayKey: LocalDayKey,
-        calendar: Calendar = .current,
+        calendar: Calendar = UsageDayBucketer.calendar(),
         eventLimit: Int = 500,
         eventCursor: String? = nil
     ) throws -> DayDetailDTO {
@@ -72,15 +72,15 @@ public actor UsageQueryFacade {
         )
     }
 
-    public func getDashboardMetrics(days: Int = 30, calendar: Calendar = .current) throws -> DashboardMetricsDTO {
+    public func getDashboardMetrics(days: Int = 30, calendar: Calendar = UsageDayBucketer.calendar()) throws -> DashboardMetricsDTO {
         try repository.fetchDashboardMetrics(days: days, calendar: calendar)
     }
 
-    public func getTodayMetrics(calendar: Calendar = .current) throws -> DashboardMetricsDTO {
+    public func getTodayMetrics(calendar: Calendar = UsageDayBucketer.calendar()) throws -> DashboardMetricsDTO {
         try repository.fetchTodayMetrics(calendar: calendar)
     }
 
-    public func getActivityHeatmap(year: Int = Calendar.current.component(.year, from: Date()), calendar: Calendar = .current) throws -> [ActivityHeatmapCellDTO] {
+    public func getActivityHeatmap(year: Int = UsageDayBucketer.calendar().component(.year, from: Date()), calendar: Calendar = UsageDayBucketer.calendar()) throws -> [ActivityHeatmapCellDTO] {
         try repository.fetchActivityHeatmap(year: year, calendar: calendar)
     }
 
