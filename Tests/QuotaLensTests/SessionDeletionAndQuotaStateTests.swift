@@ -280,8 +280,8 @@ final class SessionDeletionAndQuotaStateTests: XCTestCase {
             }
         }
 
-        let chinese = "新增下载更新时实时显示下载进度条与百分比（从 0% 起始终保持滚动条展示）"
-        let english = "Enhanced in-app update downloading with persistent progress bar and percentage tracker from 0% onwards"
+        let chinese = "全新升级 Codex 计费与定价目录引擎，支持模型历史分段价格、缓存命中折算与多周期计费回溯"
+        let english = "Upgraded Codex pricing and catalog engine with historical tiered pricing, prompt cache savings, and multi-cycle cost auditing"
         for mode in AppLanguageMode.allCases where mode != .system {
             defaults.set(mode.rawValue, forKey: L10n.languageModeDefaultsKey)
             let localized = L10n.text(chinese, english)
@@ -308,7 +308,7 @@ final class SessionDeletionAndQuotaStateTests: XCTestCase {
             }
         }
 
-        let chinese = "新增下载更新时实时显示下载进度条与百分比（从 0% 起始终保持滚动条展示）"
+        let chinese = "全新升级 Codex 计费与定价目录引擎，支持模型历史分段价格、缓存命中折算与多周期计费回溯"
         for mode in AppLanguageMode.allCases where mode != .system {
             defaults.set(mode.rawValue, forKey: L10n.languageModeDefaultsKey)
             let localized = L10n.localizeChangelogText(chinese)

@@ -254,6 +254,10 @@ public enum L10n {
     }
 
     public static let changelogZhToEnMap: [String: String] = [
+        "全新升级 Codex 计费与定价目录引擎，支持模型历史分段价格、缓存命中折算与多周期计费回溯": "Upgraded Codex pricing and catalog engine with historical tiered pricing, prompt cache savings, and multi-cycle cost auditing",
+        "重构数据索引与数据库重建机制，增强原子化写入、损坏文件自动隔离与跨时区自然日精确对齐": "Restructured data indexing and database rebuild pipeline with atomic commits, corrupted file quarantine, and timezone alignment",
+        "强化重置卡明细持久化与容错解析能力，在多账号切换与同步中提供平滑兜底与状态占位": "Hardened reset card persistence and lossy decoding resilience across account switches and syncing gaps",
+        "优化历史明细、用量看板与设置界面的高频刷新性能与内存占用": "Optimized memory footprint and high-frequency refresh performance across history, dashboard, and settings views",
         "优化 App 启动阶段菜单栏控制器初始化生命周期，确保冷启动时即刻可靠挂载菜单栏图标并响应交互": "Optimized menu bar controller initialization during app startup ensuring instant and reliable menu bar presence",
         "完善主窗口唤醒与数据刷新回调联动，提升菜单栏常驻模式下的响应速度与稳定性": "Refined main window focus and refresh callback bindings for enhanced menu bar responsiveness",
         "新增下载更新时实时显示下载进度条与百分比（从 0% 起始终保持滚动条展示）": "Enhanced in-app update downloading with persistent progress bar and percentage tracker from 0% onwards",
@@ -337,6 +341,46 @@ public enum L10n {
 }
 
 private let keyedTranslations: [String: [AppLanguage: String]] = [
+    "Upgraded Codex pricing and catalog engine with historical tiered pricing, prompt cache savings, and multi-cycle cost auditing": [
+        .traditionalChinese: "全新升級 Codex 計費與定價目錄引擎，支援模型歷史分段價格、快取命中折算與多週期計費回溯",
+        .japanese: "Codex の価格・料金カタログエンジンを刷新し、履歴価格（段階料金）、キャッシュ節約計算、複数サイクルのコスト監査に対応",
+        .korean: "Codex 가격 및 요금 카탈로그 엔진을 개편하여 모델별 과거 단계별 요금, 캐시 절감액 계산, 다중 주기 비용 감사 지원",
+        .spanish: "Actualizado el motor de precios y catálogo de Codex con tarifas históricas escalonadas, ahorro de caché y auditoría de costes multiciclo",
+        .german: "Codex-Preis- und Katalog-Engine mit gestaffelten historischen Preisen, Cache-Einsparungen und Mehrzyklus-Kostenprüfung aktualisiert",
+        .french: "Mise à niveau du moteur de tarification et catalogue Codex avec tarifs historiques échelonnés, économies de cache et audit multi-cycles",
+        .portuguese: "Motor de preços e catálogo do Codex atualizado com tarifas históricas escalonadas, poupança de cache e auditoria de custos multiciclo",
+        .portugueseBrazil: "Motor de preços e catálogo do Codex aprimorado com tarifas históricas escalonadas, economia de cache e auditoria de custos multiciclo"
+    ],
+    "Restructured data indexing and database rebuild pipeline with atomic commits, corrupted file quarantine, and timezone alignment": [
+        .traditionalChinese: "重構資料索引與資料庫重建機制，增強原子化寫入、損壞檔案自動隔離與跨時區自然日精確對齊",
+        .japanese: "データインデックスと DB 再構築パイプラインを再設計し、アトミック書き込み、破損ファイルの自動隔離、タイムゾーン境界の正確な整合を強化",
+        .korean: "데이터 인덱싱 및 DB 재구축 파이프라인을 리팩터링하여 원자적 커밋, 손상된 파일 격리, 타임존 자연일 정렬 강화",
+        .spanish: "Reestructurado el flujo de indexación y reconstrucción de la base de datos con escrituras atómicas, aislamiento de archivos dañados y alineación horaria",
+        .german: "Datenindizierung und Datenbank-Neuerstellung mit atomaren Commits, Quarantäne beschädigter Dateien und Zeitzonenausrichtung neu strukturiert",
+        .french: "Restructuration de l'indexation et de la reconstruction de base de données avec écritures atomiques, mise en quarantaine des fichiers corrompus et alignement des fuseaux horaires",
+        .portuguese: "Reestruturado o fluxo de indexação e reconstrução da base de dados com escritas atómicas, quarentena de ficheiros corrompidos e alinhamento de fuso horário",
+        .portugueseBrazil: "Reestruturado o pipeline de indexação e reconstrução do banco de dados com gravações atômicas, isolamento de arquivos corrompidos e alinhamento de fuso horário"
+    ],
+    "Hardened reset card persistence and lossy decoding resilience across account switches and syncing gaps": [
+        .traditionalChinese: "強化重設卡明細持久化與容錯解析能力，在多帳號切換與同步中提供平滑兜底與狀態佔位",
+        .japanese: "リセットカード詳細の永続化とフォールトトレラントなデコードを強化し、アカウント切替や同期遅延時のフォールバックとプレースホルダーを提供",
+        .korean: "리셋 카드 세부 정보의 영속성 및 손실 허용 디코딩을 강화하여 계정 전환 및 동기화 지연 시 원활한 대체 상태 제공",
+        .spanish: "Reforzada la persistencia y tolerancia a fallos en la decodificación de tarjetas de reinicio durante cambios de cuenta y sincronización",
+        .german: "Dauerhaftigkeit und fehlertolerante Dekodierung von Reset-Karten bei Kontowechseln und Synchronisierungslücken verstärkt",
+        .french: "Renforcement de la persistance et du décodage tolérant aux pannes des cartes de réinitialisation lors des changements de compte et de synchronisation",
+        .portuguese: "Reforçada a persistência e tolerância a falhas na descodificação dos cartões de reposição durante mudanças de conta e sincronização",
+        .portugueseBrazil: "Reforçada a persistência e tolerância a falhas na decodificação de cartões de redefinição durante trocas de conta e sincronização"
+    ],
+    "Optimized memory footprint and high-frequency refresh performance across history, dashboard, and settings views": [
+        .traditionalChinese: "優化歷史明細、用量看板與設定介面的高頻重新整理效能與記憶體佔用",
+        .japanese: "履歴明細、ダッシュボード、設定画面における高頻度リフレッシュの描画パフォーマンスとメモリ使用量を最適化",
+        .korean: "사용 기록, 대시보드, 설정 화면의 고빈도 새로고침 성능 및 메모리 점유율 최적화",
+        .spanish: "Optimizados el rendimiento de actualización frecuente y el consumo de memoria en historial, panel y ajustes",
+        .german: "Aktualisierungsleistung bei hoher Frequenz und Speicherbedarf in Verlauf, Dashboard und Einstellungen optimiert",
+        .french: "Optimisation des performances d'actualisation haute fréquence et de l'empreinte mémoire dans l'historique, le tableau de bord et les paramètres",
+        .portuguese: "Otimizado o desempenho de atualização frequente e o consumo de memória no histórico, painel e definições",
+        .portugueseBrazil: "Otimizado o desempenho de atualização frequente e o consumo de memória no histórico, painel e configurações"
+    ],
     "Optimized menu bar controller initialization during app startup ensuring instant and reliable menu bar presence": [
         .traditionalChinese: "優化 App 啟動階段選單列控制器初始化生命週期，確保冷啟動時即刻可靠掛載選單列圖示並響應互動",
         .japanese: "App 起動時のメニューバーコントローラー初期化ライフサイクルを最適化し、コールドスタート時の即時かつ確実なメニューバーアイコン常駐と操作応答を確保",

@@ -53,6 +53,17 @@ public struct AboutView: View {
     private var defaultChangelogs: [ChangelogEntry] {
         [
             ChangelogEntry(
+                id: "v1.0.14",
+                version: "v1.0.14",
+                date: "2026-08-26",
+                changes: [
+                    L10n.text("全新升级 Codex 计费与定价目录引擎，支持模型历史分段价格、缓存命中折算与多周期计费回溯", "Upgraded Codex pricing and catalog engine with historical tiered pricing, prompt cache savings, and multi-cycle cost auditing"),
+                    L10n.text("重构数据索引与数据库重建机制，增强原子化写入、损坏文件自动隔离与跨时区自然日精确对齐", "Restructured data indexing and database rebuild pipeline with atomic commits, corrupted file quarantine, and timezone alignment"),
+                    L10n.text("强化重置卡明细持久化与容错解析能力，在多账号切换与同步中提供平滑兜底与状态占位", "Hardened reset card persistence and lossy decoding resilience across account switches and syncing gaps"),
+                    L10n.text("优化历史明细、用量看板与设置界面的高频刷新性能与内存占用", "Optimized memory footprint and high-frequency refresh performance across history, dashboard, and settings views")
+                ]
+            ),
+            ChangelogEntry(
                 id: "v1.0.13",
                 version: "v1.0.13",
                 date: "2026-08-25",
