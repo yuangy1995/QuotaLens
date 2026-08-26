@@ -46,7 +46,7 @@ public enum QuotaDisplayMode: String, CaseIterable, Identifiable {
     }
 }
 
-public struct ResetCreditDisplay: Identifiable, Sendable {
+public struct ResetCreditDisplay: Identifiable, Codable, Sendable {
     public let id: String
     public let accountKey: String?
     public let title: String?
@@ -56,7 +56,9 @@ public struct ResetCreditDisplay: Identifiable, Sendable {
     public let expiresAt: Int64?
 
     public var isAvailable: Bool {
-        (status ?? "").lowercased() == "available"
+        (status ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() == "available"
     }
 
     public func isValidAvailable(now: Date = Date()) -> Bool {
@@ -539,6 +541,10 @@ public final class AppState: ObservableObject {
 
     public var validResetCredits: [ResetCreditDisplay] {
         sortedValidResetCredits()
+    }
+
+    public var resetCreditMissingDetailCount: Int {
+        max(0, resetCreditAvailableCount - validResetCredits.count)
     }
 
     public func sortedValidResetCredits(now: Date = Date()) -> [ResetCreditDisplay] {

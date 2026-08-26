@@ -41,8 +41,9 @@ public final class AppEnvironment: ObservableObject {
     private var resetCreditStatesByAccountKey: [String: AccountResetCreditState] = [:]
     private static let serverRetryDelaysSeconds: [UInt64] = [3, 10, 30]
     private static let subscriptionRetryDelaysSeconds: [UInt64] = [30, 120, 300, 900]
+    private static let resetCreditDetailsCacheDefaultsPrefix = "QuotaLens.resetCreditDetailsCache"
 
-    private struct AccountResetCreditState: Sendable {
+    private struct AccountResetCreditState: Codable, Sendable {
         let accountKey: String
         let availableCount: Int
         let credits: [ResetCreditDisplay]
@@ -560,6 +561,8 @@ public final class AppEnvironment: ObservableObject {
     /// 删除指定账户
     public func deleteAccount(accountKey: String) {
         try? repositories.deleteAccount(accountKey: accountKey)
+        resetCreditStatesByAccountKey.removeValue(forKey: accountKey)
+        removePersistedResetCreditState(for: accountKey)
         if state.selectedAccountKey == accountKey {
             beginAccountScopeChange()
             state.selectedAccountKey = nil
@@ -1038,17 +1041,7 @@ public final class AppEnvironment: ObservableObject {
     }
 
     private func restoreResetCreditState(for accountKey: String, snapshot: RateLimitSnapshotRecord?) {
-        if let creditsObject = resetCreditObject(from: snapshot) {
-            updateResetCreditState(from: creditsObject, accountKey: accountKey)
-            return
-        }
-
-        if let cachedState = resetCreditStatesByAccountKey[accountKey] {
-            applyResetCreditState(cachedState)
-            return
-        }
-
-        updateResetCreditState(from: nil, accountKey: accountKey)
+        updateResetCreditState(from: resetCreditObject(from: snapshot), accountKey: accountKey)
     }
 
     private func resetCreditObject(from snapshot: RateLimitSnapshotRecord?) -> RateLimitResetCreditsObject? {
@@ -1061,38 +1054,127 @@ public final class AppEnvironment: ObservableObject {
     }
 
     private func updateResetCreditState(from creditsObject: RateLimitResetCreditsObject?, accountKey: String) {
-        let resetCreditState = makeResetCreditState(from: creditsObject, accountKey: accountKey)
+        let fallbackState = resetCreditStatesByAccountKey[accountKey]
+            ?? persistedDetailedResetCreditState(for: accountKey)
+        let resetCreditState = Self.makeResetCreditState(
+            from: creditsObject,
+            accountKey: accountKey,
+            preserving: fallbackState
+        )
         resetCreditStatesByAccountKey[accountKey] = resetCreditState
+        updatePersistedResetCreditState(resetCreditState, from: creditsObject)
         applyResetCreditState(resetCreditState)
     }
 
-    private func makeResetCreditState(from creditsObject: RateLimitResetCreditsObject?, accountKey: String) -> AccountResetCreditState {
-        let credits = (creditsObject?.credits ?? [])
-            .enumerated()
-            .map { index, credit in
-                ResetCreditDisplay(
-                    id: credit.id ?? "reset_credit_\(index)_\(credit.grantedAt ?? 0)_\(credit.expiresAt ?? 0)",
-                    accountKey: accountKey,
-                    title: credit.title,
-                    resetType: credit.resetType,
-                    status: credit.status,
-                    grantedAt: credit.grantedAt,
-                    expiresAt: credit.expiresAt
-                )
-            }
-            .sorted {
-                switch ($0.expiresAt, $1.expiresAt) {
-                case let (lhs?, rhs?): return lhs < rhs
-                case (_?, nil): return true
-                case (nil, _?): return false
-                case (nil, nil): return $0.id < $1.id
+    private static func makeResetCreditState(
+        from creditsObject: RateLimitResetCreditsObject?,
+        accountKey: String,
+        preserving fallbackState: AccountResetCreditState? = nil,
+        now: Date = Date()
+    ) -> AccountResetCreditState {
+        guard let creditsObject else {
+            return fallbackState ?? emptyResetCreditState(accountKey: accountKey)
+        }
+
+        let detailedCredits = creditsObject.credits.map { credits in
+            credits
+                .enumerated()
+                .map { index, credit in
+                    ResetCreditDisplay(
+                        id: credit.id ?? "reset_credit_\(index)_\(credit.grantedAt ?? 0)_\(credit.expiresAt ?? 0)",
+                        accountKey: accountKey,
+                        title: credit.title,
+                        resetType: credit.resetType,
+                        status: credit.status,
+                        grantedAt: credit.grantedAt,
+                        expiresAt: credit.expiresAt
+                    )
                 }
-            }
+                .sorted {
+                    switch ($0.expiresAt, $1.expiresAt) {
+                    case let (lhs?, rhs?): return lhs < rhs
+                    case (_?, nil): return true
+                    case (nil, _?): return false
+                    case (nil, nil): return $0.id < $1.id
+                    }
+                }
+        }
+
+        if creditsObject.availableCount == nil, detailedCredits == nil {
+            return fallbackState ?? emptyResetCreditState(accountKey: accountKey)
+        }
+
+        let detailedAvailableCount = detailedCredits?.filter { $0.isValidAvailable(now: now) }.count ?? 0
+        let availableCount = max(0, creditsObject.availableCount ?? detailedAvailableCount)
+        guard availableCount > 0 else {
+            return emptyResetCreditState(accountKey: accountKey)
+        }
+
+        if let detailedCredits, !detailedCredits.isEmpty {
+            return AccountResetCreditState(
+                accountKey: accountKey,
+                availableCount: availableCount,
+                credits: detailedCredits
+            )
+        }
+
+        // Codex 明细接口失败时仍会返回数量。此时保留上次已确认且尚未过期的明细，避免周期刷新把列表清空。
+        let preservedCredits = Array(
+            (fallbackState?.credits ?? [])
+                .filter { $0.isValidAvailable(now: now) }
+                .prefix(availableCount)
+        )
         return AccountResetCreditState(
             accountKey: accountKey,
-            availableCount: creditsObject?.availableCount ?? credits.filter(\.isAvailable).count,
-            credits: credits
+            availableCount: availableCount,
+            credits: preservedCredits
         )
+    }
+
+    private static func emptyResetCreditState(accountKey: String) -> AccountResetCreditState {
+        AccountResetCreditState(accountKey: accountKey, availableCount: 0, credits: [])
+    }
+
+    private func persistedDetailedResetCreditState(for accountKey: String) -> AccountResetCreditState? {
+        guard let data = UserDefaults.standard.data(forKey: resetCreditDetailsCacheKey(for: accountKey)),
+              let cachedState = try? JSONDecoder().decode(AccountResetCreditState.self, from: data),
+              cachedState.accountKey == accountKey else {
+            return nil
+        }
+        return cachedState
+    }
+
+    private func updatePersistedResetCreditState(
+        _ resetCreditState: AccountResetCreditState,
+        from creditsObject: RateLimitResetCreditsObject?
+    ) {
+        if creditsObject?.availableCount == 0 {
+            removePersistedResetCreditState(for: resetCreditState.accountKey)
+            return
+        }
+
+        guard let details = creditsObject?.credits,
+              !details.isEmpty,
+              !resetCreditState.credits.isEmpty else {
+            return
+        }
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        guard let data = try? encoder.encode(resetCreditState) else { return }
+
+        let key = resetCreditDetailsCacheKey(for: resetCreditState.accountKey)
+        if UserDefaults.standard.data(forKey: key) != data {
+            UserDefaults.standard.set(data, forKey: key)
+        }
+    }
+
+    private func removePersistedResetCreditState(for accountKey: String) {
+        UserDefaults.standard.removeObject(forKey: resetCreditDetailsCacheKey(for: accountKey))
+    }
+
+    private func resetCreditDetailsCacheKey(for accountKey: String) -> String {
+        "\(Self.resetCreditDetailsCacheDefaultsPrefix).\(accountKey)"
     }
 
     private func applyResetCreditState(_ resetCreditState: AccountResetCreditState) {
@@ -1287,6 +1369,7 @@ public final class AppEnvironment: ObservableObject {
         state.connectionStatus = .disconnected
         state.latestRateLimit = nil
         state.hasCurrentServerQuota = false
+        resetCreditStatesByAccountKey.removeAll()
         state.resetCreditAvailableCount = 0
         state.resetCredits = []
         state.subscriptionStartsAt = nil

@@ -46,6 +46,8 @@ public struct ResetCardsView: View {
 
     private var resetCardsList: some View {
         let amber = AppTheme.accentAmber(for: colorScheme)
+        let validCredits = state.validResetCredits
+        let missingDetailCount = state.resetCreditMissingDetailCount
 
         return VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
@@ -86,11 +88,11 @@ public struct ResetCardsView: View {
 
             CyberDivider(glowColor: amber.opacity(0.3))
 
-            if state.validResetCredits.isEmpty {
+            if validCredits.isEmpty && missingDetailCount == 0 {
                 emptyState
             } else {
                 VStack(spacing: 10) {
-                    ForEach(state.validResetCredits) { credit in
+                    ForEach(validCredits) { credit in
                         ResetCreditCardRowView(
                             credit: credit,
                             state: state,
@@ -98,6 +100,10 @@ public struct ResetCardsView: View {
                         ) {
                             pendingCredit = credit
                         }
+                    }
+
+                    if missingDetailCount > 0 {
+                        ResetCreditDetailsPendingRowView(count: missingDetailCount)
                     }
                 }
             }

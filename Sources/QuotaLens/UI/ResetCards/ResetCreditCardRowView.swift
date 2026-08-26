@@ -189,6 +189,79 @@ public struct ResetCreditCardRowView: View {
     }
 }
 
+public struct ResetCreditDetailsPendingRowView: View {
+    @Environment(\.colorScheme) private var colorScheme
+    public let count: Int
+    public var isCompact: Bool
+
+    public init(count: Int, isCompact: Bool = false) {
+        self.count = count
+        self.isCompact = isCompact
+    }
+
+    public var body: some View {
+        let amber = AppTheme.accentAmber(for: colorScheme)
+        let cyan = AppTheme.accentCyan(for: colorScheme)
+
+        HStack(spacing: 14) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(amber.opacity(colorScheme == .dark ? 0.18 : 0.12))
+                    .frame(width: isCompact ? 32 : 36, height: isCompact ? 32 : 36)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .strokeBorder(amber.opacity(0.35), lineWidth: 0.8)
+                    )
+
+                Image(systemName: "ticket.fill")
+                    .font(.system(size: isCompact ? 14 : 15, weight: .bold))
+                    .foregroundStyle(amber)
+            }
+
+            VStack(alignment: .leading, spacing: isCompact ? 3 : 5) {
+                HStack(spacing: 8) {
+                    Text(titleText)
+                        .font(.system(size: isCompact ? 13 : 14, weight: .bold, design: .monospaced))
+                        .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+
+                    Text(L10n.text("可用", "Available"))
+                        .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                        .foregroundStyle(AppTheme.accentEmerald(for: colorScheme))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1.5)
+                        .background(AppTheme.accentEmerald(for: colorScheme).opacity(colorScheme == .dark ? 0.15 : 0.10), in: Capsule())
+                }
+
+                Text(L10n.text("后台已确认可用，卡片明细正在同步", "Availability confirmed; card details are syncing"))
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 12)
+
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(cyan)
+                .padding(8)
+                .background(cyan.opacity(colorScheme == .dark ? 0.15 : 0.10), in: RoundedRectangle(cornerRadius: 7))
+        }
+        .padding(isCompact ? 10 : 14)
+        .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
+        )
+    }
+
+    private var titleText: String {
+        if count == 1 {
+            return L10n.text("重置卡", "Reset card")
+        }
+        return L10n.format("%d reset cards", zhHans: "%d 张重置卡", count)
+    }
+}
+
 public struct ResetCreditUseNotice: Identifiable {
     public let id = UUID()
     public let title: String

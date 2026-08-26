@@ -221,8 +221,8 @@ public struct RateLimitResetCredit: Codable, Sendable {
         self.id = try container.decodeIfPresent(String.self, forKeys: ["id", "creditId", "credit_id"])
         self.resetType = try container.decodeIfPresent(String.self, forKeys: ["resetType", "reset_type", "type"])
         self.status = try container.decodeIfPresent(String.self, forKeys: ["status", "state"])
-        self.grantedAt = try container.decodeFlexibleInt64(forKeys: ["grantedAt", "granted_at", "createdAt", "created_at"])
-        self.expiresAt = try container.decodeFlexibleInt64(forKeys: ["expiresAt", "expires_at", "deadline", "resetsAt", "resets_at"])
+        self.grantedAt = try container.decodeFlexibleEpochSeconds(forKeys: ["grantedAt", "granted_at", "createdAt", "created_at"])
+        self.expiresAt = try container.decodeFlexibleEpochSeconds(forKeys: ["expiresAt", "expires_at", "deadline", "resetsAt", "resets_at"])
         self.title = try container.decodeIfPresent(String.self, forKeys: ["title", "name"])
         self.description = try container.decodeIfPresent(String.self, forKeys: ["description", "detail", "summary"])
     }
@@ -235,7 +235,7 @@ public struct RateLimitResetCreditsObject: Codable, Sendable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: FlexibleCodingKey.self)
         self.availableCount = try container.decodeFlexibleInt(forKeys: ["availableCount", "available_count"])
-        self.credits = try container.decodeIfPresent([RateLimitResetCredit].self, forKeys: ["credits"])
+        self.credits = try container.decodeLossyArrayIfPresent(RateLimitResetCredit.self, forKeys: ["credits"])
     }
 }
 
@@ -248,7 +248,7 @@ public struct RateLimitsReadResult: Codable, Sendable {
         let container = try decoder.container(keyedBy: FlexibleCodingKey.self)
         self.rateLimits = try container.decodeIfPresent(RateLimitsObject.self, forKeys: ["rateLimits", "rate_limits"])
         self.rateLimitsByLimitId = try container.decodeIfPresent([String: RateLimitsObject].self, forKeys: ["rateLimitsByLimitId", "rate_limits_by_limit_id"])
-        self.rateLimitResetCredits = try container.decodeIfPresent(RateLimitResetCreditsObject.self, forKeys: ["rateLimitResetCredits", "rate_limit_reset_credits"])
+        self.rateLimitResetCredits = try? container.decodeIfPresent(RateLimitResetCreditsObject.self, forKeys: ["rateLimitResetCredits", "rate_limit_reset_credits"])
     }
 }
 
@@ -349,6 +349,11 @@ private extension KeyedDecodingContainer where Key == FlexibleCodingKey {
         return nil
     }
 
+    func decodeLossyArrayIfPresent<T: Decodable>(_ type: T.Type, forKeys names: [String]) throws -> [T]? {
+        guard let key = key(names), try !decodeNil(forKey: key) else { return nil }
+        return try? decode(LossyDecodableArray<T>.self, forKey: key).values
+    }
+
     func decodeFlexibleEpochSeconds(forKeys names: [String]) throws -> Int64? {
         guard let key = key(names) else { return nil }
         if let int = try? decode(Int64.self, forKey: key) { return normalizeEpochSeconds(int) }
@@ -367,6 +372,22 @@ private extension KeyedDecodingContainer where Key == FlexibleCodingKey {
 
     private func normalizeEpochSeconds(_ value: Int64) -> Int64 {
         abs(value) > 10_000_000_000 ? value / 1_000 : value
+    }
+}
+
+private struct LossyDecodableArray<Element: Decodable>: Decodable {
+    let values: [Element]
+
+    init(from decoder: Decoder) throws {
+        var container = try decoder.unkeyedContainer()
+        var decodedValues: [Element] = []
+        while !container.isAtEnd {
+            let elementDecoder = try container.superDecoder()
+            if let value = try? Element(from: elementDecoder) {
+                decodedValues.append(value)
+            }
+        }
+        self.values = decodedValues
     }
 }
 

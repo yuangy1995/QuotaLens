@@ -3377,6 +3377,26 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Nunca verificado",
         .portugueseBrazil: "Nunca verificado"
     ],
+    "%d reset cards": [
+        .traditionalChinese: "%d 張重置卡",
+        .japanese: "リセットカード %d枚",
+        .korean: "리셋 카드 %d장",
+        .spanish: "%d tarjetas de reinicio",
+        .german: "%d Reset-Karten",
+        .french: "%d cartes de réinitialisation",
+        .portuguese: "%d cartões de reposição",
+        .portugueseBrazil: "%d cartões de reset"
+    ],
+    "Availability confirmed; card details are syncing": [
+        .traditionalChinese: "後台已確認可用，卡片明細正在同步",
+        .japanese: "利用可能であることを確認済みです。カードの詳細を同期中です",
+        .korean: "사용 가능 여부가 확인되었습니다. 카드 세부 정보를 동기화하는 중입니다",
+        .spanish: "Disponibilidad confirmada; sincronizando los detalles de la tarjeta",
+        .german: "Verfügbarkeit bestätigt; Kartendetails werden synchronisiert",
+        .french: "Disponibilité confirmée ; synchronisation des détails de la carte",
+        .portuguese: "Disponibilidade confirmada; a sincronizar os detalhes do cartão",
+        .portugueseBrazil: "Disponibilidade confirmada; sincronizando os detalhes do cartão"
+    ],
     "No reset cards reported yet.": [
         .traditionalChinese: "暫無可用重置卡。",
         .japanese: "利用可能なリセットカードはまだありません。",

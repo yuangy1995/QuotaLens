@@ -480,6 +480,8 @@ public struct DashboardView: View {
     private var resetCreditsHangarView: some View {
         let amber = AppTheme.accentAmber(for: colorScheme)
         let countColor = state.resetCreditAvailableCount > 0 ? amber : AppTheme.textSecondary(for: colorScheme)
+        let dashboardCredits = state.dashboardResetCredits
+        let missingDetailCount = state.resetCreditMissingDetailCount
 
         return VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
@@ -515,7 +517,7 @@ public struct DashboardView: View {
 
             CyberDivider(glowColor: amber.opacity(0.3))
 
-            if state.dashboardResetCredits.isEmpty {
+            if dashboardCredits.isEmpty && missingDetailCount == 0 {
                 HStack {
                     Spacer()
                     VStack(spacing: 8) {
@@ -531,8 +533,12 @@ public struct DashboardView: View {
                 }
             } else {
                 VStack(spacing: 10) {
-                    ForEach(state.dashboardResetCredits) { credit in
+                    ForEach(dashboardCredits) { credit in
                         ResetCreditCardRowView(credit: credit, state: state, isCompact: true)
+                    }
+
+                    if dashboardCredits.isEmpty && missingDetailCount > 0 {
+                        ResetCreditDetailsPendingRowView(count: missingDetailCount, isCompact: true)
                     }
                 }
             }
