@@ -102,6 +102,42 @@ public struct RateLimitSnapshotRecord: Identifiable, Codable, Sendable {
         guard let resetsAt else { return true }
         return resetsAt > unixTime
     }
+
+    public var usedPercent: Double {
+        min(max(Double(usedPercentMilli) / 1000.0, 0.0), 100.0)
+    }
+
+    public var remainingPercent: Double {
+        max(0.0, 100.0 - usedPercent)
+    }
+
+    /// 多个并行额度窗口同时生效时，选择剩余额度最少的当前窗口作为实际限制。
+    public static func mostRestrictiveCurrentSnapshot(
+        from snapshots: [RateLimitSnapshotRecord],
+        at unixTime: Int64
+    ) -> RateLimitSnapshotRecord? {
+        snapshots
+            .filter { $0.isCurrentQuotaWindow(at: unixTime) }
+            .min { lhs, rhs in
+                if lhs.remainingPercent != rhs.remainingPercent {
+                    return lhs.remainingPercent < rhs.remainingPercent
+                }
+
+                let lhsReset = lhs.resetsAt ?? Int64.max
+                let rhsReset = rhs.resetsAt ?? Int64.max
+                if lhsReset != rhsReset {
+                    return lhsReset < rhsReset
+                }
+
+                let lhsDuration = lhs.windowDurationMins ?? Int.max
+                let rhsDuration = rhs.windowDurationMins ?? Int.max
+                if lhsDuration != rhsDuration {
+                    return lhsDuration < rhsDuration
+                }
+
+                return (lhs.id ?? 0) < (rhs.id ?? 0)
+            }
+    }
 }
 
 /// 线程用量快照记录

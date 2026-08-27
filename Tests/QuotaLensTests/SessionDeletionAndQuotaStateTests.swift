@@ -304,6 +304,22 @@ final class SessionDeletionAndQuotaStateTests: XCTestCase {
         XCTAssertEqual(state.recommendedQuotaPaceUnit, "hour")
         XCTAssertEqual(state.recommendedQuotaPaceSubtitle(now: now), "About 4.0 hours remaining · Even pace")
         XCTAssertEqual(state.quotaDisplayMode.ringTitle(for: state.quotaWindowKind), "Available in 5 Hours")
+
+        state.latestRateLimit = RateLimitSnapshotRecord(
+            accountKey: "test-account",
+            observedAt: Int64(now.timeIntervalSince1970),
+            limitId: "codex",
+            slot: "primary",
+            usedPercentMilli: 4_000,
+            windowDurationMins: 300,
+            resetsAt: Int64(now.addingTimeInterval(30 * 60).timeIntervalSince1970),
+            planType: "plus",
+            rawJson: "{}"
+        )
+
+        XCTAssertEqual(state.currentQuotaRemainingUnits(now: now) ?? 0, 0.5, accuracy: 0.001)
+        XCTAssertEqual(state.recommendedQuotaPacePercent(now: now) ?? 0, 96.0, accuracy: 0.001)
+        XCTAssertEqual(state.recommendedQuotaPacePercentString(now: now), "96.0%")
     }
 
     @MainActor
@@ -339,6 +355,22 @@ final class SessionDeletionAndQuotaStateTests: XCTestCase {
         XCTAssertEqual(state.recommendedQuotaPaceTitle, "Daily Budget Pace")
         XCTAssertEqual(state.recommendedQuotaPaceUnit, "day")
         XCTAssertEqual(state.recommendedQuotaPaceSubtitle(now: now), "Remaining 4.0 days · Even pace")
+
+        state.latestRateLimit = RateLimitSnapshotRecord(
+            accountKey: "test-account",
+            observedAt: Int64(now.timeIntervalSince1970),
+            limitId: "codex",
+            slot: "primary",
+            usedPercentMilli: 4_000,
+            windowDurationMins: 10_080,
+            resetsAt: Int64(now.addingTimeInterval(12 * 3_600).timeIntervalSince1970),
+            planType: "plus",
+            rawJson: "{}"
+        )
+
+        XCTAssertEqual(state.currentQuotaRemainingUnits(now: now) ?? 0, 0.5, accuracy: 0.001)
+        XCTAssertEqual(state.recommendedQuotaPacePercent(now: now) ?? 0, 96.0, accuracy: 0.001)
+        XCTAssertEqual(state.recommendedQuotaPacePercentString(now: now), "96.0%")
     }
 
     @MainActor
@@ -353,8 +385,8 @@ final class SessionDeletionAndQuotaStateTests: XCTestCase {
             }
         }
 
-        let chinese = "全新升级 Codex 计费与定价目录引擎，支持模型历史分段价格、缓存命中折算与多周期计费回溯"
-        let english = "Upgraded Codex pricing and catalog engine with historical tiered pricing, prompt cache savings, and multi-cycle cost auditing"
+        let chinese = "引入 5 小时与周度双周期配额预算与建议节奏引擎，根据窗口类型自动按小时/天智能推算合理配额消耗"
+        let english = "Introduced dual-window quota pace budget engine for 5-hour and weekly cycles with window-aware hourly/daily consumption pace"
         for mode in AppLanguageMode.allCases where mode != .system {
             defaults.set(mode.rawValue, forKey: L10n.languageModeDefaultsKey)
             let localized = L10n.text(chinese, english)
@@ -381,7 +413,7 @@ final class SessionDeletionAndQuotaStateTests: XCTestCase {
             }
         }
 
-        let chinese = "全新升级 Codex 计费与定价目录引擎，支持模型历史分段价格、缓存命中折算与多周期计费回溯"
+        let chinese = "引入 5 小时与周度双周期配额预算与建议节奏引擎，根据窗口类型自动按小时/天智能推算合理配额消耗"
         for mode in AppLanguageMode.allCases where mode != .system {
             defaults.set(mode.rawValue, forKey: L10n.languageModeDefaultsKey)
             let localized = L10n.localizeChangelogText(chinese)

@@ -195,7 +195,7 @@ public struct SessionDetailView: View {
                 )
 
                 MetricHUDTile(
-                    title: L10n.text("费用估算（试用）", "Estimated cost (Beta)"),
+                    title: L10n.text("API 等价价值", "API Equivalent Value"),
                     value: UsageNumberFormatter.currencyUSD(detail.session.estimatedCost),
                     caption: pricingCaption(for: detail.session),
                     icon: "dollarsign.circle.fill",
@@ -441,13 +441,10 @@ public struct SessionDetailView: View {
 
     private func pricingCaption(for session: CodexSessionDTO) -> String {
         if session.summaryProvenance == .legacyAggregate {
-            return L10n.text(
-                "历史金额（保留原记录）；根据公开价格估算，并非实际扣款",
-                "Historical amount kept from the original record; estimated costs are not actual charges"
-            )
+            return L10n.text("含历史记录", "Includes historical records")
         }
         guard !session.pricingStatus.isPriced else {
-            return L10n.text("根据公开价格估算，并非实际扣款", "Estimated from public rates, not actual charges")
+            return L10n.text("按 API 价格折算", "Converted at API rates")
         }
         guard !session.unpricedReasonCounts.isEmpty else {
             return session.pricingStatus.localizedDescription

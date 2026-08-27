@@ -39,9 +39,17 @@ public final class AppEnvironment: ObservableObject {
     private var systemAppearanceObserver: NSObjectProtocol?
     private var serverAccountDisplayNames: [String: String] = [:]
     private var resetCreditStatesByAccountKey: [String: AccountResetCreditState] = [:]
+    private var resetCreditIdempotencyKeys: [String: String] = {
+        guard let data = UserDefaults.standard.data(forKey: "QuotaLens.resetCreditIdempotencyKeys"),
+              let keys = try? JSONDecoder().decode([String: String].self, from: data) else {
+            return [:]
+        }
+        return keys
+    }()
     private static let serverRetryDelaysSeconds: [UInt64] = [3, 10, 30]
     private static let subscriptionRetryDelaysSeconds: [UInt64] = [30, 120, 300, 900]
     private static let resetCreditDetailsCacheDefaultsPrefix = "QuotaLens.resetCreditDetailsCache"
+    private static let resetCreditIdempotencyKeysDefaultsKey = "QuotaLens.resetCreditIdempotencyKeys"
 
     private struct AccountResetCreditState: Codable, Sendable {
         let accountKey: String
@@ -230,6 +238,11 @@ public final class AppEnvironment: ObservableObject {
         }
 
         let currentStatus = await processManager.getStatus()
+        let requestScopeKey = resetCreditRequestScopeKey(for: credit)
+        let request = ConsumeRateLimitResetCreditRequest(
+            creditId: credit.id,
+            idempotencyKey: resetCreditIdempotencyKey(for: requestScopeKey)
+        )
         if !currentStatus.isConnected {
             let started = await processManager.start()
             state.connectionStatus = await processManager.getStatus()
@@ -242,17 +255,14 @@ public final class AppEnvironment: ObservableObject {
             }
         }
 
-        let params: [String: AnyCodable] = [
-            "creditId": AnyCodable(credit.id),
-            "idempotencyKey": AnyCodable(UUID().uuidString)
-        ]
         let payload = try await rpcPayload(
             ConsumeRateLimitResetCreditResponse.self,
-            method: "account/rateLimitResetCredit/consume",
-            params: params,
+            method: ConsumeRateLimitResetCreditRequest.method,
+            params: request.params,
             timeoutSeconds: 10.0
         )
         let outcome = payload.value?.outcome ?? .nothingToReset
+        removeResetCreditIdempotencyKey(for: requestScopeKey)
         await refreshData()
         return outcome
     }
@@ -585,6 +595,7 @@ public final class AppEnvironment: ObservableObject {
     public func deleteAccount(accountKey: String) {
         try? repositories.deleteAccount(accountKey: accountKey)
         resetCreditStatesByAccountKey.removeValue(forKey: accountKey)
+        removeResetCreditIdempotencyKeys(for: accountKey)
         removePersistedResetCreditState(for: accountKey)
         if state.selectedAccountKey == accountKey {
             beginAccountScopeChange()
@@ -873,30 +884,40 @@ public final class AppEnvironment: ObservableObject {
         return state.hasQuotaSnapshot
     }
 
-    private func latestPrimaryQuotaSnapshot(accountKey: String) throws -> RateLimitSnapshotRecord? {
-        try repositories.getLatestRateLimitSnapshot(accountKey: accountKey, limitId: Self.primaryQuotaLimitId)
-            ?? repositories.getLatestRateLimitSnapshot(accountKey: accountKey)
+    private func latestQuotaSnapshots(accountKey: String) throws -> [RateLimitSnapshotRecord] {
+        let primarySnapshots = try repositories.getLatestRateLimitSnapshots(
+            accountKey: accountKey,
+            limitId: Self.primaryQuotaLimitId
+        )
+        if !primarySnapshots.isEmpty {
+            return primarySnapshots
+        }
+        return try repositories.getLatestRateLimitSnapshots(accountKey: accountKey)
     }
 
-    private func latestDisplayablePrimaryQuotaSnapshot(accountKey: String) throws -> RateLimitSnapshotRecord? {
-        guard let snapshot = try latestPrimaryQuotaSnapshot(accountKey: accountKey) else {
-            return nil
-        }
+    private func latestDisplayableQuotaSnapshots(accountKey: String) throws -> [RateLimitSnapshotRecord] {
         let now = Int64(Date().timeIntervalSince1970)
-        return snapshot.isCurrentQuotaWindow(at: now) ? snapshot : nil
+        return try latestQuotaSnapshots(accountKey: accountKey)
+            .filter { $0.isCurrentQuotaWindow(at: now) }
     }
 
     @discardableResult
     private func applyCachedQuotaSnapshotIfAvailable(for accountKey: String) -> Bool {
-        guard let snapshot = try? latestDisplayablePrimaryQuotaSnapshot(accountKey: accountKey) else {
+        guard let snapshots = try? latestDisplayableQuotaSnapshots(accountKey: accountKey),
+              let snapshot = RateLimitSnapshotRecord.mostRestrictiveCurrentSnapshot(
+                  from: snapshots,
+                  at: Int64(Date().timeIntervalSince1970)
+              ) else {
             return false
         }
+        state.currentQuotaSnapshots = snapshots
         state.latestRateLimit = snapshot
         state.hasCurrentServerQuota = true
         return true
     }
 
     private func clearQuotaSnapshotState() {
+        state.currentQuotaSnapshots = []
         state.latestRateLimit = nil
         state.hasCurrentServerQuota = false
     }
@@ -926,6 +947,40 @@ public final class AppEnvironment: ObservableObject {
         resetCreditReminderTask?.cancel()
         resetCreditReminderTask = nil
         return accountDataGeneration
+    }
+
+    private func resetCreditRequestScopeKey(for credit: ResetCreditDisplay) -> String {
+        let accountKey = currentStateAccountKey() ?? credit.accountKey ?? "acc_local"
+        return "\(accountKey)|\(credit.id)"
+    }
+
+    private func resetCreditIdempotencyKey(for scopeKey: String) -> String {
+        if let existing = resetCreditIdempotencyKeys[scopeKey] {
+            return existing
+        }
+
+        let generated = UUID().uuidString
+        resetCreditIdempotencyKeys[scopeKey] = generated
+        persistResetCreditIdempotencyKeys()
+        return generated
+    }
+
+    private func removeResetCreditIdempotencyKey(for scopeKey: String) {
+        guard resetCreditIdempotencyKeys.removeValue(forKey: scopeKey) != nil else { return }
+        persistResetCreditIdempotencyKeys()
+    }
+
+    private func removeResetCreditIdempotencyKeys(for accountKey: String) {
+        let prefix = "\(accountKey)|"
+        let keysToRemove = resetCreditIdempotencyKeys.keys.filter { $0.hasPrefix(prefix) }
+        guard !keysToRemove.isEmpty else { return }
+        keysToRemove.forEach { resetCreditIdempotencyKeys.removeValue(forKey: $0) }
+        persistResetCreditIdempotencyKeys()
+    }
+
+    private func persistResetCreditIdempotencyKeys() {
+        guard let data = try? JSONEncoder().encode(resetCreditIdempotencyKeys) else { return }
+        UserDefaults.standard.set(data, forKey: Self.resetCreditIdempotencyKeysDefaultsKey)
     }
 
     private func beginServerSnapshotRequest() -> Int {
@@ -983,7 +1038,7 @@ public final class AppEnvironment: ObservableObject {
 
         if let rateLimits = snapshot.rateLimits {
             updateResetCreditState(from: rateLimits.rateLimitResetCredits, accountKey: accountKey)
-            let liveSnapshot = liveRateLimitSnapshot(
+            let liveSnapshots = liveRateLimitSnapshots(
                 from: rateLimits,
                 accountKey: accountKey,
                 observedAt: now,
@@ -998,7 +1053,12 @@ public final class AppEnvironment: ObservableObject {
             if insertedCount > 0, applyCachedQuotaSnapshotIfAvailable(for: accountKey) {
                 return
             }
-            if let liveSnapshot {
+            let currentLiveSnapshots = liveSnapshots.filter { $0.isCurrentQuotaWindow(at: now) }
+            if let liveSnapshot = RateLimitSnapshotRecord.mostRestrictiveCurrentSnapshot(
+                from: currentLiveSnapshots,
+                at: now
+            ) {
+                state.currentQuotaSnapshots = currentLiveSnapshots
                 state.latestRateLimit = liveSnapshot
                 state.hasCurrentServerQuota = true
             } else if !applyCachedQuotaSnapshotIfAvailable(for: accountKey) {
@@ -1013,12 +1073,12 @@ public final class AppEnvironment: ObservableObject {
 
     }
 
-    private func liveRateLimitSnapshot(
+    private func liveRateLimitSnapshots(
         from dto: RateLimitsReadResult,
         accountKey: String,
         observedAt: Int64,
         rawJson: String
-    ) -> RateLimitSnapshotRecord? {
+    ) -> [RateLimitSnapshotRecord] {
         var candidates: [(fallbackID: String, limits: RateLimitsObject)] = []
         if let exact = dto.rateLimitsByLimitId?[Self.primaryQuotaLimitId] {
             candidates.append((Self.primaryQuotaLimitId, exact))
@@ -1034,36 +1094,49 @@ public final class AppEnvironment: ObservableObject {
             }
         }
 
+        var snapshotsByLimitID: [String: [RateLimitSnapshotRecord]] = [:]
+        var limitIDOrder: [String] = []
         var seen = Set<String>()
         for candidate in candidates {
             let limitID = candidate.limits.limitId ?? candidate.fallbackID
-            guard seen.insert(limitID).inserted else { continue }
-            let detail: RateLimitWindowDetail
-            let slot: String
-            if let primary = candidate.limits.primary {
-                detail = primary
-                slot = "primary"
-            } else if let secondary = candidate.limits.secondary {
-                detail = secondary
-                slot = "secondary"
-            } else {
-                continue
+            if snapshotsByLimitID[limitID] == nil {
+                snapshotsByLimitID[limitID] = []
+                limitIDOrder.append(limitID)
             }
-            guard let rawUsedPercent = detail.usedPercent else { continue }
-            let usedPercent = min(max(rawUsedPercent, 0), 100)
-            return RateLimitSnapshotRecord(
-                accountKey: accountKey,
-                observedAt: observedAt,
-                limitId: limitID,
-                slot: slot,
-                usedPercentMilli: Int((usedPercent * 1_000).rounded()),
-                windowDurationMins: detail.windowDurationMins,
-                resetsAt: detail.resetsAt,
-                planType: candidate.limits.planType,
-                rawJson: rawJson
-            )
+
+            let details: [(slot: String, detail: RateLimitWindowDetail?)] = [
+                ("primary", candidate.limits.primary),
+                ("secondary", candidate.limits.secondary)
+            ]
+            for (slot, detail) in details {
+                guard let detail,
+                      let rawUsedPercent = detail.usedPercent,
+                      seen.insert("\(limitID)|\(slot)").inserted else {
+                    continue
+                }
+                let usedPercent = min(max(rawUsedPercent, 0), 100)
+                snapshotsByLimitID[limitID, default: []].append(
+                    RateLimitSnapshotRecord(
+                        accountKey: accountKey,
+                        observedAt: observedAt,
+                        limitId: limitID,
+                        slot: slot,
+                        usedPercentMilli: Int((usedPercent * 1_000).rounded()),
+                        windowDurationMins: detail.windowDurationMins,
+                        resetsAt: detail.resetsAt,
+                        planType: candidate.limits.planType,
+                        rawJson: rawJson
+                    )
+                )
+            }
         }
-        return nil
+
+        for limitID in limitIDOrder {
+            if let snapshots = snapshotsByLimitID[limitID], !snapshots.isEmpty {
+                return snapshots
+            }
+        }
+        return []
     }
 
     private func restoreResetCreditState(for accountKey: String, snapshot: RateLimitSnapshotRecord?) {
@@ -1407,9 +1480,12 @@ public final class AppEnvironment: ObservableObject {
         state.allAccounts = []
         state.selectedAccountKey = nil
         state.connectionStatus = .disconnected
+        state.currentQuotaSnapshots = []
         state.latestRateLimit = nil
         state.hasCurrentServerQuota = false
         resetCreditStatesByAccountKey.removeAll()
+        resetCreditIdempotencyKeys.removeAll()
+        persistResetCreditIdempotencyKeys()
         state.resetCreditAvailableCount = 0
         state.resetCredits = []
         state.subscriptionStartsAt = nil

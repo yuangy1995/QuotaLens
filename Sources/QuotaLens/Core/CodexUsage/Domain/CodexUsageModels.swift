@@ -290,7 +290,7 @@ public enum PricingStatus: String, Hashable, Sendable, Codable {
     public var localizedDescription: String {
         switch self {
         case .priced:
-            return L10n.text("已按公开价格估算", "Estimated from public rates")
+            return L10n.text("按 API 价格折算", "Converted at API rates")
         case .unpricedUnknownModel:
             return L10n.text("无法识别模型", "Model not recognized")
         case .unpricedHistoricalRuleMissing:

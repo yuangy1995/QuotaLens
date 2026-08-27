@@ -299,7 +299,7 @@ public struct HistoryView: View {
                     )
 
                     MetricHUDTile(
-                        title: L10n.text("当日费用估算（试用）", "Day estimated cost (Beta)"),
+                        title: L10n.text("当日 API 等价价值", "Daily API Equivalent Value"),
                         value: UsageNumberFormatter.currencyUSD(day.estimatedCost),
                         caption: dayPricingCaption(day),
                         icon: "dollarsign.circle.fill",
@@ -554,30 +554,13 @@ public struct HistoryView: View {
     }
 
     private func dayPricingCaption(_ day: DayUsageSummaryDTO) -> String {
-        let totalTokens = day.tokens.canonicalTotalTokens
-        let coveredTokens = max(0, totalTokens - day.unpricedTokenCount - day.legacyAggregateTokens)
-        let ratio = totalTokens > 0 ? Double(coveredTokens) / Double(totalTokens) : 1.0
-        let percentage = UsageNumberFormatter.percent(ratio * 100.0, maximumFractionDigits: 1)
-        let coverage = L10n.format(
-            "Usage with cost estimates %@",
-            zhHans: "能估算费用的用量占比 %@",
-            percentage
-        )
-        let legacyText = day.legacyAggregateCost.rawValue > 0 || day.legacyAggregateTokens > 0
-            ? L10n.format(
-                "historical amount %@",
-                zhHans: "历史金额（保留原记录）%@",
-                UsageNumberFormatter.currencyUSD(day.legacyAggregateCost)
-            )
-            : nil
-        guard !day.unpricedReasonCounts.isEmpty else {
-            return [coverage, legacyText, L10n.text("根据公开价格估算，并非实际扣款", "Estimated from public rates, not actual charges")]
-                .compactMap { $0 }
-                .joined(separator: " · ")
+        if !day.unpricedReasonCounts.isEmpty {
+            return L10n.text("部分记录未计价", "Some records are unpriced")
         }
-        return [coverage, legacyText, day.unpricedReasonCounts.localizedSummary]
-            .compactMap { $0 }
-            .joined(separator: " · ")
+        if day.legacyAggregateCost.rawValue > 0 || day.legacyAggregateTokens > 0 {
+            return L10n.text("含历史记录", "Includes historical records")
+        }
+        return L10n.text("按 API 价格折算", "Converted at API rates")
     }
 }
 

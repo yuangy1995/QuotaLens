@@ -150,6 +150,7 @@ public final class AppState: ObservableObject {
     private static let resetCreditReminderSnoozeUntilDefaultsKey = "QuotaLens.resetCreditReminder.snoozeUntil"
     private static let resetCreditReminderLastDeliveredKeyDefaultsKey = "QuotaLens.resetCreditReminder.lastDeliveredKey"
     private static let dismissedSuggestionCycleKeysDefaultsKey = "QuotaLens.dismissedSuggestionCycleKeys"
+    private static let quotaExhaustionThreshold = 0.000_1
     nonisolated public static let defaultRefreshIntervalSeconds = 60
 
     // 当前账户与外观主题
@@ -202,6 +203,7 @@ public final class AppState: ObservableObject {
 
     // 当前额度
     @Published public var latestRateLimit: RateLimitSnapshotRecord?
+    @Published public var currentQuotaSnapshots: [RateLimitSnapshotRecord] = []
     @Published public var hasCurrentServerQuota: Bool = false
     @Published public var resetCreditAvailableCount: Int = 0
     @Published public var resetCredits: [ResetCreditDisplay] = []
@@ -273,9 +275,45 @@ public final class AppState: ObservableObject {
     }
 
     // 格式化辅助方法
+    private var quotaSnapshotPool: [RateLimitSnapshotRecord] {
+        if !currentQuotaSnapshots.isEmpty {
+            return currentQuotaSnapshots
+        }
+        return latestRateLimit.map { [$0] } ?? []
+    }
+
+    private var effectiveQuotaSnapshot: RateLimitSnapshotRecord? {
+        RateLimitSnapshotRecord.mostRestrictiveCurrentSnapshot(
+            from: quotaSnapshotPool,
+            at: Int64(Date().timeIntervalSince1970)
+        )
+    }
+
+    private func quotaSnapshot(for kind: QuotaWindowKind) -> RateLimitSnapshotRecord? {
+        let candidates = quotaSnapshotPool.filter {
+            QuotaWindowKind(windowDurationMins: $0.windowDurationMins) == kind
+        }
+        return RateLimitSnapshotRecord.mostRestrictiveCurrentSnapshot(
+            from: candidates,
+            at: Int64(Date().timeIntervalSince1970)
+        )
+    }
+
+    private func countdownString(for snapshot: RateLimitSnapshotRecord?) -> String {
+        guard let resetsAt = snapshot?.resetsAt else { return L10n.text("未知", "Unknown") }
+        let diff = resetsAt - Int64(Date().timeIntervalSince1970)
+        if diff <= 0 {
+            return L10n.text("即将重置", "Resetting soon")
+        }
+        let days = diff / 86400
+        let hours = (diff % 86400) / 3600
+        let mins = (diff % 3600) / 60
+        let secs = diff % 60
+        return L10n.countdown(days: days, hours: hours, minutes: mins, seconds: secs)
+    }
+
     public var currentUsedPercent: Double {
-        guard let snap = latestRateLimit else { return 0.0 }
-        return Double(snap.usedPercentMilli) / 1000.0
+        effectiveQuotaSnapshot?.usedPercent ?? 0.0
     }
 
     public var currentRemainingPercent: Double {
@@ -283,11 +321,11 @@ public final class AppState: ObservableObject {
     }
 
     public var quotaWindowKind: QuotaWindowKind {
-        QuotaWindowKind(windowDurationMins: latestRateLimit?.windowDurationMins)
+        QuotaWindowKind(windowDurationMins: effectiveQuotaSnapshot?.windowDurationMins)
     }
 
     public var isQuotaExhausted: Bool {
-        hasQuotaSnapshot && currentRemainingPercent <= 0.000_1
+        hasQuotaSnapshot && currentRemainingPercent <= Self.quotaExhaustionThreshold
     }
 
     public var currentUsedPercentString: String {
@@ -295,8 +333,135 @@ public final class AppState: ObservableObject {
     }
 
     public var currentRemainingPercentString: String {
-        guard latestRateLimit != nil else { return "100%" }
+        guard effectiveQuotaSnapshot != nil else { return "100%" }
         return formatPercent(currentRemainingPercent)
+    }
+
+    public var fiveHourQuotaSnapshot: RateLimitSnapshotRecord? {
+        quotaSnapshot(for: .fiveHour)
+    }
+
+    public var weeklyQuotaSnapshot: RateLimitSnapshotRecord? {
+        quotaSnapshot(for: .weekly)
+    }
+
+    public var hasMultipleQuotaWindows: Bool {
+        fiveHourQuotaSnapshot != nil && weeklyQuotaSnapshot != nil
+    }
+
+    public var isFiveHourQuotaExhausted: Bool {
+        fiveHourQuotaSnapshot?.remainingPercent ?? 100.0 <= Self.quotaExhaustionThreshold
+    }
+
+    public var isWeeklyQuotaExhausted: Bool {
+        weeklyQuotaSnapshot?.remainingPercent ?? 100.0 <= Self.quotaExhaustionThreshold
+    }
+
+    /// 周额度耗尽时，即使 5 小时窗口仍有余量，服务也不能继续使用。
+    public var isWeeklyQuotaBlockingFiveHour: Bool {
+        isWeeklyQuotaExhausted && fiveHourQuotaSnapshot != nil && !isFiveHourQuotaExhausted
+    }
+
+    /// 弹窗平时优先显示 5 小时窗口；周额度耗尽时切换到周窗口，避免把不可用的 5 小时余量当成可用额度。
+    public var preferredDisplayQuotaSnapshot: RateLimitSnapshotRecord? {
+        if isWeeklyQuotaBlockingFiveHour {
+            return weeklyQuotaSnapshot
+        }
+        return fiveHourQuotaSnapshot ?? weeklyQuotaSnapshot ?? effectiveQuotaSnapshot
+    }
+
+    /// 服务器额度预测只使用 5 小时窗口；没有 5 小时窗口时才回退到周窗口。
+    public var preferredQuotaForecastSnapshot: RateLimitSnapshotRecord? {
+        fiveHourQuotaSnapshot ?? weeklyQuotaSnapshot ?? effectiveQuotaSnapshot
+    }
+
+    public var preferredDisplayQuotaWindowKind: QuotaWindowKind {
+        QuotaWindowKind(windowDurationMins: preferredDisplayQuotaSnapshot?.windowDurationMins)
+    }
+
+    public var preferredQuotaForecastWindowKind: QuotaWindowKind {
+        QuotaWindowKind(windowDurationMins: preferredQuotaForecastSnapshot?.windowDurationMins)
+    }
+
+    public var preferredDisplayUsedPercent: Double {
+        preferredDisplayQuotaSnapshot?.usedPercent ?? 0.0
+    }
+
+    public var preferredDisplayRemainingPercent: Double {
+        preferredDisplayQuotaSnapshot?.remainingPercent ?? 100.0
+    }
+
+    public var preferredDisplayQuotaProgress: Double {
+        let percent = quotaDisplayMode == .used ? preferredDisplayUsedPercent : preferredDisplayRemainingPercent
+        return min(max(percent / 100.0, 0.0), 1.0)
+    }
+
+    public var preferredDisplayQuotaRiskProgress: Double {
+        min(max(preferredDisplayUsedPercent / 100.0, 0.0), 1.0)
+    }
+
+    public var preferredDisplayQuotaPercentString: String {
+        let percent = quotaDisplayMode == .used ? preferredDisplayUsedPercent : preferredDisplayRemainingPercent
+        return formatPercent(percent)
+    }
+
+    public var preferredDisplayComplementQuotaPercentString: String {
+        let percent = quotaDisplayMode == .used ? preferredDisplayRemainingPercent : preferredDisplayUsedPercent
+        return formatPercent(percent)
+    }
+
+    public var preferredDisplayUsedPercentString: String {
+        formatPercent(preferredDisplayUsedPercent)
+    }
+
+    public var preferredDisplayRemainingPercentString: String {
+        formatPercent(preferredDisplayRemainingPercent)
+    }
+
+    public var preferredDisplayQuotaSeverityColor: Color {
+        if preferredDisplayRemainingPercent <= 15.0 {
+            return .red
+        }
+        if preferredDisplayRemainingPercent <= 35.0 {
+            return .orange
+        }
+        return .green
+    }
+
+    public var preferredDisplayResetCountdownString: String {
+        countdownString(for: preferredDisplayQuotaSnapshot)
+    }
+
+    public var preferredDisplayResetExactDateString: String? {
+        guard let resetsAt = preferredDisplayQuotaSnapshot?.resetsAt else { return nil }
+        return formatFullDate(resetsAt)
+    }
+
+    public var preferredQuotaForecastTitle: String {
+        guard preferredQuotaForecastSnapshot != nil else {
+            return L10n.text("服务器额度耗尽预测", "Rate Limit Burn Forecast")
+        }
+        switch preferredQuotaForecastWindowKind {
+        case .fiveHour:
+            return L10n.text("服务器 5 小时额度预测", "5-Hour Rate Limit Forecast")
+        case .weekly:
+            return L10n.text("服务器周额度预测", "Weekly Rate Limit Forecast")
+        }
+    }
+
+    public var quotaExhaustionStatusTitle: String {
+        isWeeklyQuotaBlockingFiveHour
+            ? L10n.text("周额度已耗尽", "Weekly quota exhausted")
+            : L10n.text("已用尽", "Exhausted")
+    }
+
+    public var quotaExhaustionStatusMessage: String {
+        isWeeklyQuotaBlockingFiveHour
+            ? L10n.text(
+                "5小时额度无法继续使用，请等待周额度重置",
+                "The 5-hour quota is unavailable until the weekly quota resets"
+            )
+            : L10n.text("本周期额度已用完，等待重置后恢复", "Quota exhausted for this cycle, waiting for reset")
     }
 
     public var displayedQuotaPercent: Double {
@@ -330,7 +495,7 @@ public final class AppState: ObservableObject {
     }
 
     public var hasQuotaSnapshot: Bool {
-        latestRateLimit != nil && hasCurrentServerQuota && connectionStatus.isConnected
+        effectiveQuotaSnapshot != nil && hasCurrentServerQuota && connectionStatus.isConnected
     }
 
     public var menuBarStatusString: String {
@@ -446,17 +611,7 @@ public final class AppState: ObservableObject {
     }
 
     public var resetCountdownString: String {
-        guard let snap = latestRateLimit, let resetsAt = snap.resetsAt else { return L10n.text("未知", "Unknown") }
-        let now = Date().timeIntervalSince1970
-        let diff = resetsAt - Int64(now)
-        if diff <= 0 {
-            return L10n.text("即将重置", "Resetting soon")
-        }
-        let days = diff / 86400
-        let hours = (diff % 86400) / 3600
-        let mins = (diff % 3600) / 60
-        let secs = diff % 60
-        return L10n.countdown(days: days, hours: hours, minutes: mins, seconds: secs)
+        countdownString(for: effectiveQuotaSnapshot)
     }
 
     public func preciseCountdownString(until timestamp: Int64?, now: Date = Date()) -> String {
@@ -481,13 +636,13 @@ public final class AppState: ObservableObject {
     }
 
     public var resetExactDateString: String? {
-        guard let snap = latestRateLimit, let resetsAt = snap.resetsAt else { return nil }
+        guard let resetsAt = effectiveQuotaSnapshot?.resetsAt else { return nil }
         return formatFullDate(resetsAt)
     }
 
     /// 当前周期剩余天数（浮点数，支持传入当前基准时间）
     public func currentPeriodRemainingDays(now: Date = Date()) -> Double? {
-        guard let snap = latestRateLimit, let resetsAt = snap.resetsAt else { return nil }
+        guard let resetsAt = effectiveQuotaSnapshot?.resetsAt else { return nil }
         let nowTs = now.timeIntervalSince1970
         let diff = resetsAt - Int64(nowTs)
         guard diff > 0 else { return 0.0 }
@@ -500,22 +655,39 @@ public final class AppState: ObservableObject {
 
     /// 当前额度窗口内，按统一速率消耗至重置时刚好用完所需的时间单位数。
     public func currentQuotaRemainingUnits(now: Date = Date()) -> Double? {
-        guard let resetsAt = latestRateLimit?.resetsAt else { return nil }
+        guard let resetsAt = effectiveQuotaSnapshot?.resetsAt else { return nil }
         let seconds = Double(resetsAt) - now.timeIntervalSince1970
         guard seconds > 0 else { return 0.0 }
         return seconds / quotaWindowKind.paceUnitSeconds
     }
 
-    /// 建议按当前额度窗口均匀消耗的百分比。
+    private func forecastQuotaRemainingUnits(now: Date) -> Double? {
+        guard let snapshot = preferredQuotaForecastSnapshot,
+              let resetsAt = snapshot.resetsAt else {
+            return nil
+        }
+        let seconds = Double(resetsAt) - now.timeIntervalSince1970
+        guard seconds > 0 else { return 0.0 }
+        let windowKind = QuotaWindowKind(windowDurationMins: snapshot.windowDurationMins)
+        return seconds / windowKind.paceUnitSeconds
+    }
+
+    /// 建议按当前额度窗口均匀消耗的百分比；剩余时间不足一个显示单位时显示剩余额度本身。
     public func recommendedQuotaPacePercent(now: Date = Date()) -> Double? {
-        guard currentRemainingPercent > 0.000_1 else { return nil }
-        guard let units = currentQuotaRemainingUnits(now: now), units > 0 else { return nil }
-        let pace = max(0.0, currentRemainingPercent / units)
-        return quotaWindowKind == .fiveHour ? pace : min(100.0, pace)
+        guard let snapshot = preferredQuotaForecastSnapshot,
+              snapshot.remainingPercent > Self.quotaExhaustionThreshold else {
+            return nil
+        }
+        guard let units = forecastQuotaRemainingUnits(now: now), units > 0 else { return nil }
+        if units < 1.0 {
+            return snapshot.remainingPercent
+        }
+        let pace = max(0.0, snapshot.remainingPercent / units)
+        return pace
     }
 
     public var recommendedQuotaPaceTitle: String {
-        switch quotaWindowKind {
+        switch preferredQuotaForecastWindowKind {
         case .fiveHour:
             return L10n.text("建议每小时消耗", "Hourly Budget Pace")
         case .weekly:
@@ -524,7 +696,7 @@ public final class AppState: ObservableObject {
     }
 
     public var recommendedQuotaPaceUnit: String {
-        switch quotaWindowKind {
+        switch preferredQuotaForecastWindowKind {
         case .fiveHour:
             return L10n.text("小时", "hour")
         case .weekly:
@@ -539,14 +711,18 @@ public final class AppState: ObservableObject {
 
     /// 建议额度速率短文案。
     public func recommendedQuotaPaceSubtitle(now: Date = Date()) -> String {
-        if latestRateLimit != nil, currentRemainingPercent <= 0.000_1 {
+        if isWeeklyQuotaBlockingFiveHour {
+            return quotaExhaustionStatusMessage
+        }
+        if isQuotaExhausted {
             return L10n.text("本周期无可用额度 · 等待重置", "No quota remaining · Waiting for reset")
         }
-        guard let units = currentQuotaRemainingUnits(now: now), units > 0 else {
+        guard let units = forecastQuotaRemainingUnits(now: now),
+              units > 0 else {
             return L10n.text("周期即将结束", "Cycle ending soon")
         }
 
-        switch quotaWindowKind {
+        switch preferredQuotaForecastWindowKind {
         case .fiveHour:
             if units < 1.0 {
                 let minutes = max(1, Int(units * 60.0))
@@ -559,8 +735,8 @@ public final class AppState: ObservableObject {
             return L10n.format(
                 "About %.1f hours remaining · Even pace",
                 zhHans: "剩余约 %.1f 小时 · 匀速可用",
-                units
-            )
+                    units
+                )
 
         case .weekly:
             if units < 1.0 {
@@ -614,7 +790,7 @@ public final class AppState: ObservableObject {
     }
 
     public var quotaWindowEndDateString: String? {
-        guard let endAt = latestRateLimit?.resetsAt else { return nil }
+        guard let endAt = effectiveQuotaSnapshot?.resetsAt else { return nil }
         return formatFullDate(endAt)
     }
 
@@ -993,7 +1169,7 @@ public final class AppState: ObservableObject {
     }
 
     private var quotaWindowStartAt: Int64? {
-        guard let snap = latestRateLimit,
+        guard let snap = effectiveQuotaSnapshot,
               let resetsAt = snap.resetsAt,
               let duration = snap.windowDurationMins else {
             return nil
@@ -1127,6 +1303,7 @@ public final class AppState: ObservableObject {
             account = nil
             allAccounts = []
         }
+        currentQuotaSnapshots = []
         latestRateLimit = nil
         hasCurrentServerQuota = false
         resetCreditAvailableCount = 0
@@ -1168,7 +1345,7 @@ public final class AppState: ObservableObject {
 
     // MARK: - 首页智能建议引擎 (Dashboard Smart Suggestions)
     public var currentCycleKey: String? {
-        guard let snap = latestRateLimit, let resetsAt = snap.resetsAt else { return nil }
+        guard let snap = effectiveQuotaSnapshot, let resetsAt = snap.resetsAt else { return nil }
         let accountKey = selectedAccountKey ?? account?.accountKey ?? "default"
         return "\(accountKey):\(resetsAt)"
     }

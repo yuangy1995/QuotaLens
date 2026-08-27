@@ -254,7 +254,7 @@ public struct SettingsView: View {
                         Text(L10n.text("启用本地 Codex 用量分析", "Enable Local Codex Analytics"))
                             .font(.system(size: 13, weight: .bold))
                             .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
-                        Text(L10n.text("读取本机保存的会话记录，提供 Token 统计与费用估算（试用）", "Reads locally saved session records for tokens and estimated cost (Beta)"))
+                        Text(L10n.text("读取本机会话记录，统计 Token 与 API 价值", "Read local sessions for token and API value"))
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
                     }
@@ -520,7 +520,7 @@ public struct SettingsView: View {
                 )
 
                 DiagnosticMetricTile(
-                    title: L10n.text("费用估算", "Cost Estimate"),
+                    title: L10n.text("API 价值", "API Value"),
                     value: L10n.text("公开价格", "Public rates"),
                     icon: "tag.fill",
                     accentColor: amber,
@@ -1280,7 +1280,7 @@ public struct SettingsView: View {
 
         return VStack(alignment: .leading, spacing: 14) {
             CyberSectionHeader(
-                title: L10n.text("本地用量读取与费用估算", "Local Usage & Estimated Cost"),
+                title: L10n.text("本地用量与 API 价值", "Local Usage & API Value"),
                 icon: "waveform.path.ecg"
             )
 
@@ -1312,7 +1312,7 @@ public struct SettingsView: View {
             // 索引状态与操作
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Text(L10n.text("费用按公开价格估算，并非实际扣款", "Costs are estimated from public rates, not actual charges"))
+                    Text(L10n.text("按 API 价格折算", "Converted at API rates"))
                         .font(.system(size: 11, weight: .bold, design: .monospaced))
                         .foregroundStyle(cyan)
 

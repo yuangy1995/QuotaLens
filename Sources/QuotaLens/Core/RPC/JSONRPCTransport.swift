@@ -29,7 +29,7 @@ public actor JSONRPCTransport {
         // 启动后台异步读取循环
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let self = self else { return }
-            await self.readLoop()
+            await self.readLoop(input: stdin)
         }
     }
 
@@ -98,22 +98,16 @@ public actor JSONRPCTransport {
         }
     }
 
-    private func readLoop() async {
-        guard let input = inputHandle else { return }
-
-        while isRunning {
-            do {
-                let chunk = try input.read(upToCount: 4096)
-                guard let chunk = chunk, !chunk.isEmpty else {
-                    // EOF
-                    break
-                }
-                self.processIncomingData(chunk)
-            } catch {
+    private nonisolated func readLoop(input: FileHandle) async {
+        while await self.isRunning {
+            let chunk = input.availableData
+            guard !chunk.isEmpty else {
+                // EOF
                 break
             }
+            await self.processIncomingData(chunk)
         }
-        self.stop()
+        await self.stop()
     }
 
     private func processIncomingData(_ data: Data) {

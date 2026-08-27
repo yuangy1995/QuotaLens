@@ -259,6 +259,25 @@ public enum ConsumeRateLimitResetCreditOutcome: String, Codable, Sendable {
     case alreadyRedeemed
 }
 
+public struct ConsumeRateLimitResetCreditRequest: Codable, Sendable {
+    public static let method = "account/rateLimitResetCredit/consume"
+
+    public let creditId: String
+    public let idempotencyKey: String
+
+    public init(creditId: String, idempotencyKey: String) {
+        self.creditId = creditId
+        self.idempotencyKey = idempotencyKey
+    }
+
+    public var params: [String: AnyCodable] {
+        [
+            "creditId": AnyCodable(creditId),
+            "idempotencyKey": AnyCodable(idempotencyKey)
+        ]
+    }
+}
+
 public struct ConsumeRateLimitResetCreditResponse: Codable, Sendable {
     public let outcome: ConsumeRateLimitResetCreditOutcome
 

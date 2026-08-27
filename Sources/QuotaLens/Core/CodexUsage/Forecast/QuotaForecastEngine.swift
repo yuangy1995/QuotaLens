@@ -71,19 +71,21 @@ public enum QuotaForecastEngine {
         let mediumConfidenceSpanSeconds: TimeInterval = windowKind == .fiveHour ? 1_800 : 14_400
         let highConfidenceSpanSeconds: TimeInterval = windowKind == .fiveHour ? 7_200 : 86_400
 
-        // 过滤有效数据点（按时间升序），并在明显百分比回退处切分周期。
+        // 过滤有效数据点（按时间升序），每分钟保留最后一次采样，并在明显百分比回退处切分周期。
         let filteredSorted = snapshots
             .filter { $0.cycleKey == currentCycleKey }
             .filter { $0.timestamp <= now && $0.timestamp < resetDate }
             .filter { (0.0...100.0).contains($0.usedPercent) }
             .sorted { $0.timestamp < $1.timestamp }
         var rawSorted: [RateSnapshotPoint] = []
+        var lastSampleBucket: Int64?
         for point in filteredSorted {
-            if let previous = rawSorted.last,
-               point.timestamp.timeIntervalSince(previous.timestamp) < 60 {
+            let sampleBucket = Int64(floor(point.timestamp.timeIntervalSince1970 / 60.0))
+            if sampleBucket == lastSampleBucket {
                 rawSorted[rawSorted.count - 1] = point
             } else {
                 rawSorted.append(point)
+                lastSampleBucket = sampleBucket
             }
         }
         var cycleStartIndex = 0

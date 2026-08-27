@@ -44,6 +44,8 @@ public struct DashboardView: View {
     // MARK: - 核心配额卡片
     private var quotaHeroHUDCard: some View {
         let cyan = AppTheme.accentCyan(for: colorScheme)
+        let emerald = AppTheme.accentEmerald(for: colorScheme)
+        let rose = AppTheme.accentRose(for: colorScheme)
         return VStack(alignment: .leading, spacing: 18) {
             // 顶部小标头与右侧操作流
             HStack(alignment: .center, spacing: 12) {
@@ -85,38 +87,54 @@ public struct DashboardView: View {
             HStack(spacing: 28) {
                 // 全息双环表盘
                 CircularProgressView(
-                    progress: state.displayedQuotaProgress,
-                    riskProgress: state.quotaRiskProgress,
+                    progress: state.preferredDisplayQuotaProgress,
+                    riskProgress: state.preferredDisplayQuotaRiskProgress,
                     lineWidth: 16,
                     size: 160,
-                    title: state.quotaDisplayMode.ringTitle(for: state.quotaWindowKind),
-                    valueText: state.displayedQuotaPercentString,
-                    subtitle: "\(state.quotaDisplayMode.complementLabel) \(state.complementQuotaPercentString)"
+                    title: state.quotaDisplayMode.ringTitle(for: state.preferredDisplayQuotaWindowKind),
+                    valueText: state.preferredDisplayQuotaPercentString,
+                    subtitle: "\(state.quotaDisplayMode.complementLabel) \(state.preferredDisplayComplementQuotaPercentString)"
                 )
 
                 // 结构化指标网格
                 VStack(alignment: .leading, spacing: 14) {
                     // 主额度遥测大字卡 + 建议日均消耗微卡片
                     HStack(alignment: .top, spacing: 16) {
-                        HStack(spacing: 24) {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(state.quotaDisplayMode.primaryLabel)
-                                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-                                Text(state.displayedQuotaPercentString)
-                                    .font(.system(size: 30, weight: .black, design: .rounded))
-                                    .foregroundStyle(cyan)
-                                    .monospacedDigit()
+                        if let fiveHour = state.fiveHourQuotaSnapshot,
+                           let weekly = state.weeklyQuotaSnapshot {
+                            HStack(spacing: 18) {
+                                quotaWindowMetric(
+                                    title: L10n.text("5 小时额度", "5-Hour Quota"),
+                                    snapshot: fiveHour,
+                                    accent: fiveHour.remainingPercent <= 0.000_1 ? rose : cyan
+                                )
+                                quotaWindowMetric(
+                                    title: L10n.text("周额度", "Weekly Quota"),
+                                    snapshot: weekly,
+                                    accent: weekly.remainingPercent <= 0.000_1 ? rose : emerald
+                                )
                             }
+                        } else {
+                            HStack(spacing: 24) {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(state.quotaDisplayMode.primaryLabel)
+                                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                        .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                                    Text(state.displayedQuotaPercentString)
+                                        .font(.system(size: 30, weight: .black, design: .rounded))
+                                        .foregroundStyle(cyan)
+                                        .monospacedDigit()
+                                }
 
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(state.quotaDisplayMode.complementLabel)
-                                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-                                Text(state.complementQuotaPercentString)
-                                    .font(.system(size: 30, weight: .black, design: .rounded))
-                                    .foregroundStyle(state.quotaSeverityColor)
-                                    .monospacedDigit()
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(state.quotaDisplayMode.complementLabel)
+                                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                        .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                                    Text(state.complementQuotaPercentString)
+                                        .font(.system(size: 30, weight: .black, design: .rounded))
+                                        .foregroundStyle(state.quotaSeverityColor)
+                                        .monospacedDigit()
+                                }
                             }
                         }
 
@@ -180,6 +198,39 @@ public struct DashboardView: View {
         .cyberCard(cornerRadius: 16, padding: 22, isHighlighted: true, glowColor: cyan)
     }
 
+    private func quotaWindowMetric(
+        title: String,
+        snapshot: RateLimitSnapshotRecord,
+        accent: Color
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+
+            HStack(spacing: 5) {
+                Text(L10n.text("可用", "Free"))
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                Text(UsageNumberFormatter.percent(snapshot.remainingPercent))
+                    .font(.system(size: 22, weight: .black, design: .rounded))
+                    .foregroundStyle(accent)
+                    .monospacedDigit()
+            }
+
+            HStack(spacing: 5) {
+                Text(L10n.text("已用", "Used"))
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                Text(UsageNumberFormatter.percent(snapshot.usedPercent))
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                    .monospacedDigit()
+            }
+        }
+        .frame(minWidth: 112, alignment: .leading)
+    }
+
     // MARK: - 建议日均配额消耗微卡片
     private var dailyBudgetPaceCard: some View {
         let isDark = colorScheme == .dark
@@ -196,7 +247,7 @@ public struct DashboardView: View {
                         .foregroundStyle(accent)
 
                     Text(isExhausted
-                        ? L10n.text("本周期额度已用尽", "Quota Exhausted")
+                        ? state.quotaExhaustionStatusTitle
                         : state.recommendedQuotaPaceTitle)
                         .font(.system(size: 10.5, weight: .bold))
                         .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
@@ -218,7 +269,7 @@ public struct DashboardView: View {
                 }
 
                 if isExhausted {
-                    Text(L10n.text("已用尽", "Exhausted"))
+                    Text(state.quotaExhaustionStatusTitle)
                         .font(.system(size: 18, weight: .black, design: .rounded))
                         .foregroundStyle(accent)
                 } else {
@@ -235,11 +286,11 @@ public struct DashboardView: View {
                 }
 
                 Text(isExhausted
-                    ? L10n.text("等待下周期重置恢复", "Will restore on next reset")
+                    ? state.quotaExhaustionStatusMessage
                     : state.recommendedQuotaPaceSubtitle(now: context.date))
                     .font(.system(size: 9.5, weight: .medium, design: .monospaced))
                     .foregroundStyle(AppTheme.textSecondary(for: colorScheme).opacity(0.88))
-                    .lineLimit(1)
+                    .lineLimit(2)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)

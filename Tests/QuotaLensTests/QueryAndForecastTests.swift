@@ -401,6 +401,68 @@ final class QueryAndForecastTests: XCTestCase {
         XCTAssertEqual(forecast.burnRatePercentPerHour, 12, accuracy: 0.05)
     }
 
+    func testQuotaForecastRetainsHighFrequencyFiveHourSamples() {
+        let now = Date(timeIntervalSince1970: 20_000_000)
+        let reset = Int64(now.addingTimeInterval(4 * 3_600).timeIntervalSince1970)
+        let key = QuotaForecastEngine.QuotaCycleKey(
+            accountID: "a",
+            limitID: "codex",
+            slot: "primary",
+            resetAt: reset,
+            windowDurationMins: 300
+        )
+        var points: [QuotaForecastEngine.RateSnapshotPoint] = []
+        for index in 0...24 {
+            points.append(.init(
+                timestamp: now.addingTimeInterval(-Double(index * 15)),
+                usedPercent: 10 + Double(24 - index) * 0.5,
+                cycleKey: key
+            ))
+        }
+
+        let forecast = QuotaForecastEngine.forecast(
+            currentUsedPercent: 22,
+            resetsAt: reset,
+            currentCycleKey: key,
+            snapshots: points,
+            now: now
+        )
+
+        XCTAssertNotEqual(forecast.risk, .insufficientData)
+        XCTAssertGreaterThanOrEqual(forecast.samplePointsCount, 2)
+    }
+
+    func testQuotaForecastRetainsHighFrequencyWeeklySamples() {
+        let now = Date(timeIntervalSince1970: 20_000_000)
+        let reset = Int64(now.addingTimeInterval(12 * 3_600).timeIntervalSince1970)
+        let key = QuotaForecastEngine.QuotaCycleKey(
+            accountID: "a",
+            limitID: "codex",
+            slot: "primary",
+            resetAt: reset,
+            windowDurationMins: 10_080
+        )
+        var points: [QuotaForecastEngine.RateSnapshotPoint] = []
+        for index in 0...64 {
+            points.append(.init(
+                timestamp: now.addingTimeInterval(-Double(index * 15)),
+                usedPercent: 20 + Double(64 - index) * 0.1,
+                cycleKey: key
+            ))
+        }
+
+        let forecast = QuotaForecastEngine.forecast(
+            currentUsedPercent: 26.4,
+            resetsAt: reset,
+            currentCycleKey: key,
+            snapshots: points,
+            now: now
+        )
+
+        XCTAssertNotEqual(forecast.risk, .insufficientData)
+        XCTAssertGreaterThanOrEqual(forecast.samplePointsCount, 2)
+    }
+
     func testQuotaForecastKeepsWeeklyThresholdAndSeparatesWindowDurations() {
         let now = Date(timeIntervalSince1970: 20_000_000)
         let reset = Int64(now.addingTimeInterval(12 * 3_600).timeIntervalSince1970)

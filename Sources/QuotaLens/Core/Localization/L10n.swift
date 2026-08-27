@@ -254,6 +254,10 @@ public enum L10n {
     }
 
     public static let changelogZhToEnMap: [String: String] = [
+        "引入 5 小时与周度双周期配额预算与建议节奏引擎，根据窗口类型自动按小时/天智能推算合理配额消耗": "Introduced dual-window quota pace budget engine for 5-hour and weekly cycles with window-aware hourly/daily consumption pace",
+        "动态调整 5 小时短周期的预测门限与采样新鲜度，支持高频周度快照保留并提升预测覆盖率": "Dynamically adjusted forecast thresholds and sampling freshness for 5-hour windows with enhanced snapshot retention",
+        "增强多账号额度同步与历史快照存储持久化，提升 JSON-RPC 传输容错与弱网恢复能力": "Hardened multi-account quota snapshot persistence and JSON-RPC transport resilience against network fluctuations",
+        "优化菜单栏、全息悬浮窗与看板对 5 小时周期的环形指示与文案感知，全方位完善 10 种语言本地化": "Optimized 5-hour cycle ring indicators and contextual labels across menu bar, overlay, and dashboard with 10-language translations",
         "全新升级全息悬浮挂件交互与智能感知：支持「仅在目标应用前台时显示」自动防打扰，并新增一键重置吸附位置": "Upgraded floating overlay interactions: added auto-hide when target app is inactive and one-click position reset",
         "优化悬浮挂件视觉排版与隐私保护模式提示，增强已用/可用配额视角的平滑切换": "Refined overlay layout and privacy-preserved mode indicator with smooth view switching between used and available quota",
         "重构用量看板预测卡片布局，实现自适应等高对齐并提升多分辨率下的展示美观度": "Restructured usage dashboard forecast cards with adaptive equal-height alignment for enhanced layout aesthetics across displays",
@@ -345,6 +349,46 @@ public enum L10n {
 }
 
 private let keyedTranslations: [String: [AppLanguage: String]] = [
+    "Introduced dual-window quota pace budget engine for 5-hour and weekly cycles with window-aware hourly/daily consumption pace": [
+        .traditionalChinese: "引入 5 小時與週度雙週期配額預算與建議節奏引擎，根據窗口類型自動按小時/天智能推算合理配額消耗",
+        .japanese: "5時間および週間のデュアルウィンドウ配額予算＆推奨ペースエンジンを導入し、ウィンドウ種別に応じて時間/日単位の適正消費ペースを自動算出",
+        .korean: "5시간 및 주간 듀얼 윈도우 할당량 예산 및 권장 페이스 엔진을 도입하여 창 유형에 따라 시간/일 단위의 적정 소비량을 스마트하게 추산",
+        .spanish: "Introducido el motor de presupuesto de ritmo de cuota para ventanas de 5 horas y semanales con ritmo de consumo por hora o por día según el tipo de ventana",
+        .german: "Dual-Fenster-Kontingent-Pace-Engine für 5-Stunden- und Wochenzyklen mit fensterabhängigem stündlichem/täglichem Verbrauchstempo eingeführt",
+        .french: "Introduction du moteur de rythme de quota pour cycles de 5 heures et hebdomadaires avec calcul intelligent du rythme horaire/journalier",
+        .portuguese: "Introduzido motor de ritmo de quota para ciclos de 5 horas e semanais com cálculo inteligente do ritmo de consumo horário/diário",
+        .portugueseBrazil: "Introduzido motor de ritmo de cota para ciclos de 5 horas e semanais com cálculo inteligente do ritmo de consumo horário/diário"
+    ],
+    "Dynamically adjusted forecast thresholds and sampling freshness for 5-hour windows with enhanced snapshot retention": [
+        .traditionalChinese: "動態調整 5 小時短週期的預測門檻與採樣新鮮度，支援高頻週度快照保留並提升預測覆蓋率",
+        .japanese: "5時間の短い周期における予測しきい値とサンプリング鮮度を動的に調整し、高頻度なスナップショット保持と予測カバレッジを向上",
+        .korean: "5시간 단기 주기의 예측 임계값 및 샘플 신선도를 동적으로 조정하여 고주파 스냅샷 보존 및 예측 커버리지 향상",
+        .spanish: "Ajustados dinámicamente los umbrales de predicción y la frescura de muestreo para ventanas de 5 horas con mayor retención de instantáneas",
+        .german: "Prognoseschwellen und Stichprobenaktualität für 5-Stunden-Fenster dynamisch angepasst mit verbesserter Snapshot-Speicherung",
+        .french: "Ajustement dynamique des seuils de prévision et de la fraîcheur d'échantillonnage pour les fenêtres de 5 heures avec rétention accrue des instantanés",
+        .portuguese: "Ajuste dinâmico dos limites de previsão e da frescura da amostragem para janelas de 5 horas com retenção aprimorada de instantâneos",
+        .portugueseBrazil: "Ajuste dinâmico dos limites de previsão e do frescor da amostragem para janelas de 5 horas com retenção aprimorada de instantâneos"
+    ],
+    "Hardened multi-account quota snapshot persistence and JSON-RPC transport resilience against network fluctuations": [
+        .traditionalChinese: "增強多帳號額度同步與歷史快照存儲持久化，提升 JSON-RPC 傳輸容錯與弱網恢復能力",
+        .japanese: "マルチアカウントのクォータ同期と履歴スナップショットの永続化を強化し、JSON-RPC 転送のフォールトトレランスと不安定なネットワークからの復旧力を向上",
+        .korean: "다중 계정 할당량 동기화 및 기록 스냅샷 영속성을 강화하여 JSON-RPC 전송 내결함성 및 네트워크 불안정 복원력 향상",
+        .spanish: "Reforzada la persistencia de instantáneas de cuotas multicuenta y la resistencia del transporte JSON-RPC ante fluctuaciones de red",
+        .german: "Dauerhaftigkeit von Multi-Konto-Kontingent-Snapshots und Ausfallsicherheit des JSON-RPC-Transports bei Netzwerkfluktuationen verstärkt",
+        .french: "Renforcement de la persistance des instantanés de quotas multi-comptes et de la résilience du transport JSON-RPC face aux fluctuations réseau",
+        .portuguese: "Reforçada a persistência de instantâneos de quotas multi-conta e a resiliência do transporte JSON-RPC contra oscilações de rede",
+        .portugueseBrazil: "Reforçada a persistência de instantâneos de cotas multi-conta e a resiliência do transporte JSON-RPC contra oscilações de rede"
+    ],
+    "Optimized 5-hour cycle ring indicators and contextual labels across menu bar, overlay, and dashboard with 10-language translations": [
+        .traditionalChinese: "優化選單列、全息懸浮窗與看板對 5 小時週期的環形指示與文案感知，全方位完善 10 種語言本地化",
+        .japanese: "メニューバー、フローティングオーバーレイ、ダッシュボードにおける5時間周期のリングインジケーターと文脈ラベルを最適化し、10言語の翻訳を完備",
+        .korean: "메뉴 바, 플로팅 오버레이, 대시보드에서 5시간 주기에 대한 원형 표시기 및 문맥 라벨을 최적화하고 10개 언어 번역 완비",
+        .spanish: "Optimizados los indicadores de anillo y las etiquetas contextuales para ciclos de 5 horas en la barra de menús, overlay y panel con 10 idiomas",
+        .german: "Ringanzeigen und Kontextbeschriftungen für 5-Stunden-Zyklen in Menüleiste, Overlay und Dashboard optimiert mit 10-Sprachen-Übersetzungen",
+        .french: "Optimisation des indicateurs circulaires et libellés contextuels pour cycles de 5 heures dans la barre de menus, l'overlay et le tableau de bord en 10 langues",
+        .portuguese: "Otimizados os indicadores circulares e etiquetas contextuais para ciclos de 5 horas na barra de menus, overlay e painel com 10 idiomas",
+        .portugueseBrazil: "Otimizados os indicadores circulares e etiquetas contextuais para ciclos de 5 horas na barra de menus, overlay e painel com 10 idiomas"
+    ],
     "Upgraded floating overlay interactions: added auto-hide when target app is inactive and one-click position reset": [
         .traditionalChinese: "全新升級全息懸浮掛件互動與智慧感知：支援「僅在目標應用前台時顯示」自動防打擾，並新增一鍵重設吸附位置",
         .japanese: "フローティングウィジェットの操作性と連携を刷新：「対象アプリが前面にある時のみ表示」の自動非表示と、位置リセット機能を追加",
@@ -955,6 +999,46 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Estado da quota",
         .portugueseBrazil: "Status da cota"
     ],
+    "5-Hour Quota": [
+        .traditionalChinese: "5 小時額度",
+        .japanese: "5時間クォータ",
+        .korean: "5시간 할당량",
+        .spanish: "Cuota de 5 horas",
+        .german: "5-Stunden-Kontingent",
+        .french: "Quota de 5 heures",
+        .portuguese: "Quota de 5 horas",
+        .portugueseBrazil: "Quota de 5 horas"
+    ],
+    "Weekly Quota": [
+        .traditionalChinese: "每週額度",
+        .japanese: "週間クォータ",
+        .korean: "주간 할당량",
+        .spanish: "Cuota semanal",
+        .german: "Wochenkontingent",
+        .french: "Quota hebdomadaire",
+        .portuguese: "Quota semanal",
+        .portugueseBrazil: "Cota semanal"
+    ],
+    "Weekly quota exhausted": [
+        .traditionalChinese: "每週額度已耗盡",
+        .japanese: "週間クォータを使い切りました",
+        .korean: "주간 할당량 소진",
+        .spanish: "Cuota semanal agotada",
+        .german: "Wochenkontingent ausgeschöpft",
+        .french: "Quota hebdomadaire épuisé",
+        .portuguese: "Quota semanal esgotada",
+        .portugueseBrazil: "Cota semanal esgotada"
+    ],
+    "The 5-hour quota is unavailable until the weekly quota resets": [
+        .traditionalChinese: "在每週額度重置前，5 小時額度無法使用",
+        .japanese: "週間クォータがリセットされるまで、5時間クォータは利用できません",
+        .korean: "주간 할당량이 재설정될 때까지 5시간 할당량을 사용할 수 없습니다",
+        .spanish: "La cuota de 5 horas no está disponible hasta que se restablezca la cuota semanal",
+        .german: "Das 5-Stunden-Kontingent ist nicht verfügbar, bis das Wochenkontingent zurückgesetzt wird",
+        .french: "Le quota de 5 heures est indisponible jusqu'à la réinitialisation du quota hebdomadaire",
+        .portuguese: "A quota de 5 horas fica indisponível até a reposição da quota semanal",
+        .portugueseBrazil: "A cota de 5 horas fica indisponível até a redefinição da cota semanal"
+    ],
     "Exhausted": [
         .traditionalChinese: "已用盡",
         .japanese: "使い切りました",
@@ -1474,6 +1558,106 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .french: "Valeur API du jour · bêta",
         .portuguese: "Valor API do dia · Beta",
         .portugueseBrazil: "Valor API do dia · Beta"
+    ],
+    "API Equivalent Value": [
+        .traditionalChinese: "API 等價價值",
+        .japanese: "API 換算価値",
+        .korean: "API 환산 가치",
+        .spanish: "Valor equivalente de API",
+        .german: "API-Gegenwert",
+        .french: "Équivalent API",
+        .portuguese: "Valor equivalente da API",
+        .portugueseBrazil: "Valor equivalente da API"
+    ],
+    "Daily API Equivalent Value": [
+        .traditionalChinese: "當日 API 等價價值",
+        .japanese: "当日の API 換算価値",
+        .korean: "일일 API 환산 가치",
+        .spanish: "Valor diario equivalente de API",
+        .german: "Täglicher API-Gegenwert",
+        .french: "Équivalent API du jour",
+        .portuguese: "Valor diário equivalente da API",
+        .portugueseBrazil: "Valor diário equivalente da API"
+    ],
+    "API Value": [
+        .traditionalChinese: "API 價值",
+        .japanese: "API 価値",
+        .korean: "API 가치",
+        .spanish: "Valor API",
+        .german: "API-Wert",
+        .french: "Valeur API",
+        .portuguese: "Valor da API",
+        .portugueseBrazil: "Valor da API"
+    ],
+    "API Value:": [
+        .traditionalChinese: "API 價值：",
+        .japanese: "API 価値:",
+        .korean: "API 가치:",
+        .spanish: "Valor API:",
+        .german: "API-Wert:",
+        .french: "Valeur API :",
+        .portuguese: "Valor da API:",
+        .portugueseBrazil: "Valor da API:"
+    ],
+    "Converted at API rates": [
+        .traditionalChinese: "按 API 價格折算",
+        .japanese: "API 料金で換算",
+        .korean: "API 요금 기준 환산",
+        .spanish: "Convertido según tarifas API",
+        .german: "Nach API-Tarifen umgerechnet",
+        .french: "Converti aux tarifs API",
+        .portuguese: "Convertido pelas tarifas da API",
+        .portugueseBrazil: "Convertido pelas tarifas da API"
+    ],
+    "Includes historical records": [
+        .traditionalChinese: "包含歷史記錄",
+        .japanese: "履歴を含む",
+        .korean: "과거 기록 포함",
+        .spanish: "Incluye registros históricos",
+        .german: "Enthält historische Einträge",
+        .french: "Inclut les historiques",
+        .portuguese: "Inclui registos históricos",
+        .portugueseBrazil: "Inclui registros históricos"
+    ],
+    "Some records are unpriced": [
+        .traditionalChinese: "部分記錄未計價",
+        .japanese: "一部の記録は未計価",
+        .korean: "일부 기록은 가격이 책정되지 않음",
+        .spanish: "Algunos registros no tienen precio",
+        .german: "Einige Einträge sind nicht bepreist",
+        .french: "Certains enregistrements ne sont pas tarifés",
+        .portuguese: "Alguns registos não têm preço",
+        .portugueseBrazil: "Alguns registros não têm preço"
+    ],
+    "Limited pricing data; showing token trend only": [
+        .traditionalChinese: "計價資料不足，僅顯示 Token 趨勢",
+        .japanese: "価格データ不足のため、Token の傾向のみ表示",
+        .korean: "가격 데이터 부족으로 Token 추세만 표시",
+        .spanish: "Datos de precios insuficientes; solo se muestra la tendencia de tokens",
+        .german: "Unzureichende Preisdaten; nur der Token-Trend wird angezeigt",
+        .french: "Données tarifaires insuffisantes ; seule la tendance des tokens est affichée",
+        .portuguese: "Dados de preços insuficientes; apenas a tendência de tokens é mostrada",
+        .portugueseBrazil: "Dados de preços insuficientes; apenas a tendência de tokens é mostrada"
+    ],
+    "Read local sessions for token and API value": [
+        .traditionalChinese: "讀取本機會話記錄，統計 Token 與 API 價值",
+        .japanese: "ローカルセッションから Token と API 価値を集計",
+        .korean: "로컬 세션에서 Token과 API 가치를 집계",
+        .spanish: "Lee sesiones locales para calcular tokens y valor API",
+        .german: "Lokale Sitzungen für Token- und API-Wert auslesen",
+        .french: "Lit les sessions locales pour calculer les tokens et la valeur API",
+        .portuguese: "Lê sessões locais para calcular tokens e valor da API",
+        .portugueseBrazil: "Lê sessões locais para calcular tokens e valor da API"
+    ],
+    "Local Usage & API Value": [
+        .traditionalChinese: "本機用量與 API 價值",
+        .japanese: "ローカル使用量と API 価値",
+        .korean: "로컬 사용량 및 API 가치",
+        .spanish: "Uso local y valor API",
+        .german: "Lokale Nutzung & API-Wert",
+        .french: "Usage local et valeur API",
+        .portuguese: "Uso local e valor da API",
+        .portugueseBrazil: "Uso local e valor da API"
     ],
     "Not a bill": [
         .traditionalChinese: "不是訂閱帳單金額",
@@ -2314,6 +2498,26 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .french: "Prévision d'épuisement du quota",
         .portuguese: "Previsão de esgotamento da quota",
         .portugueseBrazil: "Previsão de esgotamento da cota"
+    ],
+    "5-Hour Rate Limit Forecast": [
+        .traditionalChinese: "5 小時額度預測",
+        .japanese: "5時間クォータ予測",
+        .korean: "5시간 할당량 예측",
+        .spanish: "Predicción de cuota de 5 horas",
+        .german: "Prognose des 5-Stunden-Kontingents",
+        .french: "Prévision du quota de 5 heures",
+        .portuguese: "Previsão da quota de 5 horas",
+        .portugueseBrazil: "Previsão da cota de 5 horas"
+    ],
+    "Weekly Rate Limit Forecast": [
+        .traditionalChinese: "每週額度預測",
+        .japanese: "週間クォータ予測",
+        .korean: "주간 할당량 예측",
+        .spanish: "Predicción de cuota semanal",
+        .german: "Prognose des Wochenkontingents",
+        .french: "Prévision du quota hebdomadaire",
+        .portuguese: "Previsão da quota semanal",
+        .portugueseBrazil: "Previsão da cota semanal"
     ],
     "Local 7-Day Usage Projection": [
         .traditionalChinese: "本機未來 7 天趨勢估算",
@@ -4164,26 +4368,6 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .french: "Réinitialiser",
         .portuguese: "Repor",
         .portugueseBrazil: "Redefinir"
-    ],
-    "Precise mode · Window attached": [
-        .traditionalChinese: "精確貼邊 · 只讀取尺寸",
-        .japanese: "高精度吸着 · サイズのみ取得",
-        .korean: "정밀 부착 · 창 크기만 읽기",
-        .spanish: "Modo preciso · Ajuste a ventana",
-        .german: "Präziser Modus · Am Fenster fixiert",
-        .french: "Mode précis · Ajusté à la fenêtre",
-        .portuguese: "Modo preciso · Ajustado à janela",
-        .portugueseBrazil: "Modo preciso · Ajustado à janela"
-    ],
-    "Basic mode · Privacy preserved": [
-        .traditionalChinese: "基礎模式 · 保護隱私",
-        .japanese: "基本モード · プライバシー保護",
-        .korean: "기본 모드 · 개인정보 보호",
-        .spanish: "Modo básico · Privacidad protegida",
-        .german: "Basismodus · Datenschutz gewahrt",
-        .french: "Mode de base · Confidentialité préservée",
-        .portuguese: "Modo básico · Privacidade protegida",
-        .portugueseBrazil: "Modo básico · Privacidade protegida"
     ],
     "Click to toggle used/available view": [
         .traditionalChinese: "點擊切換已用/可用視角",

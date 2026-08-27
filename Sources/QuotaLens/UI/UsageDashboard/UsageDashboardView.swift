@@ -208,6 +208,11 @@ public struct UsageDashboardView: View {
                 await reloadData()
             }
         }
+        .onReceive(env.state.$currentQuotaSnapshots.dropFirst()) { _ in
+            Task {
+                await reloadData()
+            }
+        }
         .onChange(of: store.selectedRangeDays) { _, _ in
             clearChartHoverState()
             Task { await reloadData() }
@@ -218,8 +223,8 @@ public struct UsageDashboardView: View {
     }
 
     private func reloadData() async {
-        let snap = env.state.latestRateLimit
-        let used = env.state.currentUsedPercent
+        let snap = env.state.preferredQuotaForecastSnapshot
+        let used = snap?.usedPercent ?? 0.0
         let resetsAt = snap?.resetsAt
         let currentCycleKey = snap.flatMap { snapshot -> QuotaForecastEngine.QuotaCycleKey? in
             guard let resetAt = snapshot.resetsAt else { return nil }
@@ -321,7 +326,7 @@ public struct UsageDashboardView: View {
             )
 
             DashboardKPICard(
-                title: L10n.text("费用估算（试用）", "Estimated cost (Beta)"),
+                title: L10n.text("API 等价价值", "API Equivalent Value"),
                 value: UsageNumberFormatter.currencyUSD(metrics.totalCost),
                 caption: pricingCoverageCaption(metrics),
                 icon: "dollarsign.circle.fill",
@@ -435,34 +440,13 @@ public struct UsageDashboardView: View {
     }
 
     private func pricingCoverageCaption(_ metrics: DashboardMetricsDTO) -> String {
-        let percentage = UsageNumberFormatter.percent(
-            metrics.tokenPricingCoverage * 100.0,
-            maximumFractionDigits: 1
-        )
-        let catalogPercentage = UsageNumberFormatter.percent(
-            metrics.currentCatalogCoverage * 100.0,
-            maximumFractionDigits: 1
-        )
-        let coverage = L10n.format(
-            "Usage with cost estimates %@ · updated to latest public rates %@",
-            zhHans: "能估算费用的用量占比 %@ · 已按最新公开价格更新 %@",
-            percentage,
-            catalogPercentage
-        )
-        let legacyText = metrics.legacyAggregateCost.rawValue > 0 || metrics.legacyAggregateTokens > 0
-            ? L10n.format(
-                "historical amount %@",
-                zhHans: "历史金额（保留原记录）%@",
-                UsageNumberFormatter.currencyUSD(metrics.legacyAggregateCost)
-            )
-            : nil
-        let suffix: String
-        guard !metrics.unpricedReasonCounts.isEmpty else {
-            suffix = L10n.text("根据公开价格估算，并非实际扣款", "Estimated from public rates, not actual charges")
-            return [coverage, legacyText, suffix].compactMap { $0 }.joined(separator: " · ")
+        if !metrics.unpricedReasonCounts.isEmpty {
+            return L10n.text("部分记录未计价", "Some records are unpriced")
         }
-        suffix = metrics.unpricedReasonCounts.localizedSummary
-        return [coverage, legacyText, suffix].compactMap { $0 }.joined(separator: " · ")
+        if metrics.legacyAggregateCost.rawValue > 0 || metrics.legacyAggregateTokens > 0 {
+            return L10n.text("含历史记录", "Includes historical records")
+        }
+        return L10n.text("按 API 价格折算", "Converted at API rates")
     }
 
     // MARK: - 3. 双重智能预测引擎
@@ -482,7 +466,7 @@ public struct UsageDashboardView: View {
                             Image(systemName: "gauge.with.dots.needle.bottom.50percent")
                                 .font(.system(size: 13, weight: .bold))
                                 .foregroundStyle(qf.risk == .critical ? rose : (qf.risk == .warning ? amber : cyan))
-                            Text(L10n.text("服务器额度耗尽预测", "Rate Limit Burn Forecast"))
+                            Text(env.state.preferredQuotaForecastTitle)
                                 .font(.system(size: 13, weight: .black, design: .rounded))
                                 .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
                         }
@@ -579,7 +563,7 @@ public struct UsageDashboardView: View {
                         }
 
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(L10n.text("预计费用估算:", "Projected estimated cost:"))
+                            Text(L10n.text("API 价值:", "API Value:"))
                                 .font(.system(size: 10, design: .monospaced))
                                 .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
                             Text(lf.isCostForecastAvailable
@@ -592,19 +576,10 @@ public struct UsageDashboardView: View {
                         Spacer()
                     }
 
-                    Text(L10n.format(
-                        "Usage with cost estimates %.1f%% · records with cost estimates %.1f%% · estimates use local usage records",
-                        zhHans: "能估算费用的用量占比 %.1f%% · 可估算记录 %.1f%% · 费用估算基于本地用量记录",
-                        lf.tokenPricingCoverage * 100.0,
-                        lf.eventPricingCoverage * 100.0
-                    ))
-                    .font(.system(size: 9.5, design: .monospaced))
-                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-
                     if !lf.isCostForecastAvailable {
                         Text(L10n.text(
-                            "金额预测需要至少 80% Token 可计价；当前仅保留 Token 趋势。",
-                            "Cost projection requires at least 80% token pricing coverage; only token trend is retained."
+                            "计价信息不足，仅显示 Token 趋势",
+                            "Limited pricing data; showing token trend only"
                         ))
                         .font(.system(size: 9.5, design: .rounded))
                         .foregroundStyle(amber)

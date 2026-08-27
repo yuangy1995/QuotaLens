@@ -664,7 +664,7 @@ public struct CodexOverlayView: View {
         let purple = AppTheme.accentPurple(for: colorScheme)
         let amber = AppTheme.accentAmber(for: colorScheme)
         let isDark = colorScheme == .dark
-        let statusColor = state.quotaSeverityColor
+        let statusColor = state.preferredDisplayQuotaSeverityColor
 
         TimelineView(.periodic(from: .now, by: 1)) { _ in
             VStack(alignment: .leading, spacing: isExpanded ? 9 : 0) {
@@ -715,7 +715,7 @@ public struct CodexOverlayView: View {
                                     .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
                                     .fixedSize()
 
-                                Text(state.displayedQuotaPercentString)
+                                Text(state.preferredDisplayQuotaPercentString)
                                     .font(.system(size: 11.5, weight: .heavy, design: .monospaced))
                                     .foregroundStyle(statusColor)
                                     .monospacedDigit()
@@ -746,7 +746,7 @@ public struct CodexOverlayView: View {
                     VStack(alignment: .leading, spacing: 3) {
                         GeometryReader { proxy in
                             let trackWidth = proxy.size.width
-                            let progress = min(max(state.displayedQuotaProgress, 0.0), 1.0)
+                            let progress = min(max(state.preferredDisplayQuotaProgress, 0.0), 1.0)
                             let fillWidth = max(5, trackWidth * CGFloat(progress))
 
                             ZStack(alignment: .leading) {
@@ -764,7 +764,7 @@ public struct CodexOverlayView: View {
                                     )
                                     .frame(width: fillWidth, height: 4)
                                     .shadow(color: statusColor.opacity(0.5), radius: 2)
-                                    .animation(.spring(response: 0.35, dampingFraction: 0.78), value: state.displayedQuotaProgress)
+                                    .animation(.spring(response: 0.35, dampingFraction: 0.78), value: state.preferredDisplayQuotaProgress)
                             }
                         }
                         .frame(height: 4)
@@ -777,15 +777,26 @@ public struct CodexOverlayView: View {
                             icon: "gauge.with.dots.needle.bottom.50percent",
                             iconColor: statusColor,
                             title: state.quotaDisplayMode.pickerTitle,
-                            value: state.displayedQuotaPercentString,
+                            value: state.preferredDisplayQuotaPercentString,
                             valueColor: statusColor
                         )
+
+                        if state.fiveHourQuotaSnapshot != nil,
+                           let weekly = state.weeklyQuotaSnapshot {
+                            overlayDetailRow(
+                                icon: "calendar",
+                                iconColor: AppTheme.accentEmerald(for: colorScheme),
+                                title: L10n.text("周额度", "Weekly Quota"),
+                                value: weeklyQuotaDisplayPercent(for: weekly),
+                                valueColor: AppTheme.accentEmerald(for: colorScheme)
+                            )
+                        }
 
                         overlayDetailRow(
                             icon: "hourglass",
                             iconColor: cyan,
                             title: L10n.text("距离重置", "Until reset"),
-                            value: state.resetCountdownString,
+                            value: state.preferredDisplayResetCountdownString,
                             valueColor: cyan
                         )
 
@@ -806,17 +817,6 @@ public struct CodexOverlayView: View {
                         )
                     }
 
-                    // 底部极简模式说明
-                    HStack(spacing: 4) {
-                        Image(systemName: "shield.lefthalf.filled")
-                            .font(.system(size: 8))
-                            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-                        Text(overlayModeDescription)
-                            .font(.system(size: 8.5, design: .monospaced))
-                            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-                        Spacer()
-                    }
-                    .padding(.top, 2)
                 }
             }
             .padding(.horizontal, isExpanded ? 12 : 10)
@@ -863,11 +863,13 @@ public struct CodexOverlayView: View {
         onToggleExpand(isExpanded)
     }
 
-    private var overlayModeDescription: String {
-        if flags.isAXSnappingEnabled && overlayController.isAccessibilityTrusted {
-            return L10n.text("精确贴边 · 只读取尺寸", "Precise mode · Window attached")
+    private func weeklyQuotaDisplayPercent(for snapshot: RateLimitSnapshotRecord) -> String {
+        switch state.quotaDisplayMode {
+        case .used:
+            return UsageNumberFormatter.percent(snapshot.usedPercent)
+        case .remaining:
+            return UsageNumberFormatter.percent(snapshot.remainingPercent)
         }
-        return L10n.text("基础模式 · 保护隐私", "Basic mode · Privacy preserved")
     }
 
     private func overlayDetailRow(

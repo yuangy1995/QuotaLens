@@ -53,6 +53,17 @@ public struct AboutView: View {
     private var defaultChangelogs: [ChangelogEntry] {
         [
             ChangelogEntry(
+                id: "v1.0.16",
+                version: "v1.0.16",
+                date: "2026-08-27",
+                changes: [
+                    L10n.text("引入 5 小时与周度双周期配额预算与建议节奏引擎，根据窗口类型自动按小时/天智能推算合理配额消耗", "Introduced dual-window quota pace budget engine for 5-hour and weekly cycles with window-aware hourly/daily consumption pace"),
+                    L10n.text("动态调整 5 小时短周期的预测门限与采样新鲜度，支持高频周度快照保留并提升预测覆盖率", "Dynamically adjusted forecast thresholds and sampling freshness for 5-hour windows with enhanced snapshot retention"),
+                    L10n.text("增强多账号额度同步与历史快照存储持久化，提升 JSON-RPC 传输容错与弱网恢复能力", "Hardened multi-account quota snapshot persistence and JSON-RPC transport resilience against network fluctuations"),
+                    L10n.text("优化菜单栏、全息悬浮窗与看板对 5 小时周期的环形指示与文案感知，全方位完善 10 种语言本地化", "Optimized 5-hour cycle ring indicators and contextual labels across menu bar, overlay, and dashboard with 10-language translations")
+                ]
+            ),
+            ChangelogEntry(
                 id: "v1.0.15",
                 version: "v1.0.15",
                 date: "2026-08-27",

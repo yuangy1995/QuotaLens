@@ -162,7 +162,7 @@ public final class MenuBarStatusItemController: NSObject {
         }
 
         let label = " \(state.quotaDisplayMode.shortTitle) "
-        let percent = "\(state.displayedQuotaPercentString) "
+        let percent = "\(state.preferredDisplayQuotaPercentString) "
         let title = NSMutableAttributedString()
         let font = NSFont.systemFont(ofSize: 13, weight: .semibold)
 
@@ -190,10 +190,10 @@ public final class MenuBarStatusItemController: NSObject {
 
     private func severityColor() -> NSColor {
         let isLight = isLightAppearance
-        if state.currentRemainingPercent <= 15.0 {
+        if state.preferredDisplayRemainingPercent <= 15.0 {
             return isLight ? NSColor(red: 0.80, green: 0.04, blue: 0.18, alpha: 1.0) : .systemRed
         }
-        if state.currentRemainingPercent <= 35.0 {
+        if state.preferredDisplayRemainingPercent <= 35.0 {
             return isLight ? NSColor(red: 0.72, green: 0.34, blue: 0.00, alpha: 1.0) : .systemOrange
         }
         return isLight ? NSColor(red: 0.00, green: 0.48, blue: 0.25, alpha: 1.0) : .systemGreen

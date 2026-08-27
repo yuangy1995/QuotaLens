@@ -173,6 +173,64 @@ public final class Repositories: @unchecked Sendable {
         return list.first
     }
 
+    public func getLatestRateLimitSnapshots(accountKey: String, limitId: String? = nil) throws -> [RateLimitSnapshotRecord] {
+        var bindings: [Any?] = [accountKey]
+        let limitClause: String
+        if let limitId {
+            limitClause = "AND s.limit_id = ?"
+            bindings.append(limitId)
+        } else {
+            limitClause = ""
+        }
+
+        let sql = """
+        SELECT s.id, s.account_key, s.observed_at, s.limit_id, s.slot, s.used_percent_milli,
+               s.window_duration_mins, s.resets_at, s.plan_type, s.raw_json
+        FROM rate_limit_snapshots AS s
+        WHERE s.account_key = ? \(limitClause)
+          AND NOT EXISTS (
+              SELECT 1
+              FROM rate_limit_snapshots AS newer
+              WHERE newer.account_key = s.account_key
+                AND newer.limit_id = s.limit_id
+                AND newer.slot = s.slot
+                AND (
+                    newer.observed_at > s.observed_at
+                    OR (newer.observed_at = s.observed_at AND newer.id > s.id)
+                )
+          )
+        ORDER BY s.observed_at DESC,
+                 CASE WHEN s.limit_id = 'codex' THEN 0 ELSE 1 END,
+                 CASE s.slot WHEN 'primary' THEN 0 ELSE 1 END,
+                 s.id DESC;
+        """
+
+        return try db.executeQuery(sql: sql, bindings: bindings) { stmt in
+            let id = sqlite3_column_int64(stmt, 0)
+            let acc = String(cString: sqlite3_column_text(stmt, 1))
+            let obs = sqlite3_column_int64(stmt, 2)
+            let lim = String(cString: sqlite3_column_text(stmt, 3))
+            let slot = String(cString: sqlite3_column_text(stmt, 4))
+            let milli = Int(sqlite3_column_int(stmt, 5))
+            let dur = sqlite3_column_type(stmt, 6) != SQLITE_NULL ? Int(sqlite3_column_int(stmt, 6)) : nil
+            let resets = sqlite3_column_type(stmt, 7) != SQLITE_NULL ? sqlite3_column_int64(stmt, 7) : nil
+            let plan = sqlite3_column_type(stmt, 8) != SQLITE_NULL ? String(cString: sqlite3_column_text(stmt, 8)) : nil
+            let json = String(cString: sqlite3_column_text(stmt, 9))
+            return RateLimitSnapshotRecord(
+                id: id,
+                accountKey: acc,
+                observedAt: obs,
+                limitId: lim,
+                slot: slot,
+                usedPercentMilli: milli,
+                windowDurationMins: dur,
+                resetsAt: resets,
+                planType: plan,
+                rawJson: json
+            )
+        }
+    }
+
     public func getPreviousRateLimitSnapshot(accountKey: String, limitId: String, slot: String, before observedAt: Int64) throws -> RateLimitSnapshotRecord? {
         let sql = """
         SELECT id, account_key, observed_at, limit_id, slot, used_percent_milli, window_duration_mins, resets_at, plan_type, raw_json

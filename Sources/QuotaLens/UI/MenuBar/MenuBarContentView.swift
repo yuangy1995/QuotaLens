@@ -132,6 +132,11 @@ public struct MenuBarContentView: View {
                 await refreshLocalUsageStore()
             }
         }
+        .onReceive(state.$currentQuotaSnapshots.dropFirst()) { _ in
+            Task {
+                await refreshLocalUsageStore()
+            }
+        }
         .onReceive(state.$selectedAccountKey.dropFirst()) { _ in
             Task {
                 await refreshLocalUsageStore()
@@ -140,10 +145,11 @@ public struct MenuBarContentView: View {
     }
 
     private func refreshLocalUsageStore() async {
+        let forecastSnapshot = state.preferredQuotaForecastSnapshot
         await localUsageStore.load(
             accountKey: state.selectedAccountKey ?? state.account?.accountKey,
-            currentUsedPercent: state.currentUsedPercent,
-            currentSnapshot: state.latestRateLimit
+            currentUsedPercent: forecastSnapshot?.usedPercent ?? 0.0,
+            currentSnapshot: forecastSnapshot
         )
     }
 
@@ -221,13 +227,13 @@ public struct MenuBarContentView: View {
                     }
                 }) {
                     CircularProgressView(
-                        progress: state.displayedQuotaProgress,
-                        riskProgress: state.quotaRiskProgress,
+                        progress: state.preferredDisplayQuotaProgress,
+                        riskProgress: state.preferredDisplayQuotaRiskProgress,
                         lineWidth: 12.5,
                         size: 104,
-                        title: state.quotaDisplayMode.shortTitle,
-                        valueText: state.displayedQuotaPercentString,
-                        subtitle: "\(state.quotaDisplayMode.complementLabel) \(state.complementQuotaPercentString)"
+                        title: state.quotaDisplayMode.ringTitle(for: state.preferredDisplayQuotaWindowKind),
+                        valueText: state.preferredDisplayQuotaPercentString,
+                        subtitle: "\(state.quotaDisplayMode.complementLabel) \(state.preferredDisplayComplementQuotaPercentString)"
                     )
                 }
                 .buttonStyle(.plain)
@@ -251,7 +257,7 @@ public struct MenuBarContentView: View {
                             Text(state.quotaDisplayMode.primaryLabel)
                                 .font(.system(size: 11, weight: .bold, design: .monospaced))
                                 .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-                            Text(state.displayedQuotaPercentString)
+                            Text(state.preferredDisplayQuotaPercentString)
                                 .font(.system(size: 18, weight: .black, design: .rounded))
                                 .foregroundStyle(cyan)
                                 .monospacedDigit()
@@ -261,9 +267,9 @@ public struct MenuBarContentView: View {
                             Text(state.quotaDisplayMode.complementLabel)
                                 .font(.system(size: 11, weight: .bold, design: .monospaced))
                                 .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-                            Text(state.complementQuotaPercentString)
+                            Text(state.preferredDisplayComplementQuotaPercentString)
                                 .font(.system(size: 18, weight: .black, design: .rounded))
-                                .foregroundStyle(state.quotaSeverityColor)
+                                .foregroundStyle(state.preferredDisplayQuotaSeverityColor)
                                 .monospacedDigit()
                         }
                     }
@@ -296,8 +302,8 @@ public struct MenuBarContentView: View {
                             icon: "hourglass",
                             iconColor: amber,
                             title: L10n.text("重置倒计时", "Reset Countdown"),
-                            value: state.resetCountdownString,
-                            caption: state.resetExactDateString ?? L10n.text("下周期自动重置", "Auto-resets next cycle")
+                            value: state.preferredDisplayResetCountdownString,
+                            caption: state.preferredDisplayResetExactDateString ?? L10n.text("下周期自动重置", "Auto-resets next cycle")
                         )
                     }
 
@@ -443,12 +449,12 @@ public struct MenuBarContentView: View {
 
                 Spacer()
 
-                Text(state.currentUsedPercentString)
+                Text(state.preferredDisplayUsedPercentString)
                     .font(.system(size: 10, weight: .heavy, design: .monospaced))
                     .foregroundStyle(prediction.color)
             }
 
-            ProgressView(value: state.quotaRiskProgress)
+            ProgressView(value: state.preferredDisplayQuotaRiskProgress)
                 .tint(prediction.color)
 
             Text(prediction.text)
@@ -485,12 +491,12 @@ public struct MenuBarContentView: View {
 
                 Spacer()
 
-                Text(L10n.text("已用尽", "Exhausted"))
+                Text(state.quotaExhaustionStatusTitle)
                     .font(.system(size: 9.5, weight: .heavy, design: .monospaced))
                     .foregroundStyle(rose)
             }
 
-            Text(L10n.text("本周期额度已用完，等待重置后恢复", "Quota exhausted for this cycle, waiting for reset"))
+            Text(state.quotaExhaustionStatusMessage)
                 .font(.system(size: 10.5, weight: .heavy, design: .rounded))
                 .foregroundStyle(rose)
                 .lineLimit(2)
