@@ -2515,6 +2515,66 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Ritmo diário recomendado",
         .portugueseBrazil: "Ritmo diário recomendado"
     ],
+    "Hourly Budget Pace": [
+        .traditionalChinese: "建議每小時消耗",
+        .japanese: "推奨毎時消費ペース",
+        .korean: "시간당 권장 소비량",
+        .spanish: "Ritmo por hora recomendado",
+        .german: "Empfohlenes Stundenbudget",
+        .french: "Rythme horaire conseillé",
+        .portuguese: "Ritmo horário recomendado",
+        .portugueseBrazil: "Ritmo horário recomendado"
+    ],
+    "hour": [
+        .traditionalChinese: "小時",
+        .japanese: "時間",
+        .korean: "시간",
+        .spanish: "hora",
+        .german: "Std.",
+        .french: "h",
+        .portuguese: "hora",
+        .portugueseBrazil: "hora"
+    ],
+    "Used in 5 Hours": [
+        .traditionalChinese: "5 小時已用",
+        .japanese: "5時間の使用量",
+        .korean: "5시간 사용됨",
+        .spanish: "Usado en 5 horas",
+        .german: "In 5 Std. verwendet",
+        .french: "Utilisé sur 5 h",
+        .portuguese: "Usado em 5 horas",
+        .portugueseBrazil: "Usado em 5 horas"
+    ],
+    "Available in 5 Hours": [
+        .traditionalChinese: "5 小時可用",
+        .japanese: "5時間の利用可能分",
+        .korean: "5시간 사용 가능",
+        .spanish: "Disponible en 5 horas",
+        .german: "In 5 Std. verfügbar",
+        .french: "Disponible sur 5 h",
+        .portuguese: "Disponível em 5 horas",
+        .portugueseBrazil: "Disponível em 5 horas"
+    ],
+    "About %d minutes remaining · Even pace": [
+        .traditionalChinese: "剩餘約 %d 分鐘 · 勻速可用",
+        .japanese: "残り約 %d 分 · 均等配分",
+        .korean: "약 %d분 남음 · 균등",
+        .spanish: "Quedan aprox. %d minutos · ritmo uniforme",
+        .german: "Noch ca. %d Min. · gleichmäßig",
+        .french: "Env. %d min restantes · rythme stable",
+        .portuguese: "Restam cerca de %d min · ritmo uniforme",
+        .portugueseBrazil: "Restam cerca de %d min · ritmo uniforme"
+    ],
+    "About %.1f hours remaining · Even pace": [
+        .traditionalChinese: "剩餘約 %.1f 小時 · 勻速可用",
+        .japanese: "残り約 %.1f 時間 · 均等配分",
+        .korean: "약 %.1f시간 남음 · 균등",
+        .spanish: "Quedan aprox. %.1f horas · ritmo uniforme",
+        .german: "Noch ca. %.1f Std. · gleichmäßig",
+        .french: "Env. %.1f h restantes · rythme stable",
+        .portuguese: "Restam cerca de %.1f horas · ritmo uniforme",
+        .portugueseBrazil: "Restam cerca de %.1f horas · ritmo uniforme"
+    ],
     "Paced": [
         .traditionalChinese: "勻速",
         .japanese: "均等",

@@ -8,12 +8,21 @@ public enum QuotaForecastEngine {
         public let limitID: String
         public let slot: String
         public let resetAt: Int64
+        public let windowDurationMins: Int?
 
-        public init(accountID: String, limitID: String, slot: String, resetAt: Int64) {
+        public init(
+            accountID: String,
+            limitID: String,
+            slot: String,
+            resetAt: Int64,
+            windowDurationMins: Int? = nil
+        ) {
             self.accountID = accountID
             self.limitID = limitID
             self.slot = slot
             self.resetAt = resetAt
+            // 周窗口（含缺失或未知时长）共享同一个周期键，避免历史快照断开。
+            self.windowDurationMins = windowDurationMins == 300 ? 300 : nil
         }
     }
 
@@ -56,6 +65,11 @@ public enum QuotaForecastEngine {
         let hoursUntilReset = secondsUntilReset / 3600.0
         let remainingPercent = max(0.0, 100.0 - currentUsedPercent)
         let evenPaceSlopePerHour = remainingPercent / max(0.1, hoursUntilReset)
+        let windowKind = QuotaWindowKind(windowDurationMins: currentCycleKey.windowDurationMins)
+        let minimumTimeSpanSeconds: TimeInterval = windowKind == .fiveHour ? 300 : 900
+        let maximumSampleAgeSeconds: TimeInterval = windowKind == .fiveHour ? 900 : 3_600
+        let mediumConfidenceSpanSeconds: TimeInterval = windowKind == .fiveHour ? 1_800 : 14_400
+        let highConfidenceSpanSeconds: TimeInterval = windowKind == .fiveHour ? 7_200 : 86_400
 
         // 过滤有效数据点（按时间升序），并在明显百分比回退处切分周期。
         let filteredSorted = snapshots
@@ -93,7 +107,8 @@ public enum QuotaForecastEngine {
 
         let timeSpanSeconds = last.timestamp.timeIntervalSince(first.timestamp)
         let sampleFreshnessSeconds = now.timeIntervalSince(last.timestamp)
-        guard timeSpanSeconds >= 900, sampleFreshnessSeconds <= 3_600 else { // 至少 15 分钟跨度且最后样本不超过 1 小时
+        guard timeSpanSeconds >= minimumTimeSpanSeconds,
+              sampleFreshnessSeconds <= maximumSampleAgeSeconds else {
             return QuotaForecastDTO(
                 risk: .insufficientData,
                 confidence: .insufficientData,
@@ -179,9 +194,9 @@ public enum QuotaForecastEngine {
         }
 
         let confidence: ForecastConfidence
-        if inliers.count >= 10 && timeSpanSeconds >= 86400 && fitQuality >= 0.75 {
+        if inliers.count >= 10 && timeSpanSeconds >= highConfidenceSpanSeconds && fitQuality >= 0.75 {
             confidence = .high
-        } else if inliers.count >= 4 && timeSpanSeconds >= 14400 && fitQuality >= 0.40 {
+        } else if inliers.count >= 4 && timeSpanSeconds >= mediumConfidenceSpanSeconds && fitQuality >= 0.40 {
             confidence = .medium
         } else {
             confidence = .low

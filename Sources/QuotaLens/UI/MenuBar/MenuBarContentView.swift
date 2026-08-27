@@ -34,7 +34,7 @@ private final class MenuBarLocalUsageStore: ObservableObject {
             return
         }
 
-        let storedSnaps = (try? await facade.getRecentRateLimitSnapshots(accountKey: accountKey, limit: 50)) ?? []
+        let storedSnaps = (try? await facade.getRecentRateLimitSnapshots(accountKey: accountKey, limit: 300)) ?? []
         let points = storedSnaps.compactMap { snapshot -> QuotaForecastEngine.RateSnapshotPoint? in
             guard let resetAt = snapshot.resetsAt else { return nil }
             return QuotaForecastEngine.RateSnapshotPoint(
@@ -44,7 +44,8 @@ private final class MenuBarLocalUsageStore: ObservableObject {
                     accountID: snapshot.accountKey,
                     limitID: snapshot.limitId,
                     slot: snapshot.slot,
-                    resetAt: resetAt
+                    resetAt: resetAt,
+                    windowDurationMins: snapshot.windowDurationMins
                 )
             )
         }
@@ -54,7 +55,8 @@ private final class MenuBarLocalUsageStore: ObservableObject {
                 accountID: snapshot.accountKey,
                 limitID: snapshot.limitId,
                 slot: snapshot.slot,
-                resetAt: resetAt
+                resetAt: resetAt,
+                windowDurationMins: snapshot.windowDurationMins
             )
         }
         quotaForecast = QuotaForecastEngine.forecast(

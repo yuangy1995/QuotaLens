@@ -25,9 +25,19 @@ public enum QuotaDisplayMode: String, CaseIterable, Identifiable {
     }
 
     public var ringTitle: String {
+        ringTitle(for: .weekly)
+    }
+
+    public func ringTitle(for window: QuotaWindowKind) -> String {
         switch self {
-        case .used: return L10n.text("本周已用", "Used This Week")
-        case .remaining: return L10n.text("本周可用", "Available This Week")
+        case .used:
+            return window == .fiveHour
+                ? L10n.text("5小时已用", "Used in 5 Hours")
+                : L10n.text("本周已用", "Used This Week")
+        case .remaining:
+            return window == .fiveHour
+                ? L10n.text("5小时可用", "Available in 5 Hours")
+                : L10n.text("本周可用", "Available This Week")
         }
     }
 
@@ -272,6 +282,10 @@ public final class AppState: ObservableObject {
         max(0.0, 100.0 - currentUsedPercent)
     }
 
+    public var quotaWindowKind: QuotaWindowKind {
+        QuotaWindowKind(windowDurationMins: latestRateLimit?.windowDurationMins)
+    }
+
     public var isQuotaExhausted: Bool {
         hasQuotaSnapshot && currentRemainingPercent <= 0.000_1
     }
@@ -484,45 +498,114 @@ public final class AppState: ObservableObject {
         currentPeriodRemainingDays(now: Date())
     }
 
-    /// 建议每日可用配额百分比（至重置刚好用完）
-    public func recommendedDailyQuotaPercent(now: Date = Date()) -> Double? {
+    /// 当前额度窗口内，按统一速率消耗至重置时刚好用完所需的时间单位数。
+    public func currentQuotaRemainingUnits(now: Date = Date()) -> Double? {
+        guard let resetsAt = latestRateLimit?.resetsAt else { return nil }
+        let seconds = Double(resetsAt) - now.timeIntervalSince1970
+        guard seconds > 0 else { return 0.0 }
+        return seconds / quotaWindowKind.paceUnitSeconds
+    }
+
+    /// 建议按当前额度窗口均匀消耗的百分比。
+    public func recommendedQuotaPacePercent(now: Date = Date()) -> Double? {
         guard currentRemainingPercent > 0.000_1 else { return nil }
-        guard let days = currentPeriodRemainingDays(now: now), days > 0 else { return nil }
-        return min(100.0, max(0.0, currentRemainingPercent / days))
+        guard let units = currentQuotaRemainingUnits(now: now), units > 0 else { return nil }
+        let pace = max(0.0, currentRemainingPercent / units)
+        return quotaWindowKind == .fiveHour ? pace : min(100.0, pace)
     }
 
-    public var recommendedDailyQuotaPercent: Double? {
-        recommendedDailyQuotaPercent(now: Date())
+    public var recommendedQuotaPaceTitle: String {
+        switch quotaWindowKind {
+        case .fiveHour:
+            return L10n.text("建议每小时消耗", "Hourly Budget Pace")
+        case .weekly:
+            return L10n.text("建议日均消耗", "Daily Budget Pace")
+        }
     }
 
-    /// 建议每日配额消耗格式化字符串，例如 "10.1%"
-    public func recommendedDailyQuotaPercentString(now: Date = Date()) -> String {
-        guard let daily = recommendedDailyQuotaPercent(now: now) else { return "--%" }
-        return String(format: "%.1f%%", daily)
+    public var recommendedQuotaPaceUnit: String {
+        switch quotaWindowKind {
+        case .fiveHour:
+            return L10n.text("小时", "hour")
+        case .weekly:
+            return L10n.text("天", "day")
+        }
     }
 
-    public var recommendedDailyQuotaPercentString: String {
-        recommendedDailyQuotaPercentString(now: Date())
+    public func recommendedQuotaPacePercentString(now: Date = Date()) -> String {
+        guard let pace = recommendedQuotaPacePercent(now: now) else { return "--%" }
+        return String(format: "%.1f%%", pace)
     }
 
-    /// 建议每日配额短文案（例如 "剩余 6.7 天 · 匀速可用"）
-    public func recommendedDailyQuotaSubtitle(now: Date = Date()) -> String {
+    /// 建议额度速率短文案。
+    public func recommendedQuotaPaceSubtitle(now: Date = Date()) -> String {
         if latestRateLimit != nil, currentRemainingPercent <= 0.000_1 {
             return L10n.text("本周期无可用额度 · 等待重置", "No quota remaining · Waiting for reset")
         }
-        guard let days = currentPeriodRemainingDays(now: now), days > 0 else {
+        guard let units = currentQuotaRemainingUnits(now: now), units > 0 else {
             return L10n.text("周期即将结束", "Cycle ending soon")
         }
-        if days < 1.0 {
-            let hours = max(1, Int(days * 24.0))
-            return L10n.format("Remaining %d hours · Even pace", zhHans: "剩余约 %d 小时 · 匀速可用", hours)
-        } else {
-            return L10n.format("Remaining %.1f days · Even pace", zhHans: "剩余 %.1f 天 · 匀速可用", days)
+
+        switch quotaWindowKind {
+        case .fiveHour:
+            if units < 1.0 {
+                let minutes = max(1, Int(units * 60.0))
+                return L10n.format(
+                    "About %d minutes remaining · Even pace",
+                    zhHans: "剩余约 %d 分钟 · 匀速可用",
+                    minutes
+                )
+            }
+            return L10n.format(
+                "About %.1f hours remaining · Even pace",
+                zhHans: "剩余约 %.1f 小时 · 匀速可用",
+                units
+            )
+
+        case .weekly:
+            if units < 1.0 {
+                let hours = max(1, Int(units * 24.0))
+                return L10n.format("Remaining %d hours · Even pace", zhHans: "剩余约 %d 小时 · 匀速可用", hours)
+            }
+            return L10n.format("Remaining %.1f days · Even pace", zhHans: "剩余 %.1f 天 · 匀速可用", units)
         }
     }
 
+    public var recommendedQuotaPacePercent: Double? {
+        recommendedQuotaPacePercent(now: Date())
+    }
+
+    public var recommendedQuotaPacePercentString: String {
+        recommendedQuotaPacePercentString(now: Date())
+    }
+
+    public var recommendedQuotaPaceSubtitle: String {
+        recommendedQuotaPaceSubtitle(now: Date())
+    }
+
+    // 保留旧接口，避免外部调用方升级时失去周额度行为。
+    public func recommendedDailyQuotaPercent(now: Date = Date()) -> Double? {
+        recommendedQuotaPacePercent(now: now)
+    }
+
+    public var recommendedDailyQuotaPercent: Double? {
+        recommendedQuotaPacePercent
+    }
+
+    public func recommendedDailyQuotaPercentString(now: Date = Date()) -> String {
+        recommendedQuotaPacePercentString(now: now)
+    }
+
+    public var recommendedDailyQuotaPercentString: String {
+        recommendedQuotaPacePercentString
+    }
+
+    public func recommendedDailyQuotaSubtitle(now: Date = Date()) -> String {
+        recommendedQuotaPaceSubtitle(now: now)
+    }
+
     public var recommendedDailyQuotaSubtitle: String {
-        recommendedDailyQuotaSubtitle(now: Date())
+        recommendedQuotaPaceSubtitle
     }
 
     public var quotaWindowStartDateString: String? {

@@ -227,14 +227,15 @@ public struct UsageDashboardView: View {
                 accountID: snapshot.accountKey,
                 limitID: snapshot.limitId,
                 slot: snapshot.slot,
-                resetAt: resetAt
+                resetAt: resetAt,
+                windowDurationMins: snapshot.windowDurationMins
             )
         }
 
         var points: [QuotaForecastEngine.RateSnapshotPoint] = []
         if let storedSnaps = try? env.repositories.getRecentRateLimitSnapshots(
             accountKey: env.state.selectedAccountKey ?? env.state.account?.accountKey,
-            limit: 50
+            limit: 300
         ) {
             points = storedSnaps.compactMap { s in
                 guard let resetAt = s.resetsAt else { return nil }
@@ -245,7 +246,8 @@ public struct UsageDashboardView: View {
                         accountID: s.accountKey,
                         limitID: s.limitId,
                         slot: s.slot,
-                        resetAt: resetAt
+                        resetAt: resetAt,
+                        windowDurationMins: s.windowDurationMins
                     )
                 )
             }

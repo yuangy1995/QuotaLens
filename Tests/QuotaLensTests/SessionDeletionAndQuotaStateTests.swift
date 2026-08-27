@@ -261,11 +261,84 @@ final class SessionDeletionAndQuotaStateTests: XCTestCase {
         state.connectionStatus = .connected(version: "test", binaryPath: "/tmp/codex")
 
         XCTAssertTrue(state.isQuotaExhausted)
-        XCTAssertNil(state.recommendedDailyQuotaPercent(now: now))
+        XCTAssertNil(state.recommendedQuotaPacePercent(now: now))
         XCTAssertEqual(
-            state.recommendedDailyQuotaSubtitle(now: now),
+            state.recommendedQuotaPaceSubtitle(now: now),
             "No quota remaining · Waiting for reset"
         )
+    }
+
+    @MainActor
+    func testQuotaPaceUsesHourlyUnitForFiveHourWindow() {
+        let defaults = UserDefaults.standard
+        let previousLanguage = defaults.string(forKey: L10n.languageModeDefaultsKey)
+        defaults.set(AppLanguageMode.english.rawValue, forKey: L10n.languageModeDefaultsKey)
+        defer {
+            if let previousLanguage {
+                defaults.set(previousLanguage, forKey: L10n.languageModeDefaultsKey)
+            } else {
+                defaults.removeObject(forKey: L10n.languageModeDefaultsKey)
+            }
+        }
+
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let state = AppState()
+        state.latestRateLimit = RateLimitSnapshotRecord(
+            accountKey: "test-account",
+            observedAt: Int64(now.timeIntervalSince1970),
+            limitId: "codex",
+            slot: "primary",
+            usedPercentMilli: 20_000,
+            windowDurationMins: 300,
+            resetsAt: Int64(now.addingTimeInterval(4 * 3_600).timeIntervalSince1970),
+            planType: "plus",
+            rawJson: "{}"
+        )
+        state.quotaDisplayMode = .remaining
+
+        XCTAssertEqual(state.quotaWindowKind, .fiveHour)
+        XCTAssertEqual(state.currentQuotaRemainingUnits(now: now) ?? 0, 4.0, accuracy: 0.001)
+        XCTAssertEqual(state.recommendedQuotaPacePercent(now: now) ?? 0, 20.0, accuracy: 0.001)
+        XCTAssertEqual(state.recommendedQuotaPacePercentString(now: now), "20.0%")
+        XCTAssertEqual(state.recommendedQuotaPaceTitle, "Hourly Budget Pace")
+        XCTAssertEqual(state.recommendedQuotaPaceUnit, "hour")
+        XCTAssertEqual(state.recommendedQuotaPaceSubtitle(now: now), "About 4.0 hours remaining · Even pace")
+        XCTAssertEqual(state.quotaDisplayMode.ringTitle(for: state.quotaWindowKind), "Available in 5 Hours")
+    }
+
+    @MainActor
+    func testQuotaPaceKeepsDailyUnitForWeeklyWindow() {
+        let defaults = UserDefaults.standard
+        let previousLanguage = defaults.string(forKey: L10n.languageModeDefaultsKey)
+        defaults.set(AppLanguageMode.english.rawValue, forKey: L10n.languageModeDefaultsKey)
+        defer {
+            if let previousLanguage {
+                defaults.set(previousLanguage, forKey: L10n.languageModeDefaultsKey)
+            } else {
+                defaults.removeObject(forKey: L10n.languageModeDefaultsKey)
+            }
+        }
+
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let state = AppState()
+        state.latestRateLimit = RateLimitSnapshotRecord(
+            accountKey: "test-account",
+            observedAt: Int64(now.timeIntervalSince1970),
+            limitId: "codex",
+            slot: "primary",
+            usedPercentMilli: 20_000,
+            windowDurationMins: 10_080,
+            resetsAt: Int64(now.addingTimeInterval(4 * 86_400).timeIntervalSince1970),
+            planType: "plus",
+            rawJson: "{}"
+        )
+
+        XCTAssertEqual(state.quotaWindowKind, .weekly)
+        XCTAssertEqual(state.currentQuotaRemainingUnits(now: now) ?? 0, 4.0, accuracy: 0.001)
+        XCTAssertEqual(state.recommendedQuotaPacePercent(now: now) ?? 0, 20.0, accuracy: 0.001)
+        XCTAssertEqual(state.recommendedQuotaPaceTitle, "Daily Budget Pace")
+        XCTAssertEqual(state.recommendedQuotaPaceUnit, "day")
+        XCTAssertEqual(state.recommendedQuotaPaceSubtitle(now: now), "Remaining 4.0 days · Even pace")
     }
 
     @MainActor

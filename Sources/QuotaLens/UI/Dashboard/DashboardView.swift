@@ -89,7 +89,7 @@ public struct DashboardView: View {
                     riskProgress: state.quotaRiskProgress,
                     lineWidth: 16,
                     size: 160,
-                    title: state.quotaDisplayMode.ringTitle,
+                    title: state.quotaDisplayMode.ringTitle(for: state.quotaWindowKind),
                     valueText: state.displayedQuotaPercentString,
                     subtitle: "\(state.quotaDisplayMode.complementLabel) \(state.complementQuotaPercentString)"
                 )
@@ -197,7 +197,7 @@ public struct DashboardView: View {
 
                     Text(isExhausted
                         ? L10n.text("本周期额度已用尽", "Quota Exhausted")
-                        : L10n.text("建议日均消耗", "Daily Budget Pace"))
+                        : state.recommendedQuotaPaceTitle)
                         .font(.system(size: 10.5, weight: .bold))
                         .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
 
@@ -223,12 +223,12 @@ public struct DashboardView: View {
                         .foregroundStyle(accent)
                 } else {
                     HStack(alignment: .firstTextBaseline, spacing: 3) {
-                        Text(state.recommendedDailyQuotaPercentString(now: context.date))
+                        Text(state.recommendedQuotaPacePercentString(now: context.date))
                             .font(.system(size: 18, weight: .black, design: .rounded))
                             .foregroundStyle(accent)
                             .monospacedDigit()
 
-                        Text("/" + L10n.text("天", "day"))
+                        Text("/" + state.recommendedQuotaPaceUnit)
                             .font(.system(size: 10, weight: .bold, design: .monospaced))
                             .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
                     }
@@ -236,7 +236,7 @@ public struct DashboardView: View {
 
                 Text(isExhausted
                     ? L10n.text("等待下周期重置恢复", "Will restore on next reset")
-                    : state.recommendedDailyQuotaSubtitle(now: context.date))
+                    : state.recommendedQuotaPaceSubtitle(now: context.date))
                     .font(.system(size: 9.5, weight: .medium, design: .monospaced))
                     .foregroundStyle(AppTheme.textSecondary(for: colorScheme).opacity(0.88))
                     .lineLimit(1)
