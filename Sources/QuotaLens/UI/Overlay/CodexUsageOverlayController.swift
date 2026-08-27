@@ -906,5 +906,3 @@ private extension NSRect {
         return width * height
     }
 }
-
-
