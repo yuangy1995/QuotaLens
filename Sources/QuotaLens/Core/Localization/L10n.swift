@@ -254,6 +254,9 @@ public enum L10n {
     }
 
     public static let changelogZhToEnMap: [String: String] = [
+        "架构级重构 Codex 悬浮挂件定位与吸附感知引擎，模块化解耦辅助功能锚点读取与坐标计算": "Architectural refactor of Codex overlay positioning and snapping engine, decoupling accessibility anchor detection and geometry calculation",
+        "升级精准锚定算法：直接定位 Codex 窗口与其内部 Help 按钮锚点，完全无需读取任何对话正文，彻底保障用户隐私": "Upgraded precision anchoring: directly targets Codex window and Help button anchors without reading any conversation text for total privacy",
+        "优化悬浮挂件吸附与重置交互，支持一键恢复挂件在 Codex 窗口内的智能默认吸附位置": "Refined overlay snapping and reset interactions with one-click restoration to the intelligent default position inside the Codex window",
         "新增 Codex 会话正文按需解析与对话记录回放，支持在会话详情中直接浏览用户提示词与助手完整回复": "Introduced on-demand Codex conversation parsing and message history viewer in session details for user prompts and assistant replies",
         "支持会话标题与对话正文全文混合检索，秒级过滤历史对话内容并自动匹配相关工程上下文": "Full-text hybrid search across session titles and conversation bodies with instant filtering and project context matching",
         "优化会话明细卡片排版，支持「对话内容」与「用量统计」无缝分栏切换与附件标记识别": "Refined session detail layout with seamless switching between Conversation and Usage tabs along with attachment badges",
@@ -355,6 +358,36 @@ public enum L10n {
 }
 
 private let keyedTranslations: [String: [AppLanguage: String]] = [
+    "Architectural refactor of Codex overlay positioning and snapping engine, decoupling accessibility anchor detection and geometry calculation": [
+        .traditionalChinese: "架構級重構 Codex 懸浮掛件定位與吸附感知引擎，模組化解耦輔助功能錨點讀取與座標計算",
+        .japanese: "Codex フローティングウィジェットの位置決め＆吸着認識エンジンをアーキテクチャ刷新し、アクセシビリティアンカー検出と座標計算をモジュール分離",
+        .korean: "Codex 플로팅 위젯 위치 지정 및 부착 감지 엔진을 아키텍처 수준에서 리팩터링하여 접근성 앵커 감지 및 좌표 계산을 모듈화 분리",
+        .spanish: "Refactorización arquitectónica del motor de posicionamiento y anclaje de la superposición de Codex, desacoplando detección de anclajes y cálculo geométrico",
+        .german: "Architektur-Refactoring der Positionierungs- und Andock-Engine des Codex-Overlays durch Entkopplung von Accessibility-Ankererkennung und Geometrieberechnung",
+        .french: "Refonte architecturale du moteur de positionnement et d'aimantation de la superposition Codex, découplant la détection des ancres et le calcul géométrique",
+        .portuguese: "Refatoração arquitetural do motor de posicionamento e fixação da sobreposição do Codex, desacoplando a deteção de âncoras e o cálculo geométrico",
+        .portugueseBrazil: "Refatoração arquitetural do motor de posicionamento e fixação da sobreposição do Codex, desacoplando a detecção de âncoras e o cálculo geométrico"
+    ],
+    "Upgraded precision anchoring: directly targets Codex window and Help button anchors without reading any conversation text for total privacy": [
+        .traditionalChinese: "升級精準錨定演算法：直接定位 Codex 視窗與其內部 Help 按鈕錨點，完全無需讀取任何對話正文，徹底保障使用者隱私",
+        .japanese: "高精度アンカー検出アルゴリズムを刷新：会話本文を一切読み取ることなく、Codex ウインドウと内部の Help ボタンを直接特定し完全なプライバシーを保護",
+        .korean: "정밀 앵커링 알고리즘 업그레이드: 대화 내용을 일체 읽지 않고 Codex 창과 내부 Help 버튼 앵커를 직접 타겟팅하여 완벽한 개인정보 보호 실현",
+        .spanish: "Algoritmo de anclaje de precisión mejorado: localiza la ventana de Codex y el botón de ayuda sin leer texto de conversación para total privacidad",
+        .german: "Präzisions-Verankerungsalgorithmus aktualisiert: zielt direkt auf das Codex-Fenster und die Hilfe-Schaltfläche ab, ohne Konversationstexte zu lesen, für vollständigen Datenschutz",
+        .french: "Mise à niveau de l'algorithme d'ancrage de précision : cible directement la fenêtre Codex et le bouton d'aide sans lire le texte des conversations pour une confidentialité totale",
+        .portuguese: "Algoritmo de ancoragem de precisão melhorado: localiza a janela do Codex e o botão de ajuda sem ler texto de conversas para total privacidade",
+        .portugueseBrazil: "Algoritmo de ancoragem de precisão aprimorado: localiza a janela do Codex e o botão de ajuda sem ler texto de conversas para total privacidade"
+    ],
+    "Refined overlay snapping and reset interactions with one-click restoration to the intelligent default position inside the Codex window": [
+        .traditionalChinese: "優化懸浮掛件吸附與重設互動，支援一鍵恢復掛件在 Codex 視窗內的智慧預設吸附位置",
+        .japanese: "フローティングウィジェットの吸着とリセット操作を改善し、Codex ウインドウ内のインテリジェントな初期吸着位置へワンクリック復帰に対応",
+        .korean: "플로팅 위젯 부착 및 초기화 상호작용을 개선하여 Codex 창 내부의 스마트 기본 부착 위치로 원클릭 복원 지원",
+        .spanish: "Interacciones de anclaje y restablecimiento refinadas con restauración en un clic a la posición predeterminada inteligente dentro de la ventana de Codex",
+        .german: "Andock- und Zurücksetz-Interaktionen verfeinert mit Ein-Klick-Wiederherstellung der intelligenten Standardposition im Codex-Fenster",
+        .french: "Interactions d'aimantation et de réinitialisation affinées avec restauration en un clic vers la position par défaut intelligente dans la fenêtre Codex",
+        .portuguese: "Interações de fixação e reposição aperfeiçoadas com restauro num clique para a posição predefinida inteligente dentro da janela do Codex",
+        .portugueseBrazil: "Interações de fixação e redefinição aprimoradas com restauração em um clique para a posição padrão inteligente dentro da janela do Codex"
+    ],
     "Introduced on-demand Codex conversation parsing and message history viewer in session details for user prompts and assistant replies": [
         .traditionalChinese: "新增 Codex 會話正文按需解析與對話記錄回放，支援在會話詳情中直接瀏覽使用者提示詞與助理完整回覆",
         .japanese: "Codex 会話本文のオンデマンド解析と履歴閲覧機能を追加し、セッション詳細画面でユーザーの指示とアシスタントの返答を直接確認可能に",
@@ -1965,15 +1998,15 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Ativar análise local do Codex",
         .portugueseBrazil: "Ativar análise local do Codex"
     ],
-    "Window Floating Overlay": [
-        .traditionalChinese: "ChatGPT / Codex 視窗懸浮掛件",
-        .japanese: "ChatGPT / Codex ウィンドウフローティングウィジェット",
-        .korean: "ChatGPT / Codex 창 플로팅 위젯",
-        .spanish: "Widget flotante en ventana",
-        .german: "Schwebendes Fenster-Overlay",
-        .french: "Widget flottant de fenêtre",
-        .portuguese: "Widget flutuante de janela",
-        .portugueseBrazil: "Widget flutuante de janela"
+    "Codex Window Overlay": [
+        .traditionalChinese: "Codex 視窗懸浮掛件",
+        .japanese: "Codex ウインドウフローティングウィジェット",
+        .korean: "Codex 창 플로팅 위젯",
+        .spanish: "Widget flotante de Codex",
+        .german: "Schwebendes Codex-Fenster-Overlay",
+        .french: "Widget flottant de Codex",
+        .portuguese: "Widget flutuante do Codex",
+        .portugueseBrazil: "Widget flutuante do Codex"
     ],
     "Smart Forecast Engine": [
         .traditionalChinese: "智慧預測引擎",
@@ -4495,26 +4528,6 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Fixado em %@",
         .portugueseBrazil: "Fixado em %@"
     ],
-    "Only Show When Target App is Active": [
-        .traditionalChinese: "僅在目標應用前台時顯示",
-        .japanese: "対象アプリが前面にある時のみ表示",
-        .korean: "대상 앱이 전면에 있을 때만 표시",
-        .spanish: "Mostrar solo cuando la aplicación objetivo esté activa",
-        .german: "Nur anzeigen, wenn die Ziel-App aktiv ist",
-        .french: "Afficher uniquement lorsque l'application cible est active",
-        .portuguese: "Mostrar apenas quando a aplicação de destino estiver ativa",
-        .portugueseBrazil: "Mostrar apenas quando o aplicativo de destino estiver ativo"
-    ],
-    "Automatically hide overlay when switching to other applications": [
-        .traditionalChinese: "切換至其他應用時自動隱藏掛件，避免干擾桌面操作",
-        .japanese: "他のアプリに切り替えた際にウィジェットを自動非表示にし、デスクトップ操作の妨げを防ぎます",
-        .korean: "다른 앱으로 전환할 때 위젯을 자동으로 숨겨 데스크톱 작업을 방해하지 않습니다",
-        .spanish: "Oculta automáticamente la superposición al cambiar a otras aplicaciones para evitar interferencias",
-        .german: "Blendet das Overlay beim Wechsel zu anderen Apps automatisch aus, um Störungen zu vermeiden",
-        .french: "Masque automatiquement la superposition lors du basculement vers d'autres applications",
-        .portuguese: "Oculta automaticamente a sobreposição ao alternar para outras aplicações para evitar interferências",
-        .portugueseBrazil: "Oculta automaticamente a sobreposição ao alternar para outros aplicativos para evitar interferências"
-    ],
     "Reset Overlay Position": [
         .traditionalChinese: "重設掛件吸附位置",
         .japanese: "ウィジェットの吸着位置をリセット",
@@ -4525,15 +4538,25 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Repor posição da sobreposição",
         .portugueseBrazil: "Redefinir posição da sobreposição"
     ],
-    "Reset floating overlay to default top-right position": [
-        .traditionalChinese: "恢復掛件至預設吸附狀態（螢幕右上角）",
-        .japanese: "ウィジェットをデフォルトの吸着状態（画面右上）に戻します",
-        .korean: "위젯을 기본 부착 상태(화면 오른쪽 상단)로 복원합니다",
-        .spanish: "Restaura la superposición a la posición predeterminada (esquina superior derecha)",
-        .german: "Setzt das schwebende Overlay auf die standardmäßige Position oben rechts zurück",
-        .french: "Rétablit la superposition à sa position par défaut en haut à droite",
-        .portuguese: "Restaura a sobreposição para a posição predefinida no canto superior direito",
-        .portugueseBrazil: "Restaura a sobreposição para a posição padrão no canto superior direito"
+    "Locates the Codex window and Help button without reading conversations": [
+        .traditionalChinese: "用於識別 Codex 視窗和說明按鈕的位置，不讀取對話內容",
+        .japanese: "会話内容を読み取らずに、Codexウインドウとヘルプボタンの位置を特定します",
+        .korean: "대화 내용을 읽지 않고 Codex 창과 도움말 버튼의 위치를 찾습니다",
+        .spanish: "Localiza la ventana de Codex y el botón de ayuda sin leer las conversaciones",
+        .german: "Ermittelt die Position des Codex-Fensters und der Hilfe-Schaltfläche, ohne Unterhaltungen zu lesen",
+        .french: "Repère la fenêtre Codex et le bouton d'aide sans lire les conversations",
+        .portuguese: "Localiza a janela do Codex e o botão de ajuda sem ler as conversas",
+        .portugueseBrazil: "Localiza a janela do Codex e o botão de ajuda sem ler as conversas"
+    ],
+    "Restore automatic placement inside the Codex window": [
+        .traditionalChinese: "恢復掛件在 Codex 視窗中的自動吸附位置",
+        .japanese: "Codexウインドウ内の自動配置に戻します",
+        .korean: "Codex 창 안의 자동 배치 위치로 복원합니다",
+        .spanish: "Restaura la posición automática dentro de la ventana de Codex",
+        .german: "Stellt die automatische Position im Codex-Fenster wieder her",
+        .french: "Rétablit le placement automatique dans la fenêtre Codex",
+        .portuguese: "Restaura a posição automática dentro da janela do Codex",
+        .portugueseBrazil: "Restaura a posição automática dentro da janela do Codex"
     ],
     "Reset": [
         .traditionalChinese: "重設",

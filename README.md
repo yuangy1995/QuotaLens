@@ -22,7 +22,7 @@ QuotaLens is a native macOS menu bar app for tracking Codex and ChatGPT quota us
 - Adjustable refresh interval, custom Codex CLI path, launch-at-login toggle, and pure menu-bar mode.
 - Clicking the Dock icon focuses only the main window; the quota popover opens only from the menu bar status item.
 - When the available quota reaches zero, the dashboard and menu bar show an exhausted/waiting-for-reset state and stop producing pace forecasts.
-- Optional floating overlay can be disabled independently from local analytics. Basic mode needs no Accessibility permission; precise snapping is an explicit opt-in and reads only target-window position, size, and minimized state. This is QuotaLens' own floating window overlay, not a WidgetKit desktop widget or Widget Extension.
+- Optional Codex window overlay can be disabled independently from local analytics. It appears only while Codex or QuotaLens is focused. Basic mode needs no Accessibility permission; precise snapping is an explicit opt-in that locates the Codex window and Help control without reading conversation content.
 - Built-in localization for English, Simplified Chinese, Traditional Chinese, Japanese, Korean, Spanish, German, French, Portuguese, and Brazilian Portuguese.
 - The in-app changelog follows the selected interface language; its Simplified Chinese remote source cannot override other languages.
 
@@ -47,19 +47,13 @@ Build a release binary:
 swift build -c release
 ```
 
-Create a locally signed `.app`, `.zip`, and `.dmg` package:
+Create an `.app`, `.zip`, and `.dmg` package:
 
 ```bash
 ./scripts/build_and_package.sh --arch universal
 ```
 
-By default, the packaging script uses ad-hoc signing for local testing. To sign with a Developer ID certificate, set `DEVELOPER_ID_APPLICATION` and request Developer ID signing explicitly:
-
-```bash
-DEVELOPER_ID_APPLICATION="Developer ID Application: Your Name (TEAMID)" ./scripts/build_and_package.sh --signing-mode developer-id
-```
-
-Production GitHub releases require Developer ID signing, notarization, stapling, and Gatekeeper assessment. Missing signing or notarization credentials fail the workflow instead of falling back to ad-hoc signing.
+The packaging script uses ad-hoc signing.
 
 Build architecture-specific downloads:
 
@@ -91,7 +85,7 @@ Local analytics can be turned off in Settings. The Settings page also provides *
 
 ## Privacy Notes
 
-QuotaLens is designed as a local desktop utility. It reads local Codex configuration and session files on your Mac and stores derived app data locally in SQLite. For usage analytics, QuotaLens stores token counts, model identifiers, timestamps, pricing status, source paths, and byte offsets. It does not store conversation text from prompts, answers, or tool output. Exported diagnostics contain aggregate counters only and omit source paths. Precise overlay snapping is opt-in and does not read window text. The subscription entitlement refresh uses your existing local ChatGPT access token to call ChatGPT's account endpoint.
+QuotaLens is designed as a local desktop utility. It reads local Codex configuration and session files on your Mac and stores derived app data locally in SQLite. For usage analytics, QuotaLens stores token counts, model identifiers, timestamps, pricing status, source paths, and byte offsets. It does not store conversation text from prompts, answers, or tool output. Exported diagnostics contain aggregate counters only and omit source paths. Precise overlay snapping is opt-in and uses only Codex window and control metadata to locate the Help control; it does not read conversation content. The subscription entitlement refresh uses your existing local ChatGPT access token to call ChatGPT's account endpoint.
 
 API equivalent value is a diagnostic comparison against API list prices. It is not a subscription bill, invoice, or actual amount charged. Unknown models remain unpriced and are surfaced in diagnostics instead of being silently mapped to a default model.
 

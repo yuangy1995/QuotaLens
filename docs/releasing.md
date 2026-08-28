@@ -32,30 +32,14 @@ The script reads `VERSION` automatically. You can override it:
 ./scripts/build_and_package.sh --arch universal --version 1.0.1 --build-number 42
 ```
 
-Local packages use ad-hoc signing unless you explicitly request Developer ID signing:
-
-```bash
-DEVELOPER_ID_APPLICATION="Developer ID Application: Your Name (TEAMID)" \
-  ./scripts/build_and_package.sh --arch universal --signing-mode developer-id
-```
-
-Production releases also pass `--notarize`, which requires Apple notarization credentials and runs `codesign --verify --deep --strict`, `xcrun stapler`, and `spctl` checks. The script refuses to notarize ad-hoc builds.
-
-## Product Boundary
-
-QuotaLens' current overlay is an app-owned floating window. It is not a WidgetKit desktop widget and this release process does not build or ship a Widget Extension.
+Packages use ad-hoc signing.
 
 ## Publishing A GitHub Release
 
-Before publishing an update-capable production build, configure Sparkle signing, Developer ID signing, and Apple notarization secrets in the GitHub repository:
+Before publishing an update-capable build, configure the Sparkle update-signing secrets in the GitHub repository:
 
 - `SPARKLE_PUBLIC_ED_KEY`: public EdDSA key embedded into the app bundle.
 - `SPARKLE_PRIVATE_ED_KEY`: private EdDSA key used only by GitHub Actions to sign update archives and appcasts.
-- `DEVELOPER_ID_APPLICATION`: Developer ID Application identity string, such as `Developer ID Application: Example, Inc. (TEAMID)`.
-- `DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64`: base64-encoded `.p12` export for that Developer ID Application certificate.
-- `DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD`: password for the `.p12` export.
-- `APPLE_BUILD_KEYCHAIN_PASSWORD`: temporary CI keychain password.
-- `APPLE_ID`, `APPLE_TEAM_ID`, `APPLE_APP_SPECIFIC_PASSWORD`: credentials used by `xcrun notarytool`.
 
 Generate the key pair once with Sparkle's tools, then keep the private key out of git:
 
@@ -77,8 +61,6 @@ SPARKLE_KEYS_TOOL="./.build/artifacts/sparkle/Sparkle/bin/generate_keys"
 
 Put the printed public key into `SPARKLE_PUBLIC_ED_KEY`, and put the private key file contents into `SPARKLE_PRIVATE_ED_KEY`.
 
-The workflow intentionally fails when any Developer ID or notarization secret is missing. Production release builds must not fall back to ad-hoc signing.
-
 1. Update `VERSION`.
 2. Commit the version change.
 3. Create and push a matching tag:
@@ -98,7 +80,7 @@ The `Release macOS` workflow builds and uploads:
 - Legacy in-app update feed: `appcast.xml` with both architecture items for older clients
 - `SHA256SUMS.txt`
 
-The workflow validates that the pushed tag matches `VERSION`, runs the quality gate (`swift test`, focused migration/parser/pricing tests, `swift build -c release`, and `git diff --check`), signs with Developer ID, notarizes, staples, and Gatekeeper-assesses the resulting app and DMG before publishing.
+The workflow validates that the pushed tag matches `VERSION`, runs the quality gate (`swift test`, focused migration/parser/pricing tests, `swift build -c release`, and `git diff --check`), builds the architecture-specific app and DMG packages, and then publishes them.
 
 ## In-App Updates
 

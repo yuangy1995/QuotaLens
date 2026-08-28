@@ -12,7 +12,7 @@ public final class UsageFeatureFlags: ObservableObject, @unchecked Sendable {
     private static let scanArchivedSessionsKey = "QuotaLens.Analytics.ScanArchivedSessions"
     private static let customCodexHomePathKey = "QuotaLens.Analytics.CustomCodexHomePath"
     private static let axSnappingEnabledKey = "QuotaLens.Overlay.AXSnappingEnabled"
-    private static let overlayOnlyWhenActiveKey = "QuotaLens.Overlay.OnlyWhenActive"
+    private static let legacyOverlayVisibilityKey = "QuotaLens.Overlay.OnlyWhenActive"
 
     @Published public var isAnalyticsEnabled: Bool {
         didSet { UserDefaults.standard.set(isAnalyticsEnabled, forKey: Self.analyticsEnabledKey) }
@@ -20,10 +20,6 @@ public final class UsageFeatureFlags: ObservableObject, @unchecked Sendable {
 
     @Published public var isOverlayEnabled: Bool {
         didSet { UserDefaults.standard.set(isOverlayEnabled, forKey: Self.overlayEnabledKey) }
-    }
-
-    @Published public var isOverlayOnlyWhenActive: Bool {
-        didSet { UserDefaults.standard.set(isOverlayOnlyWhenActive, forKey: Self.overlayOnlyWhenActiveKey) }
     }
 
     @Published public var isForecastEnabled: Bool {
@@ -50,6 +46,7 @@ public final class UsageFeatureFlags: ObservableObject, @unchecked Sendable {
 
     public init() {
         let defaults = UserDefaults.standard
+        defaults.removeObject(forKey: Self.legacyOverlayVisibilityKey)
         if defaults.object(forKey: Self.analyticsEnabledKey) == nil {
             self.isAnalyticsEnabled = true
         } else {
@@ -57,12 +54,6 @@ public final class UsageFeatureFlags: ObservableObject, @unchecked Sendable {
         }
 
         self.isOverlayEnabled = defaults.bool(forKey: Self.overlayEnabledKey)
-
-        if defaults.object(forKey: Self.overlayOnlyWhenActiveKey) == nil {
-            self.isOverlayOnlyWhenActive = true
-        } else {
-            self.isOverlayOnlyWhenActive = defaults.bool(forKey: Self.overlayOnlyWhenActiveKey)
-        }
 
         if defaults.object(forKey: Self.forecastEnabledKey) == nil {
             self.isForecastEnabled = true

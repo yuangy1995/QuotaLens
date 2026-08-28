@@ -53,6 +53,17 @@ public struct AboutView: View {
     private var defaultChangelogs: [ChangelogEntry] {
         [
             ChangelogEntry(
+                id: "v1.0.19",
+                version: "v1.0.19",
+                date: "2026-08-29",
+                changes: [
+                    L10n.text("架构级重构 Codex 悬浮挂件定位与吸附感知引擎，模块化解耦辅助功能锚点读取与坐标计算", "Architectural refactor of Codex overlay positioning and snapping engine, decoupling accessibility anchor detection and geometry calculation"),
+                    L10n.text("升级精准锚定算法：直接定位 Codex 窗口与其内部 Help 按钮锚点，完全无需读取任何对话正文，彻底保障用户隐私", "Upgraded precision anchoring: directly targets Codex window and Help button anchors without reading any conversation text for total privacy"),
+                    L10n.text("优化悬浮挂件吸附与重置交互，支持一键恢复挂件在 Codex 窗口内的智能默认吸附位置", "Refined overlay snapping and reset interactions with one-click restoration to the intelligent default position inside the Codex window"),
+                    L10n.text("全面完善 10 种语言的多语言本地化翻译字典与更新日志多语言映射", "Comprehensive localization dictionary refinements and changelog translation mapping across 10 supported languages")
+                ]
+            ),
+            ChangelogEntry(
                 id: "v1.0.18",
                 version: "v1.0.18",
                 date: "2026-08-28",

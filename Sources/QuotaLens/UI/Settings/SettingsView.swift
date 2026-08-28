@@ -282,13 +282,13 @@ public struct SettingsView: View {
                 .padding(12)
                 .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))
 
-                // 2. 启用 ChatGPT / Codex 窗口悬浮挂件
+                // 2. 启用 Codex 窗口悬浮挂件
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(L10n.text("ChatGPT / Codex 窗口悬浮挂件", "Window Floating Overlay"))
+                        Text(L10n.text("Codex 窗口悬浮挂件", "Codex Window Overlay"))
                             .font(.system(size: 13, weight: .bold))
                             .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
-                        Text(L10n.text("在目标应用前台窗口边缘附着小胶囊，显示实时配额", "Floating pill attached to target window"))
+                        Text(L10n.text("在 Codex 窗口中显示实时配额", "Shows live quota inside the Codex window"))
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
                     }
@@ -307,37 +307,13 @@ public struct SettingsView: View {
                 .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))
 
                 if flags.isOverlayEnabled {
-                    // 仅在前台使用时显示
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(L10n.text("仅在目标应用前台时显示", "Only Show When Target App is Active"))
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
-                            Text(L10n.text("切换至其他应用时自动隐藏挂件，避免干扰桌面操作", "Automatically hide overlay when switching to other applications"))
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-                        }
-                        Spacer()
-                        Toggle("", isOn: Binding(
-                            get: { flags.isOverlayOnlyWhenActive },
-                            set: { enabled in
-                                flags.isOverlayOnlyWhenActive = enabled
-                                overlayController.updateVisibilityForFrontmostApp()
-                            }
-                        ))
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                    }
-                    .padding(12)
-                    .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))
-
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(L10n.text("精确窗口吸附（辅助功能）", "Precise Window Snapping (Accessibility)"))
                                 .font(.system(size: 13, weight: .bold))
                                 .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
                             Text(overlayController.isAccessibilityTrusted
-                                ? L10n.text("只读取目标窗口的位置与尺寸，不读取窗口文本", "Reads only target window position and size; never window text")
+                                ? L10n.text("用于识别 Codex 窗口和帮助按钮的位置，不读取对话内容", "Locates the Codex window and Help button without reading conversations")
                                 : L10n.text("由你主动授权；未授权时自动保持基础模式", "Opt-in only; basic mode remains active until authorized"))
                                 .font(.system(size: 11, weight: .medium))
                                 .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
@@ -361,7 +337,7 @@ public struct SettingsView: View {
                             Text(L10n.text("重置挂件吸附位置", "Reset Overlay Position"))
                                 .font(.system(size: 13, weight: .bold))
                                 .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
-                            Text(L10n.text("恢复挂件至默认吸附状态（屏幕右上角）", "Reset floating overlay to default top-right position"))
+                            Text(L10n.text("恢复挂件至 Codex 窗口中的自动吸附位置", "Restore automatic placement inside the Codex window"))
                                 .font(.system(size: 11, weight: .medium))
                                 .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
                         }
