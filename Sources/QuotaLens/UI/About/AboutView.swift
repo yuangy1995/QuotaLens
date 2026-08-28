@@ -53,6 +53,17 @@ public struct AboutView: View {
     private var defaultChangelogs: [ChangelogEntry] {
         [
             ChangelogEntry(
+                id: "v1.0.18",
+                version: "v1.0.18",
+                date: "2026-08-28",
+                changes: [
+                    L10n.text("新增 Codex 会话正文按需解析与对话记录回放，支持在会话详情中直接浏览用户提示词与助手完整回复", "Introduced on-demand Codex conversation parsing and message history viewer in session details for user prompts and assistant replies"),
+                    L10n.text("支持会话标题与对话正文全文混合检索，秒级过滤历史对话内容并自动匹配相关工程上下文", "Full-text hybrid search across session titles and conversation bodies with instant filtering and project context matching"),
+                    L10n.text("优化会话明细卡片排版，支持「对话内容」与「用量统计」无缝分栏切换与附件标记识别", "Refined session detail layout with seamless switching between Conversation and Usage tabs along with attachment badges"),
+                    L10n.text("全面完善 10 种语言的多语言本地化翻译字典与更新日志多语言映射", "Comprehensive localization dictionary refinements and changelog translation mapping across 10 supported languages")
+                ]
+            ),
+            ChangelogEntry(
                 id: "v1.0.17",
                 version: "v1.0.17",
                 date: "2026-08-28",

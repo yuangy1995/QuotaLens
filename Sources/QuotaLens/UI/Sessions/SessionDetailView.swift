@@ -3,23 +3,38 @@
 import SwiftUI
 import AppKit
 
+private enum SessionDetailSection: String, CaseIterable {
+    case conversation
+    case usage
+}
+
 public struct SessionDetailView: View {
     let detail: CodexSessionDetailDTO
+    let conversation: CodexSessionConversationDTO?
+    let isLoadingConversation: Bool
+    let conversationErrorMessage: String?
     let onBackToRoot: () -> Void
     let onSelectSubagent: (String) -> Void
     let onLoadMoreEvents: () -> Void
     let isLoadingMoreEvents: Bool
     @Environment(\.colorScheme) var colorScheme
     @State private var isCopiedId = false
+    @State private var selectedSection: SessionDetailSection = .conversation
 
     public init(
         detail: CodexSessionDetailDTO,
+        conversation: CodexSessionConversationDTO? = nil,
+        isLoadingConversation: Bool = false,
+        conversationErrorMessage: String? = nil,
         onBackToRoot: @escaping () -> Void,
         onSelectSubagent: @escaping (String) -> Void,
         onLoadMoreEvents: @escaping () -> Void = {},
         isLoadingMoreEvents: Bool = false
     ) {
         self.detail = detail
+        self.conversation = conversation
+        self.isLoadingConversation = isLoadingConversation
+        self.conversationErrorMessage = conversationErrorMessage
         self.onBackToRoot = onBackToRoot
         self.onSelectSubagent = onSelectSubagent
         self.onLoadMoreEvents = onLoadMoreEvents
@@ -59,29 +74,120 @@ public struct SessionDetailView: View {
                 // 1. 顶部全息信息头
                 sessionHeaderCard
 
-                // 2. 四大核心指标卡
-                kpiMetricsGrid
+                detailSectionPicker
 
-                // 3. Token 构成可视化条形图
-                tokenCompositionCard
+                if selectedSection == .conversation {
+                    conversationCard
+                } else {
+                    // 2. 四大核心指标卡
+                    kpiMetricsGrid
 
-                // 4. 多模型占比汇总
-                if !detail.modelSummaries.isEmpty {
-                    modelDistributionCard
-                }
+                    // 3. Token 构成可视化条形图
+                    tokenCompositionCard
 
-                // 5. 子会话分身列表 (Subagents)
-                if !detail.subagents.isEmpty {
-                    subagentsSectionCard
-                }
+                    // 4. 多模型占比汇总
+                    if !detail.modelSummaries.isEmpty {
+                        modelDistributionCard
+                    }
 
-                // 6. 事件流时间线
-                if !detail.recentEvents.isEmpty {
-                    eventTimelineCard
+                    // 5. 子会话分身列表 (Subagents)
+                    if !detail.subagents.isEmpty {
+                        subagentsSectionCard
+                    }
+
+                    // 6. 事件流时间线
+                    if !detail.recentEvents.isEmpty {
+                        eventTimelineCard
+                    }
                 }
             }
             .padding(18)
         }
+        .onChange(of: detail.session.sessionId) { _, _ in
+            selectedSection = .conversation
+        }
+    }
+
+    private var detailSectionPicker: some View {
+        Picker("", selection: $selectedSection) {
+            Text(L10n.text("对话内容", "Conversation"))
+                .tag(SessionDetailSection.conversation)
+            Text(L10n.text("用量统计", "Usage"))
+                .tag(SessionDetailSection.usage)
+        }
+        .labelsHidden()
+        .pickerStyle(.segmented)
+        .accessibilityLabel(L10n.text("会话明细类型", "Session detail type"))
+        .accessibilityIdentifier("sessions.detailSection")
+    }
+
+    private var conversationCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "text.bubble.fill")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(AppTheme.accentCyan(for: colorScheme))
+
+                Text(L10n.text("对话内容", "Conversation"))
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+
+                Spacer()
+
+                if let conversation, !conversation.messages.isEmpty {
+                    Text(L10n.format(
+                        "%d messages",
+                        zhHans: "%d 条消息",
+                        conversation.messages.count
+                    ))
+                    .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                }
+            }
+
+            if isLoadingConversation {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text(L10n.text("正在读取对话内容…", "Loading conversation..."))
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 28)
+            } else if let conversationErrorMessage {
+                Label(conversationErrorMessage, systemImage: "exclamationmark.triangle")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 28)
+            } else if let conversation, !conversation.messages.isEmpty {
+                LazyVStack(spacing: 8) {
+                    ForEach(conversation.messages) { message in
+                        ConversationMessageRow(message: message, colorScheme: colorScheme)
+                    }
+                }
+            } else {
+                VStack(spacing: 7) {
+                    Image(systemName: "bubble.left")
+                        .font(.system(size: 22))
+                    Text(L10n.text(
+                        "这条记录中没有可显示的用户或助手消息",
+                        "No user or assistant messages were found in this session"
+                    ))
+                    .font(.system(size: 11, weight: .medium))
+                }
+                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 28)
+            }
+        }
+        .padding(12)
+        .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
+        )
     }
 
     // MARK: - 1. 顶部全息信息头
@@ -450,6 +556,66 @@ public struct SessionDetailView: View {
             return session.pricingStatus.localizedDescription
         }
         return "\(session.pricingStatus.localizedDescription) · \(session.unpricedReasonCounts.localizedSummary)"
+    }
+}
+
+private struct ConversationMessageRow: View {
+    let message: CodexConversationMessageDTO
+    let colorScheme: ColorScheme
+
+    var body: some View {
+        let accent = message.role == .user
+            ? AppTheme.accentCyan(for: colorScheme)
+            : AppTheme.accentPurple(for: colorScheme)
+
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 6) {
+                Image(systemName: message.role == .user ? "person.fill" : "sparkles")
+                    .font(.system(size: 9.5, weight: .bold))
+                    .foregroundStyle(accent)
+
+                Text(message.role.localizedTitle)
+                    .font(.system(size: 10, weight: .heavy, design: .rounded))
+                    .foregroundStyle(accent)
+
+                Spacer()
+
+                if let timestamp = message.timestamp {
+                    Text(timestamp.formatted(date: .abbreviated, time: .shortened))
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                }
+            }
+
+            if !message.text.isEmpty {
+                Text(message.text)
+                    .font(.system(size: 11.5, design: .rounded))
+                    .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            }
+
+            if message.attachmentCount > 0 {
+                Label(
+                    L10n.format(
+                        "%d attachments",
+                        zhHans: "%d 个附件",
+                        message.attachmentCount
+                    ),
+                    systemImage: "paperclip"
+                )
+                .font(.system(size: 9.5, weight: .semibold))
+                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(accent.opacity(colorScheme == .dark ? 0.08 : 0.05), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(accent.opacity(colorScheme == .dark ? 0.20 : 0.14), lineWidth: 0.8)
+        )
     }
 }
 

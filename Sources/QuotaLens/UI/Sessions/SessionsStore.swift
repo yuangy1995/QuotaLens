@@ -21,25 +21,29 @@ public final class SessionsStore: ObservableObject {
     @Published public var selectedSessionId: String? = nil {
         didSet {
             guard oldValue != selectedSessionId else { return }
-            Task { await loadSelectedSessionDetail() }
+            detailLoadTask?.cancel()
+            detailLoadTask = Task { @MainActor [weak self] in
+                await self?.loadSelectedSessionDetail()
+            }
         }
     }
     @Published public var selectedDetail: CodexSessionDetailDTO? = nil
+    @Published public var selectedConversation: CodexSessionConversationDTO? = nil
     @Published public var searchText: String = "" {
         didSet {
-            debounceSearch()
+            scheduleSessionsReload(afterNanoseconds: 250_000_000)
         }
     }
     @Published public var sortOption: SessionSort = .lastActivityDesc {
         didSet {
-            Task { await reloadSessions() }
+            scheduleSessionsReload()
         }
     }
     @Published public var availableProjects: [String] = []
     @Published public var selectedProject: String? = nil {
         didSet {
             guard oldValue != selectedProject else { return }
-            Task { await reloadSessions() }
+            scheduleSessionsReload()
         }
     }
     @Published public var isGroupedByProject: Bool = false
@@ -48,12 +52,15 @@ public final class SessionsStore: ObservableObject {
     @Published public var isLoading: Bool = false
     @Published public var isLoadingNextPage: Bool = false
     @Published public var isLoadingDetail: Bool = false
+    @Published public var isLoadingConversation: Bool = false
     @Published public var isLoadingMoreEvents: Bool = false
     @Published public var isDeletingSession: Bool = false
     @Published public var errorMessage: String? = nil
+    @Published public var conversationErrorMessage: String? = nil
 
     private let facade: UsageQueryFacade
-    private var searchCancellable: Task<Void, Never>?
+    private var sessionQueryTask: Task<Void, Never>?
+    private var detailLoadTask: Task<Void, Never>?
     private var nextCursor: String?
     private var queryGeneration = 0
     private let pageSize = 50
@@ -128,43 +135,52 @@ public final class SessionsStore: ObservableObject {
     }
 
     public func reloadSessions() async {
-        guard !isLoading else { return }
-
         queryGeneration += 1
         let generation = queryGeneration
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         isLoading = true
         isLoadingNextPage = false
         nextCursor = nil
         errorMessage = nil
+        defer {
+            if generation == queryGeneration {
+                isLoading = false
+            }
+        }
+
         do {
             if let projects = try? await facade.getProjectNames() {
                 self.availableProjects = projects
             }
+            try Task.checkCancellation()
 
             let page = try await facade.getSessionPage(
                 sort: sortOption,
-                search: searchText.isEmpty ? nil : searchText,
+                search: query.isEmpty ? nil : query,
                 project: selectedProject,
                 limit: pageSize
             )
             guard generation == queryGeneration else { return }
             self.sessions = page.sessions
             self.nextCursor = page.nextCursor
-            if selectedSessionId == nil, let first = page.sessions.first {
-                self.selectedSessionId = first.sessionId
+
+            if let selectedSessionId,
+               page.sessions.contains(where: { $0.sessionId == selectedSessionId }) {
+                return
             }
+            self.selectedSessionId = page.sessions.first?.sessionId
+        } catch is CancellationError {
+            return
         } catch {
             guard generation == queryGeneration else { return }
             self.errorMessage = Self.userFacingError(error)
-        }
-        if generation == queryGeneration {
-            isLoading = false
         }
     }
 
     public func loadNextPage() async {
         guard !isLoading, !isLoadingNextPage, let cursor = nextCursor else { return }
         let generation = queryGeneration
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         isLoadingNextPage = true
         defer {
             if generation == queryGeneration { isLoadingNextPage = false }
@@ -172,7 +188,7 @@ public final class SessionsStore: ObservableObject {
         do {
             let page = try await facade.getSessionPage(
                 sort: sortOption,
-                search: searchText.isEmpty ? nil : searchText,
+                search: query.isEmpty ? nil : query,
                 project: selectedProject,
                 limit: pageSize,
                 cursor: cursor
@@ -190,18 +206,61 @@ public final class SessionsStore: ObservableObject {
     public func loadSelectedSessionDetail() async {
         guard let sid = selectedSessionId else {
             selectedDetail = nil
+            selectedConversation = nil
+            conversationErrorMessage = nil
+            isLoadingDetail = false
+            isLoadingConversation = false
             return
         }
+
+        selectedDetail = nil
+        selectedConversation = nil
+        conversationErrorMessage = nil
         isLoadingDetail = true
+        isLoadingConversation = false
+
         do {
-            self.selectedDetail = try await facade.getSessionDetail(
+            let detail = try await facade.getSessionDetail(
                 sessionId: sid,
                 eventLimit: eventPageSize
             )
+            try Task.checkCancellation()
+            guard selectedSessionId == sid else { return }
+            self.selectedDetail = detail
+        } catch is CancellationError {
+            return
         } catch {
+            guard selectedSessionId == sid else { return }
             self.errorMessage = Self.userFacingError(error)
+            isLoadingDetail = false
+            return
         }
+
+        guard selectedSessionId == sid else { return }
         isLoadingDetail = false
+        guard selectedDetail != nil else { return }
+
+        isLoadingConversation = true
+        do {
+            let conversation = try await facade.getSessionConversation(sessionId: sid)
+            try Task.checkCancellation()
+            guard selectedSessionId == sid else { return }
+            self.selectedConversation = conversation ?? CodexSessionConversationDTO(
+                sessionId: sid,
+                messages: []
+            )
+        } catch is CancellationError {
+            return
+        } catch {
+            guard selectedSessionId == sid else { return }
+            conversationErrorMessage = L10n.text(
+                "暂时无法读取这条会话的对话内容。",
+                "This conversation could not be read right now."
+            )
+        }
+        if selectedSessionId == sid {
+            isLoadingConversation = false
+        }
     }
 
     public func loadMoreSelectedSessionEvents() async {
@@ -254,6 +313,7 @@ public final class SessionsStore: ObservableObject {
                 || selectedDetail?.session.rootSessionId == session.rootSessionId {
                 selectedSessionId = nil
                 selectedDetail = nil
+                selectedConversation = nil
             }
             await reloadSessions()
             return true
@@ -273,15 +333,18 @@ public final class SessionsStore: ObservableObject {
         )
     }
 
-    private func debounceSearch() {
-        searchCancellable?.cancel()
-        searchCancellable = Task { @MainActor in
-            do {
-                try await Task.sleep(nanoseconds: 250_000_000) // 250ms
-            } catch {
-                return
+    private func scheduleSessionsReload(afterNanoseconds delay: UInt64 = 0) {
+        sessionQueryTask?.cancel()
+        sessionQueryTask = Task { @MainActor [weak self] in
+            if delay > 0 {
+                do {
+                    try await Task.sleep(nanoseconds: delay)
+                } catch {
+                    return
+                }
             }
-            await reloadSessions()
+            guard let self, !Task.isCancelled else { return }
+            await self.reloadSessions()
         }
     }
 }

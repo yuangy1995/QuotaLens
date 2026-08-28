@@ -170,6 +170,16 @@ public final class UsageAnalyticsRepository: Sendable {
         cursor: String? = nil
     ) throws -> CodexSessionPageDTO {
         let requestedLimit = min(max(1, limit), 500)
+        if let query = search?.trimmingCharacters(in: .whitespacesAndNewlines), !query.isEmpty {
+            return try fetchConversationSearchPage(
+                query: query,
+                sort: sort,
+                project: project,
+                limit: requestedLimit,
+                cursor: cursor
+            )
+        }
+
         var conditions: [String] = []
         var bindings: [Any?] = []
 
@@ -179,26 +189,6 @@ public final class UsageAnalyticsRepository: Sendable {
         if let project = project?.trimmingCharacters(in: .whitespacesAndNewlines), !project.isEmpty {
             conditions.append("project_name = ?")
             bindings.append(project)
-        }
-
-        if let search = search?.trimmingCharacters(in: .whitespacesAndNewlines), !search.isEmpty {
-            let pattern = "%\(Self.escapeLike(search))%"
-            conditions.append("""
-            (
-                title LIKE ? ESCAPE '\\'
-                OR project_name LIKE ? ESCAPE '\\'
-                OR session_id LIKE ? ESCAPE '\\'
-                OR cwd LIKE ? ESCAPE '\\'
-                OR agent_type LIKE ? ESCAPE '\\'
-                OR EXISTS (
-                    SELECT 1
-                    FROM codex_session_summaries m
-                    WHERE m.session_id = codex_sessions.session_id
-                      AND m.model_canonical LIKE ? ESCAPE '\\'
-                )
-            )
-            """)
-            bindings.append(contentsOf: [pattern, pattern, pattern, pattern, pattern, pattern])
         }
 
         if let cursorParts = Self.decodeCursor(cursor) {
@@ -256,6 +246,148 @@ public final class UsageAnalyticsRepository: Sendable {
         let pageRows = Array(rows.prefix(requestedLimit))
         let nextCursor = hasMore ? pageRows.last.map { Self.encodeCursor(session: $0, sort: sort) } : nil
         return CodexSessionPageDTO(sessions: pageRows, nextCursor: nextCursor)
+    }
+
+    private struct ConversationSearchCandidate {
+        let session: CodexSessionDTO
+        let sourcePath: String
+        let modelNames: String
+    }
+
+    private func fetchConversationSearchPage(
+        query: String,
+        sort: SessionSort,
+        project: String?,
+        limit: Int,
+        cursor: String?
+    ) throws -> CodexSessionPageDTO {
+        let candidates = try fetchConversationSearchCandidates(
+            sort: sort,
+            project: project,
+            cursor: cursor
+        )
+        var matches: [CodexSessionDTO] = []
+        matches.reserveCapacity(limit + 1)
+
+        for candidate in candidates {
+            try Task.checkCancellation()
+
+            let metadataFields = [
+                candidate.session.title,
+                candidate.session.projectName,
+                candidate.session.sessionId,
+                candidate.session.cwd,
+                candidate.session.agentType,
+                candidate.modelNames
+            ]
+            let metadataMatches = metadataFields.compactMap { $0 }.contains {
+                Self.localizedContains($0, query: query)
+            }
+
+            var contentMatches = false
+            if !metadataMatches, !candidate.sourcePath.isEmpty {
+                do {
+                    contentMatches = try CodexConversationReader.containsConversationText(
+                        fileURL: URL(fileURLWithPath: candidate.sourcePath),
+                        query: query
+                    )
+                } catch let cancellation as CancellationError {
+                    throw cancellation
+                } catch {
+                    contentMatches = false
+                }
+            }
+
+            if metadataMatches || contentMatches {
+                matches.append(candidate.session)
+                if matches.count > limit {
+                    break
+                }
+            }
+        }
+
+        let hasMore = matches.count > limit
+        let pageRows = Array(matches.prefix(limit))
+        return CodexSessionPageDTO(
+            sessions: pageRows,
+            nextCursor: hasMore ? pageRows.last.map { Self.encodeCursor(session: $0, sort: sort) } : nil
+        )
+    }
+
+    private func fetchConversationSearchCandidates(
+        sort: SessionSort,
+        project: String?,
+        cursor: String?
+    ) throws -> [ConversationSearchCandidate] {
+        var conditions = ["(depth = 0 OR parent_session_id IS NULL)"]
+        var bindings: [Any?] = []
+
+        if let project = project?.trimmingCharacters(in: .whitespacesAndNewlines), !project.isEmpty {
+            conditions.append("project_name = ?")
+            bindings.append(project)
+        }
+
+        if let cursorParts = Self.decodeCursor(cursor) {
+            switch sort {
+            case .lastActivityDesc:
+                conditions.append("(COALESCE(last_event_at, updated_at) < ? OR (COALESCE(last_event_at, updated_at) = ? AND session_id < ?))")
+            case .totalTokensDesc:
+                conditions.append("(total_tokens < ? OR (total_tokens = ? AND session_id < ?))")
+            case .estimatedCostDesc:
+                conditions.append("(estimated_cost_usd_nano < ? OR (estimated_cost_usd_nano = ? AND session_id < ?))")
+            case .createdDesc:
+                conditions.append("(created_at < ? OR (created_at = ? AND session_id < ?))")
+            }
+            bindings.append(contentsOf: [cursorParts.primary, cursorParts.primary, cursorParts.sessionId])
+        }
+
+        let orderClause: String
+        switch sort {
+        case .lastActivityDesc:
+            orderClause = "COALESCE(last_event_at, updated_at) DESC, session_id DESC"
+        case .totalTokensDesc:
+            orderClause = "total_tokens DESC, session_id DESC"
+        case .estimatedCostDesc:
+            orderClause = "estimated_cost_usd_nano DESC, session_id DESC"
+        case .createdDesc:
+            orderClause = "created_at DESC, session_id DESC"
+        }
+
+        let sql = """
+        SELECT
+            session_id, root_session_id, parent_session_id, depth, title, project_name, cwd,
+            created_at, updated_at, last_event_at, event_count, total_tokens, input_tokens,
+            cached_input_tokens, cache_write_input_tokens, output_tokens,
+            reasoning_output_tokens, estimated_cost_usd_nano,
+            pricing_status, bucket, has_subagents, agent_type,
+            unpriced_unknown_model_event_count, unpriced_unknown_model_token_count,
+            unpriced_unsupported_tier_event_count, unpriced_unsupported_tier_token_count,
+            unpriced_historical_rule_missing_event_count, unpriced_historical_rule_missing_token_count,
+            unpriced_unsupported_context_event_count, unpriced_unsupported_context_token_count,
+            unpriced_invalid_record_event_count, unpriced_invalid_record_token_count,
+            unpriced_overflow_event_count, unpriced_overflow_token_count,
+            summary_provenance, source_path, relative_path,
+            COALESCE((
+                SELECT GROUP_CONCAT(model_canonical, ' ')
+                FROM codex_session_summaries summary
+                WHERE summary.session_id = codex_sessions.session_id
+            ), '')
+        FROM codex_sessions
+        WHERE \(conditions.joined(separator: " AND "))
+        ORDER BY \(orderClause);
+        """
+
+        return try database.executeQuery(sql: sql, bindings: bindings) { statement in
+            let session = Self.mapSessionRow(statement)
+            let storedSource = Self.stringColumn(statement, index: 35) ?? ""
+            let relativePath = Self.stringColumn(statement, index: 36) ?? ""
+            let preferredSource = storedSource.isEmpty ? relativePath : storedSource
+            return ConversationSearchCandidate(
+                session: session,
+                sourcePath: Self.absoluteSourcePath(preferredSource),
+                modelNames: Self.stringColumn(statement, index: 37) ?? ""
+            )
+        }
     }
 
     // MARK: - 2. 会话完整详情查询
@@ -420,6 +552,30 @@ public final class UsageAnalyticsRepository: Sendable {
             relativePath: sourceInfo?.1 ?? "",
             totalSubagentTokens: totalSubagentTokens,
             totalSubagentCost: totalSubagentCost
+        )
+    }
+
+    public func fetchSessionConversation(sessionId: String) throws -> CodexSessionConversationDTO? {
+        let rows = try database.executeQuery(
+            sql: "SELECT source_path, relative_path FROM codex_sessions WHERE session_id = ? LIMIT 1;",
+            bindings: [sessionId]
+        ) { statement in
+            (
+                Self.stringColumn(statement, index: 0) ?? "",
+                Self.stringColumn(statement, index: 1) ?? ""
+            )
+        }
+        guard let source = rows.first else { return nil }
+
+        let preferredSource = source.0.isEmpty ? source.1 : source.0
+        let sourcePath = Self.absoluteSourcePath(preferredSource)
+        guard !sourcePath.isEmpty else {
+            return CodexSessionConversationDTO(sessionId: sessionId, messages: [])
+        }
+
+        return try CodexConversationReader.readConversation(
+            fileURL: URL(fileURLWithPath: sourcePath),
+            sessionId: sessionId
         )
     }
 
@@ -1937,13 +2093,6 @@ public final class UsageAnalyticsRepository: Sendable {
         return "\(timestampMs)|\(event.lineOffset)|\(event.eventId)"
     }
 
-    private static func escapeLike(_ value: String) -> String {
-        value
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "%", with: "\\%")
-            .replacingOccurrences(of: "_", with: "\\_")
-    }
-
     private static func unpricedReasonCounts(from stmt: OpaquePointer, start: Int32) -> UnpricedReasonCounts {
         UnpricedReasonCounts(
             unknownModelEvents: Int(sqlite3_column_int(stmt, start)),
@@ -2288,6 +2437,23 @@ public final class UsageAnalyticsRepository: Sendable {
         return CodexHistoryRootResolver.resolvePaths().rootURL
             .appendingPathComponent(path)
             .path
+    }
+
+    private static func stringColumn(_ statement: OpaquePointer, index: Int32) -> String? {
+        guard sqlite3_column_type(statement, index) != SQLITE_NULL,
+              let text = sqlite3_column_text(statement, index) else {
+            return nil
+        }
+        return String(cString: text)
+    }
+
+    private static func localizedContains(_ value: String, query: String) -> Bool {
+        value.range(
+            of: query,
+            options: [.caseInsensitive, .diacriticInsensitive],
+            range: nil,
+            locale: L10n.locale
+        ) != nil
     }
 
     private func deleteSessionDerivedRows(

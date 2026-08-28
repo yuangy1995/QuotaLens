@@ -116,6 +116,7 @@ public final class StreamingJSONLReader: Sendable {
         }
 
         while currentOffset < targetEndOffset {
+            try Task.checkCancellation()
             let bytesToRead = min(Int64(chunkSize), targetEndOffset - currentOffset)
             guard bytesToRead > 0 else { break }
 

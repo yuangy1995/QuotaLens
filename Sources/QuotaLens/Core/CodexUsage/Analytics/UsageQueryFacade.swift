@@ -46,6 +46,10 @@ public actor UsageQueryFacade {
         )
     }
 
+    public func getSessionConversation(sessionId: String) throws -> CodexSessionConversationDTO? {
+        try repository.fetchSessionConversation(sessionId: sessionId)
+    }
+
     public func deleteSession(sessionId: String) throws {
         try repository.deleteSession(sessionId: sessionId)
     }

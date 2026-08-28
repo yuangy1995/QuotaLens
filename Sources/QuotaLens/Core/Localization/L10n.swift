@@ -254,6 +254,9 @@ public enum L10n {
     }
 
     public static let changelogZhToEnMap: [String: String] = [
+        "新增 Codex 会话正文按需解析与对话记录回放，支持在会话详情中直接浏览用户提示词与助手完整回复": "Introduced on-demand Codex conversation parsing and message history viewer in session details for user prompts and assistant replies",
+        "支持会话标题与对话正文全文混合检索，秒级过滤历史对话内容并自动匹配相关工程上下文": "Full-text hybrid search across session titles and conversation bodies with instant filtering and project context matching",
+        "优化会话明细卡片排版，支持「对话内容」与「用量统计」无缝分栏切换与附件标记识别": "Refined session detail layout with seamless switching between Conversation and Usage tabs along with attachment badges",
         "深度优化全界面异步数据加载机制，引入防抖过滤与按需刷新，大幅降低高频切换时的 CPU 与数据库 I/O 占用": "Deeply optimized asynchronous UI data loading with debouncing and on-demand refresh, reducing CPU and database I/O overhead",
         "重构用量看板预测引擎响应链路，实现轻量级额度变化即时计算与重度历史分析按需解耦": "Decoupled usage dashboard forecast calculations from heavy historical queries for instant rate limit updates and smoother interaction",
         "优化菜单栏常驻面板与悬浮挂件的生命周期交互，提升多屏协同与窗口切换时的响应流畅度": "Refined menu bar popover and floating overlay lifecycle interactions, enhancing smoothness during multi-display and window transitions",
@@ -352,6 +355,146 @@ public enum L10n {
 }
 
 private let keyedTranslations: [String: [AppLanguage: String]] = [
+    "Introduced on-demand Codex conversation parsing and message history viewer in session details for user prompts and assistant replies": [
+        .traditionalChinese: "新增 Codex 會話正文按需解析與對話記錄回放，支援在會話詳情中直接瀏覽使用者提示詞與助理完整回覆",
+        .japanese: "Codex 会話本文のオンデマンド解析と履歴閲覧機能を追加し、セッション詳細画面でユーザーの指示とアシスタントの返答を直接確認可能に",
+        .korean: "Codex 세션 본문 온디맨드 파싱 및 대화 기록 뷰어 기능 추가: 세션 세부 정보에서 사용자 프롬프트와 어시스턴트 응답을 직접 확인 가능",
+        .spanish: "Añadido análisis bajo demanda de conversaciones de Codex y visor de historial en el detalle de la sesión para ver prompts y respuestas",
+        .german: "On-Demand-Analyse von Codex-Konversationen und Nachrichtenverlaufsanzeige in den Sitzungsdetails für Benutzer-Prompts und Assistenten-Antworten hinzugefügt",
+        .french: "Ajout de l'analyse à la demande des conversations Codex et de la visualisation de l'historique dans les détails de session",
+        .portuguese: "Adicionada análise a pedido de conversas do Codex e visualizador de histórico nos detalhes da sessão para mensagens do utilizador e do assistente",
+        .portugueseBrazil: "Adicionada análise sob demanda de conversas do Codex e visualizador de histórico nos detalhes da sessão para mensagens do usuário e do assistente"
+    ],
+    "Full-text hybrid search across session titles and conversation bodies with instant filtering and project context matching": [
+        .traditionalChinese: "支援會話標題與對話正文全文混合檢索，秒級過濾歷史對話內容並自動匹配相關工程上下文",
+        .japanese: "セッションタイトルと会話本文のハイブリッド全文検索に対応し、過去の対話内容を瞬時に絞り込みプロジェクト文脈と自動照合",
+        .korean: "세션 제목 및 대화 본문 통합 전체 텍스트 검색 지원으로 과거 대화 내용을 즉시 필터링하고 프로젝트 컨텍스트와 자동 매칭",
+        .spanish: "Búsqueda híbrida de texto completo en títulos y cuerpo de conversaciones con filtrado instantáneo y coincidencia de contexto",
+        .german: "Volltext-Hybridsuche über Sitzungstitel und Konversationstexte mit sofortiger Filterung und Projektkontext-Zuordnung",
+        .french: "Recherche hybride en texte intégral sur les titres et le corps des conversations avec filtrage instantané et contexte de projet",
+        .portuguese: "Pesquisa híbrida de texto integral em títulos e corpo de conversas com filtragem instantânea e correspondência de contexto",
+        .portugueseBrazil: "Pesquisa híbrida de texto completo em títulos e corpo de conversas com filtragem instantânea e correspondência de contexto"
+    ],
+    "Refined session detail layout with seamless switching between Conversation and Usage tabs along with attachment badges": [
+        .traditionalChinese: "優化會話明細卡片排版，支援「對話內容」與「用量統計」無縫分欄切換與附件標記識別",
+        .japanese: "セッション詳細レイアウトを改善し、「会話内容」と「使用量統計」のスムーズなタブ切替および添付ファイル表示に対応",
+        .korean: "세션 세부 정보 레이아웃을 개선하여 「대화 내용」과 「사용량 통계」 간의 부드러운 탭 전환 및 첨부파일 배지 표시 지원",
+        .spanish: "Diseño de detalle de sesión mejorado con cambio fluido entre las pestañas de Conversación y Uso e identificación de adjuntos",
+        .german: "Sitzungsdetail-Layout verbessert mit nahtlosem Wechsel zwischen Konversation und Verbrauch sowie Anhangsmarkierungen",
+        .french: "Mise en page des détails de session affinée avec basculement fluide entre Conversation et Utilisation et badges de pièces jointes",
+        .portuguese: "Esquema de detalhes da sessão aperfeiçoado com alternância suave entre os separadores Conversa e Utilização e identificação de anexos",
+        .portugueseBrazil: "Layout de detalhes da sessão aprimorado com alternância suave entre as abas Conversa e Uso e identificação de anexos"
+    ],
+    "Conversation": [
+        .traditionalChinese: "對話內容",
+        .japanese: "会話内容",
+        .korean: "대화 내용",
+        .spanish: "Conversación",
+        .german: "Konversation",
+        .french: "Conversation",
+        .portuguese: "Conversa",
+        .portugueseBrazil: "Conversa"
+    ],
+    "Session detail type": [
+        .traditionalChinese: "會話明細類型",
+        .japanese: "セッション詳細タイプ",
+        .korean: "세션 세부 정보 유형",
+        .spanish: "Tipo de detalle de sesión",
+        .german: "Sitzungsdetailtyp",
+        .french: "Type de détail de session",
+        .portuguese: "Tipo de detalhe da sessão",
+        .portugueseBrazil: "Tipo de detalhe da sessão"
+    ],
+    "Loading conversation...": [
+        .traditionalChinese: "正在讀取對話內容…",
+        .japanese: "会話内容を読み込み中…",
+        .korean: "대화 내용 읽는 중…",
+        .spanish: "Cargando conversación...",
+        .german: "Konversation wird geladen...",
+        .french: "Chargement de la conversation...",
+        .portuguese: "A carregar conversa...",
+        .portugueseBrazil: "Carregando conversa..."
+    ],
+    "No user or assistant messages were found in this session": [
+        .traditionalChinese: "這條記錄中沒有可顯示的使用者或助理訊息",
+        .japanese: "このセッションには表示可能なユーザーまたはアシスタントのメッセージがありません",
+        .korean: "이 세션에는 표시할 수 있는 사용자 또는 어시스턴트 메시지가 없습니다",
+        .spanish: "No se encontraron mensajes de usuario ni de asistente en esta sesión",
+        .german: "In dieser Sitzung wurden keine Benutzer- oder Assistentennachrichten gefunden",
+        .french: "Aucun message utilisateur ou assistant trouvé dans cette session",
+        .portuguese: "Não foram encontradas mensagens de utilizador ou assistente nesta sessão",
+        .portugueseBrazil: "Não foram encontradas mensagens de usuário ou assistente nesta sessão"
+    ],
+    "Failed to read conversation: %@": [
+        .traditionalChinese: "讀取對話失敗：%@",
+        .japanese: "会話内容の取得に失敗しました：%@",
+        .korean: "대화 내용을 읽지 못했습니다: %@",
+        .spanish: "Error al leer la conversación: %@",
+        .german: "Fehler beim Laden der Konversation: %@",
+        .french: "Échec de lecture de la conversation : %@",
+        .portuguese: "Falha ao ler a conversa: %@",
+        .portugueseBrazil: "Falha ao ler a conversa: %@"
+    ],
+    "Search titles or conversation text...": [
+        .traditionalChinese: "搜尋標題或對話內容…",
+        .japanese: "タイトルまたは会話内容を検索…",
+        .korean: "제목 또는 대화 내용 검색…",
+        .spanish: "Buscar títulos o texto de conversación...",
+        .german: "Titel oder Konversationstext suchen...",
+        .french: "Rechercher des titres ou le texte de la conversation...",
+        .portuguese: "Pesquisar títulos ou texto da conversa...",
+        .portugueseBrazil: "Pesquisar títulos ou texto da conversa..."
+    ],
+    "No matching title or conversation text": [
+        .traditionalChinese: "沒有相符的標題或對話內容",
+        .japanese: "一致するタイトルまたは会話内容が見つかりません",
+        .korean: "일치하는 제목 또는 대화 내용이 없습니다",
+        .spanish: "No hay títulos ni texto de conversación coincidentes",
+        .german: "Kein passender Titel oder Konversationstext gefunden",
+        .french: "Aucun titre ni texte de conversation correspondant",
+        .portuguese: "Nenhum título ou texto de conversa correspondente",
+        .portugueseBrazil: "Nenhum título ou texto de conversa correspondente"
+    ],
+    "You": [
+        .traditionalChinese: "使用者",
+        .japanese: "ユーザー",
+        .korean: "사용자",
+        .spanish: "Tú",
+        .german: "Du",
+        .french: "Vous",
+        .portuguese: "Você",
+        .portugueseBrazil: "Você"
+    ],
+    "Assistant": [
+        .traditionalChinese: "助理",
+        .japanese: "アシスタント",
+        .korean: "어시스턴트",
+        .spanish: "Asistente",
+        .german: "Assistent",
+        .french: "Assistant",
+        .portuguese: "Assistente",
+        .portugueseBrazil: "Assistente"
+    ],
+    "%d messages": [
+        .traditionalChinese: "%d 則訊息",
+        .japanese: "%d 件のメッセージ",
+        .korean: "%d개 메시지",
+        .spanish: "%d mensajes",
+        .german: "%d Nachrichten",
+        .french: "%d messages",
+        .portuguese: "%d mensagens",
+        .portugueseBrazil: "%d mensagens"
+    ],
+    "%d attachments": [
+        .traditionalChinese: "%d 個附件",
+        .japanese: "%d 件の添付ファイル",
+        .korean: "%d개 첨부파일",
+        .spanish: "%d archivos adjuntos",
+        .german: "%d Anhänge",
+        .french: "%d pièces jointes",
+        .portuguese: "%d anexos",
+        .portugueseBrazil: "%d anexos"
+    ],
     "Deeply optimized asynchronous UI data loading with debouncing and on-demand refresh, reducing CPU and database I/O overhead": [
         .traditionalChinese: "深度優化全介面非同步資料載入機制，引入防抖過濾與按需重新整理，大幅降低高頻切換時的 CPU 與資料庫 I/O 佔用",
         .japanese: "全画面の非同期データ読み込み機構を刷新し、デバウンス処理とオンデマンド更新によりタブ切替時の CPU および DB I/O 負荷を大幅に削減",

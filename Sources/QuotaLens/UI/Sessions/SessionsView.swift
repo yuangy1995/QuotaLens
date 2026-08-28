@@ -87,10 +87,15 @@ public struct SessionsView: View {
                         .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
 
-                    TextField(L10n.text("搜索会话 / 项目 / 路径…", "Search sessions..."), text: $store.searchText)
+                    TextField(L10n.text("搜索标题或对话内容…", "Search titles or conversation text..."), text: $store.searchText)
                         .textFieldStyle(.plain)
                         .font(.system(size: 11.5, design: .rounded))
                         .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+
+                    if store.isLoading && !store.searchText.isEmpty {
+                        ProgressView()
+                            .controlSize(.mini)
+                    }
 
                     if !store.searchText.isEmpty {
                         Button(action: { store.searchText = "" }) {
@@ -251,7 +256,9 @@ public struct SessionsView: View {
                     Image(systemName: "tray")
                         .font(.system(size: 24))
                         .foregroundStyle(AppTheme.textSecondary(for: colorScheme).opacity(0.6))
-                    Text(L10n.text("未发现会话记录", "No sessions found"))
+                    Text(store.searchText.isEmpty
+                        ? L10n.text("未发现会话记录", "No sessions found")
+                        : L10n.text("没有匹配的标题或对话内容", "No matching title or conversation text"))
                         .font(.system(size: 12, weight: .bold))
                         .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
                 }
@@ -416,6 +423,9 @@ public struct SessionsView: View {
             } else if let detail = store.selectedDetail {
                 SessionDetailView(
                     detail: detail,
+                    conversation: store.selectedConversation,
+                    isLoadingConversation: store.isLoadingConversation,
+                    conversationErrorMessage: store.conversationErrorMessage,
                     onBackToRoot: {
                         store.selectedSessionId = detail.session.rootSessionId
                     },
