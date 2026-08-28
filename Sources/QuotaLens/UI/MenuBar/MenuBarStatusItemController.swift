@@ -12,11 +12,14 @@ public final class MenuBarStatusItemController: NSObject {
     private let statusItem: NSStatusItem
     private let popover: NSPopover
     private var cancellable: AnyCancellable?
+    private var appearanceRefreshScheduled = false
     private var onOpenMainWindow: () -> Void
     private var onRefresh: () -> Void
     private var onAcknowledgeResetCreditReminder: () -> Void
     private var onSnoozeResetCreditReminder: (Int) -> Void
     private var suppressPopoverUntil = Date.distantPast
+    private let popoverWidth: CGFloat = 340
+    private let minimumPopoverHeight: CGFloat = 575
 
     public init(
         state: AppState,
@@ -131,15 +134,18 @@ public final class MenuBarStatusItemController: NSObject {
 
     private func observeState() {
         cancellable = state.objectWillChange.sink { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.refreshAppearance()
+            guard let self, !self.appearanceRefreshScheduled else { return }
+            self.appearanceRefreshScheduled = true
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.appearanceRefreshScheduled = false
+                self.refreshAppearance()
             }
         }
     }
 
     private func updateStatusTitle() {
         guard let button = statusItem.button else { return }
-        updateStatusIcon()
 
         let isLight = isLightAppearance
         let labelColor = isLight
@@ -214,15 +220,30 @@ public final class MenuBarStatusItemController: NSObject {
         if popover.isShown {
             popover.performClose(sender)
         } else {
-            if let hostingController = popover.contentViewController as? NSHostingController<MenuBarContentView> {
-                let fitting = hostingController.sizeThatFits(in: CGSize(width: 340, height: 1000))
-                popover.contentSize = NSSize(width: 340, height: max(fitting.height, 575))
-            } else {
-                popover.contentSize = NSSize(width: 340, height: 575)
-            }
-            popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .minY)
+            showPopover(relativeTo: sender)
             popover.contentViewController?.view.window?.makeKey()
         }
+    }
+
+    private func showPopover(relativeTo sender: NSStatusBarButton) {
+        // The status item's frame can still be stale immediately after its
+        // variable-length title changes. Layout first so the popover is
+        // anchored to the actual menu bar button, not its previous frame.
+        sender.superview?.layoutSubtreeIfNeeded()
+
+        if let hostingController = popover.contentViewController as? NSHostingController<MenuBarContentView> {
+            let fittingSize = hostingController.sizeThatFits(
+                in: CGSize(width: popoverWidth, height: 1_000)
+            )
+            popover.contentSize = NSSize(
+                width: popoverWidth,
+                height: max(minimumPopoverHeight, ceil(fittingSize.height))
+            )
+        } else {
+            popover.contentSize = NSSize(width: popoverWidth, height: minimumPopoverHeight)
+        }
+
+        popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .minY)
     }
 
     private func updateCapsuleAppearance(isReminderActive: Bool) {

@@ -128,6 +128,8 @@ public final class SessionsStore: ObservableObject {
     }
 
     public func reloadSessions() async {
+        guard !isLoading else { return }
+
         queryGeneration += 1
         let generation = queryGeneration
         isLoading = true

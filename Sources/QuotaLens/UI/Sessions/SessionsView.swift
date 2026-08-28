@@ -25,10 +25,11 @@ public struct SessionsView: View {
                 .frame(minWidth: 460, maxWidth: .infinity)
         }
         .task {
-            env.scanCoordinator.triggerScan()
+            guard !env.scanCoordinator.isScanning else { return }
             await store.reloadSessions()
         }
-        .onReceive(env.scanCoordinator.$dataGeneration.dropFirst()) { _ in
+        .onChange(of: env.scanCoordinator.isScanning) { _, isScanning in
+            guard !isScanning else { return }
             Task {
                 await store.reloadSessions()
             }

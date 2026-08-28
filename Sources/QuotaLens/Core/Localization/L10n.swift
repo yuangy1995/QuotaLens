@@ -254,6 +254,9 @@ public enum L10n {
     }
 
     public static let changelogZhToEnMap: [String: String] = [
+        "深度优化全界面异步数据加载机制，引入防抖过滤与按需刷新，大幅降低高频切换时的 CPU 与数据库 I/O 占用": "Deeply optimized asynchronous UI data loading with debouncing and on-demand refresh, reducing CPU and database I/O overhead",
+        "重构用量看板预测引擎响应链路，实现轻量级额度变化即时计算与重度历史分析按需解耦": "Decoupled usage dashboard forecast calculations from heavy historical queries for instant rate limit updates and smoother interaction",
+        "优化菜单栏常驻面板与悬浮挂件的生命周期交互，提升多屏协同与窗口切换时的响应流畅度": "Refined menu bar popover and floating overlay lifecycle interactions, enhancing smoothness during multi-display and window transitions",
         "引入 5 小时与周度双周期配额预算与建议节奏引擎，根据窗口类型自动按小时/天智能推算合理配额消耗": "Introduced dual-window quota pace budget engine for 5-hour and weekly cycles with window-aware hourly/daily consumption pace",
         "动态调整 5 小时短周期的预测门限与采样新鲜度，支持高频周度快照保留并提升预测覆盖率": "Dynamically adjusted forecast thresholds and sampling freshness for 5-hour windows with enhanced snapshot retention",
         "增强多账号额度同步与历史快照存储持久化，提升 JSON-RPC 传输容错与弱网恢复能力": "Hardened multi-account quota snapshot persistence and JSON-RPC transport resilience against network fluctuations",
@@ -349,6 +352,36 @@ public enum L10n {
 }
 
 private let keyedTranslations: [String: [AppLanguage: String]] = [
+    "Deeply optimized asynchronous UI data loading with debouncing and on-demand refresh, reducing CPU and database I/O overhead": [
+        .traditionalChinese: "深度優化全介面非同步資料載入機制，引入防抖過濾與按需重新整理，大幅降低高頻切換時的 CPU 與資料庫 I/O 佔用",
+        .japanese: "全画面の非同期データ読み込み機構を刷新し、デバウンス処理とオンデマンド更新によりタブ切替時の CPU および DB I/O 負荷を大幅に削減",
+        .korean: "전체 화면의 비동기 데이터 로딩 메커니즘을 심층 최적화하고 디바운싱 및 온디맨드 새로고침을 도입하여 탭 전환 시 CPU 및 DB I/O 부하 대폭 감소",
+        .spanish: "Carga de datos asíncrona de la interfaz optimizada con filtrado antirrebote y actualización bajo demanda, reduciendo el uso de CPU y E/S de base de datos",
+        .german: "Asynchrones Laden von UI-Daten mit Debounce-Filterung und On-Demand-Aktualisierung optimiert, wodurch CPU- und Datenbank-I/O-Lasten deutlich gesenkt werden",
+        .french: "Chargement asynchrone des données de l'interface optimisé avec filtrage anti-rebond et rafraîchissement à la demande, réduisant la charge CPU et E/S de la base de données",
+        .portuguese: "Carregamento assíncrono de dados da interface otimizado com filtragem antirressalto e atualização a pedido, reduzindo a utilização de CPU e E/S da base de dados",
+        .portugueseBrazil: "Carregamento assíncrono de dados da interface otimizado com filtragem antirruído e atualização sob demanda, reduzindo o uso de CPU e E/S do banco de dados"
+    ],
+    "Decoupled usage dashboard forecast calculations from heavy historical queries for instant rate limit updates and smoother interaction": [
+        .traditionalChinese: "重構用量看板預測引擎響應鏈路，實現輕量級額度變化即時計算與重度歷史分析按需解耦",
+        .japanese: "利用状況ダッシュボードの予測計算と重い履歴データ取得を分離し、クォータ変化時の即時反映とスムーズな操作性を実現",
+        .korean: "사용량 대시보드의 예측 계산을 무거운 과거 데이터 쿼리와 분리하여 할당량 변동 시 즉각적인 계산 및 원활한 상호작용 구현",
+        .spanish: "Desacoplados los cálculos de previsión del panel de uso de las consultas pesadas del historial para actualizaciones instantáneas y fluidas",
+        .german: "Prognoseberechnungen im Verbrauchs-Dashboard von rechenintensiven Verlaufsabfragen entkoppelt für sofortige Aktualisierungen und flüssigere Bedienung",
+        .french: "Découplage des calculs de prévision du tableau de bord d'utilisation des requêtes d'historique lourdes pour des mises à jour instantanées et fluides",
+        .portuguese: "Desacoplados os cálculos de previsão do painel de utilização das consultas pesadas do histórico para atualizações instantâneas e maior fluidez",
+        .portugueseBrazil: "Desacoplados os cálculos de previsão do painel de uso das consultas pesadas do histórico para atualizações instantâneas e maior fluidez"
+    ],
+    "Refined menu bar popover and floating overlay lifecycle interactions, enhancing smoothness during multi-display and window transitions": [
+        .traditionalChinese: "優化選單列常駐面板與懸浮掛件的生命週期互動，提升多螢幕協同與視窗切換時的響應流暢度",
+        .japanese: "メニューバーポップオーバーとフローティングウィジェットのライフサイクル連携を改善し、マルチディスプレイ環境やウィンドウ切替時の操作性を向上",
+        .korean: "메뉴 바 팝오버 및 플로팅 위젯의 수명 주기 상호작용을 개선하여 다중 모니터 환경 및 창 전환 시 응답 유연성 향상",
+        .spanish: "Mejoradas las interacciones del menú emergente de la barra y la superposición flotante para mayor fluidez en entornos multipantalla",
+        .german: "Lebenszyklus-Interaktionen des Menüleisten-Popovers und schwebenden Overlays verbessert für flüssigere Übergänge bei mehreren Bildschirmen",
+        .french: "Amélioration des interactions du popover de la barre de menus et de la superposition flottante pour une meilleure fluidité multi-écrans",
+        .portuguese: "Aperfeiçoadas as interações do popover da barra de menus e da sobreposição flutuante para maior fluidez em ambientes de múltiplos ecrãs",
+        .portugueseBrazil: "Aprimoradas as interações do popover da barra de menus e da sobreposição flutuante para maior fluidez em ambientes de várias telas"
+    ],
     "Introduced dual-window quota pace budget engine for 5-hour and weekly cycles with window-aware hourly/daily consumption pace": [
         .traditionalChinese: "引入 5 小時與週度雙週期配額預算與建議節奏引擎，根據窗口類型自動按小時/天智能推算合理配額消耗",
         .japanese: "5時間および週間のデュアルウィンドウ配額予算＆推奨ペースエンジンを導入し、ウィンドウ種別に応じて時間/日単位の適正消費ペースを自動算出",

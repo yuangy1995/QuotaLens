@@ -782,16 +782,22 @@ private struct StableWindowConfigurator: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async {
-            configure(nsView.window)
-        }
+        configure(nsView.window)
     }
 
     private func configure(_ window: NSWindow?) {
         guard let window else { return }
-        window.titleVisibility = .hidden
-        window.titlebarAppearsTransparent = true
-        window.isMovableByWindowBackground = true
-        window.toolbar = nil
+        if window.titleVisibility != .hidden {
+            window.titleVisibility = .hidden
+        }
+        if !window.titlebarAppearsTransparent {
+            window.titlebarAppearsTransparent = true
+        }
+        if !window.isMovableByWindowBackground {
+            window.isMovableByWindowBackground = true
+        }
+        if window.toolbar != nil {
+            window.toolbar = nil
+        }
     }
 }

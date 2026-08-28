@@ -11,6 +11,7 @@ private final class MenuBarLocalUsageStore: ObservableObject {
     @Published var isLoading = false
 
     private let facade: UsageQueryFacade
+    private var forecastPoints: [QuotaForecastEngine.RateSnapshotPoint] = []
 
     init(facade: UsageQueryFacade) {
         self.facade = facade
@@ -23,6 +24,8 @@ private final class MenuBarLocalUsageStore: ObservableObject {
             quotaForecast = nil
             return
         }
+        guard !isLoading else { return }
+
         isLoading = true
         defer { isLoading = false }
 
@@ -35,7 +38,7 @@ private final class MenuBarLocalUsageStore: ObservableObject {
         }
 
         let storedSnaps = (try? await facade.getRecentRateLimitSnapshots(accountKey: accountKey, limit: 300)) ?? []
-        let points = storedSnaps.compactMap { snapshot -> QuotaForecastEngine.RateSnapshotPoint? in
+        forecastPoints = storedSnaps.compactMap { snapshot -> QuotaForecastEngine.RateSnapshotPoint? in
             guard let resetAt = snapshot.resetsAt else { return nil }
             return QuotaForecastEngine.RateSnapshotPoint(
                 timestamp: Date(timeIntervalSince1970: Double(snapshot.observedAt)),
@@ -49,6 +52,15 @@ private final class MenuBarLocalUsageStore: ObservableObject {
                 )
             )
         }
+        updateForecast(currentUsedPercent: currentUsedPercent, currentSnapshot: currentSnapshot)
+    }
+
+    func updateForecast(currentUsedPercent: Double, currentSnapshot: RateLimitSnapshotRecord?) {
+        guard currentUsedPercent < 99.999_9 else {
+            quotaForecast = nil
+            return
+        }
+
         let currentCycleKey = currentSnapshot.flatMap { snapshot -> QuotaForecastEngine.QuotaCycleKey? in
             guard let resetAt = snapshot.resetsAt else { return nil }
             return QuotaForecastEngine.QuotaCycleKey(
@@ -63,7 +75,7 @@ private final class MenuBarLocalUsageStore: ObservableObject {
             currentUsedPercent: currentUsedPercent,
             resetsAt: currentSnapshot?.resetsAt,
             currentCycleKey: currentCycleKey,
-            snapshots: points
+            snapshots: forecastPoints
         )
     }
 }
@@ -122,22 +134,19 @@ public struct MenuBarContentView: View {
         .task {
             await refreshLocalUsageStore()
         }
-        .onReceive(scanCoordinator.$dataGeneration.dropFirst()) { _ in
+        .onChange(of: scanCoordinator.isScanning) { _, isScanning in
+            guard !isScanning else { return }
             Task {
                 await refreshLocalUsageStore()
             }
         }
         .onReceive(state.$latestRateLimit.dropFirst()) { _ in
-            Task {
-                await refreshLocalUsageStore()
-            }
+            updateLocalUsageForecast()
         }
         .onReceive(state.$currentQuotaSnapshots.dropFirst()) { _ in
-            Task {
-                await refreshLocalUsageStore()
-            }
+            updateLocalUsageForecast()
         }
-        .onReceive(state.$selectedAccountKey.dropFirst()) { _ in
+        .onChange(of: state.selectedAccountKey) { _, _ in
             Task {
                 await refreshLocalUsageStore()
             }
@@ -145,11 +154,20 @@ public struct MenuBarContentView: View {
     }
 
     private func refreshLocalUsageStore() async {
+        guard !scanCoordinator.isScanning else { return }
+
         let forecastSnapshot = state.preferredQuotaForecastSnapshot
         await localUsageStore.load(
             accountKey: state.selectedAccountKey ?? state.account?.accountKey,
             currentUsedPercent: forecastSnapshot?.usedPercent ?? 0.0,
             currentSnapshot: forecastSnapshot
+        )
+    }
+
+    private func updateLocalUsageForecast() {
+        localUsageStore.updateForecast(
+            currentUsedPercent: state.preferredQuotaForecastSnapshot?.usedPercent ?? 0.0,
+            currentSnapshot: state.preferredQuotaForecastSnapshot
         )
     }
 

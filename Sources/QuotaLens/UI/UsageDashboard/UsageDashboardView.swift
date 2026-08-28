@@ -84,6 +84,7 @@ public final class UsageDashboardStore: ObservableObject {
     @Published public var errorMessage: String? = nil
 
     private let facade: UsageQueryFacade
+    private var lastRateSnapshots: [QuotaForecastEngine.RateSnapshotPoint] = []
 
     public init(facade: UsageQueryFacade) {
         self.facade = facade
@@ -95,6 +96,9 @@ public final class UsageDashboardStore: ObservableObject {
         currentCycleKey: QuotaForecastEngine.QuotaCycleKey? = nil,
         rateSnapshots: [QuotaForecastEngine.RateSnapshotPoint] = []
     ) async {
+        guard !isLoading else { return }
+
+        lastRateSnapshots = rateSnapshots
         isLoading = true
         errorMessage = nil
         do {
@@ -115,14 +119,11 @@ public final class UsageDashboardStore: ObservableObject {
             self.heatmapCells = heatmap
 
             // 计算双重预测
-            self.quotaForecast = currentUsedPercent >= 99.999_9
-                ? nil
-                : QuotaForecastEngine.forecast(
-                    currentUsedPercent: currentUsedPercent,
-                    resetsAt: resetsAt,
-                    currentCycleKey: currentCycleKey,
-                    snapshots: rateSnapshots
-                )
+            self.updateQuotaForecast(
+                currentUsedPercent: currentUsedPercent,
+                resetsAt: resetsAt,
+                currentCycleKey: currentCycleKey
+            )
 
             self.localForecast = LocalUsageProjection.project(
                 history: history,
@@ -132,6 +133,21 @@ public final class UsageDashboardStore: ObservableObject {
             self.errorMessage = Self.userFacingError(error)
         }
         isLoading = false
+    }
+
+    public func updateQuotaForecast(
+        currentUsedPercent: Double,
+        resetsAt: Int64?,
+        currentCycleKey: QuotaForecastEngine.QuotaCycleKey?
+    ) {
+        quotaForecast = currentUsedPercent >= 99.999_9
+            ? nil
+            : QuotaForecastEngine.forecast(
+                currentUsedPercent: currentUsedPercent,
+                resetsAt: resetsAt,
+                currentCycleKey: currentCycleKey,
+                snapshots: lastRateSnapshots
+            )
     }
 
     private static func userFacingError(_ error: Error) -> String {
@@ -200,18 +216,17 @@ public struct UsageDashboardView: View {
             .padding(24)
         }
         .task {
-            env.scanCoordinator.triggerScan()
+            guard !env.scanCoordinator.isScanning else { return }
             await reloadData()
         }
-        .onReceive(env.scanCoordinator.$dataGeneration.dropFirst()) { _ in
+        .onChange(of: env.scanCoordinator.isScanning) { _, isScanning in
+            guard !isScanning else { return }
             Task {
                 await reloadData()
             }
         }
         .onReceive(env.state.$currentQuotaSnapshots.dropFirst()) { _ in
-            Task {
-                await reloadData()
-            }
+            updateQuotaForecast()
         }
         .onChange(of: store.selectedRangeDays) { _, _ in
             clearChartHoverState()
@@ -223,6 +238,8 @@ public struct UsageDashboardView: View {
     }
 
     private func reloadData() async {
+        guard !env.scanCoordinator.isScanning, !store.isLoading else { return }
+
         let snap = env.state.preferredQuotaForecastSnapshot
         let used = snap?.usedPercent ?? 0.0
         let resetsAt = snap?.resetsAt
@@ -238,7 +255,7 @@ public struct UsageDashboardView: View {
         }
 
         var points: [QuotaForecastEngine.RateSnapshotPoint] = []
-        if let storedSnaps = try? env.repositories.getRecentRateLimitSnapshots(
+        if let storedSnaps = try? await env.usageQueryFacade.getRecentRateLimitSnapshots(
             accountKey: env.state.selectedAccountKey ?? env.state.account?.accountKey,
             limit: 300
         ) {
@@ -263,6 +280,25 @@ public struct UsageDashboardView: View {
             resetsAt: resetsAt,
             currentCycleKey: currentCycleKey,
             rateSnapshots: points
+        )
+    }
+
+    private func updateQuotaForecast() {
+        let snap = env.state.preferredQuotaForecastSnapshot
+        let currentCycleKey = snap.flatMap { snapshot -> QuotaForecastEngine.QuotaCycleKey? in
+            guard let resetAt = snapshot.resetsAt else { return nil }
+            return QuotaForecastEngine.QuotaCycleKey(
+                accountID: snapshot.accountKey,
+                limitID: snapshot.limitId,
+                slot: snapshot.slot,
+                resetAt: resetAt,
+                windowDurationMins: snapshot.windowDurationMins
+            )
+        }
+        store.updateQuotaForecast(
+            currentUsedPercent: snap?.usedPercent ?? 0.0,
+            resetsAt: snap?.resetsAt,
+            currentCycleKey: currentCycleKey
         )
     }
 

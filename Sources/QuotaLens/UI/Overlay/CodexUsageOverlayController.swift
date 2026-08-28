@@ -483,6 +483,17 @@ public enum CodexWindowTracker {
             return nil
         }
 
+        let frontmostTargetPID: pid_t? = {
+            guard let frontmost = NSWorkspace.shared.frontmostApplication,
+                  isTargetApplication(frontmost) else {
+                return nil
+            }
+            return frontmost.processIdentifier
+        }()
+
+        var bestFrame: NSRect?
+        var bestArea: CGFloat = 0
+
         for info in windowInfoList {
             guard let layer = info[kCGWindowLayer as String] as? Int, layer == 0,
                   let boundsDict = info[kCGWindowBounds as String] as? [String: Any],
@@ -495,17 +506,26 @@ public enum CodexWindowTracker {
             let bundleIdentifier = ownerPID.flatMap { NSRunningApplication(processIdentifier: $0)?.bundleIdentifier }
             let isTarget = isTargetWindow(ownerName: ownerName, windowName: windowName, bundleIdentifier: bundleIdentifier)
 
-            if isTarget {
-                let x = cgFloat(boundsDict["X"]) ?? 0
-                let y = cgFloat(boundsDict["Y"]) ?? 0
-                let width = cgFloat(boundsDict["Width"]) ?? 0
-                let height = cgFloat(boundsDict["Height"]) ?? 0
+            guard isTarget,
+                  frontmostTargetPID == nil || ownerPID == frontmostTargetPID,
+                  let x = cgFloat(boundsDict["X"]),
+                  let y = cgFloat(boundsDict["Y"]),
+                  let width = cgFloat(boundsDict["Width"]),
+                  let height = cgFloat(boundsDict["Height"]),
+                  width >= 120,
+                  height >= 120 else {
+                continue
+            }
 
-                let quartzRect = NSRect(x: x, y: y, width: width, height: height)
-                return appKitRect(fromQuartz: quartzRect)
+            let quartzRect = NSRect(x: x, y: y, width: width, height: height)
+            let frame = appKitRect(fromQuartz: quartzRect)
+            let area = frame.area
+            if area > bestArea {
+                bestArea = area
+                bestFrame = frame
             }
         }
-        return nil
+        return bestFrame
     }
 
     private static func findAccessibleTargetWindowFrame() -> NSRect? {
@@ -602,18 +622,48 @@ public enum CodexWindowTracker {
             }
         }
         guard let best else {
-            let mainMaxY = NSScreen.main?.frame.maxY ?? 900
+            let mainScreen = NSScreen.main
+            let mainMaxY = mainScreen?.frame.maxY ?? 900
+            let scaleX = mainScreen.flatMap { screen in
+                displayID(for: screen).map { display in
+                    let bounds = CGDisplayBounds(display)
+                    return bounds.width > 0 ? screen.frame.width / bounds.width : 1
+                }
+            } ?? 1
+            let scaleY = mainScreen.flatMap { screen in
+                displayID(for: screen).map { display in
+                    let bounds = CGDisplayBounds(display)
+                    return bounds.height > 0 ? screen.frame.height / bounds.height : 1
+                }
+            } ?? 1
+            let width = quartzRect.width * scaleX
+            let height = quartzRect.height * scaleY
             return NSRect(
-                x: quartzRect.minX,
-                y: mainMaxY - quartzRect.maxY,
-                width: quartzRect.width,
-                height: quartzRect.height
+                x: quartzRect.minX * scaleX,
+                y: mainMaxY - quartzRect.minY * scaleY - height,
+                width: width,
+                height: height
             )
         }
-        let x = best.screen.frame.minX + (quartzRect.minX - best.quartzBounds.minX)
-        let yFromTop = quartzRect.minY - best.quartzBounds.minY
-        let y = best.screen.frame.maxY - yFromTop - quartzRect.height
-        return NSRect(x: x, y: y, width: quartzRect.width, height: quartzRect.height)
+        let scaleX = best.quartzBounds.width > 0
+            ? best.screen.frame.width / best.quartzBounds.width
+            : 1
+        let scaleY = best.quartzBounds.height > 0
+            ? best.screen.frame.height / best.quartzBounds.height
+            : 1
+        let width = quartzRect.width * scaleX
+        let height = quartzRect.height * scaleY
+        let x = best.screen.frame.minX + (quartzRect.minX - best.quartzBounds.minX) * scaleX
+        let yFromTop = (quartzRect.minY - best.quartzBounds.minY) * scaleY
+        let y = best.screen.frame.maxY - yFromTop - height
+        return NSRect(x: x, y: y, width: width, height: height)
+    }
+
+    private static func displayID(for screen: NSScreen) -> CGDirectDisplayID? {
+        guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else {
+            return nil
+        }
+        return CGDirectDisplayID(number.uint32Value)
     }
 
     private static func cgFloat(_ value: Any?) -> CGFloat? {

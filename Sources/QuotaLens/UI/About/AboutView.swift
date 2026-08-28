@@ -53,6 +53,17 @@ public struct AboutView: View {
     private var defaultChangelogs: [ChangelogEntry] {
         [
             ChangelogEntry(
+                id: "v1.0.17",
+                version: "v1.0.17",
+                date: "2026-08-28",
+                changes: [
+                    L10n.text("深度优化全界面异步数据加载机制，引入防抖过滤与按需刷新，大幅降低高频切换时的 CPU 与数据库 I/O 占用", "Deeply optimized asynchronous UI data loading with debouncing and on-demand refresh, reducing CPU and database I/O overhead"),
+                    L10n.text("重构用量看板预测引擎响应链路，实现轻量级额度变化即时计算与重度历史分析按需解耦", "Decoupled usage dashboard forecast calculations from heavy historical queries for instant rate limit updates and smoother interaction"),
+                    L10n.text("优化菜单栏常驻面板与悬浮挂件的生命周期交互，提升多屏协同与窗口切换时的响应流畅度", "Refined menu bar popover and floating overlay lifecycle interactions, enhancing smoothness during multi-display and window transitions"),
+                    L10n.text("全面完善 10 种语言的多语言本地化翻译字典与更新日志多语言映射", "Comprehensive localization dictionary refinements and changelog translation mapping across 10 supported languages")
+                ]
+            ),
+            ChangelogEntry(
                 id: "v1.0.16",
                 version: "v1.0.16",
                 date: "2026-08-27",

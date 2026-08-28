@@ -29,6 +29,8 @@ public final class HistoryStore: ObservableObject {
     }
 
     public func loadHistory() async {
+        guard !isLoading else { return }
+
         isLoading = true
         errorMessage = nil
         do {
@@ -143,10 +145,11 @@ public struct HistoryView: View {
                 .frame(minWidth: 460, maxWidth: .infinity)
         }
         .task {
-            env.scanCoordinator.triggerScan()
+            guard !env.scanCoordinator.isScanning else { return }
             await store.loadHistory()
         }
-        .onReceive(env.scanCoordinator.$dataGeneration.dropFirst()) { _ in
+        .onChange(of: env.scanCoordinator.isScanning) { _, isScanning in
+            guard !isScanning else { return }
             Task {
                 await store.loadHistory()
             }

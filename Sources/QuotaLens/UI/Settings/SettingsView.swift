@@ -64,6 +64,7 @@ public struct SettingsView: View {
     @State private var isCleaningMissingSources: Bool = false
     @State private var showResetConfirmDialog: Bool = false
     @State private var isResettingApp: Bool = false
+    @State private var isLoadingUsageDiagnostics: Bool = false
     @ObservedObject private var overlayController = CodexUsageOverlayController.shared
 
     private let presetIntervals: [Int] = [15, 30, 60, 300, 900]
@@ -101,10 +102,17 @@ public struct SettingsView: View {
         .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
         .task {
             await refreshAutoDetectedBinaryPath()
-            await refreshUsageDiagnostics()
+            if selectedTab == .storage {
+                await refreshUsageDiagnostics(force: true)
+            }
         }
-        .onReceive(env.scanCoordinator.$dataGeneration.dropFirst()) { _ in
+        .onChange(of: selectedTab) { _, tab in
+            guard tab == .storage else { return }
             Task { await refreshUsageDiagnostics() }
+        }
+        .onChange(of: env.scanCoordinator.isScanning) { _, isScanning in
+            guard !isScanning, selectedTab == .storage else { return }
+            Task { await refreshUsageDiagnostics(force: true) }
         }
         .confirmationDialog(
             L10n.text("确认重置所有数据与配置？", "Reset all data and preferences?"),
@@ -146,9 +154,7 @@ public struct SettingsView: View {
             ForEach(SettingsTab.allCases) { tab in
                 let isSelected = selectedTab == tab
                 Button(action: {
-                    withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) {
-                        selectedTab = tab
-                    }
+                    selectedTab = tab
                 }) {
                     HStack(spacing: 6) {
                         Image(systemName: tab.icon)
@@ -1650,7 +1656,14 @@ public struct SettingsView: View {
         autoDetectedBinaryResult = result
     }
 
-    private func refreshUsageDiagnostics() async {
+    @MainActor
+    private func refreshUsageDiagnostics(force: Bool = false) async {
+        guard !isLoadingUsageDiagnostics,
+              !env.scanCoordinator.isScanning,
+              force || usageDiagnostics == nil else { return }
+
+        isLoadingUsageDiagnostics = true
+        defer { isLoadingUsageDiagnostics = false }
         usageDiagnostics = try? await env.usageQueryFacade.getDiagnostics()
     }
 
@@ -1758,7 +1771,7 @@ public struct SettingsView: View {
                     UsageNumberFormatter.compactTokenCount(result.tokensRemoved)
                 )
                 missingSourceCleanupPreview = nil
-                await refreshUsageDiagnostics()
+                await refreshUsageDiagnostics(force: true)
             } catch {
                 missingSourceCleanupStatus = userFacingCleanupError(error)
             }
