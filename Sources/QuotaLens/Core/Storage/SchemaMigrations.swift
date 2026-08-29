@@ -45,7 +45,7 @@ private func addUnpricedReasonColumns(database: SQLiteDatabase, table: String) t
 }
 
 public struct SchemaMigrations {
-    public static let targetSchemaVersion = 14
+    public static let targetSchemaVersion = 15
 
     public static func migrate(database: SQLiteDatabase) throws {
         let currentVersion = try database.intScalar(sql: "PRAGMA user_version;")
@@ -78,7 +78,8 @@ public struct SchemaMigrations {
             V11ExactPricingCoverageMigration(),
             V12AggregateReasonsAndRebuildStateMigration(),
             V13Round2ReliabilityMigration(),
-            V14MultiProviderAndClaudeMigration()
+            V14MultiProviderAndClaudeMigration(),
+            V15AntigravityMigration()
         ]
 
         for migration in migrations where migration.version > currentVersion {
@@ -89,6 +90,39 @@ public struct SchemaMigrations {
         }
 
         try V5AggregateOnlyUsageMigration.compactIfNeeded(database: database)
+    }
+}
+
+// MARK: - V15: Antigravity quota cache and local activity
+private struct V15AntigravityMigration: DatabaseMigration {
+    let version = 15
+    let name = "V15Antigravity"
+
+    func apply(database: SQLiteDatabase) throws {
+        try database.execute(sql: """
+        CREATE TABLE IF NOT EXISTS antigravity_quota_cache (
+            source_profile TEXT NOT NULL,
+            account_key TEXT NOT NULL,
+            captured_at INTEGER NOT NULL,
+            payload_json TEXT NOT NULL,
+            PRIMARY KEY (source_profile, account_key)
+        );
+        CREATE INDEX IF NOT EXISTS idx_antigravity_quota_captured
+            ON antigravity_quota_cache(captured_at DESC);
+
+        CREATE TABLE IF NOT EXISTS antigravity_activity_records (
+            source_profile TEXT NOT NULL,
+            trajectory_id TEXT NOT NULL,
+            created_at INTEGER,
+            last_modified_at INTEGER,
+            last_user_input_at INTEGER,
+            step_count INTEGER NOT NULL DEFAULT 0,
+            project_name TEXT,
+            PRIMARY KEY (source_profile, trajectory_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_antigravity_activity_time
+            ON antigravity_activity_records(source_profile, last_user_input_at DESC, last_modified_at DESC);
+        """)
     }
 }
 

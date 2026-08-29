@@ -10,6 +10,7 @@ public enum SettingsTab: String, CaseIterable, Identifiable {
     case overlay
     case codex
     case claude
+    case antigravity
     case storage
 
     public var id: String { rawValue }
@@ -26,6 +27,8 @@ public enum SettingsTab: String, CaseIterable, Identifiable {
             return L10n.text("Codex 环境", "Codex Environment")
         case .claude:
             return L10n.text("Claude 追踪", "Claude Tracking")
+        case .antigravity:
+            return L10n.text("Antigravity 监控", "Antigravity Monitoring")
         case .storage:
             return L10n.text("存储与诊断", "Data & Diagnostics")
         }
@@ -43,8 +46,19 @@ public enum SettingsTab: String, CaseIterable, Identifiable {
             return "cpu.fill"
         case .claude:
             return "sparkles"
+        case .antigravity:
+            return "wand.and.stars"
         case .storage:
             return "externaldrive.fill"
+        }
+    }
+
+    fileprivate var toolID: MonitoringToolID? {
+        switch self {
+        case .codex: return .codex
+        case .claude: return .claude
+        case .antigravity: return .antigravity
+        default: return nil
         }
     }
 }
@@ -53,12 +67,14 @@ public enum SettingsScope: String, Sendable {
     case global
     case codex
     case claude
+    case antigravity
 
     fileprivate var tabs: [SettingsTab] {
         switch self {
         case .global: return [.general, .storage]
         case .codex: return [.account, .overlay, .codex]
         case .claude: return [.claude]
+        case .antigravity: return [.antigravity]
         }
     }
 
@@ -91,6 +107,7 @@ public struct SettingsView: View {
     @State private var isLoadingUsageDiagnostics: Bool = false
     @State private var codexOverlayEnabled: Bool
     @State private var claudeOverlayEnabled: Bool
+    @State private var antigravityOverlayEnabled: Bool
     @ObservedObject private var overlayController = CodexUsageOverlayController.shared
 
     private let presetIntervals: [Int] = [15, 30, 60, 300, 900]
@@ -103,6 +120,7 @@ public struct SettingsView: View {
         _selectedTab = State(initialValue: scope.tabs.contains(stored ?? scope.tabs[0]) ? (stored ?? scope.tabs[0]) : scope.tabs[0])
         _codexOverlayEnabled = State(initialValue: ToolOverlayPreferences.isEnabled(for: .codex))
         _claudeOverlayEnabled = State(initialValue: ToolOverlayPreferences.isEnabled(for: .claude))
+        _antigravityOverlayEnabled = State(initialValue: ToolOverlayPreferences.isEnabled(for: .antigravity))
     }
 
     public var body: some View {
@@ -132,6 +150,8 @@ public struct SettingsView: View {
                         codexTabPane
                     case .claude:
                         claudeTabPane
+                    case .antigravity:
+                        antigravityTabPane
                     case .storage:
                         storageTabPane
                     }
@@ -201,9 +221,13 @@ public struct SettingsView: View {
                         selectedTab = tab
                     }) {
                         HStack(spacing: 6) {
-                            Image(systemName: tab.icon)
-                                .font(.system(size: 11.5, weight: isSelected ? .bold : .semibold))
-                                .foregroundStyle(isSelected ? Color.white : (isDark ? Color.white.opacity(0.7) : Color.black.opacity(0.6)))
+                            if let tool = tab.toolID {
+                                ToolAppIcon(tool: tool, size: 16)
+                            } else {
+                                Image(systemName: tab.icon)
+                                    .font(.system(size: 11.5, weight: isSelected ? .bold : .semibold))
+                                    .foregroundStyle(isSelected ? Color.white : (isDark ? Color.white.opacity(0.7) : Color.black.opacity(0.6)))
+                            }
 
                             Text(tab.title)
                                 .font(.system(size: 12, weight: isSelected ? .bold : .medium, design: .rounded))
@@ -262,11 +286,7 @@ public struct SettingsView: View {
 
             ForEach(ToolRegistry.shared.descriptors) { descriptor in
                 HStack(spacing: 12) {
-                    Image(systemName: descriptor.systemImage)
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(descriptor.accent == .amber
-                            ? AppTheme.accentAmber(for: colorScheme)
-                            : AppTheme.accentCyan(for: colorScheme))
+                    ToolAppIcon(tool: descriptor.id, size: 34)
                         .frame(width: 34, height: 34)
                         .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 8))
 
@@ -316,6 +336,8 @@ public struct SettingsView: View {
             return L10n.text("监控 Codex 额度、本地用量、会话和重置卡", "Monitor Codex quota, local usage, sessions, and reset cards")
         case .claude:
             return L10n.text("监控 Claude 额度、本地用量和会话", "Monitor Claude quota, local usage, and sessions")
+        case .antigravity:
+            return L10n.text("监控 Antigravity 额度、本机活动和窗口挂件", "Monitor Antigravity quota, local activity, and window overlay")
         default:
             return L10n.text("监控此工具的额度与用量", "Monitor quota and usage for this tool")
         }
@@ -348,6 +370,13 @@ public struct SettingsView: View {
     private var claudeTabPane: some View {
         VStack(spacing: 18) {
             claudeTrackingHUDCard
+        }
+    }
+
+    // MARK: - Tab 6 · Antigravity 监控
+    private var antigravityTabPane: some View {
+        VStack(spacing: 18) {
+            antigravityTrackingHUDCard
         }
     }
 
@@ -491,6 +520,112 @@ public struct SettingsView: View {
             }
         }
         .cyberCard(cornerRadius: 16, padding: 18)
+    }
+
+    private var antigravityTrackingHUDCard: some View {
+        let cyan = AppTheme.accentCyan(for: colorScheme)
+        let isDark = colorScheme == .dark
+        return VStack(alignment: .leading, spacing: 14) {
+            CyberSectionHeader(
+                title: L10n.text("Antigravity 额度与本机活动", "Antigravity Quota & Local Activity"),
+                icon: "wand.and.stars"
+            )
+            CyberDivider()
+
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text(L10n.text("当前状态", "Current Status"))
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    Spacer()
+                    Text(antigravityStatusText)
+                        .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                        .foregroundStyle(state.antigravityHasQuota ? AppTheme.accentEmerald(for: colorScheme) : cyan)
+                }
+
+                if let error = state.antigravityQuotaErrorText {
+                    Text(error)
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                }
+
+                HStack(spacing: 9) {
+                    Button {
+                        Task { await env.refreshAntigravityQuota(force: true) }
+                    } label: {
+                        Label(L10n.text("刷新额度", "Refresh Quota"), systemImage: "arrow.clockwise")
+                    }
+                    .disabled(state.isRefreshingAntigravityQuota)
+
+                    Button {
+                        Task { await env.antigravityActivityCoordinator.scanNow() }
+                    } label: {
+                        Label(L10n.text("读取本机活动", "Read Local Activity"), systemImage: "waveform.path.ecg")
+                    }
+                    .disabled(env.antigravityActivityCoordinator.isScanning)
+                }
+                .buttonStyle(.bordered)
+            }
+            .padding(12)
+            .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))
+
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(L10n.text("Antigravity 窗口悬浮挂件", "Antigravity Window Overlay"))
+                        .font(.system(size: 13, weight: .bold))
+                    Text(L10n.text(
+                        "打开 Antigravity 时显示当前额度，切换到其他工具后自动切换。",
+                        "Shows Antigravity quota while it is active and switches with the foreground tool."
+                    ))
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                }
+                Spacer()
+                Button(L10n.text("重置位置", "Reset")) {
+                    env.toolOverlayCoordinator.resetPosition(for: .antigravity)
+                }
+                .buttonStyle(.bordered)
+                .disabled(!antigravityOverlayEnabled)
+                Toggle("", isOn: Binding(
+                    get: { antigravityOverlayEnabled },
+                    set: { enabled in
+                        antigravityOverlayEnabled = enabled
+                        env.toolOverlayCoordinator.setEnabled(enabled, for: .antigravity)
+                    }
+                ))
+                .labelsHidden()
+                .toggleStyle(.switch)
+            }
+            .padding(12)
+            .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))
+
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "lock.shield.fill").foregroundStyle(cyan)
+                Text(L10n.text(
+                    "QuotaLens 只读取 Antigravity 的登录状态、额度和活动摘要，不会修改登录信息或保存对话内容。",
+                    "QuotaLens only reads Antigravity sign-in state, quota, and activity summaries. It does not modify sign-in data or save conversations."
+                ))
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+            }
+            .padding(12)
+            .background(isDark ? Color.white.opacity(0.04) : Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 10))
+        }
+        .cyberCard(cornerRadius: 16, padding: 18)
+    }
+
+    private var antigravityStatusText: String {
+        if state.isRefreshingAntigravityQuota { return L10n.text("正在读取", "Reading") }
+        if state.antigravityHasQuota { return L10n.text("额度可用", "Quota available") }
+        switch state.antigravityQuotaStatus {
+        case .disabled: return L10n.text("已关闭", "Off")
+        case .loading: return L10n.text("正在读取", "Reading")
+        case .available: return L10n.text("等待活动", "Activity pending")
+        case .missingCredentials: return L10n.text("等待登录", "Sign-in needed")
+        case .signInRequired: return L10n.text("需要重新登录", "Sign in again")
+        case .needsInitialization: return L10n.text("需要完成设置", "Setup needed")
+        case .limited: return L10n.text("稍后自动重试", "Retrying later")
+        case .unavailable: return L10n.text("暂时不可用", "Unavailable")
+        }
     }
 
     private var claudeStatusText: String {

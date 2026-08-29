@@ -21,6 +21,7 @@ public final class FrontmostToolTracker: ObservableObject {
     @Published public private(set) var foregroundTool: MonitoringToolID?
     @Published public private(set) var lastActiveTool: MonitoringToolID?
     @Published public private(set) var foregroundApplicationPID: pid_t?
+    @Published public private(set) var foregroundBundleIdentifier: String?
 
     private let enabledTools: EnabledToolsStore
     private var workspaceObservers: [NSObjectProtocol] = []
@@ -79,6 +80,7 @@ public final class FrontmostToolTracker: ObservableObject {
         guard let application = NSWorkspace.shared.frontmostApplication else {
             foregroundTool = nil
             foregroundApplicationPID = nil
+            foregroundBundleIdentifier = nil
             return
         }
         let bundleIdentifier = application.bundleIdentifier
@@ -87,6 +89,7 @@ public final class FrontmostToolTracker: ObservableObject {
         }
 
         foregroundApplicationPID = application.processIdentifier
+        foregroundBundleIdentifier = bundleIdentifier
         if application.processIdentifier == ProcessInfo.processInfo.processIdentifier {
             foregroundTool = nil
             return

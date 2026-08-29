@@ -276,6 +276,7 @@ public final class CodexUsageOverlayController: NSObject, ObservableObject, @unc
     @MainActor
     private func summaryHoverChanged(_ hovering: Bool) {
         isSummaryHovered = hovering
+        guard !isDragging else { return }
         if hovering, !isExpanded {
             showDetails()
         } else if !hovering {
@@ -285,6 +286,10 @@ public final class CodexUsageOverlayController: NSObject, ObservableObject, @unc
 
     @MainActor
     private func detailsHoverChanged(_ hovering: Bool) {
+        guard !isDragging else {
+            isDetailsHovered = false
+            return
+        }
         isDetailsHovered = hovering
         if hovering {
             detailsCloseTask?.cancel()
@@ -298,7 +303,8 @@ public final class CodexUsageOverlayController: NSObject, ObservableObject, @unc
     private func showDetails() {
         detailsCloseTask?.cancel()
         detailsCloseTask = nil
-        guard !isExpanded,
+        guard !isDragging,
+              !isExpanded,
               panel?.isVisible == true,
               let trackedAppKitFrame else { return }
         switch lastFocusState {
@@ -648,8 +654,8 @@ public final class CodexUsageOverlayController: NSObject, ObservableObject, @unc
     @MainActor
     private func handleDragChanged() {
         guard let p = panel, let trackedAppKitFrame else { return }
-        closeDetails()
         isDragging = true
+        closeDetails()
 
         let currentMouse = NSEvent.mouseLocation
         if dragStartMouseLocation == nil {
@@ -671,10 +677,16 @@ public final class CodexUsageOverlayController: NSObject, ObservableObject, @unc
 
     @MainActor
     private func handleDragEnded() {
-        guard let p = panel else {
+        let shouldShowDetails = isSummaryHovered && !isExpanded
+        defer {
             isDragging = false
             dragStartMouseLocation = nil
             dragStartOrigin = nil
+            if shouldShowDetails {
+                showDetails()
+            }
+        }
+        guard let p = panel else {
             return
         }
 
@@ -699,9 +711,6 @@ public final class CodexUsageOverlayController: NSObject, ObservableObject, @unc
             )
             removeLegacyPositionDefaults()
         }
-        isDragging = false
-        dragStartMouseLocation = nil
-        dragStartOrigin = nil
     }
 
     private func loadManualPosition() {
@@ -829,6 +838,7 @@ public struct CodexOverlayView: View {
                 HStack(spacing: 6) {
                     // 左侧：发光指示器 + 品牌文字
                     HStack(spacing: 5) {
+                        ToolAppIcon(tool: .codex, size: 16)
                         ZStack {
                             Circle()
                                 .fill(statusColor.opacity(isPulsing ? 0.35 : 0.18))
@@ -840,16 +850,6 @@ public struct CodexOverlayView: View {
                                 .shadow(color: statusColor.opacity(0.8), radius: 2)
                         }
 
-                        Text("Codex")
-                            .font(.system(size: 11, weight: .black, design: .rounded))
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [cyan, isDark ? Color.white : cyan],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
-                            .fixedSize()
                     }
                     .contentShape(Rectangle())
                     .onTapGesture {
@@ -1090,6 +1090,7 @@ private struct CodexOverlayHoverDetailsView: View {
         TimelineView(.periodic(from: .now, by: 1)) { _ in
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
+                    ToolAppIcon(tool: .codex, size: 16)
                     Text("Codex")
                         .font(.system(size: 11, weight: .black, design: .rounded))
                         .foregroundStyle(cyan)

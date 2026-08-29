@@ -9,6 +9,7 @@ public struct MainView: View {
     @ObservedObject var navigation: AppNavigationStore
     @EnvironmentObject var env: AppEnvironment
     @Environment(\.colorScheme) var colorScheme
+    @State private var isContextSwitcherPresented = false
 
     public init(
         state: AppState,
@@ -191,6 +192,12 @@ public struct MainView: View {
             ClaudeSessionsView(facade: env.usageQueryFacade)
         case (.claude, .settings):
             ClaudeSettingsView(state: state)
+        case (.antigravity, .quota):
+            AntigravityOverviewView(state: state)
+        case (.antigravity, .usage):
+            AntigravityActivityView(state: state)
+        case (.antigravity, .settings):
+            AntigravitySettingsView(state: state)
         default:
             MonitoringSetupView()
         }
@@ -218,11 +225,15 @@ public struct MainView: View {
     private var isCurrentContextScanning: Bool {
         switch navigation.selectedContext {
         case .overview:
-            return env.scanCoordinator.isScanning || env.claudeScanCoordinator.isScanning
+            return env.scanCoordinator.isScanning
+                || env.claudeScanCoordinator.isScanning
+                || env.antigravityActivityCoordinator.isScanning
         case .tool(.codex):
             return env.scanCoordinator.isScanning
         case .tool(.claude):
             return env.claudeScanCoordinator.isScanning
+        case .tool(.antigravity):
+            return env.antigravityActivityCoordinator.isScanning
         case .tool:
             return false
         }
@@ -231,7 +242,12 @@ public struct MainView: View {
     private var currentScanProgress: Double? {
         switch navigation.selectedContext {
         case .tool(.claude): return nil
+        case .tool(.antigravity): return nil
         case .overview where env.claudeScanCoordinator.isScanning && !env.scanCoordinator.isScanning:
+            return nil
+        case .overview where env.antigravityActivityCoordinator.isScanning
+            && !env.scanCoordinator.isScanning
+            && !env.claudeScanCoordinator.isScanning:
             return nil
         default:
             return env.scanCoordinator.progress
@@ -241,8 +257,13 @@ public struct MainView: View {
     private var currentScanStatusText: String {
         switch navigation.selectedContext {
         case .tool(.claude): return env.claudeScanCoordinator.statusText
+        case .tool(.antigravity): return env.antigravityActivityCoordinator.statusText
         case .overview where env.claudeScanCoordinator.isScanning && !env.scanCoordinator.isScanning:
             return env.claudeScanCoordinator.statusText
+        case .overview where env.antigravityActivityCoordinator.isScanning
+            && !env.scanCoordinator.isScanning
+            && !env.claudeScanCoordinator.isScanning:
+            return env.antigravityActivityCoordinator.statusText
         default:
             return env.scanCoordinator.statusText
         }
@@ -258,30 +279,15 @@ public struct MainView: View {
     }
 
     private var contextSwitcher: some View {
-        Menu {
-            Button {
-                navigation.selectContext(.overview)
-            } label: {
-                Label(L10n.text("总览", "Overview"), systemImage: "square.grid.2x2.fill")
-            }
-            Divider()
-            ForEach(enabledTools.enabledDescriptors) { descriptor in
-                Button {
-                    navigation.selectContext(.tool(descriptor.id))
-                } label: {
-                    Label(descriptor.displayName, systemImage: descriptor.systemImage)
-                }
-            }
+        Button {
+            isContextSwitcherPresented.toggle()
         } label: {
             HStack(spacing: 9) {
-                Image(systemName: currentContextDescriptor?.systemImage ?? "square.grid.2x2.fill")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(AppTheme.accentCyan(for: colorScheme))
-                    .frame(width: 24, height: 24)
+                contextIcon(size: 24)
                 Text(currentContextDescriptor?.displayName ?? L10n.text("总览", "Overview"))
                     .font(.system(size: 12, weight: .bold, design: .rounded))
                 Spacer()
-                Image(systemName: "chevron.up.chevron.down")
+                Image(systemName: isContextSwitcherPresented ? "chevron.up" : "chevron.down")
                     .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
             }
@@ -293,8 +299,34 @@ public struct MainView: View {
                     .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
             )
         }
-        .menuStyle(.borderlessButton)
+        .buttonStyle(.plain)
+        .popover(
+            isPresented: $isContextSwitcherPresented,
+            attachmentAnchor: .rect(.bounds),
+            arrowEdge: .top
+        ) {
+            ContextSwitcherPopover(
+                selectedContext: navigation.selectedContext,
+                descriptors: enabledTools.enabledDescriptors,
+                onSelect: { context in
+                    navigation.selectContext(context)
+                    isContextSwitcherPresented = false
+                }
+            )
+        }
         .accessibilityLabel(L10n.text("切换工具空间", "Switch Tool Space"))
+    }
+
+    @ViewBuilder
+    private func contextIcon(size: CGFloat) -> some View {
+        if let descriptor = currentContextDescriptor {
+            ToolAppIcon(tool: descriptor.id, size: size)
+        } else {
+            Image(systemName: "square.grid.2x2.fill")
+                .font(.system(size: size * 0.55, weight: .bold))
+                .foregroundStyle(AppTheme.accentCyan(for: colorScheme))
+                .frame(width: size, height: size)
+        }
     }
 
     private var currentContextDescriptor: MonitoringToolDescriptor? {
@@ -456,9 +488,13 @@ public struct MainView: View {
                     )
                     .shadow(color: cyan.opacity(isDark ? 0.4 : 0.2), radius: 5)
 
-                Image(systemName: currentContextDescriptor?.systemImage ?? "square.grid.2x2.fill")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(.white)
+                if currentContextDescriptor != nil {
+                    contextIcon(size: 22)
+                } else {
+                    Image(systemName: "square.grid.2x2.fill")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(.white)
+                }
             }
 
             VStack(alignment: .leading, spacing: 3) {
@@ -517,6 +553,8 @@ public struct MainView: View {
             return state.displayName(for: state.account?.accountKey)
         case .tool(.claude):
             return "Claude"
+        case .tool(.antigravity):
+            return state.latestAntigravityQuota?.accountDisplayName ?? "Antigravity"
         case .tool(let id):
             return ToolRegistry.shared.descriptor(for: id)?.displayName ?? "QuotaLens"
         }
@@ -530,6 +568,8 @@ public struct MainView: View {
             return state.subscriptionPlanTitle
         case .tool(.claude):
             return state.latestClaudeUsage?.tier ?? L10n.text("等待同步", "Waiting for Sync")
+        case .tool(.antigravity):
+            return state.latestAntigravityQuota?.planName ?? L10n.text("等待同步", "Waiting for Sync")
         case .tool:
             return L10n.text("监控中", "Monitoring")
         }
@@ -544,6 +584,8 @@ public struct MainView: View {
             return state.connectionStatus.isConnected
         case .tool(.claude):
             return state.latestClaudeUsage?.hasQuota == true
+        case .tool(.antigravity):
+            return state.antigravityHasQuota
         case .tool:
             return false
         }
@@ -916,6 +958,112 @@ private struct UpdateCheckDialog: View {
         case .installing:
             return AppTheme.accentPurple(for: colorScheme)
         }
+    }
+}
+
+private struct ContextSwitcherPopover: View {
+    let selectedContext: AppContext
+    let descriptors: [MonitoringToolDescriptor]
+    let onSelect: (AppContext) -> Void
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        let cyan = AppTheme.accentCyan(for: colorScheme)
+        let isDark = colorScheme == .dark
+
+        VStack(alignment: .leading, spacing: 6) {
+            Text(L10n.text("切换工作空间", "Switch Workspace"))
+                .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                .padding(.horizontal, 8)
+                .padding(.bottom, 2)
+
+            contextRow(
+                title: L10n.text("总览", "Overview"),
+                context: .overview,
+                icon: "square.grid.2x2.fill"
+            )
+
+            Divider()
+                .opacity(isDark ? 0.28 : 0.55)
+                .padding(.vertical, 2)
+
+            ForEach(descriptors) { descriptor in
+                contextRow(
+                    title: descriptor.displayName,
+                    context: .tool(descriptor.id),
+                    tool: descriptor.id,
+                    icon: descriptor.systemImage
+                )
+            }
+        }
+        .padding(10)
+        .frame(width: 212)
+        .background(AppTheme.popoverGradient(for: colorScheme))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(cyan.opacity(isDark ? 0.35 : 0.24), lineWidth: 0.8)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .shadow(color: Color.black.opacity(isDark ? 0.42 : 0.18), radius: 14, y: 5)
+        .tint(cyan)
+        .preferredColorScheme(colorScheme)
+    }
+
+    @ViewBuilder
+    private func contextRow(
+        title: String,
+        context: AppContext,
+        tool: MonitoringToolID? = nil,
+        icon: String
+    ) -> some View {
+        let isSelected = selectedContext == context
+        let cyan = AppTheme.accentCyan(for: colorScheme)
+        let blue = AppTheme.accentBlue(for: colorScheme)
+        let isDark = colorScheme == .dark
+
+        Button {
+            onSelect(context)
+        } label: {
+            HStack(spacing: 10) {
+                if let tool {
+                    ToolAppIcon(tool: tool, size: 22)
+                } else {
+                    Image(systemName: icon)
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(isSelected ? Color.white : cyan)
+                        .frame(width: 22, height: 22)
+                }
+
+                Text(title)
+                    .font(.system(size: 12.5, weight: isSelected ? .bold : .medium, design: .rounded))
+                    .foregroundStyle(isSelected ? Color.white : AppTheme.textPrimary(for: colorScheme))
+
+                Spacer(minLength: 8)
+
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 10, weight: .black))
+                        .foregroundStyle(Color.white)
+                }
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 34)
+            .background(
+                isSelected
+                    ? AnyShapeStyle(LinearGradient(colors: [cyan, blue], startPoint: .leading, endPoint: .trailing))
+                    : AnyShapeStyle(isDark ? Color.white.opacity(0.035) : Color.black.opacity(0.025)),
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(
+                        isSelected ? cyan.opacity(0.55) : AppTheme.insetBorder(for: colorScheme),
+                        lineWidth: 0.7
+                    )
+            )
+        }
+        .buttonStyle(.plain)
     }
 }
 

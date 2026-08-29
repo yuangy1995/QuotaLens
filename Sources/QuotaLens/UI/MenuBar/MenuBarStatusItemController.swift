@@ -16,6 +16,7 @@ public final class MenuBarStatusItemController: NSObject {
     private let popover: NSPopover
     private var cancellable: AnyCancellable?
     private var settingsCancellable: AnyCancellable?
+    private var antigravityCancellable: AnyCancellable?
     private var toolCancellable: AnyCancellable?
     private var enabledToolsCancellable: AnyCancellable?
     private var appearanceRefreshScheduled = false
@@ -25,6 +26,8 @@ public final class MenuBarStatusItemController: NSObject {
     private var onSnoozeResetCreditReminder: (Int) -> Void
     private var suppressPopoverUntil = Date.distantPast
     private var restoreMainWindowFocusAfterPopover = false
+    private var globalMouseMonitor: Any?
+    private var localMouseMonitor: Any?
     private let popoverWidth: CGFloat = 340
     private let minimumPopoverHeight: CGFloat = 575
 
@@ -96,6 +99,16 @@ public final class MenuBarStatusItemController: NSObject {
 
     private func updateStatusIcon() {
         guard let button = statusItem.button else { return }
+        if let currentDisplayTool,
+           let baseImage = ToolAppIcon.applicationImage(for: currentDisplayTool) {
+            let image = baseImage.copy() as? NSImage ?? baseImage
+            image.size = NSSize(width: 16, height: 16)
+            image.isTemplate = false
+            button.image = image
+            button.contentTintColor = nil
+            return
+        }
+
         let isLight = isLightAppearance
         let iconColor = isLight
             ? NSColor(red: 0.02, green: 0.36, blue: 0.74, alpha: 1.0)
@@ -103,7 +116,12 @@ public final class MenuBarStatusItemController: NSObject {
 
         let config = NSImage.SymbolConfiguration(pointSize: 13, weight: .bold)
 
-        let symbolName = currentDisplayTool == .claude ? "sparkles" : "gauge.with.needle.fill"
+        let symbolName: String
+        switch currentDisplayTool {
+        case .claude: symbolName = "sparkles"
+        case .antigravity: symbolName = "wand.and.stars"
+        default: symbolName = "gauge.with.needle.fill"
+        }
         if let baseImage = NSImage(systemSymbolName: symbolName, accessibilityDescription: "QuotaLens") {
             if let configuredImage = baseImage.withSymbolConfiguration(config) {
                 configuredImage.isTemplate = true
@@ -167,6 +185,12 @@ public final class MenuBarStatusItemController: NSObject {
                 self?.updateStatusTitle()
             }
         }
+        antigravityCancellable = state.$latestAntigravityQuota
+            .sink { [weak self] _ in
+                DispatchQueue.main.async { [weak self] in
+                    self?.updateStatusTitle()
+                }
+            }
         toolCancellable = Publishers.CombineLatest(
             toolTracker.$foregroundTool,
             toolTracker.$lastActiveTool
@@ -206,21 +230,58 @@ public final class MenuBarStatusItemController: NSObject {
         }
 
         if displayTool == .claude {
-            let value = " \(state.claudeMenuBarQuotaString) "
-            button.attributedTitle = NSAttributedString(
-                string: value,
+            let label = " \(state.quotaDisplayMode.shortTitle) "
+            let percent = "\(state.claudeMenuBarPercentString) "
+            let title = NSMutableAttributedString()
+            let font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+            title.append(NSAttributedString(
+                string: label,
                 attributes: [
-                    .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
+                    .font: font,
+                    .foregroundColor: labelColor
+                ]
+            ))
+            title.append(NSAttributedString(
+                string: percent,
+                attributes: [
+                    .font: font,
                     .foregroundColor: claudeSeverityColor()
                 ]
-            )
-            button.toolTip = "QuotaLens \(value)"
+            ))
+            button.attributedTitle = title
+            button.toolTip = "QuotaLens \(label)\(percent)"
             statusItem.length = NSStatusItem.variableLength
             updateCapsuleAppearance(isReminderActive: state.hasActiveResetCreditReminder)
             return
         }
 
-        let label = " Codex \(state.quotaDisplayMode.shortTitle) "
+        if displayTool == .antigravity {
+            let label = " \(state.quotaDisplayMode.shortTitle) "
+            let percent = "\(state.antigravityMenuBarPercentString) "
+            let title = NSMutableAttributedString()
+            let font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+            title.append(NSAttributedString(
+                string: label,
+                attributes: [
+                    .font: font,
+                    .foregroundColor: labelColor
+                ]
+            ))
+            title.append(NSAttributedString(
+                string: percent,
+                attributes: [
+                    .font: font,
+                    .foregroundColor: antigravitySeverityColor()
+                ]
+            ))
+            button.attributedTitle = title
+            button.toolTip = "QuotaLens \(label)\(percent)"
+            statusItem.length = NSStatusItem.variableLength
+            updateCapsuleAppearance(isReminderActive: state.hasActiveResetCreditReminder)
+            return
+        }
+
+        let label = " \(state.quotaDisplayMode.shortTitle) "
         let percent = "\(state.preferredDisplayQuotaPercentString) "
         let title = NSMutableAttributedString()
         let font = NSFont.systemFont(ofSize: 13, weight: .semibold)
@@ -307,6 +368,15 @@ public final class MenuBarStatusItemController: NSObject {
         return .systemGreen
     }
 
+    private func antigravitySeverityColor() -> NSColor {
+        guard let remaining = state.antigravityQuotaRemainingPercent else {
+            return isLightAppearance ? NSColor.secondaryLabelColor : NSColor.secondaryLabelColor
+        }
+        if remaining <= 15 { return .systemRed }
+        if remaining <= 35 { return .systemOrange }
+        return .systemGreen
+    }
+
     @objc private func togglePopover(_ sender: NSStatusBarButton) {
         guard Date() >= suppressPopoverUntil else {
             popover.performClose(sender)
@@ -346,12 +416,51 @@ public final class MenuBarStatusItemController: NSObject {
         }
 
         popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .minY)
+        startOutsideClickMonitoring()
+    }
+
+    private func startOutsideClickMonitoring() {
+        stopOutsideClickMonitoring()
+
+        globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        ) { [weak self] _ in
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.popover.isShown else { return }
+                self.popover.performClose(nil)
+            }
+        }
+
+        localMouseMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        ) { [weak self] event in
+            guard let self, self.popover.isShown else { return event }
+            let location = NSEvent.mouseLocation
+            let isInsidePopover = self.popover.contentViewController?.view.window?.frame.contains(location) == true
+            let isInsideStatusItem = self.statusItem.button?.window?.frame.contains(location) == true
+            if !isInsidePopover && !isInsideStatusItem {
+                self.popover.performClose(nil)
+            }
+            return event
+        }
+    }
+
+    private func stopOutsideClickMonitoring() {
+        if let globalMouseMonitor {
+            NSEvent.removeMonitor(globalMouseMonitor)
+            self.globalMouseMonitor = nil
+        }
+        if let localMouseMonitor {
+            NSEvent.removeMonitor(localMouseMonitor)
+            self.localMouseMonitor = nil
+        }
     }
 
     private var minimumHeightForCurrentTool: CGFloat {
         switch currentDisplayTool {
         case .codex: return minimumPopoverHeight
         case .claude: return 330
+        case .antigravity: return 430
         default: return 180
         }
     }
@@ -455,6 +564,7 @@ public final class MenuBarStatusItemController: NSObject {
 
 extension MenuBarStatusItemController: NSPopoverDelegate {
     public func popoverDidClose(_ notification: Notification) {
+        stopOutsideClickMonitoring()
         guard restoreMainWindowFocusAfterPopover else { return }
         restoreMainWindowFocusAfterPopover = false
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == ProcessInfo.processInfo.processIdentifier,

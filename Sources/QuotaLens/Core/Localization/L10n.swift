@@ -257,6 +257,9 @@ public enum L10n {
     }
 
     public static let changelogZhToEnMap: [String: String] = [
+        "全面接入 Google Antigravity (AGY) 智能体编程工具生态，支持多周期模型配额与本机活跃度监控": "Full integration with Google Antigravity (AGY) agentic ecosystem with multi-window quota and local activity monitoring",
+        "新增 Antigravity 专属全息悬浮挂件与自动吸附定位，支持随前台应用智能唤醒与模型余量一览": "Dedicated Antigravity floating overlay with smart window snapping, foreground auto-wake, and real-time model quota breakdown",
+        "在菜单栏、总览看板与设置中深度集成 Antigravity 指标卡片、任务趋势与多空间无缝切换": "Deeply integrated Antigravity metric cards, task trends, and multi-workspace switching across menu bar, overview, and settings",
         "引入 Claude (Claude Code / Cursor) 多工具生态用量监控体系，支持 OAuth 授权与多周期配额轮询": "Introduced Claude (Claude Code / Cursor) multi-tool usage monitoring with OAuth authorization and multi-cycle quota polling",
         "全新升级统一「总览」看板与多工具导航中心，支持 Codex 与 Claude 跨工具配额一览与智能联动": "Upgraded unified Overview dashboard and multi-tool navigation hub for seamless cross-tool quota overview and smart linkage",
         "重构全息悬浮挂件多工具协同调度器，支持根据当前前台活跃的 AI 编程工具智能自动切换展示视角": "Restructured floating overlay multi-tool coordinator to intelligently auto-switch display perspectives based on the active foreground tool",
@@ -1376,6 +1379,36 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .french: "Impossible de vérifier le PATH du shell de connexion : %@",
         .portuguese: "Não foi possível verificar o PATH da shell de início de sessão: %@",
         .portugueseBrazil: "Não foi possível verificar o PATH do shell de login: %@"
+    ],
+    "Full integration with Google Antigravity (AGY) agentic ecosystem with multi-window quota and local activity monitoring": [
+        .traditionalChinese: "全面接入 Google Antigravity (AGY) 智慧體編程工具生態，支援多週期模型配額與本機活躍度監控",
+        .japanese: "Google Antigravity (AGY) エージェント開発ツールに対応し、マルチウィンドウモデルクォータおよびローカル活動状況の監視を統合",
+        .korean: "Google Antigravity (AGY) 에이전트 개발 도구 생태계 완전 통합: 다중 윈도우 모델 할당량 및 로컬 활동 모니터링 지원",
+        .spanish: "Integración completa con el ecosistema Google Antigravity (AGY) con monitoreo de cuotas por ventana y actividad local",
+        .german: "Vollständige Integration in das Google Antigravity (AGY)-Ökosystem mit Multi-Fenster-Kontingent- und lokaler Aktivitätsüberwachung",
+        .french: "Intégration complète de l'écosystème Google Antigravity (AGY) avec suivi des quotas multi-fenêtres et de l'activité locale",
+        .portuguese: "Integração completa com o ecossistema Google Antigravity (AGY) com monitorização de quotas multi-janela e atividade local",
+        .portugueseBrazil: "Integração completa com o ecossistema Google Antigravity (AGY) com monitoramento de cotas multi-janela e atividade local"
+    ],
+    "Dedicated Antigravity floating overlay with smart window snapping, foreground auto-wake, and real-time model quota breakdown": [
+        .traditionalChinese: "新增 Antigravity 專屬全息懸浮掛件與自動吸附定位，支援隨前台應用智慧喚醒與模型餘量一覽",
+        .japanese: "Antigravity 専用フローティングウィジェットと自動吸着機能を追加し、前面アプリ連動の自動起動とモデル残量一覧に対応",
+        .korean: "Antigravity 전용 플로팅 위젯 및 자동 부착 위치 지정 추가: 전면 앱 스마트 연동 및 모델 잔여량 한눈에 확인",
+        .spanish: "Superposición flotante dedicada para Antigravity con anclaje inteligente, activación automática en primer plano y desglose de cuotas",
+        .german: "Dediziertes Antigravity-Schwebemenü mit intelligentem Andocken, Vordergrund-Auto-Aktivierung und Modellkontingent-Übersicht",
+        .french: "Superposition flottante dédiée à Antigravity avec aimantation intelligente, réveil automatique au premier plan et solde de quotas",
+        .portuguese: "Sobreposição flutuante dedicada para Antigravity com fixação inteligente, ativação em primeiro plano e detalhe de quotas",
+        .portugueseBrazil: "Sobreposição flutuante dedicada para Antigravity com fixação inteligente, ativação em primeiro plano e detalhamento de cotas"
+    ],
+    "Deeply integrated Antigravity metric cards, task trends, and multi-workspace switching across menu bar, overview, and settings": [
+        .traditionalChinese: "在選單列、總覽看板與設定中深度整合 Antigravity 指標卡片、任務趨勢與多空間無縫切換",
+        .japanese: "メニューバー、概要ダッシュボード、設定画面において Antigravity の指標カード、タスク推移、複数ワークスペース切替を統合",
+        .korean: "메뉴 바, 개요 대시보드 및 설정 전반에 걸쳐 Antigravity 지표 카드, 작업 추세 및 다중 워크스페이스 원활한 전환 통합",
+        .spanish: "Tarjetas de métricas de Antigravity, tendencias de tareas y cambio de espacio de trabajo integrados en la barra de menús, resumen y ajustes",
+        .german: "Tief integrierte Antigravity-Metrikkarten, Aufgabentrends und Workspace-Wechsel in Menüleiste, Übersicht und Einstellungen",
+        .french: "Intégration approfondie des cartes de métriques Antigravity, des tendances de tâches et du basculement d'espace de travail",
+        .portuguese: "Cartões de métricas Antigravity, tendências de tarefas e alternância de áreas de trabalho integrados na barra de menus, visão geral e definições",
+        .portugueseBrazil: "Cartões de métricas Antigravity, tendências de tarefas e alternância de áreas de trabalho integrados na barra de menus, visão geral e ajustes"
     ],
     "Introduced Claude (Claude Code / Cursor) multi-tool usage monitoring with OAuth authorization and multi-cycle quota polling": [
         .traditionalChinese: "引入 Claude (Claude Code / Cursor) 多工具生態用量監控體系，支援 OAuth 授權與多週期配額輪詢",

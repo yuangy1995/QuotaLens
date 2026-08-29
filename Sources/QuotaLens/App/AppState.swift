@@ -223,6 +223,11 @@ public final class AppState: ObservableObject {
     @Published public var claudeUsageCooldownUntil: Date?
     @Published public var isRefreshingClaudeUsage: Bool = false
     @Published public var codexAccountUsage: CodexAccountUsageSnapshot?
+    @Published public var latestAntigravityQuota: AntigravityQuotaSnapshot?
+    @Published public var antigravityQuotaStatus: AntigravityQuotaStatus = .disabled
+    @Published public var antigravityQuotaErrorText: String?
+    @Published public var isRefreshingAntigravityQuota: Bool = false
+    @Published public var latestAntigravityActivity: AntigravityActivitySnapshot?
 
     private var acknowledgedResetCreditId: String?
     private var acknowledgedResetCreditExpiresAt: Int64?
@@ -520,6 +525,41 @@ public final class AppState: ObservableObject {
             ? window.usedPercent
             : window.remainingPercent
         return "Claude \(formatPercent(percent))"
+    }
+
+    public var claudeMenuBarPercentString: String {
+        guard let window = latestClaudeUsage?.fiveHourForDisplay
+            ?? latestClaudeUsage?.sevenDay else {
+            return "--"
+        }
+        let percent = quotaDisplayMode == .used
+            ? window.usedPercent
+            : window.remainingPercent
+        return formatPercent(percent)
+    }
+
+    public var antigravityMenuBarQuotaString: String {
+        guard let remaining = latestAntigravityQuota?.lowestRemainingPercent else {
+            return "Antigravity --"
+        }
+        let percent = quotaDisplayMode == .used ? max(0, 100 - remaining) : remaining
+        return "Antigravity \(quotaDisplayMode.shortTitle) \(formatPercent(percent))"
+    }
+
+    public var antigravityMenuBarPercentString: String {
+        guard let remaining = latestAntigravityQuota?.lowestRemainingPercent else {
+            return "--"
+        }
+        let percent = quotaDisplayMode == .used ? max(0, 100 - remaining) : remaining
+        return formatPercent(percent)
+    }
+
+    public var antigravityQuotaRemainingPercent: Double? {
+        latestAntigravityQuota?.lowestRemainingPercent
+    }
+
+    public var antigravityHasQuota: Bool {
+        latestAntigravityQuota?.hasQuota == true
     }
 
     public var hasQuotaSnapshot: Bool {

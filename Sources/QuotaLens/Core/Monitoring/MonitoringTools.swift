@@ -11,6 +11,7 @@ public struct MonitoringToolID: RawRepresentable, Codable, Hashable, Identifiabl
 
     public static let codex = MonitoringToolID(rawValue: "codex")
     public static let claude = MonitoringToolID(rawValue: "claude")
+    public static let antigravity = MonitoringToolID(rawValue: "antigravity")
 }
 
 public enum ToolCapability: String, Codable, Hashable, Sendable {
@@ -96,6 +97,15 @@ public struct ToolRegistry: Sendable {
             usageProvider: .claude,
             capabilities: [.quota, .usage, .history, .sessions, .overlay, .settings],
             bundleIdentifiers: ["com.anthropic.claudefordesktop", "com.anthropic.Claude"]
+        ),
+        MonitoringToolDescriptor(
+            id: .antigravity,
+            displayName: "Antigravity",
+            systemImage: "wand.and.stars",
+            accent: .cyan,
+            usageProvider: .antigravity,
+            capabilities: [.quota, .usage, .overlay, .settings],
+            bundleIdentifiers: ["com.google.antigravity-ide", "com.google.antigravity"]
         )
     ]
 }

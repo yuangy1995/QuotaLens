@@ -102,9 +102,7 @@ public struct OverviewDashboardView: View {
         let tint = accent(for: descriptor)
         return VStack(alignment: .leading, spacing: 13) {
             HStack(spacing: 10) {
-                Image(systemName: descriptor.systemImage)
-                    .font(.system(size: 17, weight: .bold))
-                    .foregroundStyle(tint)
+                ToolAppIcon(tool: descriptor.id, size: 36)
                     .frame(width: 36, height: 36)
                     .background(tint.opacity(colorScheme == .dark ? 0.16 : 0.11), in: RoundedRectangle(cornerRadius: 9))
                 VStack(alignment: .leading, spacing: 2) {
@@ -201,17 +199,24 @@ public struct OverviewDashboardView: View {
             }
             CyberDivider()
             ForEach(env.enabledToolsStore.enabledDescriptors) { descriptor in
-                let metrics = store.usage[descriptor.id]
-                HStack(spacing: 12) {
-                    Label(descriptor.displayName, systemImage: descriptor.systemImage)
+                if descriptor.id == .antigravity {
+                    antigravityActivityRow
+                } else {
+                    let metrics = store.usage[descriptor.id]
+                    HStack(spacing: 12) {
+                        HStack(spacing: 6) {
+                            ToolAppIcon(tool: descriptor.id, size: 18)
+                            Text(descriptor.displayName)
+                        }
                         .font(.system(size: 11.5, weight: .black, design: .rounded))
                         .foregroundStyle(accent(for: descriptor))
                         .frame(width: 100, alignment: .leading)
-                    usageCell(title: "7D", metrics: metrics?.sevenDay)
-                    usageCell(title: "30D", metrics: metrics?.thirtyDay)
+                        usageCell(title: "7D", metrics: metrics?.sevenDay)
+                        usageCell(title: "30D", metrics: metrics?.thirtyDay)
+                    }
+                    .padding(10)
+                    .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 9))
                 }
-                .padding(10)
-                .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 9))
             }
         }
         .cyberCard(cornerRadius: 16, padding: 18)
@@ -232,6 +237,41 @@ public struct OverviewDashboardView: View {
         .frame(maxWidth: .infinity)
     }
 
+    private var antigravityActivityRow: some View {
+        HStack(spacing: 12) {
+            HStack(spacing: 6) {
+                ToolAppIcon(tool: .antigravity, size: 18)
+                Text("Antigravity")
+            }
+            .font(.system(size: 11.5, weight: .black, design: .rounded))
+            .foregroundStyle(AppTheme.accentCyan(for: colorScheme))
+            .frame(width: 100, alignment: .leading)
+            overviewActivityCell(
+                title: "7D",
+                value: state.latestAntigravityActivity.map { L10n.format("%d tasks", zhHans: "%d 个任务", $0.taskCount7Days) } ?? "--"
+            )
+            overviewActivityCell(
+                title: "30D",
+                value: state.latestAntigravityActivity.map { L10n.format("%d tasks", zhHans: "%d 个任务", $0.taskCount30Days) } ?? "--"
+            )
+        }
+        .padding(10)
+        .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 9))
+    }
+
+    private func overviewActivityCell(title: String, value: String) -> some View {
+        HStack {
+            Text(title)
+                .font(.system(size: 9.5, weight: .heavy, design: .monospaced))
+                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+            Text(value)
+                .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+                .foregroundStyle(AppTheme.accentCyan(for: colorScheme))
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+    }
+
     private var syncHealthCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -243,13 +283,15 @@ public struct OverviewDashboardView: View {
                     Label(L10n.text("全部刷新", "Refresh All"), systemImage: "arrow.clockwise")
                 }
                 .buttonStyle(.bordered)
-                .disabled(state.isRefreshing || state.isRefreshingClaudeUsage)
+                .disabled(state.isRefreshing || state.isRefreshingClaudeUsage || state.isRefreshingAntigravityQuota)
             }
             CyberDivider()
             HStack {
                 syncRow("Codex", active: env.enabledToolsStore.isEnabled(.codex), healthy: state.connectionStatus.isConnected)
                 Spacer()
                 syncRow("Claude", active: env.enabledToolsStore.isEnabled(.claude), healthy: state.latestClaudeUsage?.hasQuota == true)
+                Spacer()
+                syncRow("Antigravity", active: env.enabledToolsStore.isEnabled(.antigravity), healthy: state.antigravityHasQuota)
                 Spacer()
                 Text(L10n.format(
                     "Last synced %@",
@@ -287,6 +329,7 @@ public struct OverviewDashboardView: View {
         switch tool {
         case .codex: return state.subscriptionPlanTitle
         case .claude: return state.latestClaudeUsage?.tier ?? L10n.text("套餐待同步", "Plan Pending")
+        case .antigravity: return state.latestAntigravityQuota?.planName ?? L10n.text("套餐待同步", "Plan Pending")
         default: return ""
         }
     }
@@ -297,6 +340,9 @@ public struct OverviewDashboardView: View {
             return state.connectionStatus.isConnected ? L10n.text("同步正常", "Sync Healthy") : L10n.text("等待连接", "Waiting for Connection")
         case .claude:
             guard let date = state.latestClaudeUsage?.capturedAt else { return L10n.text("等待同步", "Waiting for Sync") }
+            return L10n.format("Updated %@", zhHans: "%@更新", UsageNumberFormatter.relativeTimeString(from: date))
+        case .antigravity:
+            guard let date = state.latestAntigravityQuota?.capturedAt else { return L10n.text("等待同步", "Waiting for Sync") }
             return L10n.format("Updated %@", zhHans: "%@更新", UsageNumberFormatter.relativeTimeString(from: date))
         default:
             return L10n.text("等待同步", "Waiting for Sync")
@@ -310,6 +356,8 @@ public struct OverviewDashboardView: View {
             date = state.preferredDisplayQuotaSnapshot?.resetsAt.map { Date(timeIntervalSince1970: Double($0)) }
         case .claude:
             date = state.latestClaudeUsage?.fiveHourForDisplay?.resetAt ?? state.latestClaudeUsage?.sevenDay?.resetAt
+        case .antigravity:
+            date = state.latestAntigravityQuota?.buckets.compactMap(\.resetAt).min()
         default:
             date = nil
         }
@@ -338,6 +386,11 @@ public struct OverviewDashboardView: View {
             guard let usage = state.latestClaudeUsage else { return [] }
             return ([usage.fiveHourForDisplay, usage.sevenDay].compactMap { $0 } + usage.scopedWeekly).map {
                 makeQuotaRow(title: $0.localizedTitle, used: $0.usedPercent)
+            }
+        case .antigravity:
+            guard let quota = state.latestAntigravityQuota else { return [] }
+            return quota.buckets.map {
+                makeQuotaRow(title: $0.window.localizedTitle, used: 100 - $0.remainingPercent)
             }
         default:
             return []
@@ -396,6 +449,21 @@ public struct OverviewDashboardView: View {
                 }
             }
         }
+        if env.enabledToolsStore.isEnabled(.antigravity) {
+            if let error = state.antigravityQuotaErrorText, !state.antigravityHasQuota {
+                items.append(AttentionItem(
+                    text: error,
+                    icon: "wand.and.stars",
+                    tint: AppTheme.accentAmber(for: colorScheme)
+                ))
+            } else if let remaining = state.antigravityQuotaRemainingPercent, remaining <= 15 {
+                items.append(AttentionItem(
+                    text: L10n.text("Antigravity 可用额度已经较低。", "Antigravity available quota is running low."),
+                    icon: "exclamationmark.triangle.fill",
+                    tint: AppTheme.accentRose(for: colorScheme)
+                ))
+            }
+        }
         return items
     }
 
@@ -432,6 +500,18 @@ public struct OverviewDashboardView: View {
                     window: window.localizedTitle,
                     date: window.resetAt,
                     tint: AppTheme.accentAmber(for: colorScheme)
+                ))
+            }
+        }
+        if env.enabledToolsStore.isEnabled(.antigravity), let quota = state.latestAntigravityQuota {
+            for bucket in quota.buckets {
+                guard let reset = bucket.resetAt else { continue }
+                items.append(ResetItem(
+                    id: "antigravity-\(bucket.id)-\(reset.timeIntervalSince1970)",
+                    tool: "Antigravity",
+                    window: bucket.window.localizedTitle,
+                    date: reset,
+                    tint: AppTheme.accentCyan(for: colorScheme)
                 ))
             }
         }

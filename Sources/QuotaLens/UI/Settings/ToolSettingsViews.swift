@@ -35,3 +35,15 @@ public struct ClaudeSettingsView: View {
         SettingsView(state: state, scope: .claude)
     }
 }
+
+public struct AntigravitySettingsView: View {
+    @ObservedObject private var state: AppState
+
+    public init(state: AppState) {
+        self.state = state
+    }
+
+    public var body: some View {
+        SettingsView(state: state, scope: .antigravity)
+    }
+}

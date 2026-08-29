@@ -51,9 +51,12 @@ public final class ToolOverlayCoordinator {
             && ToolOverlayPreferences.isEnabled(for: .codex)
         let claudeEnabled = environment.enabledToolsStore.isEnabled(.claude)
             && ToolOverlayPreferences.isEnabled(for: .claude)
+        let antigravityEnabled = environment.enabledToolsStore.isEnabled(.antigravity)
+            && ToolOverlayPreferences.isEnabled(for: .antigravity)
 
         CodexUsageOverlayController.shared.setEnabled(codexEnabled, environment: environment)
         ClaudeUsageOverlayController.shared.setEnabled(claudeEnabled, environment: environment)
+        AntigravityUsageOverlayController.shared.setEnabled(antigravityEnabled, environment: environment)
         refreshVisibility()
     }
 
@@ -68,6 +71,8 @@ public final class ToolOverlayCoordinator {
             CodexUsageOverlayController.shared.resetPinning()
         case .claude:
             ClaudeUsageOverlayController.shared.resetPosition()
+        case .antigravity:
+            AntigravityUsageOverlayController.shared.resetPosition()
         default:
             break
         }
@@ -76,6 +81,7 @@ public final class ToolOverlayCoordinator {
     private func refreshVisibility() {
         CodexUsageOverlayController.shared.updateVisibilityForFrontmostApp()
         ClaudeUsageOverlayController.shared.updateVisibilityForFrontmostApp()
+        AntigravityUsageOverlayController.shared.updateVisibilityForFrontmostApp()
     }
 }
 
@@ -289,11 +295,14 @@ private struct ClaudeOverlayView: View {
         let amber = AppTheme.accentAmber(for: colorScheme)
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(amber)
-                Text("Claude")
-                    .font(.system(size: 11.5, weight: .black, design: .rounded))
+                ToolAppIcon(tool: .claude, size: 16)
+                Text(state.quotaDisplayMode.shortTitle)
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                Text(summaryPercentText)
+                    .font(.system(size: 11.5, weight: .heavy, design: .monospaced))
+                    .foregroundStyle(summaryQuotaColor)
+                    .monospacedDigit()
                 Spacer()
                 Image(systemName: "arrow.up.and.down.and.arrow.left.and.right")
                     .font(.system(size: 8, weight: .bold))
@@ -332,6 +341,26 @@ private struct ClaudeOverlayView: View {
                 .onChanged { _ in onDragChanged() }
                 .onEnded { _ in onDragEnded() }
         )
+    }
+
+    private var summaryWindow: ClaudeUsageSnapshot.Window? {
+        guard let usage = state.latestClaudeUsage, usage.hasQuota else { return nil }
+        return usage.fiveHourForDisplay ?? usage.sevenDay
+    }
+
+    private var summaryPercentText: String {
+        guard let window = summaryWindow else { return "--" }
+        let shown = state.quotaDisplayMode == .used ? window.usedPercent : window.remainingPercent
+        return UsageNumberFormatter.percent(shown, maximumFractionDigits: 0)
+    }
+
+    private var summaryQuotaColor: Color {
+        guard let window = summaryWindow else {
+            return AppTheme.textSecondary(for: colorScheme)
+        }
+        if window.remainingPercent <= 15 { return AppTheme.accentRose(for: colorScheme) }
+        if window.remainingPercent <= 35 { return AppTheme.accentAmber(for: colorScheme) }
+        return AppTheme.accentEmerald(for: colorScheme)
     }
 
     private func quotaRow(_ window: ClaudeUsageSnapshot.Window) -> some View {

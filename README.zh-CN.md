@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-QuotaLens 是一个原生 macOS 菜单栏应用，用来监测 Codex、Claude Code 与 ChatGPT 的额度和本地用量。它以紧凑桌面视图展示额度消耗、重置倒计时、订阅状态和重置卡可用情况。
+QuotaLens 是一个原生 macOS 菜单栏应用，用来监测 Codex、Claude Code、Antigravity 与 ChatGPT 的额度和本地用量。它以紧凑桌面视图展示额度消耗、重置倒计时、订阅状态和重置卡可用情况。
 
 ## 功能
 
@@ -12,6 +12,8 @@ QuotaLens 是一个原生 macOS 菜单栏应用，用来监测 Codex、Claude Co
 - 通过 `codex app-server --stdio` 读取账号与 rate-limit 服务端快照。
 - 展示 Codex 额外模型额度，以及云端账户累计 Token、峰值日、最长任务、连续活跃天数和每日活动。
 - Claude Code 追踪默认关闭；启用后读取 5 小时、7 天和模型周额度，并增量汇总 `~/.claude/projects` 与 `~/.config/claude/projects` 的本地用量。
+- Antigravity 追踪默认关闭；启用后读取本机登录状态，显示 Gemini 与 Claude/GPT 模型组的 5 小时、7 天额度，并统计本机任务活动。
+- 菜单栏弹窗和窗口悬浮挂件会根据当前前台的 Codex、Claude 或 Antigravity 自动切换显示内容。
 - Sessions、History 和 Dashboard 支持全部、Codex、Claude 三种来源筛选；菜单栏读数可选择 Codex、Claude 或同时显示。
 - 使用本地 ChatGPT access token 补齐订阅权益信息，识别自动续订、即将结束、计划变更等状态。
 - 重置卡到期提醒，支持确认和稍后提醒。
@@ -81,7 +83,7 @@ git push origin v1.0.0
 
 ## 工作方式
 
-QuotaLens 会在常见安装路径、ChatGPT/Codex App 和登录 Shell 的 `PATH` 中查找 Codex CLI。连接时，它会启动 `codex app-server --stdio`，请求账号、额度和账户活动。应用也会读取本地 Codex 登录元数据来识别当前账号，并在可用时刷新 ChatGPT 订阅权益信息。启用 Claude 后，应用会读取 Claude Code 的本地用量文件，并通过现有登录状态更新额度；刷新后的登录数据只保存在 QuotaLens 私有目录，不会修改 Claude Code 的登录文件。
+QuotaLens 会在常见安装路径、ChatGPT/Codex App 和登录 Shell 的 `PATH` 中查找 Codex CLI。连接时，它会启动 `codex app-server --stdio`，请求账号、额度和账户活动。应用也会读取本地 Codex 登录元数据来识别当前账号，并在可用时刷新 ChatGPT 订阅权益信息。启用 Claude 后，应用会读取 Claude Code 的本地用量文件，并通过现有登录状态更新额度；启用 Antigravity 后，应用会读取其本地登录状态和活动摘要，并通过对应登录状态更新额度。刷新后的登录数据只保存在 QuotaLens 私有目录，不会修改第三方工具的登录文件。
 
 应用使用自己的本地 SQLite 数据库保存状态、额度快照、本地用量汇总、最小用量事件事实、价格目录元数据和对账元数据。构建产物、打包后的应用、本地临时文件、凭据和机器相关文件都不会纳入仓库。
 

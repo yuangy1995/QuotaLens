@@ -2,7 +2,7 @@
 
 [简体中文](README.zh-CN.md)
 
-QuotaLens is a native macOS menu bar app for tracking Codex, Claude Code, and ChatGPT quota and local usage. It presents quota usage, reset timing, subscription status, and reset-card availability in a compact desktop view.
+QuotaLens is a native macOS menu bar app for tracking Codex, Claude Code, Antigravity, and ChatGPT quota and local usage. It presents quota usage, reset timing, subscription status, and reset-card availability in a compact desktop view.
 
 ## Features
 
@@ -12,6 +12,8 @@ QuotaLens is a native macOS menu bar app for tracking Codex, Claude Code, and Ch
 - Codex app-server snapshot reading via `codex app-server --stdio` for account and rate-limit data.
 - Additional Codex model quotas plus cloud account totals, peak day, longest turn, activity streaks, and daily activity.
 - Claude Code tracking is off by default. When enabled, it reads 5-hour, 7-day, and model-scoped weekly quotas and incrementally aggregates local usage from `~/.claude/projects` and `~/.config/claude/projects`.
+- Antigravity tracking is off by default. When enabled, it reads the local sign-in state, shows 5-hour and 7-day quota groups for Gemini and Claude/GPT models, and tracks local task activity.
+- The menu bar popover and window overlay automatically switch between Codex, Claude, and Antigravity based on the foreground app.
 - Sessions, History, and Dashboard can filter All, Codex, or Claude usage. The menu bar reading can show Codex, Claude, or both.
 - Subscription entitlement refresh using the local ChatGPT access token, with renewal, ending, and scheduled-plan-change states.
 - Reset-card expiry reminders with acknowledge and snooze controls.
@@ -81,7 +83,7 @@ Pushing a matching `vX.Y.Z` tag starts the GitHub Actions release workflow. It u
 
 ## How It Works
 
-QuotaLens looks for the Codex CLI in common installation paths, the ChatGPT/Codex app bundles, and the login shell `PATH`. When connected, it starts `codex app-server --stdio` and requests account, quota, and account-activity data. It also reads local Codex authentication metadata to identify the current account and, when possible, refreshes ChatGPT subscription entitlement details. When Claude tracking is enabled, QuotaLens reads Claude Code's local usage files and updates quota through the existing sign-in state. Refreshed sign-in data stays in QuotaLens private storage and never modifies Claude Code's sign-in files.
+QuotaLens looks for the Codex CLI in common installation paths, the ChatGPT/Codex app bundles, and the login shell `PATH`. When connected, it starts `codex app-server --stdio` and requests account, quota, and account-activity data. It also reads local Codex authentication metadata to identify the current account and, when possible, refreshes ChatGPT subscription entitlement details. When Claude tracking is enabled, QuotaLens reads Claude Code's local usage files and updates quota through the existing sign-in state. When Antigravity tracking is enabled, it reads Antigravity's local sign-in state and activity summaries and updates quota through that sign-in state. Refreshed sign-in data stays in QuotaLens private storage and never modifies third-party sign-in files.
 
 The app keeps its own local SQLite database for state, quota snapshots, local usage summaries, minimal usage event facts, pricing catalog metadata, and reconciliation metadata. Build outputs, packaged apps, temporary files, credentials, and local machine artifacts are intentionally excluded from the repository.
 

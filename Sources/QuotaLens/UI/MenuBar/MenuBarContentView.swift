@@ -124,6 +124,8 @@ public struct MenuBarContentView: View {
             codexBody
         case .claude:
             claudeBody
+        case .antigravity:
+            antigravityBody
         default:
             neutralBody
         }
@@ -226,6 +228,26 @@ public struct MenuBarContentView: View {
         }
     }
 
+    private var antigravityBody: some View {
+        let cyan = AppTheme.accentCyan(for: colorScheme)
+        let isDark = colorScheme == .dark
+
+        return VStack(spacing: 12) {
+            antigravityHeaderBar
+            CyberDivider()
+            antigravityQuotaCard
+            antigravityActivityCard
+            CyberDivider(glowColor: isDark ? Color.white.opacity(0.12) : Color.black.opacity(0.08))
+            actionDock
+        }
+        .padding(16)
+        .frame(width: 340)
+        .background(AppTheme.popoverGradient(for: colorScheme))
+        .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+        .tint(cyan)
+        .preferredColorScheme(state.colorScheme)
+    }
+
     private var neutralBody: some View {
         let cyan = AppTheme.accentCyan(for: colorScheme)
         return VStack(spacing: 14) {
@@ -246,8 +268,8 @@ public struct MenuBarContentView: View {
             }
             CyberDivider()
             Text(L10n.text(
-                "打开 Codex 或 Claude 后，这里会自动显示对应的额度。",
-                "Open Codex or Claude and its quota will appear here automatically."
+                "打开 Codex、Claude 或 Antigravity 后，这里会自动显示对应的额度。",
+                "Open Codex, Claude, or Antigravity and its quota will appear here automatically."
             ))
             .font(.system(size: 11, weight: .medium))
             .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
@@ -266,9 +288,7 @@ public struct MenuBarContentView: View {
     private var claudeHeaderBar: some View {
         let amber = AppTheme.accentAmber(for: colorScheme)
         return HStack(spacing: 9) {
-            Image(systemName: "sparkles")
-                .font(.system(size: 16, weight: .bold))
-                .foregroundStyle(amber)
+            ToolAppIcon(tool: .claude, size: 34)
                 .frame(width: 34, height: 34)
                 .background(amber.opacity(colorScheme == .dark ? 0.16 : 0.10), in: RoundedRectangle(cornerRadius: 9))
             VStack(alignment: .leading, spacing: 2) {
@@ -289,6 +309,32 @@ public struct MenuBarContentView: View {
                     .foregroundStyle(state.latestClaudeUsage?.hasQuota == true
                         ? AppTheme.accentEmerald(for: colorScheme)
                         : amber)
+            }
+        }
+    }
+
+    private var antigravityHeaderBar: some View {
+        let cyan = AppTheme.accentCyan(for: colorScheme)
+        return HStack(spacing: 9) {
+            ToolAppIcon(tool: .antigravity, size: 34)
+                .frame(width: 34, height: 34)
+                .background(cyan.opacity(colorScheme == .dark ? 0.16 : 0.10), in: RoundedRectangle(cornerRadius: 9))
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Antigravity")
+                    .font(.system(size: 13, weight: .black, design: .rounded))
+                Text(state.latestAntigravityQuota?.planName ?? L10n.text("额度监控", "Quota Monitoring"))
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+            }
+            Spacer()
+            if state.isRefreshingAntigravityQuota {
+                ProgressView().controlSize(.small)
+            } else {
+                Text(state.antigravityHasQuota
+                    ? L10n.text("已同步", "Synced")
+                    : L10n.text("等待同步", "Waiting"))
+                    .font(.system(size: 9.5, weight: .heavy, design: .monospaced))
+                    .foregroundStyle(state.antigravityHasQuota ? AppTheme.accentEmerald(for: colorScheme) : cyan)
             }
         }
     }
@@ -344,6 +390,92 @@ public struct MenuBarContentView: View {
         )
     }
 
+    private var antigravityQuotaCard: some View {
+        let cyan = AppTheme.accentCyan(for: colorScheme)
+        return VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 7) {
+                Circle().fill(cyan).frame(width: 7, height: 7)
+                Text("Antigravity")
+                    .font(.system(size: 12.5, weight: .black, design: .rounded))
+                Spacer()
+            }
+
+            if let quota = state.latestAntigravityQuota, quota.hasQuota {
+                ForEach(quota.orderedDisplayBuckets) { item in
+                    AntigravityQuotaRow(
+                        groupTitle: item.groupTitle,
+                        bucket: item.bucket,
+                        displayMode: state.quotaDisplayMode
+                    )
+                }
+            } else if state.isRefreshingAntigravityQuota || state.antigravityQuotaStatus == .loading {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text(L10n.text("正在读取 Antigravity 额度…", "Reading Antigravity quota..."))
+                }
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+            } else {
+                Text(state.antigravityQuotaErrorText ?? L10n.text(
+                    "尚未读取到 Antigravity 额度",
+                    "Antigravity quota is not available yet"
+                ))
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+            }
+            if let message = state.antigravityQuotaErrorText,
+               state.latestAntigravityQuota?.hasQuota == true {
+                Text(message)
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+            }
+        }
+        .padding(11)
+        .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 11))
+        .overlay(
+            RoundedRectangle(cornerRadius: 11)
+                .strokeBorder(cyan.opacity(0.28), lineWidth: 0.8)
+        )
+    }
+
+    private var antigravityActivityCard: some View {
+        let cyan = AppTheme.accentCyan(for: colorScheme)
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "chart.bar.xaxis")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(cyan)
+                Text(L10n.text("本机活动", "Local Activity"))
+                    .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                Spacer()
+                if let activity = state.latestAntigravityActivity {
+                    Text(L10n.format("%d tasks", zhHans: "%d 个任务", activity.taskCount30Days))
+                        .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                        .foregroundStyle(cyan)
+                }
+            }
+            HStack(spacing: 8) {
+                AntigravityActivityPill(
+                    title: "7D",
+                    value: state.latestAntigravityActivity.map { L10n.format("%d tasks", zhHans: "%d 个任务", $0.taskCount7Days) } ?? "--",
+                    accent: cyan
+                )
+                AntigravityActivityPill(
+                    title: L10n.text("活跃", "Active"),
+                    value: state.latestAntigravityActivity.map { L10n.format("%d days", zhHans: "%d 天", $0.activeDays30Days) } ?? "--",
+                    accent: AppTheme.accentEmerald(for: colorScheme)
+                )
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            colorScheme == .dark ? Color.white.opacity(0.04) : Color.black.opacity(0.03),
+            in: RoundedRectangle(cornerRadius: 8)
+        )
+    }
+
     private func updateLocalUsageForecast() {
         localUsageStore.updateForecast(
             currentUsedPercent: state.preferredQuotaForecastSnapshot?.usedPercent ?? 0.0,
@@ -374,9 +506,7 @@ public struct MenuBarContentView: View {
                         )
                         .shadow(color: cyan.opacity(colorScheme == .dark ? 0.5 : 0.25), radius: 5)
 
-                    Image(systemName: "gauge.with.needle.fill")
-                        .font(.system(size: 13, weight: .black))
-                        .foregroundStyle(.white)
+                    ToolAppIcon(tool: .codex, size: 22)
                 }
 
                 VStack(alignment: .leading, spacing: 1) {
@@ -861,7 +991,7 @@ public struct MenuBarContentView: View {
             }
             .buttonStyle(.plain)
             .help(L10n.text("立即刷新数据", "Refresh data now"))
-            .disabled(state.isRefreshing)
+            .disabled(state.isRefreshing || state.isRefreshingAntigravityQuota)
 
             // 退出
             Button(action: {
@@ -912,6 +1042,80 @@ private struct ClaudeQuotaRow: View {
             }
         }
         .opacity(window.isStale ? 0.55 : 1)
+    }
+}
+
+private struct AntigravityQuotaRow: View {
+    let groupTitle: String
+    let bucket: AntigravityQuotaSnapshot.Bucket
+    let displayMode: QuotaDisplayMode
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        let shown = displayMode == .used ? 100 - bucket.remainingPercent : bucket.remainingPercent
+        let tint: Color = bucket.remainingPercent <= 15
+            ? AppTheme.accentRose(for: colorScheme)
+            : (bucket.remainingPercent <= 35
+                ? AppTheme.accentAmber(for: colorScheme)
+                : AppTheme.accentEmerald(for: colorScheme))
+        VStack(spacing: 3) {
+            HStack {
+                Text("\(groupTitle) · \(bucket.window.localizedTitle)")
+                Spacer()
+                Text(UsageNumberFormatter.percent(shown, maximumFractionDigits: shown < 10 ? 1 : 0))
+                    .foregroundStyle(tint)
+            }
+            .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+            AntigravityAdaptiveQuotaProgress(value: shown / 100, tint: tint)
+            if let resetAt = bucket.resetAt {
+                HStack {
+                    Text(L10n.format(
+                        "Resets %@",
+                        zhHans: "%@重置",
+                        UsageNumberFormatter.relativeTimeString(from: resetAt)
+                    ))
+                    Spacer()
+                }
+                .font(.system(size: 8.5, weight: .medium))
+                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+            }
+        }
+    }
+}
+
+private struct AntigravityAdaptiveQuotaProgress: View {
+    let value: Double
+    let tint: Color
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Capsule(style: .continuous)
+                    .fill(AppTheme.insetBorder(for: colorScheme).opacity(colorScheme == .dark ? 0.9 : 0.72))
+                Capsule(style: .continuous)
+                    .fill(tint)
+                    .frame(width: proxy.size.width * min(max(value, 0), 1))
+            }
+        }
+        .frame(height: 6)
+    }
+}
+
+private struct AntigravityActivityPill: View {
+    let title: String
+    let value: String
+    let accent: Color
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Text(title)
+                .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                .foregroundStyle(accent)
+            Text(value)
+                .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

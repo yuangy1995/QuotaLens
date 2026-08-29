@@ -53,6 +53,17 @@ public struct AboutView: View {
     private var defaultChangelogs: [ChangelogEntry] {
         [
             ChangelogEntry(
+                id: "v1.0.21",
+                version: "v1.0.21",
+                date: "2026-08-30",
+                changes: [
+                    L10n.text("全面接入 Google Antigravity (AGY) 智能体编程工具生态，支持多周期模型配额与本机活跃度监控", "Full integration with Google Antigravity (AGY) agentic ecosystem with multi-window quota and local activity monitoring"),
+                    L10n.text("新增 Antigravity 专属全息悬浮挂件与自动吸附定位，支持随前台应用智能唤醒与模型余量一览", "Dedicated Antigravity floating overlay with smart window snapping, foreground auto-wake, and real-time model quota breakdown"),
+                    L10n.text("在菜单栏、总览看板与设置中深度集成 Antigravity 指标卡片、任务趋势与多空间无缝切换", "Deeply integrated Antigravity metric cards, task trends, and multi-workspace switching across menu bar, overview, and settings"),
+                    L10n.text("全面完善 10 种语言的多语言本地化翻译字典与更新日志多语言映射", "Comprehensive localization dictionary refinements and changelog translation mapping across 10 supported languages")
+                ]
+            ),
+            ChangelogEntry(
                 id: "v1.0.20",
                 version: "v1.0.20",
                 date: "2026-08-29",

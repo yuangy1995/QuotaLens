@@ -1,4 +1,5 @@
 import SwiftUI
+import Charts
 
 public struct CodexUsageDashboardView: View {
     private let facade: UsageQueryFacade
@@ -69,6 +70,302 @@ public struct ClaudeSessionsView: View {
 
     public var body: some View {
         ProviderSessionsView(facade: facade, providerFilter: .claude)
+    }
+}
+
+public struct AntigravityOverviewView: View {
+    @ObservedObject private var state: AppState
+    @Environment(\.colorScheme) private var colorScheme
+
+    public init(state: AppState) {
+        self.state = state
+    }
+
+    public var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 18) {
+                header
+                if let quota = state.latestAntigravityQuota, quota.hasQuota {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 250), spacing: 12)], spacing: 12) {
+                        ForEach(quota.orderedDisplayBuckets) { item in
+                            AntigravityBucketCard(
+                                groupTitle: item.groupTitle,
+                                bucket: item.bucket,
+                                displayMode: state.quotaDisplayMode
+                            )
+                        }
+                    }
+                    if !quota.models.isEmpty {
+                        modelCard(quota.models)
+                    }
+                } else {
+                    emptyState
+                }
+            }
+            .padding(24)
+        }
+    }
+
+    private var header: some View {
+        let cyan = AppTheme.accentCyan(for: colorScheme)
+        return HStack(spacing: 14) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(cyan.opacity(colorScheme == .dark ? 0.18 : 0.12))
+                    .frame(width: 48, height: 48)
+                ToolAppIcon(tool: .antigravity, size: 30)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Antigravity")
+                    .font(.system(size: 20, weight: .black, design: .rounded))
+                Text(statusText)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+            }
+            Spacer()
+            if let plan = state.latestAntigravityQuota?.planName, !plan.isEmpty {
+                Text(plan.uppercased())
+                    .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                    .foregroundStyle(cyan)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(cyan.opacity(colorScheme == .dark ? 0.14 : 0.10), in: Capsule())
+            }
+        }
+        .cyberCard(cornerRadius: 16, padding: 18)
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 10) {
+            if state.isRefreshingAntigravityQuota || state.antigravityQuotaStatus == .loading {
+                ProgressView().controlSize(.small)
+            } else {
+                ToolAppIcon(tool: .antigravity, size: 34)
+            }
+            Text(state.antigravityQuotaErrorText ?? L10n.text(
+                "尚未读取到 Antigravity 额度",
+                "Antigravity quota is not available yet"
+            ))
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity, minHeight: 160)
+        .cyberCard(cornerRadius: 16, padding: 18)
+    }
+
+    private func modelCard(_ models: [AntigravityQuotaSnapshot.Model]) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            CyberSectionHeader(
+                title: L10n.text("模型余量", "Model Availability"),
+                icon: "list.bullet.rectangle"
+            )
+            CyberDivider()
+            ForEach(models) { model in
+                HStack(spacing: 10) {
+                    Text(model.displayName ?? L10n.text("其他模型", "Other model"))
+                        .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                        .lineLimit(1)
+                    Spacer()
+                    Text(UsageNumberFormatter.percent(model.remainingPercent, maximumFractionDigits: 0))
+                        .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+                        .foregroundStyle(quotaTint(model.remainingPercent))
+                }
+            }
+        }
+        .cyberCard(cornerRadius: 16, padding: 18)
+    }
+
+    private var statusText: String {
+        if let capturedAt = state.latestAntigravityQuota?.capturedAt {
+            return L10n.format(
+                "Last synced %@",
+                zhHans: "最后同步 %@",
+                UsageNumberFormatter.relativeTimeString(from: capturedAt)
+            )
+        }
+        return state.antigravityQuotaErrorText ?? L10n.text("等待首次同步", "Waiting for the first sync")
+    }
+
+    private func quotaTint(_ remaining: Double) -> Color {
+        if remaining <= 15 { return AppTheme.accentRose(for: colorScheme) }
+        if remaining <= 35 { return AppTheme.accentAmber(for: colorScheme) }
+        return AppTheme.accentEmerald(for: colorScheme)
+    }
+}
+
+public struct AntigravityActivityView: View {
+    @ObservedObject private var state: AppState
+    @Environment(\.colorScheme) private var colorScheme
+
+    public init(state: AppState) {
+        self.state = state
+    }
+
+    public var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 18) {
+                activityHeader
+                if let activity = state.latestAntigravityActivity {
+                    activityMetrics(activity)
+                    activityChart(activity)
+                    projectCard(activity)
+                } else {
+                    Text(L10n.text("尚未读取到 Antigravity 本机活动", "Antigravity local activity is not available yet"))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                        .frame(maxWidth: .infinity, minHeight: 180)
+                        .cyberCard(cornerRadius: 16, padding: 18)
+                }
+            }
+            .padding(24)
+        }
+    }
+
+    private var activityHeader: some View {
+        HStack {
+            CyberSectionHeader(
+                title: L10n.text("Antigravity 本机活动", "Antigravity Local Activity"),
+                icon: "chart.bar.xaxis"
+            )
+            Spacer()
+            if let latest = state.latestAntigravityActivity?.latestActivityAt {
+                Text(L10n.format("Updated %@", zhHans: "%@更新", UsageNumberFormatter.relativeTimeString(from: latest)))
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+            }
+        }
+    }
+
+    private func activityMetrics(_ activity: AntigravityActivitySnapshot) -> some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 12)], spacing: 12) {
+            ActivityMetricCard(title: L10n.text("最近 7 天任务", "Tasks · 7 Days"), value: "\(activity.taskCount7Days)", color: AppTheme.accentCyan(for: colorScheme))
+            ActivityMetricCard(title: L10n.text("最近 30 天任务", "Tasks · 30 Days"), value: "\(activity.taskCount30Days)", color: AppTheme.accentCyan(for: colorScheme))
+            ActivityMetricCard(title: L10n.text("活跃天数", "Active Days"), value: "\(activity.activeDays30Days)", color: AppTheme.accentEmerald(for: colorScheme))
+            ActivityMetricCard(title: L10n.text("操作步骤", "Steps"), value: UsageNumberFormatter.compactTokenCount(activity.stepCount30Days), color: AppTheme.accentAmber(for: colorScheme))
+        }
+    }
+
+    private func activityChart(_ activity: AntigravityActivitySnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            CyberSectionHeader(title: L10n.text("每日活动", "Daily Activity"), icon: "chart.bar.fill")
+            CyberDivider()
+            Chart(activity.daily) { day in
+                BarMark(
+                    x: .value("Day", day.date, unit: .day),
+                    y: .value("Tasks", day.taskCount)
+                )
+                .foregroundStyle(AppTheme.accentCyan(for: colorScheme))
+            }
+            .chartYAxis { AxisMarks(position: .leading) }
+            .frame(height: 180)
+        }
+        .cyberCard(cornerRadius: 16, padding: 18)
+    }
+
+    private func projectCard(_ activity: AntigravityActivitySnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            CyberSectionHeader(title: L10n.text("项目活动", "Project Activity"), icon: "folder.fill")
+            CyberDivider()
+            if activity.projectCounts.isEmpty {
+                Text(L10n.text("暂无项目活动", "No project activity"))
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+            } else {
+                ForEach(activity.projectCounts.sorted { $0.value > $1.value }, id: \.key) { project, count in
+                    HStack {
+                        Text(project)
+                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        Spacer()
+                        Text("\(count)")
+                            .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+                            .foregroundStyle(AppTheme.accentCyan(for: colorScheme))
+                    }
+                }
+            }
+        }
+        .cyberCard(cornerRadius: 16, padding: 18)
+    }
+}
+
+private struct AntigravityBucketCard: View {
+    let groupTitle: String
+    let bucket: AntigravityQuotaSnapshot.Bucket
+    let displayMode: QuotaDisplayMode
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        let shown = displayMode == .used ? 100 - bucket.remainingPercent : bucket.remainingPercent
+        let tint: Color = bucket.remainingPercent <= 15
+            ? AppTheme.accentRose(for: colorScheme)
+            : (bucket.remainingPercent <= 35 ? AppTheme.accentAmber(for: colorScheme) : AppTheme.accentEmerald(for: colorScheme))
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(groupTitle)
+                        .font(.system(size: 14, weight: .black, design: .rounded))
+                    Text(bucket.window.localizedTitle)
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                }
+                Spacer()
+                Text(UsageNumberFormatter.percent(shown, maximumFractionDigits: shown < 10 ? 1 : 0))
+                    .font(.system(size: 23, weight: .black, design: .rounded))
+                    .foregroundStyle(tint)
+                    .monospacedDigit()
+            }
+            AntigravityAdaptiveQuotaProgress(value: shown / 100, tint: tint)
+            HStack {
+                Text(displayMode.pickerTitle)
+                Spacer()
+                if let resetAt = bucket.resetAt {
+                    Text(L10n.format("Resets %@", zhHans: "%@重置", UsageNumberFormatter.relativeTimeString(from: resetAt)))
+                }
+            }
+            .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+        }
+        .cyberCard(cornerRadius: 15, padding: 16)
+    }
+}
+
+private struct AntigravityAdaptiveQuotaProgress: View {
+    let value: Double
+    let tint: Color
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Capsule(style: .continuous)
+                    .fill(AppTheme.insetBorder(for: colorScheme).opacity(colorScheme == .dark ? 0.9 : 0.72))
+                Capsule(style: .continuous)
+                    .fill(tint)
+                    .frame(width: proxy.size.width * min(max(value, 0), 1))
+            }
+        }
+        .frame(height: 7)
+    }
+}
+
+private struct ActivityMetricCard: View {
+    let title: String
+    let value: String
+    let color: Color
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+            Text(value)
+                .font(.system(size: 22, weight: .black, design: .rounded))
+                .foregroundStyle(color)
+                .monospacedDigit()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cyberCard(cornerRadius: 14, padding: 15)
     }
 }
 
@@ -158,9 +455,7 @@ public struct ClaudeOverviewView: View {
                 RoundedRectangle(cornerRadius: 12)
                     .fill(amber.opacity(colorScheme == .dark ? 0.18 : 0.12))
                     .frame(width: 48, height: 48)
-                Image(systemName: "sparkles")
-                    .font(.system(size: 21, weight: .bold))
-                    .foregroundStyle(amber)
+                ToolAppIcon(tool: .claude, size: 30)
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text("Claude")
@@ -310,9 +605,7 @@ private struct ClaudeQuotaEmptyState: View {
             if isLoading {
                 ProgressView().controlSize(.small)
             } else {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 26, weight: .bold))
-                    .foregroundStyle(AppTheme.accentAmber(for: colorScheme))
+                ToolAppIcon(tool: .claude, size: 34)
             }
             Text(statusText ?? L10n.text("尚未读取到 Claude 额度", "Claude quota is not available yet"))
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
@@ -343,8 +636,8 @@ public struct MonitoringSetupView: View {
             Text(L10n.text("选择要监控的 AI 工具", "Choose AI Tools to Monitor"))
                 .font(.system(size: 22, weight: .black, design: .rounded))
             Text(L10n.text(
-                "启用 Codex 或 Claude 后，QuotaLens 会显示对应的额度、用量和历史记录。",
-                "Enable Codex or Claude to see its quota, usage, and history."
+                "启用 Codex、Claude 或 Antigravity 后，QuotaLens 会显示对应的额度和本机活动。",
+                "Enable Codex, Claude, or Antigravity to see its quota and local activity."
             ))
             .font(.system(size: 12, weight: .medium))
             .foregroundStyle(AppTheme.textSecondary(for: colorScheme))

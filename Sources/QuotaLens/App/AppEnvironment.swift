@@ -21,6 +21,7 @@ public final class AppEnvironment: ObservableObject {
     public let usageQueryFacade: UsageQueryFacade
     public let scanCoordinator: CodexUsageScanCoordinator
     public let claudeScanCoordinator: ClaudeUsageScanCoordinator
+    public let antigravityActivityCoordinator: AntigravityActivityScanCoordinator
     public let enabledToolsStore: EnabledToolsStore
     public let frontmostToolTracker: FrontmostToolTracker
     public let navigationStore: AppNavigationStore
@@ -33,6 +34,8 @@ public final class AppEnvironment: ObservableObject {
     private var subscriptionEntitlementRetryTask: Task<Void, Never>?
     private var claudeUsagePoller: ClaudeUsagePoller?
     private var claudeFileWatcher: ClaudeFileWatcher?
+    private var antigravityQuotaPoller: AntigravityQuotaPoller?
+    private var antigravityFileWatcher: AntigravityStateFileWatcher?
     private var notificationHandlersRegistered = false
     private var isFetchingServerSnapshot = false
     private var isFetchingSubscriptionEntitlement = false
@@ -156,6 +159,8 @@ public final class AppEnvironment: ObservableObject {
         self.scanCoordinator.configure(database: database)
         self.claudeScanCoordinator = ClaudeUsageScanCoordinator()
         self.claudeScanCoordinator.configure(database: database)
+        self.antigravityActivityCoordinator = AntigravityActivityScanCoordinator()
+        self.antigravityActivityCoordinator.configure(database: database)
         self.installThemeAppearanceObservers()
         self.applyThemeAppearance()
         self.registerRPCNotifications()
@@ -171,6 +176,23 @@ public final class AppEnvironment: ObservableObject {
             self.state.claudeUsageStatus = .disabled
         }
 
+        if enabledToolsStore.isEnabled(.antigravity) {
+            if let credentials = try? AntigravityLocalStateReader().read(),
+               let hydrated = try? AntigravityQuotaRepository.hydrate(
+                   database: database,
+                   accountKey: credentials.accountKey,
+                   sourceProfile: credentials.source.profile.rawValue
+               ) {
+                self.state.latestAntigravityQuota = hydrated
+                self.state.antigravityQuotaStatus = .available
+            } else {
+                self.state.antigravityQuotaStatus = .loading
+            }
+            self.startAntigravityServices()
+        } else {
+            self.state.antigravityQuotaStatus = .disabled
+        }
+
         // 2. 立即导入本地 ~/.codex 真实账号 (0.1ms 完成，首帧立即可见)
         if enabledToolsStore.isEnabled(.codex) {
             _ = LocalAccountImporter.importLocalAccounts(into: repositories)
@@ -180,6 +202,14 @@ public final class AppEnvironment: ObservableObject {
                 self.state.account = firstAcc
                 self.state.selectedAccountKey = firstAcc.accountKey
                 self.state.allAccounts = [firstAcc]
+            }
+        }
+
+        if enabledToolsStore.isEnabled(.antigravity) {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                await self.scanAntigravityActivity()
+                await self.refreshAntigravityQuota(force: true)
             }
         }
         let localPeriod = ChatGPTSubscriptionClient.localSubscriptionPeriodFromAuth()
@@ -727,6 +757,11 @@ public final class AppEnvironment: ObservableObject {
         if enabledToolsStore.isEnabled(.claude) {
             await refreshClaudeUsage(force: true)
         }
+        if enabledToolsStore.isEnabled(.antigravity) {
+            startAntigravityServices()
+            await scanAntigravityActivity()
+            await refreshAntigravityQuota(force: true)
+        }
         if enabledToolsStore.isEnabled(.codex) {
             await refreshData(fetchServer: fetchServer, scheduleRetryOnFailure: scheduleRetryOnFailure)
         }
@@ -746,6 +781,10 @@ public final class AppEnvironment: ObservableObject {
                 await claudeScanCoordinator.scanNow()
             }
             await refreshClaudeUsage(force: true)
+        case .antigravity:
+            startAntigravityServices()
+            await scanAntigravityActivity()
+            await refreshAntigravityQuota(force: true)
         default:
             break
         }
@@ -784,6 +823,8 @@ public final class AppEnvironment: ObservableObject {
             }
         case .claude:
             setClaudeEnabled(enabled)
+        case .antigravity:
+            setAntigravityEnabled(enabled)
         default:
             break
         }
@@ -921,6 +962,150 @@ public final class AppEnvironment: ObservableObject {
                 "暂时无法更新 Claude 额度。",
                 "Claude quota could not be updated right now."
             )
+        }
+    }
+
+    public func setAntigravityEnabled(_ enabled: Bool) {
+        if enabled {
+            if let credentials = try? AntigravityLocalStateReader().read(preferredProfile: preferredAntigravityProfile),
+               let hydrated = try? AntigravityQuotaRepository.hydrate(
+                   database: database,
+                   accountKey: credentials.accountKey,
+                   sourceProfile: credentials.source.profile.rawValue
+               ) {
+                state.latestAntigravityQuota = hydrated
+                state.antigravityQuotaStatus = .available
+            } else {
+                state.antigravityQuotaStatus = .loading
+            }
+            startAntigravityServices()
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                await self.scanAntigravityActivity()
+                await self.refreshAntigravityQuota(force: true)
+            }
+        } else {
+            stopAntigravityServices()
+            state.latestAntigravityQuota = nil
+            state.latestAntigravityActivity = nil
+            state.antigravityQuotaStatus = .disabled
+            state.antigravityQuotaErrorText = nil
+            state.isRefreshingAntigravityQuota = false
+        }
+        toolOverlayCoordinator.refreshConfiguration()
+    }
+
+    public func refreshAntigravityQuota(force: Bool = true) async {
+        guard enabledToolsStore.isEnabled(.antigravity) else { return }
+        startAntigravityServices()
+        guard let poller = antigravityQuotaPoller else { return }
+        state.isRefreshingAntigravityQuota = true
+        defer { state.isRefreshingAntigravityQuota = false }
+        await poller.pollOnce(force: force, preferredProfile: preferredAntigravityProfile)
+    }
+
+    private func scanAntigravityActivity() async {
+        await antigravityActivityCoordinator.scanNow(preferredProfile: preferredAntigravityProfile)
+        state.latestAntigravityActivity = antigravityActivityCoordinator.latestSnapshot
+    }
+
+    private func startAntigravityServices() {
+        guard enabledToolsStore.isEnabled(.antigravity) else { return }
+        if antigravityQuotaPoller == nil {
+            let poller = AntigravityQuotaPoller(
+                database: database,
+                initialSnapshot: state.latestAntigravityQuota,
+                onResult: { [weak self] result in
+                    await MainActor.run {
+                        self?.applyAntigravityQuotaResult(result)
+                    }
+                }
+            )
+            antigravityQuotaPoller = poller
+            Task { await poller.start() }
+        }
+        if antigravityFileWatcher == nil {
+            let watcher = AntigravityStateFileWatcher { [weak self] in
+                Task { @MainActor [weak self] in
+                    guard let self, self.enabledToolsStore.isEnabled(.antigravity) else { return }
+                    await self.scanAntigravityActivity()
+                }
+            }
+            if watcher.start() {
+                antigravityFileWatcher = watcher
+            }
+        }
+    }
+
+    private func stopAntigravityServices() {
+        if let poller = antigravityQuotaPoller {
+            Task { await poller.stop() }
+        }
+        antigravityQuotaPoller = nil
+        antigravityFileWatcher?.stop()
+        antigravityFileWatcher = nil
+    }
+
+    private func applyAntigravityQuotaResult(_ result: Result<AntigravityQuotaSnapshot, Error>) {
+        guard enabledToolsStore.isEnabled(.antigravity) else { return }
+        switch result {
+        case .success(let snapshot):
+            state.latestAntigravityQuota = snapshot
+            state.antigravityQuotaStatus = .available
+            state.antigravityQuotaErrorText = nil
+        case .failure(let error as AntigravityFetchError):
+            switch error {
+            case .missingCredentials, .malformedCredentials:
+                state.antigravityQuotaStatus = .missingCredentials
+                state.antigravityQuotaErrorText = L10n.text(
+                    "请先在 Antigravity 中登录。",
+                    "Sign in to Antigravity first."
+                )
+            case .unauthorized:
+                state.antigravityQuotaStatus = .signInRequired
+                state.antigravityQuotaErrorText = L10n.text(
+                    "Antigravity 登录已失效，请重新登录。",
+                    "Your Antigravity sign-in has expired. Sign in again."
+                )
+            case .forbidden:
+                state.antigravityQuotaStatus = .unavailable
+                state.antigravityQuotaErrorText = L10n.text(
+                    "当前账号暂时无法读取 Antigravity 额度。",
+                    "This account cannot read Antigravity quota right now."
+                )
+            case .needsInitialization:
+                state.antigravityQuotaStatus = .needsInitialization
+                state.antigravityQuotaErrorText = L10n.text(
+                    "请先在 Antigravity 中完成首次设置。",
+                    "Finish the initial Antigravity setup first."
+                )
+            case .rateLimited:
+                state.antigravityQuotaStatus = .limited(until: nil)
+                state.antigravityQuotaErrorText = L10n.text(
+                    "Antigravity 暂时延迟刷新，将自动重试。",
+                    "Antigravity refresh is delayed and will retry automatically."
+                )
+            case .noQuotaData, .unavailable:
+                state.antigravityQuotaStatus = .unavailable
+                state.antigravityQuotaErrorText = L10n.text(
+                    "暂时无法更新 Antigravity 额度。",
+                    "Antigravity quota could not be updated right now."
+                )
+            }
+        case .failure:
+            state.antigravityQuotaStatus = .unavailable
+            state.antigravityQuotaErrorText = L10n.text(
+                "暂时无法更新 Antigravity 额度。",
+                "Antigravity quota could not be updated right now."
+            )
+        }
+    }
+
+    private var preferredAntigravityProfile: AntigravityStateProfile? {
+        switch frontmostToolTracker.foregroundBundleIdentifier {
+        case "com.google.antigravity-ide": return .ide
+        case "com.google.antigravity": return .legacy
+        default: return nil
         }
     }
 
@@ -1699,6 +1884,7 @@ public final class AppEnvironment: ObservableObject {
 
         ClaudeUsageSettings.shared.resetToDefaults()
         await stopClaudeServicesAndWait()
+        stopAntigravityServices()
 
         // 1. 重置偏好设置 (UserDefaults)
         if let bundleID = Bundle.main.bundleIdentifier {
@@ -1758,6 +1944,10 @@ public final class AppEnvironment: ObservableObject {
         state.claudeUsageStatus = .disabled
         state.claudeUsageErrorText = nil
         state.claudeUsageCooldownUntil = nil
+        state.latestAntigravityQuota = nil
+        state.antigravityQuotaStatus = .disabled
+        state.antigravityQuotaErrorText = nil
+        state.latestAntigravityActivity = nil
         enabledToolsStore.resetToDefaults()
         frontmostToolTracker.refresh()
         navigationStore.normalize(
