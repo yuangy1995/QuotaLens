@@ -384,10 +384,24 @@ mkdir -p "${DMG_TMP_DIR}"
 ditto --norsrc --noextattr "${APP_BUNDLE}" "${DMG_TMP_DIR}/${APP_NAME}.app"
 ln -s /Applications "${DMG_TMP_DIR}/Applications"
 
-hdiutil create -volname "${APP_NAME} v${APP_VERSION}" \
-    -srcfolder "${DMG_TMP_DIR}" \
-    -ov -format UDZO \
-    "${DMG_PATH}"
+create_dmg_image() {
+    local max_attempts=5
+    local attempt=1
+    while [[ ${attempt} -le ${max_attempts} ]]; do
+        if hdiutil create -volname "${APP_NAME} v${APP_VERSION}" \
+            -srcfolder "${DMG_TMP_DIR}" \
+            -ov -format UDZO \
+            "${DMG_PATH}"; then
+            return 0
+        fi
+        echo -e "${YELLOW}hdiutil create failed (attempt ${attempt}/${max_attempts}), retrying in 3s...${NC}"
+        sleep 3
+        ((attempt++))
+    done
+    return 1
+}
+
+create_dmg_image
 
 rm -rf "${DMG_TMP_DIR}"
 echo -e "${GREEN}DMG created: ${DMG_PATH}${NC}"
