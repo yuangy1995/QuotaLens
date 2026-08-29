@@ -74,9 +74,11 @@ public struct SessionDetailView: View {
                 // 1. 顶部全息信息头
                 sessionHeaderCard
 
-                detailSectionPicker
+                if detail.session.provider == .codex {
+                    detailSectionPicker
+                }
 
-                if selectedSection == .conversation {
+                if selectedSection == .conversation && detail.session.provider == .codex {
                     conversationCard
                 } else {
                     // 2. 四大核心指标卡
@@ -104,7 +106,12 @@ public struct SessionDetailView: View {
             .padding(18)
         }
         .onChange(of: detail.session.sessionId) { _, _ in
-            selectedSection = .conversation
+            selectedSection = detail.session.provider == .codex ? .conversation : .usage
+        }
+        .onAppear {
+            if detail.session.provider == .claude {
+                selectedSection = .usage
+            }
         }
     }
 

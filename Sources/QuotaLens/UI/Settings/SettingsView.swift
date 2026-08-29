@@ -9,6 +9,7 @@ public enum SettingsTab: String, CaseIterable, Identifiable {
     case account
     case overlay
     case codex
+    case claude
     case storage
 
     public var id: String { rawValue }
@@ -23,6 +24,8 @@ public enum SettingsTab: String, CaseIterable, Identifiable {
             return L10n.text("悬浮窗挂件", "Overlay HUD")
         case .codex:
             return L10n.text("Codex 环境", "Codex Environment")
+        case .claude:
+            return L10n.text("Claude 追踪", "Claude Tracking")
         case .storage:
             return L10n.text("存储与诊断", "Data & Diagnostics")
         }
@@ -38,9 +41,29 @@ public enum SettingsTab: String, CaseIterable, Identifiable {
             return "macwindow.badge.plus"
         case .codex:
             return "cpu.fill"
+        case .claude:
+            return "sparkles"
         case .storage:
             return "externaldrive.fill"
         }
+    }
+}
+
+public enum SettingsScope: String, Sendable {
+    case global
+    case codex
+    case claude
+
+    fileprivate var tabs: [SettingsTab] {
+        switch self {
+        case .global: return [.general, .storage]
+        case .codex: return [.account, .overlay, .codex]
+        case .claude: return [.claude]
+        }
+    }
+
+    fileprivate var defaultsKey: String {
+        "QuotaLens.Settings.SelectedTab.\(rawValue).v1"
     }
 }
 
@@ -49,7 +72,8 @@ public struct SettingsView: View {
     @EnvironmentObject var env: AppEnvironment
     @Environment(\.colorScheme) var colorScheme
 
-    @AppStorage("settings_selected_tab_v2") private var selectedTab: SettingsTab = .general
+    @State private var selectedTab: SettingsTab
+    private let scope: SettingsScope
     @State private var customPath: String = ""
     @State private var isCopiedDbPath: Bool = false
     @State private var isShowingBinaryTargetDialog: Bool = false
@@ -65,20 +89,34 @@ public struct SettingsView: View {
     @State private var showResetConfirmDialog: Bool = false
     @State private var isResettingApp: Bool = false
     @State private var isLoadingUsageDiagnostics: Bool = false
+    @State private var codexOverlayEnabled: Bool
+    @State private var claudeOverlayEnabled: Bool
     @ObservedObject private var overlayController = CodexUsageOverlayController.shared
 
     private let presetIntervals: [Int] = [15, 30, 60, 300, 900]
 
+    public init(state: AppState, scope: SettingsScope) {
+        self.state = state
+        self.scope = scope
+        let stored = UserDefaults.standard.string(forKey: scope.defaultsKey)
+            .flatMap(SettingsTab.init(rawValue:))
+        _selectedTab = State(initialValue: scope.tabs.contains(stored ?? scope.tabs[0]) ? (stored ?? scope.tabs[0]) : scope.tabs[0])
+        _codexOverlayEnabled = State(initialValue: ToolOverlayPreferences.isEnabled(for: .codex))
+        _claudeOverlayEnabled = State(initialValue: ToolOverlayPreferences.isEnabled(for: .claude))
+    }
+
     public var body: some View {
         VStack(spacing: 0) {
             // 顶部分类导航切换栏
-            tabPickerHeader
-                .padding(.horizontal, 24)
-                .padding(.top, 18)
-                .padding(.bottom, 12)
+            if scope.tabs.count > 1 {
+                tabPickerHeader
+                    .padding(.horizontal, 24)
+                    .padding(.top, 18)
+                    .padding(.bottom, 12)
 
-            CyberDivider()
-                .padding(.horizontal, 24)
+                CyberDivider()
+                    .padding(.horizontal, 24)
+            }
 
             // 分类内容区域
             ScrollView {
@@ -92,6 +130,8 @@ public struct SettingsView: View {
                         overlayTabPane
                     case .codex:
                         codexTabPane
+                    case .claude:
+                        claudeTabPane
                     case .storage:
                         storageTabPane
                     }
@@ -101,12 +141,15 @@ public struct SettingsView: View {
         }
         .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
         .task {
-            await refreshAutoDetectedBinaryPath()
+            if scope == .codex {
+                await refreshAutoDetectedBinaryPath()
+            }
             if selectedTab == .storage {
                 await refreshUsageDiagnostics(force: true)
             }
         }
         .onChange(of: selectedTab) { _, tab in
+            UserDefaults.standard.set(tab.rawValue, forKey: scope.defaultsKey)
             guard tab == .storage else { return }
             Task { await refreshUsageDiagnostics() }
         }
@@ -150,61 +193,131 @@ public struct SettingsView: View {
         let blue = AppTheme.accentBlue(for: colorScheme)
         let isDark = colorScheme == .dark
 
-        return HStack(spacing: 8) {
-            ForEach(SettingsTab.allCases) { tab in
-                let isSelected = selectedTab == tab
-                Button(action: {
-                    selectedTab = tab
-                }) {
-                    HStack(spacing: 6) {
-                        Image(systemName: tab.icon)
-                            .font(.system(size: 11.5, weight: isSelected ? .bold : .semibold))
-                            .foregroundStyle(isSelected ? Color.white : (isDark ? Color.white.opacity(0.7) : Color.black.opacity(0.6)))
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(scope.tabs) { tab in
+                    let isSelected = selectedTab == tab
+                    Button(action: {
+                        selectedTab = tab
+                    }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: tab.icon)
+                                .font(.system(size: 11.5, weight: isSelected ? .bold : .semibold))
+                                .foregroundStyle(isSelected ? Color.white : (isDark ? Color.white.opacity(0.7) : Color.black.opacity(0.6)))
 
-                        Text(tab.title)
-                            .font(.system(size: 12, weight: isSelected ? .bold : .medium, design: .rounded))
-                            .foregroundStyle(isSelected ? Color.white : AppTheme.textPrimary(for: colorScheme))
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 7)
-                    .background(
-                        ZStack {
-                            if isSelected {
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .fill(
-                                        LinearGradient(
-                                            colors: [cyan, blue],
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        )
-                                    )
-                                    .shadow(color: cyan.opacity(isDark ? 0.35 : 0.20), radius: 6, y: 2)
-                            } else {
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .fill(AppTheme.insetSurface(for: colorScheme))
-                            }
+                            Text(tab.title)
+                                .font(.system(size: 12, weight: isSelected ? .bold : .medium, design: .rounded))
+                                .foregroundStyle(isSelected ? Color.white : AppTheme.textPrimary(for: colorScheme))
                         }
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .strokeBorder(
-                                isSelected ? cyan.opacity(0.8) : AppTheme.insetBorder(for: colorScheme),
-                                lineWidth: isSelected ? 1 : 0.7
-                            )
-                    )
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 7)
+                        .background(
+                            ZStack {
+                                if isSelected {
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .fill(
+                                            LinearGradient(
+                                                colors: [cyan, blue],
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            )
+                                        )
+                                        .shadow(color: cyan.opacity(isDark ? 0.35 : 0.20), radius: 6, y: 2)
+                                } else {
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .fill(AppTheme.insetSurface(for: colorScheme))
+                                }
+                            }
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .strokeBorder(
+                                    isSelected ? cyan.opacity(0.8) : AppTheme.insetBorder(for: colorScheme),
+                                    lineWidth: isSelected ? 1 : 0.7
+                                )
+                        )
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
-
-            Spacer()
         }
     }
 
     // MARK: - Tab 1 · 常规与外观
     private var generalTabPane: some View {
         VStack(spacing: 18) {
+            monitoringToolsHUDCard
             appearanceHUDCard
             launchBehaviorHUDCard
+        }
+    }
+
+    private var monitoringToolsHUDCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            CyberSectionHeader(
+                title: L10n.text("监控工具", "Monitored Tools"),
+                icon: "square.grid.2x2.fill"
+            )
+            CyberDivider()
+
+            ForEach(ToolRegistry.shared.descriptors) { descriptor in
+                HStack(spacing: 12) {
+                    Image(systemName: descriptor.systemImage)
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(descriptor.accent == .amber
+                            ? AppTheme.accentAmber(for: colorScheme)
+                            : AppTheme.accentCyan(for: colorScheme))
+                        .frame(width: 34, height: 34)
+                        .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 8))
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(descriptor.displayName)
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                        Text(monitoringToolDescription(descriptor.id))
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                    }
+
+                    Spacer()
+
+                    Toggle("", isOn: Binding(
+                        get: { env.enabledToolsStore.isEnabled(descriptor.id) },
+                        set: { env.setMonitoringToolEnabled($0, tool: descriptor.id) }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .accessibilityLabel(L10n.format(
+                        "Monitor %@",
+                        zhHans: "监控 %@",
+                        descriptor.displayName
+                    ))
+                }
+                .padding(12)
+                .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
+                )
+            }
+
+            Text(L10n.text(
+                "启用多个工具后，可以在侧边栏顶部切换总览和各工具页面。",
+                "When multiple tools are enabled, switch between Overview and each tool from the top of the sidebar."
+            ))
+            .font(.system(size: 10.5, weight: .medium))
+            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+        }
+        .cyberCard(cornerRadius: 16, padding: 18)
+    }
+
+    private func monitoringToolDescription(_ tool: MonitoringToolID) -> String {
+        switch tool {
+        case .codex:
+            return L10n.text("监控 Codex 额度、本地用量、会话和重置卡", "Monitor Codex quota, local usage, sessions, and reset cards")
+        case .claude:
+            return L10n.text("监控 Claude 额度、本地用量和会话", "Monitor Claude quota, local usage, and sessions")
+        default:
+            return L10n.text("监控此工具的额度与用量", "Monitor quota and usage for this tool")
         }
     }
 
@@ -231,13 +344,164 @@ public struct SettingsView: View {
         }
     }
 
-    // MARK: - Tab 5 · 存储与诊断
+    // MARK: - Tab 5 · Claude 追踪
+    private var claudeTabPane: some View {
+        VStack(spacing: 18) {
+            claudeTrackingHUDCard
+        }
+    }
+
+    // MARK: - Tab 6 · 存储与诊断
     private var storageTabPane: some View {
         VStack(spacing: 18) {
             storageCoreHUDCard
             if let diagnostics = usageDiagnostics {
                 diagnosticsGridHUDCard(diagnostics)
             }
+        }
+    }
+
+    private var claudeTrackingHUDCard: some View {
+        let amber = AppTheme.accentAmber(for: colorScheme)
+        let cyan = AppTheme.accentCyan(for: colorScheme)
+        return VStack(alignment: .leading, spacing: 14) {
+            CyberSectionHeader(
+                title: L10n.text("Claude Code 用量追踪", "Claude Code Usage Tracking"),
+                icon: "sparkles"
+            )
+            CyberDivider()
+
+            if env.enabledToolsStore.isEnabled(.claude) {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Text(L10n.text("当前状态", "Current Status"))
+                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        Spacer()
+                        Text(claudeStatusText)
+                            .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                            .foregroundStyle(state.latestClaudeUsage?.hasQuota == true ? Color.green : amber)
+                    }
+
+                    if let error = state.claudeUsageErrorText {
+                        Text(error)
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                    }
+
+                    HStack(spacing: 9) {
+                        Button {
+                            Task { await env.refreshClaudeUsage(force: true) }
+                        } label: {
+                            Label(L10n.text("刷新额度", "Refresh Quota"), systemImage: "arrow.clockwise")
+                        }
+                        .disabled(state.isRefreshingClaudeUsage)
+
+                        Button {
+                            Task { await env.claudeScanCoordinator.scanNow() }
+                        } label: {
+                            Label(L10n.text("读取本地记录", "Read Local History"), systemImage: "waveform.path.ecg")
+                        }
+                        .disabled(env.claudeScanCoordinator.isScanning)
+
+                        Button {
+                            Task { await env.claudeScanCoordinator.scanNow(forceRebuild: true) }
+                        } label: {
+                            Label(L10n.text("重新读取全部", "Read All Again"), systemImage: "arrow.counterclockwise")
+                        }
+                        .disabled(env.claudeScanCoordinator.isScanning)
+                    }
+                    .buttonStyle(.bordered)
+
+                    if env.claudeScanCoordinator.isScanning {
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.small)
+                            Text(env.claudeScanCoordinator.statusText)
+                                .font(.system(size: 10, design: .monospaced))
+                        }
+                    } else if let last = env.claudeScanCoordinator.lastScanTime {
+                        Text(L10n.format(
+                            "Last read: %@",
+                            zhHans: "最后读取：%@",
+                            UsageNumberFormatter.relativeTimeString(from: last)
+                        ))
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                    }
+                }
+                .padding(12)
+                .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))
+
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(L10n.text("Claude 窗口悬浮挂件", "Claude Window Overlay"))
+                            .font(.system(size: 13, weight: .bold))
+                        Text(L10n.text(
+                            "在 Claude、终端或编辑器窗口中显示当前额度",
+                            "Show current quota in Claude, terminal, or editor windows"
+                        ))
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                    }
+                    Spacer()
+                    Button(L10n.text("重置位置", "Reset")) {
+                        env.toolOverlayCoordinator.resetPosition(for: .claude)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!claudeOverlayEnabled)
+
+                    Toggle("", isOn: Binding(
+                        get: { claudeOverlayEnabled },
+                        set: { enabled in
+                            claudeOverlayEnabled = enabled
+                            env.toolOverlayCoordinator.setEnabled(enabled, for: .claude)
+                        }
+                    ))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                }
+                .padding(12)
+                .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))
+
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "app.connected.to.app.below.fill")
+                        .foregroundStyle(amber)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(L10n.text("自动识别使用场景", "Automatic App Detection"))
+                            .font(.system(size: 11, weight: .bold))
+                        Text(L10n.text(
+                            "使用 Claude 桌面端，或在终端、iTerm、VS Code 中运行 Claude 时，挂件会自动显示。",
+                            "The overlay appears automatically in Claude Desktop, or while Claude runs in Terminal, iTerm, or VS Code."
+                        ))
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                    }
+                }
+                .padding(12)
+                .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))
+
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "lock.shield.fill").foregroundStyle(cyan)
+                    Text(L10n.text(
+                        "登录刷新结果只保存在 QuotaLens 私有目录，不会修改 Claude Code 的登录文件。",
+                        "Refreshed sign-in data stays in QuotaLens private storage and never modifies Claude Code's sign-in files."
+                    ))
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                }
+            }
+        }
+        .cyberCard(cornerRadius: 16, padding: 18)
+    }
+
+    private var claudeStatusText: String {
+        switch state.claudeUsageStatus {
+        case .disabled: return L10n.text("已关闭", "Off")
+        case .loading: return L10n.text("正在读取", "Reading")
+        case .available: return L10n.text("额度可用", "Quota available")
+        case .missingCredentials: return L10n.text("等待登录", "Sign-in needed")
+        case .signInRequired: return L10n.text("需要重新登录", "Sign in again")
+        case .limited: return L10n.text("稍后自动重试", "Retrying later")
+        case .unavailable: return L10n.text("暂时不可用", "Unavailable")
         }
     }
 
@@ -294,10 +558,10 @@ public struct SettingsView: View {
                     }
                     Spacer()
                     Toggle("", isOn: Binding(
-                        get: { flags.isOverlayEnabled },
+                        get: { codexOverlayEnabled },
                         set: { enabled in
-                            flags.isOverlayEnabled = enabled
-                            CodexUsageOverlayController.shared.setEnabled(enabled, environment: env)
+                            codexOverlayEnabled = enabled
+                            env.toolOverlayCoordinator.setEnabled(enabled, for: .codex)
                         }
                     ))
                     .labelsHidden()
@@ -306,7 +570,7 @@ public struct SettingsView: View {
                 .padding(12)
                 .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))
 
-                if flags.isOverlayEnabled {
+                if codexOverlayEnabled {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(L10n.text("精确窗口吸附（辅助功能）", "Precise Window Snapping (Accessibility)"))

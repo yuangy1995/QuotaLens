@@ -16,6 +16,7 @@ public final class HistoryStore: ObservableObject {
     @Published public var selectedRangeDays: Int = 30 {
         didSet { Task { await loadHistory() } }
     }
+    public let providerFilter: UsageProviderFilter
     @Published public var isLoading: Bool = false
     @Published public var isLoadingDetail: Bool = false
     @Published public var isLoadingMoreEvents: Bool = false
@@ -23,18 +24,33 @@ public final class HistoryStore: ObservableObject {
 
     private let facade: UsageQueryFacade
     private let eventPageSize = 500
+    private var historyGeneration = 0
+    private var detailGeneration = 0
 
-    public init(facade: UsageQueryFacade) {
+    public init(facade: UsageQueryFacade, providerFilter: UsageProviderFilter) {
         self.facade = facade
+        self.providerFilter = providerFilter
     }
 
     public func loadHistory() async {
-        guard !isLoading else { return }
-
+        historyGeneration += 1
+        detailGeneration += 1
+        let generation = historyGeneration
+        let rangeDays = selectedRangeDays
+        let filter = providerFilter
         isLoading = true
         errorMessage = nil
+        defer {
+            if generation == historyGeneration {
+                isLoading = false
+            }
+        }
         do {
-            let list = try await facade.getHistoryDays(daysCount: selectedRangeDays)
+            let list = try await facade.getHistoryDays(
+                daysCount: rangeDays,
+                providerFilter: filter
+            )
+            guard generation == historyGeneration else { return }
             self.days = list
             if selectedDayKey == nil || !list.contains(where: { $0.dayKey == selectedDayKey }) {
                 self.selectedDayKey = list.first?.dayKey
@@ -42,9 +58,9 @@ public final class HistoryStore: ObservableObject {
                 await loadSelectedDayDetail()
             }
         } catch {
+            guard generation == historyGeneration else { return }
             self.errorMessage = Self.userFacingError(error)
         }
-        isLoading = false
     }
 
     public var selectedDaySummary: DayUsageSummaryDTO? {
@@ -53,17 +69,31 @@ public final class HistoryStore: ObservableObject {
     }
 
     public func loadSelectedDayDetail() async {
+        detailGeneration += 1
+        let generation = detailGeneration
         guard let dayKey = selectedDayKey else {
             selectedDayDetail = nil
             return
         }
+        let filter = providerFilter
         isLoadingDetail = true
-        defer { isLoadingDetail = false }
+        defer {
+            if generation == detailGeneration {
+                isLoadingDetail = false
+            }
+        }
         do {
-            let detail = try await facade.getDayDetail(dayKey: dayKey, eventLimit: eventPageSize)
-            guard selectedDayKey == dayKey else { return }
+            let detail = try await facade.getDayDetail(
+                dayKey: dayKey,
+                eventLimit: eventPageSize,
+                providerFilter: filter
+            )
+            guard generation == detailGeneration,
+                  selectedDayKey == dayKey,
+                  providerFilter == filter else { return }
             selectedDayDetail = detail
         } catch {
+            guard generation == detailGeneration else { return }
             errorMessage = Self.userFacingError(error)
         }
     }
@@ -76,14 +106,18 @@ public final class HistoryStore: ObservableObject {
               current.hasMoreEvents,
               let cursor = current.nextEventCursor else { return }
         isLoadingMoreEvents = true
+        let filter = providerFilter
         defer { isLoadingMoreEvents = false }
         do {
             let page = try await facade.getDayDetail(
                 dayKey: dayKey,
                 eventLimit: eventPageSize,
-                eventCursor: cursor
+                eventCursor: cursor,
+                providerFilter: filter
             )
-            guard selectedDayKey == dayKey, let existing = selectedDayDetail else { return }
+            guard selectedDayKey == dayKey,
+                  providerFilter == filter,
+                  let existing = selectedDayDetail else { return }
             selectedDayDetail = Self.mergeDayDetail(existing: existing, page: page)
         } catch {
             errorMessage = Self.userFacingError(error)
@@ -125,13 +159,18 @@ public final class HistoryStore: ObservableObject {
     }
 }
 
-public struct HistoryView: View {
+struct ProviderHistoryView: View {
     @StateObject private var store: HistoryStore
     @EnvironmentObject var env: AppEnvironment
     @Environment(\.colorScheme) var colorScheme
 
-    public init(facade: UsageQueryFacade) {
-        _store = StateObject(wrappedValue: HistoryStore(facade: facade))
+    init(facade: UsageQueryFacade, providerFilter: UsageProviderFilter) {
+        _store = StateObject(
+            wrappedValue: HistoryStore(
+                facade: facade,
+                providerFilter: providerFilter
+            )
+        )
     }
 
     public var body: some View {
@@ -145,14 +184,26 @@ public struct HistoryView: View {
                 .frame(minWidth: 460, maxWidth: .infinity)
         }
         .task {
-            guard !env.scanCoordinator.isScanning else { return }
+            guard !isRelevantScanActive else { return }
             await store.loadHistory()
         }
         .onChange(of: env.scanCoordinator.isScanning) { _, isScanning in
-            guard !isScanning else { return }
+            guard store.providerFilter == .codex, !isScanning else { return }
             Task {
                 await store.loadHistory()
             }
+        }
+        .onChange(of: env.claudeScanCoordinator.isScanning) { _, isScanning in
+            guard store.providerFilter == .claude, !isScanning else { return }
+            Task { await store.loadHistory() }
+        }
+    }
+
+    private var isRelevantScanActive: Bool {
+        switch store.providerFilter {
+        case .codex: return env.scanCoordinator.isScanning
+        case .claude: return env.claudeScanCoordinator.isScanning
+        case .all: return env.scanCoordinator.isScanning || env.claudeScanCoordinator.isScanning
         }
     }
 

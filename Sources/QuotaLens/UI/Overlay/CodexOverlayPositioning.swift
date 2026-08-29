@@ -25,11 +25,18 @@ struct CodexOverlayRelativePosition: Equatable, Sendable {
 }
 
 enum CodexOverlayWindowLocator {
-    static let bundleIdentifier = "com.openai.codex"
+    static let bundleIdentifiers: Set<String> = [
+        "com.openai.chat",
+        "com.openai.codex"
+    ]
     private static let minimumWindowSize = CGSize(width: 420, height: 300)
 
+    static func supportsBundleIdentifier(_ bundleIdentifier: String?) -> Bool {
+        bundleIdentifier.map(bundleIdentifiers.contains) ?? false
+    }
+
     static func isCodex(_ application: NSRunningApplication?) -> Bool {
-        application?.bundleIdentifier == bundleIdentifier
+        supportsBundleIdentifier(application?.bundleIdentifier)
             && application?.isTerminated == false
     }
 
@@ -96,6 +103,21 @@ enum CodexOverlayWindowLocator {
             return previousWindow
         }
         return eligible.first
+    }
+
+    static func isWindow(
+        _ windowID: CGWindowID,
+        above targetWindowID: CGWindowID,
+        windows: [CodexOverlayWindow]
+    ) -> Bool {
+        guard let windowIndex = windows.firstIndex(where: {
+            $0.windowID == windowID
+        }), let targetIndex = windows.firstIndex(where: {
+            $0.windowID == targetWindowID
+        }) else {
+            return false
+        }
+        return windowIndex < targetIndex
     }
 
     static func displaySpaces() -> [CodexOverlayDisplay] {

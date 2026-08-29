@@ -45,7 +45,7 @@ private func addUnpricedReasonColumns(database: SQLiteDatabase, table: String) t
 }
 
 public struct SchemaMigrations {
-    public static let targetSchemaVersion = 13
+    public static let targetSchemaVersion = 14
 
     public static func migrate(database: SQLiteDatabase) throws {
         let currentVersion = try database.intScalar(sql: "PRAGMA user_version;")
@@ -77,7 +77,8 @@ public struct SchemaMigrations {
             V10PricingRuleBoundsMigration(),
             V11ExactPricingCoverageMigration(),
             V12AggregateReasonsAndRebuildStateMigration(),
-            V13Round2ReliabilityMigration()
+            V13Round2ReliabilityMigration(),
+            V14MultiProviderAndClaudeMigration()
         ]
 
         for migration in migrations where migration.version > currentVersion {
@@ -88,6 +89,122 @@ public struct SchemaMigrations {
         }
 
         try V5AggregateOnlyUsageMigration.compactIfNeeded(database: database)
+    }
+}
+
+// MARK: - V14: multi-provider usage and Claude support
+private struct V14MultiProviderAndClaudeMigration: DatabaseMigration {
+    let version = 14
+    let name = "V14MultiProviderAndClaude"
+
+    func apply(database: SQLiteDatabase) throws {
+        for table in [
+            "codex_sessions",
+            "codex_usage_events",
+            "codex_session_summaries",
+            "codex_daily_usage_summaries",
+            "rate_limit_snapshots"
+        ] {
+            try addColumnIfMissing(
+                database: database,
+                table: table,
+                column: "provider",
+                definition: "TEXT NOT NULL DEFAULT 'codex'"
+            )
+        }
+
+        try addColumnIfMissing(
+            database: database,
+            table: "codex_usage_events",
+            column: "provider_message_id",
+            definition: "TEXT"
+        )
+        try addColumnIfMissing(
+            database: database,
+            table: "codex_usage_events",
+            column: "cache_write_5m_input_tokens",
+            definition: "INTEGER NOT NULL DEFAULT 0"
+        )
+        try addColumnIfMissing(
+            database: database,
+            table: "codex_usage_events",
+            column: "cache_write_1h_input_tokens",
+            definition: "INTEGER NOT NULL DEFAULT 0"
+        )
+
+        try database.execute(sql: """
+        UPDATE codex_sessions SET provider = 'codex' WHERE provider IS NULL OR provider = '';
+        UPDATE codex_usage_events SET provider = 'codex' WHERE provider IS NULL OR provider = '';
+        UPDATE codex_session_summaries SET provider = 'codex' WHERE provider IS NULL OR provider = '';
+        UPDATE codex_daily_usage_summaries SET provider = 'codex' WHERE provider IS NULL OR provider = '';
+        UPDATE rate_limit_snapshots SET provider = 'codex' WHERE provider IS NULL OR provider = '';
+
+        CREATE INDEX IF NOT EXISTS idx_usage_sessions_provider_updated
+            ON codex_sessions(provider, updated_at DESC, session_id DESC);
+        CREATE INDEX IF NOT EXISTS idx_usage_events_provider_time
+            ON codex_usage_events(provider, timestamp_ms DESC, event_id DESC);
+        CREATE INDEX IF NOT EXISTS idx_usage_events_provider_session_time
+            ON codex_usage_events(provider, session_id, timestamp_ms DESC, event_id DESC);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_usage_events_provider_message
+            ON codex_usage_events(provider, session_id, provider_message_id)
+            WHERE provider_message_id IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_usage_session_summaries_provider
+            ON codex_session_summaries(provider, session_id, model_canonical);
+        CREATE INDEX IF NOT EXISTS idx_usage_daily_summaries_provider_day
+            ON codex_daily_usage_summaries(provider, day_start_ms, session_id);
+        CREATE INDEX IF NOT EXISTS idx_rate_snapshots_provider_time
+            ON rate_limit_snapshots(provider, observed_at DESC, limit_id, slot);
+
+        CREATE TABLE IF NOT EXISTS claude_import_sources (
+            source_path TEXT PRIMARY KEY,
+            relative_path TEXT NOT NULL,
+            session_id TEXT,
+            file_size INTEGER NOT NULL,
+            mtime_ms INTEGER NOT NULL,
+            byte_offset INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'discovered',
+            last_imported_at INTEGER,
+            malformed_line_count INTEGER NOT NULL DEFAULT 0,
+            error_message TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_claude_sources_session
+            ON claude_import_sources(session_id);
+        CREATE INDEX IF NOT EXISTS idx_claude_sources_status
+            ON claude_import_sources(status);
+
+        CREATE TABLE IF NOT EXISTS claude_pricing_catalogs (
+            catalog_version TEXT PRIMARY KEY,
+            published_at INTEGER NOT NULL,
+            catalog_sha256 TEXT NOT NULL,
+            is_active INTEGER NOT NULL DEFAULT 0,
+            raw_json TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS claude_model_aliases (
+            alias_pattern TEXT NOT NULL,
+            target_model_key TEXT NOT NULL,
+            catalog_version TEXT NOT NULL,
+            PRIMARY KEY(alias_pattern, catalog_version)
+        );
+        CREATE TABLE IF NOT EXISTS claude_pricing_rules (
+            rule_id TEXT NOT NULL,
+            model_key TEXT NOT NULL,
+            effective_from_ms INTEGER NOT NULL DEFAULT 0,
+            effective_to_ms INTEGER,
+            input_usd_nano_per_token INTEGER NOT NULL,
+            cached_usd_nano_per_token INTEGER NOT NULL,
+            cache_write_5m_usd_nano_per_token INTEGER NOT NULL,
+            cache_write_1h_usd_nano_per_token INTEGER NOT NULL,
+            output_usd_nano_per_token INTEGER NOT NULL,
+            rate_divisor INTEGER NOT NULL DEFAULT 1,
+            catalog_version TEXT NOT NULL,
+            PRIMARY KEY(rule_id, catalog_version)
+        );
+        CREATE INDEX IF NOT EXISTS idx_claude_pricing_model_time
+            ON claude_pricing_rules(catalog_version, model_key, effective_from_ms, effective_to_ms);
+
+        INSERT OR IGNORE INTO app_metadata (key, value, updated_at)
+            VALUES ('claude_usage_generation', '1', unixepoch());
+        """)
     }
 }
 

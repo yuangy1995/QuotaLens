@@ -2,7 +2,7 @@
 
 [简体中文](README.zh-CN.md)
 
-QuotaLens is a native macOS menu bar app for tracking Codex and ChatGPT quota usage. It reads the local Codex sign-in state and presents quota usage, reset timing, subscription status, and reset-card availability in a compact desktop view.
+QuotaLens is a native macOS menu bar app for tracking Codex, Claude Code, and ChatGPT quota and local usage. It presents quota usage, reset timing, subscription status, and reset-card availability in a compact desktop view.
 
 ## Features
 
@@ -10,6 +10,9 @@ QuotaLens is a native macOS menu bar app for tracking Codex and ChatGPT quota us
 - Native SwiftUI dashboard with light, dark, and system appearance modes.
 - Local Codex account discovery from `~/.codex/auth.json`.
 - Codex app-server snapshot reading via `codex app-server --stdio` for account and rate-limit data.
+- Additional Codex model quotas plus cloud account totals, peak day, longest turn, activity streaks, and daily activity.
+- Claude Code tracking is off by default. When enabled, it reads 5-hour, 7-day, and model-scoped weekly quotas and incrementally aggregates local usage from `~/.claude/projects` and `~/.config/claude/projects`.
+- Sessions, History, and Dashboard can filter All, Codex, or Claude usage. The menu bar reading can show Codex, Claude, or both.
 - Subscription entitlement refresh using the local ChatGPT access token, with renewal, ending, and scheduled-plan-change states.
 - Reset-card expiry reminders with acknowledge and snooze controls.
 - Local SQLite persistence under `~/Library/Application Support/QuotaLens/quotalens.sqlite`.
@@ -22,7 +25,7 @@ QuotaLens is a native macOS menu bar app for tracking Codex and ChatGPT quota us
 - Adjustable refresh interval, custom Codex CLI path, launch-at-login toggle, and pure menu-bar mode.
 - Clicking the Dock icon focuses only the main window; the quota popover opens only from the menu bar status item.
 - When the available quota reaches zero, the dashboard and menu bar show an exhausted/waiting-for-reset state and stop producing pace forecasts.
-- Optional Codex window overlay can be disabled independently from local analytics. It appears only while Codex or QuotaLens is focused. Basic mode needs no Accessibility permission; precise snapping is an explicit opt-in that locates the Codex window and Help control without reading conversation content.
+- The Codex window overlay is enabled by default and can be disabled independently from local analytics. It stays attached with click-through behavior while Codex is in the background, unlocks dragging after a long press, and reveals details on hover. Basic mode needs no Accessibility permission; precise snapping is an explicit opt-in that locates the Codex window and Help control without reading conversation content.
 - Built-in localization for English, Simplified Chinese, Traditional Chinese, Japanese, Korean, Spanish, German, French, Portuguese, and Brazilian Portuguese.
 - The in-app changelog follows the selected interface language; its Simplified Chinese remote source cannot override other languages.
 
@@ -32,6 +35,7 @@ QuotaLens is a native macOS menu bar app for tracking Codex and ChatGPT quota us
 - Swift 6 toolchain or Xcode with Swift 6 support.
 - A working `codex` CLI installation.
 - A signed-in local Codex/ChatGPT session, usually stored in `~/.codex/auth.json`.
+- To use Claude quota and local history, sign in to Claude Code; Claude tracking can remain disabled.
 
 ## Build And Run
 
@@ -77,7 +81,7 @@ Pushing a matching `vX.Y.Z` tag starts the GitHub Actions release workflow. It u
 
 ## How It Works
 
-QuotaLens looks for the Codex CLI in common installation paths and in `PATH`. When connected, it starts a short-lived `codex app-server --stdio` process and requests account and rate-limit snapshots. It also reads local Codex authentication metadata to identify the current account and, when possible, refreshes ChatGPT subscription entitlement details.
+QuotaLens looks for the Codex CLI in common installation paths, the ChatGPT/Codex app bundles, and the login shell `PATH`. When connected, it starts `codex app-server --stdio` and requests account, quota, and account-activity data. It also reads local Codex authentication metadata to identify the current account and, when possible, refreshes ChatGPT subscription entitlement details. When Claude tracking is enabled, QuotaLens reads Claude Code's local usage files and updates quota through the existing sign-in state. Refreshed sign-in data stays in QuotaLens private storage and never modifies Claude Code's sign-in files.
 
 The app keeps its own local SQLite database for state, quota snapshots, local usage summaries, minimal usage event facts, pricing catalog metadata, and reconciliation metadata. Build outputs, packaged apps, temporary files, credentials, and local machine artifacts are intentionally excluded from the repository.
 
@@ -85,10 +89,10 @@ Local analytics can be turned off in Settings. The Settings page also provides *
 
 ## Privacy Notes
 
-QuotaLens is designed as a local desktop utility. It reads local Codex configuration and session files on your Mac and stores derived app data locally in SQLite. For usage analytics, QuotaLens stores token counts, model identifiers, timestamps, pricing status, source paths, and byte offsets. It does not store conversation text from prompts, answers, or tool output. Exported diagnostics contain aggregate counters only and omit source paths. Precise overlay snapping is opt-in and uses only Codex window and control metadata to locate the Help control; it does not read conversation content. The subscription entitlement refresh uses your existing local ChatGPT access token to call ChatGPT's account endpoint.
+QuotaLens is designed as a local desktop utility. It reads configuration and local usage files only for enabled sources and stores derived app data locally in SQLite. For usage analytics, QuotaLens stores token counts, model identifiers, timestamps, pricing status, source paths, and byte offsets. It does not store conversation text from prompts, answers, or tool output; Claude records do not offer conversation playback or deletion. Exported diagnostics contain aggregate counters only and omit source paths. Precise overlay snapping is opt-in and uses only Codex window and control metadata to locate the Help control; it does not read conversation content. The subscription entitlement refresh uses your existing local ChatGPT access token to call ChatGPT's account endpoint.
 
 API equivalent value is a diagnostic comparison against API list prices. It is not a subscription bill, invoice, or actual amount charged. Unknown models remain unpriced and are surfaced in diagnostics instead of being silently mapped to a default model.
 
 ## License
 
-Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE).
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE); third-party notices are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

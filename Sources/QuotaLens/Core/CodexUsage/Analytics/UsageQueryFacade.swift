@@ -10,8 +10,8 @@ public actor UsageQueryFacade {
         self.repository = UsageAnalyticsRepository(database: database)
     }
 
-    public func getProjectNames() throws -> [String] {
-        try repository.fetchProjectNames()
+    public func getProjectNames(providerFilter: UsageProviderFilter = .all) throws -> [String] {
+        try repository.fetchProjectNames(providerFilter: providerFilter)
     }
 
     public func getSessions(
@@ -19,9 +19,10 @@ public actor UsageQueryFacade {
         search: String? = nil,
         project: String? = nil,
         limit: Int = 50,
-        cursor: String? = nil
+        cursor: String? = nil,
+        providerFilter: UsageProviderFilter = .all
     ) throws -> [CodexSessionDTO] {
-        try repository.fetchSessions(sort: sort, search: search, project: project, limit: limit, cursor: cursor)
+        try repository.fetchSessions(sort: sort, search: search, project: project, limit: limit, cursor: cursor, providerFilter: providerFilter)
     }
 
     public func getSessionPage(
@@ -29,9 +30,10 @@ public actor UsageQueryFacade {
         search: String? = nil,
         project: String? = nil,
         limit: Int = 50,
-        cursor: String? = nil
+        cursor: String? = nil,
+        providerFilter: UsageProviderFilter = .all
     ) throws -> CodexSessionPageDTO {
-        try repository.fetchSessionPage(sort: sort, search: search, project: project, limit: limit, cursor: cursor)
+        try repository.fetchSessionPage(sort: sort, search: search, project: project, limit: limit, cursor: cursor, providerFilter: providerFilter)
     }
 
     public func getSessionDetail(
@@ -79,35 +81,38 @@ public actor UsageQueryFacade {
     public func getHistoryDays(
         daysCount: Int = 30,
         calendar: Calendar = UsageDayBucketer.calendar(),
-        now: Date = Date()
+        now: Date = Date(),
+        providerFilter: UsageProviderFilter = .all
     ) throws -> [DayUsageSummaryDTO] {
-        try repository.fetchHistoryDays(daysCount: daysCount, calendar: calendar, now: now)
+        try repository.fetchHistoryDays(daysCount: daysCount, calendar: calendar, now: now, providerFilter: providerFilter)
     }
 
     public func getDayDetail(
         dayKey: LocalDayKey,
         calendar: Calendar = UsageDayBucketer.calendar(),
         eventLimit: Int = 500,
-        eventCursor: String? = nil
+        eventCursor: String? = nil,
+        providerFilter: UsageProviderFilter = .all
     ) throws -> DayDetailDTO {
         try repository.fetchDayDetail(
             dayKey: dayKey,
             calendar: calendar,
             eventLimit: eventLimit,
-            eventCursor: eventCursor
+            eventCursor: eventCursor,
+            providerFilter: providerFilter
         )
     }
 
-    public func getDashboardMetrics(days: Int = 30, calendar: Calendar = UsageDayBucketer.calendar()) throws -> DashboardMetricsDTO {
-        try repository.fetchDashboardMetrics(days: days, calendar: calendar)
+    public func getDashboardMetrics(days: Int = 30, calendar: Calendar = UsageDayBucketer.calendar(), providerFilter: UsageProviderFilter = .all) throws -> DashboardMetricsDTO {
+        try repository.fetchDashboardMetrics(days: days, calendar: calendar, providerFilter: providerFilter)
     }
 
-    public func getTodayMetrics(calendar: Calendar = UsageDayBucketer.calendar()) throws -> DashboardMetricsDTO {
-        try repository.fetchTodayMetrics(calendar: calendar)
+    public func getTodayMetrics(calendar: Calendar = UsageDayBucketer.calendar(), providerFilter: UsageProviderFilter = .all) throws -> DashboardMetricsDTO {
+        try repository.fetchTodayMetrics(calendar: calendar, providerFilter: providerFilter)
     }
 
-    public func getActivityHeatmap(year: Int = UsageDayBucketer.calendar().component(.year, from: Date()), calendar: Calendar = UsageDayBucketer.calendar()) throws -> [ActivityHeatmapCellDTO] {
-        try repository.fetchActivityHeatmap(year: year, calendar: calendar)
+    public func getActivityHeatmap(year: Int = UsageDayBucketer.calendar().component(.year, from: Date()), calendar: Calendar = UsageDayBucketer.calendar(), providerFilter: UsageProviderFilter = .all) throws -> [ActivityHeatmapCellDTO] {
+        try repository.fetchActivityHeatmap(year: year, calendar: calendar, providerFilter: providerFilter)
     }
 
     public func getRecentRateLimitSnapshots(accountKey: String? = nil, limit: Int = 50) throws -> [RateLimitSnapshotRecord] {

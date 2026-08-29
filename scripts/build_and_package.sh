@@ -257,6 +257,10 @@ cp "${RELEASE_BIN}" "${APP_BUNDLE}/Contents/MacOS/${APP_NAME}"
 chmod +x "${APP_BUNDLE}/Contents/MacOS/${APP_NAME}"
 echo -n "APPL????" > "${APP_BUNDLE}/Contents/PkgInfo"
 
+if [[ -f "${PROJECT_DIR}/THIRD_PARTY_NOTICES.md" ]]; then
+    cp "${PROJECT_DIR}/THIRD_PARTY_NOTICES.md" "${APP_BUNDLE}/Contents/Resources/"
+fi
+
 if [[ -f "${PROJECT_DIR}/Resources/Info.plist" ]]; then
     cp "${PROJECT_DIR}/Resources/Info.plist" "${APP_BUNDLE}/Contents/Info.plist"
     plutil -lint "${APP_BUNDLE}/Contents/Info.plist" >/dev/null

@@ -82,12 +82,15 @@ public final class UsageDashboardStore: ObservableObject {
     @Published public var localForecast: LocalUsageForecastDTO? = nil
     @Published public var isLoading: Bool = false
     @Published public var errorMessage: String? = nil
+    public let providerFilter: UsageProviderFilter
 
     private let facade: UsageQueryFacade
     private var lastRateSnapshots: [QuotaForecastEngine.RateSnapshotPoint] = []
+    private var loadGeneration = 0
 
-    public init(facade: UsageQueryFacade) {
+    public init(facade: UsageQueryFacade, providerFilter: UsageProviderFilter) {
         self.facade = facade
+        self.providerFilter = providerFilter
     }
 
     public func loadDashboardData(
@@ -96,27 +99,34 @@ public final class UsageDashboardStore: ObservableObject {
         currentCycleKey: QuotaForecastEngine.QuotaCycleKey? = nil,
         rateSnapshots: [QuotaForecastEngine.RateSnapshotPoint] = []
     ) async {
-        guard !isLoading else { return }
-
-        lastRateSnapshots = rateSnapshots
+        loadGeneration += 1
+        let generation = loadGeneration
+        let filter = providerFilter
+        let rangeDays = selectedRangeDays
         isLoading = true
         errorMessage = nil
+        defer {
+            if generation == loadGeneration {
+                isLoading = false
+            }
+        }
         do {
-            async let selectedMetrics = facade.getDashboardMetrics(days: selectedRangeDays)
-            async let today = facade.getTodayMetrics()
-            async let sevenDay = facade.getDashboardMetrics(days: 7)
-            async let thirtyDay = facade.getDashboardMetrics(days: 30)
-            async let projectionHistory = facade.getHistoryDays(daysCount: 90)
-            let (m, todayM, sevenM, thirtyM, history) = try await (
-                selectedMetrics, today, sevenDay, thirtyDay, projectionHistory
+            async let selectedMetrics = facade.getDashboardMetrics(days: rangeDays, providerFilter: filter)
+            async let today = facade.getTodayMetrics(providerFilter: filter)
+            async let sevenDay = facade.getDashboardMetrics(days: 7, providerFilter: filter)
+            async let thirtyDay = facade.getDashboardMetrics(days: 30, providerFilter: filter)
+            async let projectionHistory = facade.getHistoryDays(daysCount: 90, providerFilter: filter)
+            async let heatmap = facade.getActivityHeatmap(providerFilter: filter)
+            let (m, todayM, sevenM, thirtyM, history, cells) = try await (
+                selectedMetrics, today, sevenDay, thirtyDay, projectionHistory, heatmap
             )
+            guard generation == loadGeneration else { return }
+            lastRateSnapshots = rateSnapshots
             self.metrics = m
             self.todayMetrics = todayM
             self.sevenDayMetrics = sevenM
             self.thirtyDayMetrics = thirtyM
-
-            let heatmap = try await facade.getActivityHeatmap()
-            self.heatmapCells = heatmap
+            self.heatmapCells = cells
 
             // 计算双重预测
             self.updateQuotaForecast(
@@ -130,9 +140,9 @@ public final class UsageDashboardStore: ObservableObject {
                 horizonDays: 7
             )
         } catch {
+            guard generation == loadGeneration else { return }
             self.errorMessage = Self.userFacingError(error)
         }
-        isLoading = false
     }
 
     public func updateQuotaForecast(
@@ -161,17 +171,21 @@ public final class UsageDashboardStore: ObservableObject {
     }
 }
 
-public struct UsageDashboardView: View {
+struct ProviderUsageDashboardView: View {
     @StateObject private var store: UsageDashboardStore
     @EnvironmentObject var env: AppEnvironment
     @Environment(\.colorScheme) var colorScheme
     @State private var hoveredTrendDayID: String?
     @State private var hoveredTrendLocation: CGPoint?
-    @State private var hoveredHeatmapCellID: String?
-    @State private var hoveredHeatmapLocation: CGPoint?
+    @State private var reloadGeneration = 0
 
-    public init(facade: UsageQueryFacade) {
-        _store = StateObject(wrappedValue: UsageDashboardStore(facade: facade))
+    init(facade: UsageQueryFacade, providerFilter: UsageProviderFilter) {
+        _store = StateObject(
+            wrappedValue: UsageDashboardStore(
+                facade: facade,
+                providerFilter: providerFilter
+            )
+        )
     }
 
     public var body: some View {
@@ -209,6 +223,11 @@ public struct UsageDashboardView: View {
                     // 6. GitHub 风格年度活跃热力图
                     activityHeatmapSection
 
+                    if store.providerFilter == .codex,
+                       let accountUsage = env.state.codexAccountUsage {
+                        codexAccountActivityCard(accountUsage)
+                    }
+
                     // 7. 模型使用分布
                     modelCompositionSection(models: metrics.modelDistribution)
                 }
@@ -216,17 +235,26 @@ public struct UsageDashboardView: View {
             .padding(24)
         }
         .task {
-            guard !env.scanCoordinator.isScanning else { return }
+            guard !isRelevantScanActive else { return }
             await reloadData()
         }
         .onChange(of: env.scanCoordinator.isScanning) { _, isScanning in
-            guard !isScanning else { return }
+            guard store.providerFilter == .codex, !isScanning else { return }
             Task {
                 await reloadData()
             }
         }
+        .onChange(of: env.claudeScanCoordinator.isScanning) { _, isScanning in
+            guard store.providerFilter == .claude, !isScanning else { return }
+            Task { await reloadData() }
+        }
         .onReceive(env.state.$currentQuotaSnapshots.dropFirst()) { _ in
+            guard store.providerFilter == .codex else { return }
             updateQuotaForecast()
+        }
+        .onReceive(env.state.$latestClaudeUsage.dropFirst()) { _ in
+            guard store.providerFilter == .claude else { return }
+            Task { await reloadData() }
         }
         .onChange(of: store.selectedRangeDays) { _, _ in
             clearChartHoverState()
@@ -237,10 +265,72 @@ public struct UsageDashboardView: View {
         }
     }
 
-    private func reloadData() async {
-        guard !env.scanCoordinator.isScanning, !store.isLoading else { return }
+    private var isRelevantScanActive: Bool {
+        switch store.providerFilter {
+        case .codex: return env.scanCoordinator.isScanning
+        case .claude: return env.claudeScanCoordinator.isScanning
+        case .all: return env.scanCoordinator.isScanning || env.claudeScanCoordinator.isScanning
+        }
+    }
 
-        let snap = env.state.preferredQuotaForecastSnapshot
+    private func codexAccountActivityCard(_ usage: CodexAccountUsageSnapshot) -> some View {
+        let cyan = AppTheme.accentCyan(for: colorScheme)
+        let cells = usage.daily.map(UsageActivityHeatmapCell.init(cloud:))
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label(L10n.text("Codex 云端活动", "Codex Cloud Activity"), systemImage: "icloud")
+                    .font(.system(size: 13, weight: .black, design: .rounded))
+                    .foregroundStyle(cyan)
+                Spacer()
+                Text(L10n.text("云端汇总", "Account totals"))
+                    .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+            }
+
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 5), spacing: 8) {
+                accountMetric(L10n.text("累计 Token", "Lifetime Tokens"), usage.lifetimeTokens.map(UsageNumberFormatter.compactTokenCount) ?? "--")
+                accountMetric(L10n.text("峰值日", "Peak Day"), usage.peakDailyTokens.map(UsageNumberFormatter.compactTokenCount) ?? "--")
+                accountMetric(L10n.text("最长任务", "Longest Turn"), usage.longestRunningTurnSeconds.map(accountDuration) ?? "--")
+                accountMetric(L10n.text("当前连续", "Current Streak"), usage.currentStreakDays.map { L10n.format("%lld days", zhHans: "%lld 天", $0) } ?? "--")
+                accountMetric(L10n.text("最长连续", "Longest Streak"), usage.longestStreakDays.map { L10n.format("%lld days", zhHans: "%lld 天", $0) } ?? "--")
+            }
+
+            UsageActivityHeatmapGrid(cells: cells)
+        }
+        .padding(14)
+        .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8))
+    }
+
+    private func accountMetric(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.system(size: 9.5, weight: .bold))
+                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+            Text(value)
+                .font(.system(size: 11, weight: .heavy, design: .monospaced))
+                .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(8)
+        .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func accountDuration(_ seconds: Int64) -> String {
+        if seconds >= 3_600 {
+            return L10n.format("%.1f hr", zhHans: "%.1f 小时", Double(seconds) / 3_600)
+        }
+        return L10n.format("%lld min", zhHans: "%lld 分钟", seconds / 60)
+    }
+
+    private func reloadData() async {
+        guard !isRelevantScanActive else { return }
+        reloadGeneration += 1
+        let generation = reloadGeneration
+
+        let snap = currentForecastSnapshot
         let used = snap?.usedPercent ?? 0.0
         let resetsAt = snap?.resetsAt
         let currentCycleKey = snap.flatMap { snapshot -> QuotaForecastEngine.QuotaCycleKey? in
@@ -256,7 +346,9 @@ public struct UsageDashboardView: View {
 
         var points: [QuotaForecastEngine.RateSnapshotPoint] = []
         if let storedSnaps = try? await env.usageQueryFacade.getRecentRateLimitSnapshots(
-            accountKey: env.state.selectedAccountKey ?? env.state.account?.accountKey,
+            accountKey: store.providerFilter == .claude
+                ? ClaudeQuotaRepository.accountKey
+                : (env.state.selectedAccountKey ?? env.state.account?.accountKey),
             limit: 300
         ) {
             points = storedSnaps.compactMap { s in
@@ -275,6 +367,8 @@ public struct UsageDashboardView: View {
             }
         }
 
+        guard generation == reloadGeneration else { return }
+
         await store.loadDashboardData(
             currentUsedPercent: used,
             resetsAt: resetsAt,
@@ -284,7 +378,7 @@ public struct UsageDashboardView: View {
     }
 
     private func updateQuotaForecast() {
-        let snap = env.state.preferredQuotaForecastSnapshot
+        let snap = currentForecastSnapshot
         let currentCycleKey = snap.flatMap { snapshot -> QuotaForecastEngine.QuotaCycleKey? in
             guard let resetAt = snapshot.resetsAt else { return nil }
             return QuotaForecastEngine.QuotaCycleKey(
@@ -302,6 +396,25 @@ public struct UsageDashboardView: View {
         )
     }
 
+    private var currentForecastSnapshot: RateLimitSnapshotRecord? {
+        guard store.providerFilter == .claude else {
+            return env.state.preferredQuotaForecastSnapshot
+        }
+        guard let usage = env.state.latestClaudeUsage,
+              let window = usage.fiveHour ?? usage.sevenDay else { return nil }
+        return RateLimitSnapshotRecord(
+            accountKey: ClaudeQuotaRepository.accountKey,
+            observedAt: Int64(usage.capturedAt.timeIntervalSince1970),
+            limitId: window.id,
+            slot: window.windowDuration <= 18_000 ? "primary" : "secondary",
+            usedPercentMilli: Int((window.usedPercent * 1_000).rounded()),
+            windowDurationMins: Int(window.windowDuration / 60),
+            resetsAt: Int64(window.resetAt.timeIntervalSince1970),
+            planType: usage.tier,
+            rawJson: "{}"
+        )
+    }
+
     // MARK: - 子视图组件划分
     private var headerControlBar: some View {
         let cyan = AppTheme.accentCyan(for: colorScheme)
@@ -309,11 +422,15 @@ public struct UsageDashboardView: View {
 
         return HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text(L10n.text("Codex 用量分析大盘", "Codex Usage Dashboard"))
+                Text(store.providerFilter == .claude
+                    ? L10n.text("Claude 用量分析", "Claude Usage Analytics")
+                    : L10n.text("Codex 用量分析", "Codex Usage Analytics"))
                     .font(.system(size: 18, weight: .black, design: .rounded))
                     .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
 
-                Text(L10n.text("本机精确日志解析 · 多模型构成 · 双重趋势预测", "Exact local logs · Model breakdown · Dual forecast"))
+                Text(store.providerFilter == .claude
+                    ? L10n.text("本地用量 · 活跃热力图 · 模型构成", "Local usage · Activity heatmap · Model breakdown")
+                    : L10n.text("本地与云端活动 · 活跃热力图 · 模型构成", "Local and cloud activity · Activity heatmap · Model breakdown"))
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
             }
@@ -502,7 +619,9 @@ public struct UsageDashboardView: View {
                             Image(systemName: "gauge.with.dots.needle.bottom.50percent")
                                 .font(.system(size: 13, weight: .bold))
                                 .foregroundStyle(qf.risk == .critical ? rose : (qf.risk == .warning ? amber : cyan))
-                            Text(env.state.preferredQuotaForecastTitle)
+                            Text(store.providerFilter == .claude
+                                ? L10n.text("Claude 额度预测", "Claude Quota Forecast")
+                                : env.state.preferredQuotaForecastTitle)
                                 .font(.system(size: 13, weight: .black, design: .rounded))
                                 .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
                         }
@@ -689,7 +808,7 @@ public struct UsageDashboardView: View {
         let chartData = dailyBuckets.sorted { $0.dayKey < $1.dayKey }
 
         return VStack(alignment: .leading, spacing: 12) {
-            Text(L10n.text("历史消耗趋势 (Swift Charts)", "Usage Trend"))
+            Text(L10n.text("历史消耗趋势", "Usage Trend"))
                 .font(.system(size: 14, weight: .black, design: .rounded))
                 .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
 
@@ -809,99 +928,20 @@ public struct UsageDashboardView: View {
 
     // MARK: - 5. GitHub 风格年度热力图
     private var activityHeatmapSection: some View {
-        let cells = store.heatmapCells
-        let rowCount = 7
-        let columnCount = max(1, Int(ceil(Double(max(cells.count, rowCount)) / Double(rowCount))))
+        let cells = store.heatmapCells.map(UsageActivityHeatmapCell.init(local:))
 
         return VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text(L10n.text("年度活跃热力图 (Activity Heatmap)", "Annual Activity Heatmap"))
-                    .font(.system(size: 14, weight: .black, design: .rounded))
-                    .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
-
+                Label(L10n.text("本地活动", "Local Activity"), systemImage: "internaldrive")
+                    .font(.system(size: 13, weight: .black, design: .rounded))
+                    .foregroundStyle(AppTheme.accentEmerald(for: colorScheme))
                 Spacer()
-
-                HStack(spacing: 4) {
-                    Text(L10n.text("少", "Less"))
-                        .font(.system(size: 9, design: .monospaced))
-                        .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-                    heatmapSquare(level: 0)
-                    heatmapSquare(level: 1)
-                    heatmapSquare(level: 2)
-                    heatmapSquare(level: 3)
-                    heatmapSquare(level: 4)
-                    Text(L10n.text("多", "More"))
-                        .font(.system(size: 9, design: .monospaced))
-                        .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-                }
+                Text(L10n.text("本地数据", "Local Data"))
+                    .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
             }
 
-            GeometryReader { proxy in
-                ZStack(alignment: .topLeading) {
-                    let spacing = adaptiveHeatmapSpacing(width: proxy.size.width)
-                    let squareSize = adaptiveHeatmapSquareSize(
-                        width: proxy.size.width,
-                        columns: columnCount,
-                        spacing: spacing
-                    )
-                    LazyHGrid(
-                        rows: Array(repeating: GridItem(.fixed(squareSize), spacing: spacing), count: rowCount),
-                        spacing: spacing
-                    ) {
-                        ForEach(cells) { cell in
-                            heatmapSquare(
-                                level: cell.intensityLevel,
-                                size: squareSize,
-                                isHighlighted: hoveredHeatmapCellID == cell.id
-                            )
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    // A single tracking surface owns hover state for the whole
-                    // heatmap. This prevents per-cell tracking areas and native
-                    // help tags from producing duplicate or stale popovers.
-                    Rectangle()
-                        .fill(.clear)
-                        .contentShape(Rectangle())
-                        .onContinuousHover { phase in
-                            switch phase {
-                            case .active(let location):
-                                guard let index = UsageDashboardHoverLayout.heatmapCellIndex(
-                                    at: location,
-                                    squareSize: squareSize,
-                                    spacing: spacing,
-                                    rowCount: rowCount,
-                                    cellCount: cells.count
-                                ) else {
-                                    hoveredHeatmapCellID = nil
-                                    hoveredHeatmapLocation = nil
-                                    return
-                                }
-                                hoveredHeatmapCellID = cells[index].id
-                                hoveredHeatmapLocation = location
-                            case .ended:
-                                hoveredHeatmapCellID = nil
-                                hoveredHeatmapLocation = nil
-                            }
-                        }
-                        .accessibilityHidden(true)
-
-                    if let hoveredCell = cells.first(where: { $0.id == hoveredHeatmapCellID }),
-                       let cursor = hoveredHeatmapLocation {
-                        heatmapHoverCard(hoveredCell)
-                            .allowsHitTesting(false)
-                            .position(
-                                UsageDashboardHoverLayout.cardPosition(
-                                    cursor: cursor,
-                                    containerSize: proxy.size,
-                                    cardSize: CGSize(width: 188, height: 122)
-                                )
-                            )
-                    }
-                }
-            }
-            .aspectRatio(Double(columnCount) / Double(rowCount), contentMode: .fit)
+            UsageActivityHeatmapGrid(cells: cells)
         }
         .padding(16)
         .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 14))
@@ -909,41 +949,6 @@ public struct UsageDashboardView: View {
             RoundedRectangle(cornerRadius: 14)
                 .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
         )
-    }
-
-    private func adaptiveHeatmapSpacing(width: CGFloat) -> CGFloat {
-        min(max(width / 420.0, 2.0), 5.0)
-    }
-
-    private func adaptiveHeatmapSquareSize(width: CGFloat, columns: Int, spacing: CGFloat) -> CGFloat {
-        let columnCount = max(1, columns)
-        let totalSpacing = spacing * CGFloat(max(0, columnCount - 1))
-        return max(6.0, (width - totalSpacing) / CGFloat(columnCount))
-    }
-
-    private func heatmapSquare(level: Int, size: CGFloat = 10, isHighlighted: Bool = false) -> some View {
-        let emerald = AppTheme.accentEmerald(for: colorScheme)
-        let isDark = colorScheme == .dark
-
-        let color: Color
-        switch level {
-        case 1: color = emerald.opacity(isDark ? 0.35 : 0.30)
-        case 2: color = emerald.opacity(isDark ? 0.55 : 0.50)
-        case 3: color = emerald.opacity(isDark ? 0.75 : 0.70)
-        case 4: color = emerald
-        default: color = isDark ? Color.white.opacity(0.06) : Color.black.opacity(0.06)
-        }
-
-        return RoundedRectangle(cornerRadius: 2)
-            .fill(color)
-            .frame(width: size, height: size)
-            .overlay(
-                RoundedRectangle(cornerRadius: 2)
-                    .strokeBorder(
-                        isHighlighted ? AppTheme.textPrimary(for: colorScheme).opacity(isDark ? 0.85 : 0.70) : .clear,
-                        lineWidth: isHighlighted ? 1.2 : 0
-                    )
-            )
     }
 
     private func usageTrendHoverCard(_ day: DayUsageSummaryDTO) -> some View {
@@ -994,49 +999,6 @@ public struct UsageDashboardView: View {
         }
     }
 
-    private func heatmapHoverCard(_ cell: ActivityHeatmapCellDTO) -> some View {
-        let emerald = AppTheme.accentEmerald(for: colorScheme)
-
-        return hoverCard {
-            Text(L10n.text("活跃明细", "Activity Details"))
-                .font(.system(size: 10.5, weight: .black, design: .rounded))
-                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-
-            Text(longDayString(cell.date))
-                .font(.system(size: 12, weight: .heavy, design: .rounded))
-                .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
-
-            if cell.tokenCount == 0 && cell.eventCount == 0 {
-                Text(L10n.text("暂无用量", "No usage"))
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-            } else {
-                hoverMetricRow(
-                    label: L10n.text("Token 总量", "Total Tokens"),
-                    value: UsageNumberFormatter.formattedTokenCount(cell.tokenCount),
-                    color: emerald
-                )
-                hoverMetricRow(
-                    label: L10n.text("费用", "Cost"),
-                    value: UsageNumberFormatter.currencyUSD(cell.estimatedCost),
-                    color: AppTheme.accentEmerald(for: colorScheme)
-                )
-                if cell.legacyAggregateCost.rawValue > 0 {
-                    hoverMetricRow(
-                        label: L10n.text("历史金额", "Historical Amount"),
-                        value: UsageNumberFormatter.currencyUSD(cell.legacyAggregateCost),
-                        color: AppTheme.accentAmber(for: colorScheme)
-                    )
-                }
-                hoverMetricRow(
-                    label: L10n.text("调用", "Events"),
-                    value: "\(cell.eventCount)",
-                    color: AppTheme.textPrimary(for: colorScheme)
-                )
-            }
-        }
-    }
-
     private func hoverCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         let isDark = colorScheme == .dark
 
@@ -1073,8 +1035,6 @@ public struct UsageDashboardView: View {
     private func clearChartHoverState() {
         hoveredTrendDayID = nil
         hoveredTrendLocation = nil
-        hoveredHeatmapCellID = nil
-        hoveredHeatmapLocation = nil
     }
 
     private func nearestTrendDayID(to date: Date, in days: [DayUsageSummaryDTO]) -> String? {
@@ -1145,6 +1105,279 @@ public struct UsageDashboardView: View {
             RoundedRectangle(cornerRadius: 14)
                 .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
         )
+    }
+}
+
+private struct UsageActivityHeatmapCell: Identifiable {
+    let id: String
+    let date: Date
+    let tokenCount: Int64
+    let eventCount: Int?
+    let estimatedCost: MoneyNanoUSD?
+    let legacyAggregateCost: MoneyNanoUSD?
+    let intensityLevel: Int
+
+    init(local cell: ActivityHeatmapCellDTO) {
+        id = "local-\(cell.id)"
+        date = cell.date
+        tokenCount = cell.tokenCount
+        eventCount = cell.eventCount
+        estimatedCost = cell.estimatedCost
+        legacyAggregateCost = cell.legacyAggregateCost
+        intensityLevel = cell.intensityLevel
+    }
+
+    init(cloud day: CodexAccountUsageSnapshot.Day) {
+        id = "cloud-\(Int64(day.date.timeIntervalSince1970))"
+        date = day.date
+        tokenCount = day.tokens
+        eventCount = nil
+        estimatedCost = nil
+        legacyAggregateCost = nil
+        intensityLevel = Self.intensityLevel(for: day.tokens)
+    }
+
+    private static func intensityLevel(for tokens: Int64) -> Int {
+        switch tokens {
+        case ...0: return 0
+        case 1..<100_000: return 1
+        case 100_000..<1_000_000: return 2
+        case 1_000_000..<5_000_000: return 3
+        default: return 4
+        }
+    }
+}
+
+private struct UsageActivityHeatmapGrid: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var hoveredCellID: String?
+    @State private var hoveredLocation: CGPoint?
+    let cells: [UsageActivityHeatmapCell]
+
+    private let rowCount = 7
+
+    private var columnCount: Int {
+        max(1, Int(ceil(Double(max(cells.count, rowCount)) / Double(rowCount))))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 4) {
+                Spacer()
+                Text(L10n.text("少", "Less"))
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                heatmapSquare(level: 0)
+                heatmapSquare(level: 1)
+                heatmapSquare(level: 2)
+                heatmapSquare(level: 3)
+                heatmapSquare(level: 4)
+                Text(L10n.text("多", "More"))
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+            }
+
+            if cells.isEmpty {
+                Text(L10n.text("暂无用量", "No usage"))
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                    .frame(maxWidth: .infinity, minHeight: 72)
+            } else {
+                GeometryReader { proxy in
+                    ZStack(alignment: .topLeading) {
+                        let spacing = adaptiveSpacing(width: proxy.size.width)
+                        let squareSize = adaptiveSquareSize(
+                            width: proxy.size.width,
+                            columns: columnCount,
+                            spacing: spacing
+                        )
+                        LazyHGrid(
+                            rows: Array(
+                                repeating: GridItem(.fixed(squareSize), spacing: spacing),
+                                count: rowCount
+                            ),
+                            spacing: spacing
+                        ) {
+                            ForEach(cells) { cell in
+                                heatmapSquare(
+                                    level: cell.intensityLevel,
+                                    size: squareSize,
+                                    isHighlighted: hoveredCellID == cell.id
+                                )
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                        Rectangle()
+                            .fill(.clear)
+                            .contentShape(Rectangle())
+                            .onContinuousHover { phase in
+                                switch phase {
+                                case .active(let location):
+                                    guard let index = UsageDashboardHoverLayout.heatmapCellIndex(
+                                        at: location,
+                                        squareSize: squareSize,
+                                        spacing: spacing,
+                                        rowCount: rowCount,
+                                        cellCount: cells.count
+                                    ) else {
+                                        hoveredCellID = nil
+                                        hoveredLocation = nil
+                                        return
+                                    }
+                                    hoveredCellID = cells[index].id
+                                    hoveredLocation = location
+                                case .ended:
+                                    hoveredCellID = nil
+                                    hoveredLocation = nil
+                                }
+                            }
+                            .accessibilityHidden(true)
+
+                        if let hoveredCell = cells.first(where: { $0.id == hoveredCellID }),
+                           let cursor = hoveredLocation {
+                            hoverCard(hoveredCell)
+                                .allowsHitTesting(false)
+                                .position(
+                                    UsageDashboardHoverLayout.cardPosition(
+                                        cursor: cursor,
+                                        containerSize: proxy.size,
+                                        cardSize: CGSize(width: 188, height: 122)
+                                    )
+                                )
+                        }
+                    }
+                }
+                .aspectRatio(Double(columnCount) / Double(rowCount), contentMode: .fit)
+            }
+        }
+        .onDisappear {
+            hoveredCellID = nil
+            hoveredLocation = nil
+        }
+    }
+
+    private func adaptiveSpacing(width: CGFloat) -> CGFloat {
+        min(max(width / 420, 2), 5)
+    }
+
+    private func adaptiveSquareSize(
+        width: CGFloat,
+        columns: Int,
+        spacing: CGFloat
+    ) -> CGFloat {
+        let totalSpacing = spacing * CGFloat(max(0, columns - 1))
+        return max(6, (width - totalSpacing) / CGFloat(max(1, columns)))
+    }
+
+    private func heatmapSquare(
+        level: Int,
+        size: CGFloat = 10,
+        isHighlighted: Bool = false
+    ) -> some View {
+        let emerald = AppTheme.accentEmerald(for: colorScheme)
+        let isDark = colorScheme == .dark
+        let color: Color
+        switch level {
+        case 1: color = emerald.opacity(isDark ? 0.35 : 0.30)
+        case 2: color = emerald.opacity(isDark ? 0.55 : 0.50)
+        case 3: color = emerald.opacity(isDark ? 0.75 : 0.70)
+        case 4: color = emerald
+        default: color = isDark ? Color.white.opacity(0.06) : Color.black.opacity(0.06)
+        }
+
+        return RoundedRectangle(cornerRadius: 2)
+            .fill(color)
+            .frame(width: size, height: size)
+            .overlay(
+                RoundedRectangle(cornerRadius: 2)
+                    .strokeBorder(
+                        isHighlighted
+                            ? AppTheme.textPrimary(for: colorScheme).opacity(isDark ? 0.85 : 0.70)
+                            : .clear,
+                        lineWidth: isHighlighted ? 1.2 : 0
+                    )
+            )
+    }
+
+    private func hoverCard(_ cell: UsageActivityHeatmapCell) -> some View {
+        let emerald = AppTheme.accentEmerald(for: colorScheme)
+        let isDark = colorScheme == .dark
+
+        return VStack(alignment: .leading, spacing: 6) {
+            Text(L10n.text("活跃明细", "Activity Details"))
+                .font(.system(size: 10.5, weight: .black, design: .rounded))
+                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+            Text(longDayString(cell.date))
+                .font(.system(size: 12, weight: .heavy, design: .rounded))
+                .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+
+            if cell.tokenCount == 0, cell.eventCount ?? 0 == 0 {
+                Text(L10n.text("暂无用量", "No usage"))
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+            } else {
+                metricRow(
+                    label: L10n.text("Token 总量", "Total Tokens"),
+                    value: UsageNumberFormatter.formattedTokenCount(cell.tokenCount),
+                    color: emerald
+                )
+                if let estimatedCost = cell.estimatedCost {
+                    metricRow(
+                        label: L10n.text("费用", "Cost"),
+                        value: UsageNumberFormatter.currencyUSD(estimatedCost),
+                        color: emerald
+                    )
+                }
+                if let legacyCost = cell.legacyAggregateCost,
+                   legacyCost.rawValue > 0 {
+                    metricRow(
+                        label: L10n.text("历史金额", "Historical Amount"),
+                        value: UsageNumberFormatter.currencyUSD(legacyCost),
+                        color: AppTheme.accentAmber(for: colorScheme)
+                    )
+                }
+                if let eventCount = cell.eventCount {
+                    metricRow(
+                        label: L10n.text("调用", "Events"),
+                        value: "\(eventCount)",
+                        color: AppTheme.textPrimary(for: colorScheme)
+                    )
+                }
+            }
+        }
+        .padding(10)
+        .frame(width: 188, alignment: .leading)
+        .background(
+            isDark ? Color.black.opacity(0.78) : Color.white.opacity(0.96),
+            in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
+        )
+        .shadow(color: Color.black.opacity(isDark ? 0.32 : 0.12), radius: 14, y: 6)
+    }
+
+    private func metricRow(label: String, value: String, color: Color) -> some View {
+        HStack(spacing: 10) {
+            Text(label)
+                .font(.system(size: 10, weight: .medium, design: .rounded))
+                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+            Spacer(minLength: 8)
+            Text(value)
+                .font(.system(size: 10.5, weight: .heavy, design: .rounded))
+                .foregroundStyle(color)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+        }
+    }
+
+    private func longDayString(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = L10n.locale
+        formatter.dateFormat = L10n.isChinese ? "yyyy年M月d日" : "MMM d, yyyy"
+        return formatter.string(from: date)
     }
 }
 

@@ -12,25 +12,34 @@ private final class MenuBarLocalUsageStore: ObservableObject {
 
     private let facade: UsageQueryFacade
     private var forecastPoints: [QuotaForecastEngine.RateSnapshotPoint] = []
+    private var loadGeneration = 0
 
     init(facade: UsageQueryFacade) {
         self.facade = facade
     }
 
-    func load(accountKey: String?, currentUsedPercent: Double, currentSnapshot: RateLimitSnapshotRecord?) async {
+    func load(accountKey: String?, currentUsedPercent: Double, currentSnapshot: RateLimitSnapshotRecord?, providerFilter: UsageProviderFilter) async {
         guard UsageFeatureFlags.shared.isAnalyticsEnabled else {
             sevenDayMetrics = nil
             thirtyDayMetrics = nil
             quotaForecast = nil
             return
         }
-        guard !isLoading else { return }
-
+        loadGeneration += 1
+        let generation = loadGeneration
         isLoading = true
-        defer { isLoading = false }
+        defer {
+            if generation == loadGeneration {
+                isLoading = false
+            }
+        }
 
-        sevenDayMetrics = try? await facade.getDashboardMetrics(days: 7)
-        thirtyDayMetrics = try? await facade.getDashboardMetrics(days: 30)
+        async let seven = try? facade.getDashboardMetrics(days: 7, providerFilter: providerFilter)
+        async let thirty = try? facade.getDashboardMetrics(days: 30, providerFilter: providerFilter)
+        let (sevenResult, thirtyResult) = await (seven, thirty)
+        guard generation == loadGeneration else { return }
+        sevenDayMetrics = sevenResult
+        thirtyDayMetrics = thirtyResult
 
         guard currentUsedPercent < 99.999_9 else {
             quotaForecast = nil
@@ -38,6 +47,7 @@ private final class MenuBarLocalUsageStore: ObservableObject {
         }
 
         let storedSnaps = (try? await facade.getRecentRateLimitSnapshots(accountKey: accountKey, limit: 300)) ?? []
+        guard generation == loadGeneration else { return }
         forecastPoints = storedSnaps.compactMap { snapshot -> QuotaForecastEngine.RateSnapshotPoint? in
             guard let resetAt = snapshot.resetsAt else { return nil }
             return QuotaForecastEngine.RateSnapshotPoint(
@@ -83,29 +93,47 @@ private final class MenuBarLocalUsageStore: ObservableObject {
 public struct MenuBarContentView: View {
     @ObservedObject var state: AppState
     @ObservedObject private var scanCoordinator: CodexUsageScanCoordinator
+    @ObservedObject private var claudeScanCoordinator: ClaudeUsageScanCoordinator
     @StateObject private var localUsageStore: MenuBarLocalUsageStore
     @Environment(\.colorScheme) var colorScheme
+    private let displayTool: MonitoringToolID?
     var onOpenMainWindow: () -> Void
     var onRefresh: () -> Void
 
     public init(
         state: AppState,
         usageFacade: UsageQueryFacade,
+        claudeScanCoordinator: ClaudeUsageScanCoordinator,
+        displayTool: MonitoringToolID?,
         onOpenMainWindow: @escaping () -> Void,
         onRefresh: @escaping () -> Void
     ) {
         self.state = state
         self.scanCoordinator = .shared
+        self.claudeScanCoordinator = claudeScanCoordinator
+        self.displayTool = displayTool
         self.onOpenMainWindow = onOpenMainWindow
         self.onRefresh = onRefresh
         _localUsageStore = StateObject(wrappedValue: MenuBarLocalUsageStore(facade: usageFacade))
     }
 
+    @ViewBuilder
     public var body: some View {
+        switch displayTool {
+        case .codex:
+            codexBody
+        case .claude:
+            claudeBody
+        default:
+            neutralBody
+        }
+    }
+
+    private var codexBody: some View {
         let isDark = colorScheme == .dark
         let cyan = AppTheme.accentCyan(for: colorScheme)
 
-        VStack(spacing: 12) {
+        return VStack(spacing: 12) {
             // 顶部 HUD 品牌与连接状态栏
             headerBar
 
@@ -140,6 +168,10 @@ public struct MenuBarContentView: View {
                 await refreshLocalUsageStore()
             }
         }
+        .onChange(of: claudeScanCoordinator.isScanning) { _, isScanning in
+            guard !isScanning else { return }
+            Task { await refreshLocalUsageStore() }
+        }
         .onReceive(state.$latestRateLimit.dropFirst()) { _ in
             updateLocalUsageForecast()
         }
@@ -154,13 +186,161 @@ public struct MenuBarContentView: View {
     }
 
     private func refreshLocalUsageStore() async {
-        guard !scanCoordinator.isScanning else { return }
+        guard !scanCoordinator.isScanning,
+              !claudeScanCoordinator.isScanning else { return }
 
         let forecastSnapshot = state.preferredQuotaForecastSnapshot
         await localUsageStore.load(
             accountKey: state.selectedAccountKey ?? state.account?.accountKey,
             currentUsedPercent: forecastSnapshot?.usedPercent ?? 0.0,
-            currentSnapshot: forecastSnapshot
+            currentSnapshot: forecastSnapshot,
+            providerFilter: displayTool == .claude ? .claude : .codex
+        )
+    }
+
+    private var claudeBody: some View {
+        let cyan = AppTheme.accentCyan(for: colorScheme)
+        let isDark = colorScheme == .dark
+
+        return VStack(spacing: 12) {
+            claudeHeaderBar
+            CyberDivider()
+            claudeQuotaCard
+            CyberDivider(glowColor: isDark ? Color.white.opacity(0.12) : Color.black.opacity(0.08))
+            if UsageFeatureFlags.shared.isAnalyticsEnabled {
+                localAnalyticsSnapshotCard
+            }
+            CyberDivider(glowColor: isDark ? Color.white.opacity(0.12) : Color.black.opacity(0.08))
+            actionDock
+        }
+        .padding(16)
+        .frame(width: 340)
+        .background(AppTheme.popoverGradient(for: colorScheme))
+        .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+        .tint(cyan)
+        .preferredColorScheme(state.colorScheme)
+        .task { await refreshLocalUsageStore() }
+        .onChange(of: claudeScanCoordinator.isScanning) { _, scanning in
+            guard !scanning else { return }
+            Task { await refreshLocalUsageStore() }
+        }
+    }
+
+    private var neutralBody: some View {
+        let cyan = AppTheme.accentCyan(for: colorScheme)
+        return VStack(spacing: 14) {
+            HStack(spacing: 9) {
+                Image(systemName: "gauge.with.needle.fill")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(cyan)
+                    .frame(width: 34, height: 34)
+                    .background(cyan.opacity(colorScheme == .dark ? 0.16 : 0.10), in: RoundedRectangle(cornerRadius: 9))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("QUOTALENS")
+                        .font(.system(size: 13, weight: .black, design: .rounded))
+                    Text(L10n.text("等待识别监控工具", "Waiting for a Monitored Tool"))
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                }
+                Spacer()
+            }
+            CyberDivider()
+            Text(L10n.text(
+                "打开 Codex 或 Claude 后，这里会自动显示对应的额度。",
+                "Open Codex or Claude and its quota will appear here automatically."
+            ))
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
+            CyberDivider()
+            actionDock
+        }
+        .padding(16)
+        .frame(width: 340)
+        .background(AppTheme.popoverGradient(for: colorScheme))
+        .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+        .preferredColorScheme(state.colorScheme)
+    }
+
+    private var claudeHeaderBar: some View {
+        let amber = AppTheme.accentAmber(for: colorScheme)
+        return HStack(spacing: 9) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(amber)
+                .frame(width: 34, height: 34)
+                .background(amber.opacity(colorScheme == .dark ? 0.16 : 0.10), in: RoundedRectangle(cornerRadius: 9))
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Claude")
+                    .font(.system(size: 13, weight: .black, design: .rounded))
+                Text(state.latestClaudeUsage?.tier ?? L10n.text("额度监控", "Quota Monitoring"))
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+            }
+            Spacer()
+            if state.isRefreshingClaudeUsage {
+                ProgressView().controlSize(.small)
+            } else {
+                Text(state.latestClaudeUsage?.hasQuota == true
+                    ? L10n.text("已同步", "Synced")
+                    : L10n.text("等待同步", "Waiting"))
+                    .font(.system(size: 9.5, weight: .heavy, design: .monospaced))
+                    .foregroundStyle(state.latestClaudeUsage?.hasQuota == true
+                        ? AppTheme.accentEmerald(for: colorScheme)
+                        : amber)
+            }
+        }
+    }
+
+    private var claudeQuotaCard: some View {
+        let amber = AppTheme.accentAmber(for: colorScheme)
+        return VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 7) {
+                Circle().fill(amber).frame(width: 7, height: 7)
+                Text("Claude")
+                    .font(.system(size: 12.5, weight: .black, design: .rounded))
+                Spacer()
+                if state.isRefreshingClaudeUsage {
+                    ProgressView().controlSize(.mini)
+                }
+            }
+
+            if let usage = state.latestClaudeUsage, usage.hasQuota {
+                if let window = usage.fiveHourForDisplay {
+                    ClaudeQuotaRow(window: window, displayMode: state.quotaDisplayMode)
+                }
+                if let window = usage.sevenDay {
+                    ClaudeQuotaRow(window: window, displayMode: state.quotaDisplayMode)
+                }
+            } else if state.isRefreshingClaudeUsage || state.claudeUsageStatus == .loading {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text(L10n.text("正在读取 Claude 额度…", "Reading Claude quota..."))
+                }
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+            } else {
+                Text(state.claudeUsageErrorText ?? L10n.text(
+                    "尚未读取到 Claude 额度",
+                    "Claude quota is not available yet"
+                ))
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+            }
+
+            if let message = state.claudeUsageErrorText,
+               state.latestClaudeUsage?.hasQuota == true {
+                Text(message)
+                    .font(.system(size: 9.5, weight: .medium))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+            }
+        }
+        .padding(11)
+        .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 11))
+        .overlay(
+            RoundedRectangle(cornerRadius: 11)
+                .strokeBorder(amber.opacity(0.28), lineWidth: 0.8)
         )
     }
 
@@ -700,6 +880,38 @@ public struct MenuBarContentView: View {
             .buttonStyle(.plain)
             .help(L10n.text("退出 QuotaLens", "Quit QuotaLens"))
         }
+    }
+}
+
+private struct ClaudeQuotaRow: View {
+    let window: ClaudeUsageSnapshot.Window
+    let displayMode: QuotaDisplayMode
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        let shown = displayMode == .used ? window.usedPercent : window.remainingPercent
+        let tint: Color = window.usedPercent >= 85 ? .red : (window.usedPercent >= 60 ? .orange : .green)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(window.localizedTitle)
+                    .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                Spacer()
+                Text(UsageNumberFormatter.percent(shown, maximumFractionDigits: shown < 10 ? 1 : 0))
+                    .font(.system(size: 10.5, weight: .heavy, design: .monospaced))
+                    .foregroundStyle(tint)
+            }
+            ProgressView(value: shown / 100)
+                .tint(tint)
+            HStack {
+                Text(window.isStale
+                    ? L10n.text("窗口已重置，等待更新", "Window reset; waiting for update")
+                    : L10n.format("Resets %@", zhHans: "%@重置", UsageNumberFormatter.relativeTimeString(from: window.resetAt)))
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                Spacer()
+            }
+        }
+        .opacity(window.isStale ? 0.55 : 1)
     }
 }
 

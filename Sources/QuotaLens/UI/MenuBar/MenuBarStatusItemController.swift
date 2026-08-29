@@ -9,28 +9,41 @@ import SwiftUI
 public final class MenuBarStatusItemController: NSObject {
     private let state: AppState
     private let usageFacade: UsageQueryFacade
+    private let claudeScanCoordinator: ClaudeUsageScanCoordinator
+    private let enabledTools: EnabledToolsStore
+    private let toolTracker: FrontmostToolTracker
     private let statusItem: NSStatusItem
     private let popover: NSPopover
     private var cancellable: AnyCancellable?
+    private var settingsCancellable: AnyCancellable?
+    private var toolCancellable: AnyCancellable?
+    private var enabledToolsCancellable: AnyCancellable?
     private var appearanceRefreshScheduled = false
     private var onOpenMainWindow: () -> Void
-    private var onRefresh: () -> Void
+    private var onRefresh: (MonitoringToolID?) -> Void
     private var onAcknowledgeResetCreditReminder: () -> Void
     private var onSnoozeResetCreditReminder: (Int) -> Void
     private var suppressPopoverUntil = Date.distantPast
+    private var restoreMainWindowFocusAfterPopover = false
     private let popoverWidth: CGFloat = 340
     private let minimumPopoverHeight: CGFloat = 575
 
     public init(
         state: AppState,
         usageFacade: UsageQueryFacade,
+        claudeScanCoordinator: ClaudeUsageScanCoordinator,
+        enabledTools: EnabledToolsStore,
+        toolTracker: FrontmostToolTracker,
         onOpenMainWindow: @escaping () -> Void,
-        onRefresh: @escaping () -> Void,
+        onRefresh: @escaping (MonitoringToolID?) -> Void,
         onAcknowledgeResetCreditReminder: @escaping () -> Void,
         onSnoozeResetCreditReminder: @escaping (Int) -> Void
     ) {
         self.state = state
         self.usageFacade = usageFacade
+        self.claudeScanCoordinator = claudeScanCoordinator
+        self.enabledTools = enabledTools
+        self.toolTracker = toolTracker
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         self.popover = NSPopover()
         self.onOpenMainWindow = onOpenMainWindow
@@ -47,7 +60,7 @@ public final class MenuBarStatusItemController: NSObject {
 
     public func updateActions(
         onOpenMainWindow: @escaping () -> Void,
-        onRefresh: @escaping () -> Void,
+        onRefresh: @escaping (MonitoringToolID?) -> Void,
         onAcknowledgeResetCreditReminder: @escaping () -> Void,
         onSnoozeResetCreditReminder: @escaping (Int) -> Void
     ) {
@@ -90,7 +103,8 @@ public final class MenuBarStatusItemController: NSObject {
 
         let config = NSImage.SymbolConfiguration(pointSize: 13, weight: .bold)
 
-        if let baseImage = NSImage(systemSymbolName: "gauge.with.needle.fill", accessibilityDescription: "QuotaLens") {
+        let symbolName = currentDisplayTool == .claude ? "sparkles" : "gauge.with.needle.fill"
+        if let baseImage = NSImage(systemSymbolName: symbolName, accessibilityDescription: "QuotaLens") {
             if let configuredImage = baseImage.withSymbolConfiguration(config) {
                 configuredImage.isTemplate = true
                 button.image = configuredImage
@@ -104,18 +118,24 @@ public final class MenuBarStatusItemController: NSObject {
 
     private func configurePopover() {
         popover.behavior = .transient
+        popover.delegate = self
         updatePopoverAppearance()
         popover.contentSize = NSSize(width: 340, height: 575)
         popover.contentViewController = NSHostingController(
             rootView: MenuBarContentView(
                 state: state,
                 usageFacade: usageFacade,
+                claudeScanCoordinator: claudeScanCoordinator,
+                displayTool: currentDisplayTool,
                 onOpenMainWindow: { [weak self] in
                     self?.popover.performClose(nil)
-                    self?.onOpenMainWindow()
+                    DispatchQueue.main.async { [weak self] in
+                        self?.onOpenMainWindow()
+                    }
                 },
                 onRefresh: { [weak self] in
-                    self?.onRefresh()
+                    guard let self else { return }
+                    self.onRefresh(self.currentDisplayTool)
                 }
             )
         )
@@ -142,6 +162,24 @@ public final class MenuBarStatusItemController: NSObject {
                 self.refreshAppearance()
             }
         }
+        settingsCancellable = state.$latestClaudeUsage.sink { [weak self] _ in
+            DispatchQueue.main.async { [weak self] in
+                self?.updateStatusTitle()
+            }
+        }
+        toolCancellable = Publishers.CombineLatest(
+            toolTracker.$foregroundTool,
+            toolTracker.$lastActiveTool
+        ).sink { [weak self] _, _ in
+            DispatchQueue.main.async { [weak self] in
+                self?.updatePopoverTool()
+            }
+        }
+        enabledToolsCancellable = enabledTools.$enabledToolIDs.sink { [weak self] _ in
+            DispatchQueue.main.async { [weak self] in
+                self?.updatePopoverTool()
+            }
+        }
     }
 
     private func updateStatusTitle() {
@@ -152,22 +190,37 @@ public final class MenuBarStatusItemController: NSObject {
             ? NSColor(red: 0.02, green: 0.06, blue: 0.13, alpha: 1.0)
             : NSColor(red: 0.95, green: 0.97, blue: 1.0, alpha: 1.0)
 
-        guard state.hasQuotaSnapshot else {
+        guard let displayTool = currentDisplayTool else {
             let title = NSAttributedString(
-                string: " \(state.menuBarStatusString) ",
+                string: " -- ",
                 attributes: [
                     .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
                     .foregroundColor: isLight ? NSColor(red: 0.20, green: 0.26, blue: 0.36, alpha: 1.0) : NSColor.secondaryLabelColor
                 ]
             )
             button.attributedTitle = title
-            button.toolTip = "QuotaLens \(state.quotaUnavailableTitle)"
+            button.toolTip = L10n.text("QuotaLens · 等待识别工具", "QuotaLens · Waiting for a tool")
             statusItem.length = NSStatusItem.variableLength
             updateCapsuleAppearance(isReminderActive: state.hasActiveResetCreditReminder)
             return
         }
 
-        let label = " \(state.quotaDisplayMode.shortTitle) "
+        if displayTool == .claude {
+            let value = " \(state.claudeMenuBarQuotaString) "
+            button.attributedTitle = NSAttributedString(
+                string: value,
+                attributes: [
+                    .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
+                    .foregroundColor: claudeSeverityColor()
+                ]
+            )
+            button.toolTip = "QuotaLens \(value)"
+            statusItem.length = NSStatusItem.variableLength
+            updateCapsuleAppearance(isReminderActive: state.hasActiveResetCreditReminder)
+            return
+        }
+
+        let label = " Codex \(state.quotaDisplayMode.shortTitle) "
         let percent = "\(state.preferredDisplayQuotaPercentString) "
         let title = NSMutableAttributedString()
         let font = NSFont.systemFont(ofSize: 13, weight: .semibold)
@@ -194,6 +247,41 @@ public final class MenuBarStatusItemController: NSObject {
         updateCapsuleAppearance(isReminderActive: state.hasActiveResetCreditReminder)
     }
 
+    private var currentDisplayTool: MonitoringToolID? {
+        if let foreground = toolTracker.foregroundTool, enabledTools.isEnabled(foreground) {
+            return foreground
+        }
+        if let last = toolTracker.lastActiveTool, enabledTools.isEnabled(last) {
+            return last
+        }
+        return nil
+    }
+
+    private func updatePopoverTool() {
+        guard let hostingController = popover.contentViewController as? NSHostingController<MenuBarContentView> else {
+            configurePopover()
+            return
+        }
+        hostingController.rootView = MenuBarContentView(
+            state: state,
+            usageFacade: usageFacade,
+            claudeScanCoordinator: claudeScanCoordinator,
+            displayTool: currentDisplayTool,
+            onOpenMainWindow: { [weak self] in
+                self?.popover.performClose(nil)
+                DispatchQueue.main.async { [weak self] in
+                    self?.onOpenMainWindow()
+                }
+            },
+            onRefresh: { [weak self] in
+                guard let self else { return }
+                self.onRefresh(self.currentDisplayTool)
+            }
+        )
+        updateStatusIcon()
+        updateStatusTitle()
+    }
+
     private func severityColor() -> NSColor {
         let isLight = isLightAppearance
         if state.preferredDisplayRemainingPercent <= 15.0 {
@@ -203,6 +291,20 @@ public final class MenuBarStatusItemController: NSObject {
             return isLight ? NSColor(red: 0.72, green: 0.34, blue: 0.00, alpha: 1.0) : .systemOrange
         }
         return isLight ? NSColor(red: 0.00, green: 0.48, blue: 0.25, alpha: 1.0) : .systemGreen
+    }
+
+    private func claudeSeverityColor() -> NSColor {
+        guard let window = state.latestClaudeUsage?.fiveHourForDisplay
+            ?? state.latestClaudeUsage?.sevenDay else {
+            return isLightAppearance ? NSColor.secondaryLabelColor : NSColor.secondaryLabelColor
+        }
+        if window.remainingPercent <= 15 {
+            return .systemRed
+        }
+        if window.remainingPercent <= 35 {
+            return .systemOrange
+        }
+        return .systemGreen
     }
 
     @objc private func togglePopover(_ sender: NSStatusBarButton) {
@@ -220,8 +322,8 @@ public final class MenuBarStatusItemController: NSObject {
         if popover.isShown {
             popover.performClose(sender)
         } else {
+            restoreMainWindowFocusAfterPopover = AppEnvironment.shared.mainWindowCoordinator.window?.isKeyWindow == true
             showPopover(relativeTo: sender)
-            popover.contentViewController?.view.window?.makeKey()
         }
     }
 
@@ -237,13 +339,21 @@ public final class MenuBarStatusItemController: NSObject {
             )
             popover.contentSize = NSSize(
                 width: popoverWidth,
-                height: max(minimumPopoverHeight, ceil(fittingSize.height))
+                height: max(minimumHeightForCurrentTool, ceil(fittingSize.height))
             )
         } else {
-            popover.contentSize = NSSize(width: popoverWidth, height: minimumPopoverHeight)
+            popover.contentSize = NSSize(width: popoverWidth, height: minimumHeightForCurrentTool)
         }
 
         popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .minY)
+    }
+
+    private var minimumHeightForCurrentTool: CGFloat {
+        switch currentDisplayTool {
+        case .codex: return minimumPopoverHeight
+        case .claude: return 330
+        default: return 180
+        }
     }
 
     private func updateCapsuleAppearance(isReminderActive: Bool) {
@@ -340,5 +450,16 @@ public final class MenuBarStatusItemController: NSObject {
         default:
             break
         }
+    }
+}
+
+extension MenuBarStatusItemController: NSPopoverDelegate {
+    public func popoverDidClose(_ notification: Notification) {
+        guard restoreMainWindowFocusAfterPopover else { return }
+        restoreMainWindowFocusAfterPopover = false
+        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == ProcessInfo.processInfo.processIdentifier,
+              let window = AppEnvironment.shared.mainWindowCoordinator.window,
+              window.isVisible else { return }
+        window.makeKeyAndOrderFront(nil)
     }
 }

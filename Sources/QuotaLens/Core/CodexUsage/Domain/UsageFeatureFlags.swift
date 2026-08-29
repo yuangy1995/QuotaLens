@@ -53,7 +53,12 @@ public final class UsageFeatureFlags: ObservableObject, @unchecked Sendable {
             self.isAnalyticsEnabled = defaults.bool(forKey: Self.analyticsEnabledKey)
         }
 
-        self.isOverlayEnabled = defaults.bool(forKey: Self.overlayEnabledKey)
+        if defaults.object(forKey: Self.overlayEnabledKey) == nil {
+            self.isOverlayEnabled = true
+            defaults.set(true, forKey: Self.overlayEnabledKey)
+        } else {
+            self.isOverlayEnabled = defaults.bool(forKey: Self.overlayEnabledKey)
+        }
 
         if defaults.object(forKey: Self.forecastEnabledKey) == nil {
             self.isForecastEnabled = true

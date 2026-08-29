@@ -20,11 +20,19 @@ public final class AppEnvironment: ObservableObject {
     public let updateManager: UpdateManager
     public let usageQueryFacade: UsageQueryFacade
     public let scanCoordinator: CodexUsageScanCoordinator
+    public let claudeScanCoordinator: ClaudeUsageScanCoordinator
+    public let enabledToolsStore: EnabledToolsStore
+    public let frontmostToolTracker: FrontmostToolTracker
+    public let navigationStore: AppNavigationStore
+    public lazy var mainWindowCoordinator = MainWindowCoordinator(environment: self)
+    public lazy var toolOverlayCoordinator = ToolOverlayCoordinator(environment: self)
 
     private var refreshLoopTask: Task<Void, Never>?
     private var serverRecoveryTask: Task<Void, Never>?
     private var resetCreditReminderTask: Task<Void, Never>?
     private var subscriptionEntitlementRetryTask: Task<Void, Never>?
+    private var claudeUsagePoller: ClaudeUsagePoller?
+    private var claudeFileWatcher: ClaudeFileWatcher?
     private var notificationHandlersRegistered = false
     private var isFetchingServerSnapshot = false
     private var isFetchingSubscriptionEntitlement = false
@@ -58,7 +66,17 @@ public final class AppEnvironment: ObservableObject {
     }
 
     private init() {
+        let enabledToolsStore = EnabledToolsStore()
+        self.enabledToolsStore = enabledToolsStore
+        let frontmostToolTracker = FrontmostToolTracker(enabledTools: enabledToolsStore)
+        self.frontmostToolTracker = frontmostToolTracker
+        frontmostToolTracker.start()
+        self.navigationStore = AppNavigationStore(
+            enabledTools: enabledToolsStore,
+            activeTool: frontmostToolTracker.foregroundTool
+        )
         self.state = AppState()
+        ClaudeUsageSettings.shared.isEnabled = enabledToolsStore.isEnabled(.claude)
 
         // 1. 初始化本地 SQLite
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -136,52 +154,76 @@ public final class AppEnvironment: ObservableObject {
         self.usageQueryFacade = UsageQueryFacade(database: database)
         self.scanCoordinator = CodexUsageScanCoordinator.shared
         self.scanCoordinator.configure(database: database)
+        self.claudeScanCoordinator = ClaudeUsageScanCoordinator()
+        self.claudeScanCoordinator.configure(database: database)
         self.installThemeAppearanceObservers()
         self.applyThemeAppearance()
         self.registerRPCNotifications()
         self.refreshLoginItemState()
 
+        if enabledToolsStore.isEnabled(.claude) {
+            if let hydrated = try? ClaudeQuotaRepository.hydrate(database: database) {
+                self.state.latestClaudeUsage = hydrated
+                self.state.claudeUsageStatus = .available
+            }
+            self.startClaudeServices()
+        } else {
+            self.state.claudeUsageStatus = .disabled
+        }
+
         // 2. 立即导入本地 ~/.codex 真实账号 (0.1ms 完成，首帧立即可见)
-        _ = LocalAccountImporter.importLocalAccounts(into: repositories)
-        self.state.accountDisplayNames = LocalAccountImporter.displayNamesByAccountKey()
-        let loadedAccounts = (try? repositories.getAllAccounts()) ?? []
-        if let firstAcc = loadedAccounts.first {
-            self.state.account = firstAcc
-            self.state.selectedAccountKey = firstAcc.accountKey
-            self.state.allAccounts = [firstAcc]
+        if enabledToolsStore.isEnabled(.codex) {
+            _ = LocalAccountImporter.importLocalAccounts(into: repositories)
+            self.state.accountDisplayNames = LocalAccountImporter.displayNamesByAccountKey()
+            let loadedAccounts = (try? repositories.getAllAccounts()) ?? []
+            if let firstAcc = loadedAccounts.first {
+                self.state.account = firstAcc
+                self.state.selectedAccountKey = firstAcc.accountKey
+                self.state.allAccounts = [firstAcc]
+            }
         }
         let localPeriod = ChatGPTSubscriptionClient.localSubscriptionPeriodFromAuth()
         self.state.applyLocalSubscriptionPeriodFallback(startsAt: localPeriod.startsAt, endsAt: localPeriod.endsAt)
 
         // 3. 后台连接真实服务。
-        Task(priority: .utility) { [weak self] in
-            guard let self = self else { return }
-            await self.backgroundBootstrap()
+        if enabledToolsStore.isEnabled(.codex) {
+            Task(priority: .utility) { [weak self] in
+                guard let self = self else { return }
+                await self.backgroundBootstrap()
+            }
         }
 
         // 4. 启动即扫描本地 Codex 记录；不要被服务连接阻塞。
         Task(priority: .utility) { [weak self] in
             guard let self = self else { return }
             if UsageFeatureFlags.shared.isAnalyticsEnabled {
-                await self.scanCoordinator.scanNow()
+                if self.enabledToolsStore.isEnabled(.codex) {
+                    await self.scanCoordinator.scanNow()
+                }
+                if self.enabledToolsStore.isEnabled(.claude) {
+                    await self.claudeScanCoordinator.scanNow()
+                }
             }
         }
 
-        if UsageFeatureFlags.shared.isOverlayEnabled {
-            CodexUsageOverlayController.shared.setEnabled(true, environment: self)
-        }
+        UsageFeatureFlags.shared.isOverlayEnabled = ToolOverlayPreferences.isEnabled(for: .codex)
+        self.toolOverlayCoordinator.refreshConfiguration()
 
         // 5. 立即触发首帧数据刷新
-        Task { @MainActor [weak self] in
-            await self?.refreshData()
+        if enabledToolsStore.isEnabled(.codex) {
+            Task { @MainActor [weak self] in
+                await self?.refreshData()
+            }
         }
 
         // 6. 启动可配置的周期性状态刷新，默认 1 分钟。
         self.scheduleRefreshTimer()
 
         // 7. 用 Web entitlement 后台补齐订阅周期、续费/降级状态。
-        Task { @MainActor [weak self] in
-            _ = await self?.refreshSubscriptionEntitlementIfPossible()
+        if enabledToolsStore.isEnabled(.codex) {
+            Task { @MainActor [weak self] in
+                _ = await self?.refreshSubscriptionEntitlementIfPossible()
+            }
         }
     }
 
@@ -296,27 +338,12 @@ public final class AppEnvironment: ObservableObject {
 
     @discardableResult
     public func focusExistingMainWindow() -> Bool {
-        prepareForMainWindowActivation()
-        guard let window = NSApp.windows.first(where: isMainWindow) else {
-            return false
-        }
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-        return true
+        mainWindowCoordinator.focusExistingMainWindow()
     }
 
     public func openOrFocusMainWindow(createWindow: () -> Void) {
-        if focusExistingMainWindow() {
-            return
-        }
-        prepareForMainWindowActivation()
-        createWindow()
-        DispatchQueue.main.async { [weak self] in
-            if let window = NSApp.windows.first(where: { self?.isMainWindow($0) == true }) {
-                window.makeKeyAndOrderFront(nil)
-                NSApp.activate(ignoringOtherApps: true)
-            }
-        }
+        _ = createWindow
+        mainWindowCoordinator.showMainWindow()
     }
 
     public func setLaunchAtLogin(enabled: Bool) {
@@ -341,26 +368,25 @@ public final class AppEnvironment: ObservableObject {
     public func installStartupMenuBarController() {
         installMenuBarController(
             onOpenMainWindow: { [weak self] in
-                guard let self else { return }
-                if !self.focusExistingMainWindow() {
-                    NSApp.activate(ignoringOtherApps: true)
+                DispatchQueue.main.async { [weak self] in
+                    self?.mainWindowCoordinator.showMainWindow()
                 }
             },
-            onRefresh: { [weak self] in
+            onRefresh: { [weak self] tool in
                 Task { @MainActor [weak self] in
-                    await self?.refreshAllData()
+                    if let tool {
+                        await self?.refreshMonitoringTool(tool)
+                    } else {
+                        await self?.refreshAllData()
+                    }
                 }
             }
         )
     }
 
-    private func isMainWindow(_ window: NSWindow) -> Bool {
-        window.identifier?.rawValue == "main" || window.title == "QuotaLens"
-    }
-
     public func installMenuBarController(
         onOpenMainWindow: @escaping () -> Void,
-        onRefresh: @escaping () -> Void
+        onRefresh: @escaping (MonitoringToolID?) -> Void
     ) {
         if let menuBarController {
             menuBarController.updateActions(
@@ -377,6 +403,9 @@ public final class AppEnvironment: ObservableObject {
             menuBarController = MenuBarStatusItemController(
                 state: state,
                 usageFacade: usageQueryFacade,
+                claudeScanCoordinator: claudeScanCoordinator,
+                enabledTools: enabledToolsStore,
+                toolTracker: frontmostToolTracker,
                 onOpenMainWindow: onOpenMainWindow,
                 onRefresh: onRefresh,
                 onAcknowledgeResetCreditReminder: { [weak self] in
@@ -629,6 +658,7 @@ public final class AppEnvironment: ObservableObject {
 
     /// 全量刷新数据视图
     public func refreshData(fetchServer: Bool = true, scheduleRetryOnFailure: Bool = true) async {
+        guard enabledToolsStore.isEnabled(.codex) else { return }
         refreshDataRequestGeneration += 1
         let requestGeneration = refreshDataRequestGeneration
         state.isRefreshing = true
@@ -683,10 +713,215 @@ public final class AppEnvironment: ObservableObject {
 
     /// 刷新所有用户可见数据：本地 Codex 用量先完成索引，再读取服务器额度快照。
     public func refreshAllData(fetchServer: Bool = true, scheduleRetryOnFailure: Bool = true) async {
-        if UsageFeatureFlags.shared.isAnalyticsEnabled {
-            await scanCoordinator.scanNow()
+        if enabledToolsStore.isEnabled(.claude) {
+            startClaudeServices()
         }
-        await refreshData(fetchServer: fetchServer, scheduleRetryOnFailure: scheduleRetryOnFailure)
+        if UsageFeatureFlags.shared.isAnalyticsEnabled {
+            if enabledToolsStore.isEnabled(.codex) {
+                await scanCoordinator.scanNow()
+            }
+            if enabledToolsStore.isEnabled(.claude) {
+                await claudeScanCoordinator.scanNow()
+            }
+        }
+        if enabledToolsStore.isEnabled(.claude) {
+            await refreshClaudeUsage(force: true)
+        }
+        if enabledToolsStore.isEnabled(.codex) {
+            await refreshData(fetchServer: fetchServer, scheduleRetryOnFailure: scheduleRetryOnFailure)
+        }
+    }
+
+    public func refreshMonitoringTool(_ tool: MonitoringToolID) async {
+        guard enabledToolsStore.isEnabled(tool) else { return }
+        switch tool {
+        case .codex:
+            if UsageFeatureFlags.shared.isAnalyticsEnabled {
+                await scanCoordinator.scanNow()
+            }
+            await refreshData()
+        case .claude:
+            startClaudeServices()
+            if UsageFeatureFlags.shared.isAnalyticsEnabled {
+                await claudeScanCoordinator.scanNow()
+            }
+            await refreshClaudeUsage(force: true)
+        default:
+            break
+        }
+    }
+
+    public func setMonitoringToolEnabled(_ enabled: Bool, tool: MonitoringToolID) {
+        enabledToolsStore.setEnabled(enabled, for: tool)
+        navigationStore.normalize(
+            enabledTools: enabledToolsStore.enabledToolIDs,
+            activeTool: frontmostToolTracker.foregroundTool
+        )
+        frontmostToolTracker.refresh()
+
+        switch tool {
+        case .codex:
+            if enabled {
+                importLocalAccount()
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    await self.connectCodex()
+                    if UsageFeatureFlags.shared.isAnalyticsEnabled {
+                        await self.scanCoordinator.scanNow()
+                    }
+                    self.toolOverlayCoordinator.refreshConfiguration()
+                }
+            } else {
+                cancelServerRecovery()
+                cancelSubscriptionEntitlementRetry()
+                toolOverlayCoordinator.refreshConfiguration()
+                Task { [weak self] in
+                    await self?.processManager.stop()
+                    await MainActor.run {
+                        self?.state.connectionStatus = .disconnected
+                    }
+                }
+            }
+        case .claude:
+            setClaudeEnabled(enabled)
+        default:
+            break
+        }
+    }
+
+    public func setClaudeEnabled(_ enabled: Bool) {
+        if enabledToolsStore.isEnabled(.claude) != enabled {
+            enabledToolsStore.setEnabled(enabled, for: .claude)
+        }
+        ClaudeUsageSettings.shared.isEnabled = enabled
+        if enabled {
+            if let hydrated = try? ClaudeQuotaRepository.hydrate(database: database) {
+                state.latestClaudeUsage = hydrated
+                state.claudeUsageStatus = .available
+            } else {
+                state.claudeUsageStatus = .loading
+            }
+            startClaudeServices()
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                await self.claudeScanCoordinator.scanNow()
+                await self.refreshClaudeUsage(force: true)
+            }
+        } else {
+            stopClaudeServices()
+            state.claudeUsageStatus = .disabled
+            state.claudeUsageErrorText = nil
+            state.claudeUsageCooldownUntil = nil
+            state.isRefreshingClaudeUsage = false
+        }
+        toolOverlayCoordinator.refreshConfiguration()
+    }
+
+    public func refreshClaudeUsage(force: Bool = true) async {
+        guard ClaudeUsageSettings.shared.isEnabled,
+              let poller = claudeUsagePoller else { return }
+        state.isRefreshingClaudeUsage = true
+        defer { state.isRefreshingClaudeUsage = false }
+        await poller.pollOnce(force: force)
+    }
+
+    private func startClaudeServices() {
+        guard ClaudeUsageSettings.shared.isEnabled else { return }
+        if claudeUsagePoller == nil {
+            let poller = ClaudeUsagePoller(
+                database: database,
+                initialSnapshot: state.latestClaudeUsage,
+                onResult: { [weak self] result in
+                    await MainActor.run {
+                        self?.applyClaudeUsageResult(result)
+                    }
+                },
+                onCooldown: { [weak self] until in
+                    await MainActor.run {
+                        self?.state.claudeUsageCooldownUntil = until
+                        if let until {
+                            self?.state.claudeUsageStatus = .limited(until: until)
+                        }
+                    }
+                }
+            )
+            claudeUsagePoller = poller
+            Task { await poller.start() }
+        }
+        if claudeFileWatcher == nil {
+            let watcher = ClaudeFileWatcher { [weak self] in
+                Task { @MainActor [weak self] in
+                    await self?.claudeScanCoordinator.scanNow()
+                }
+            }
+            if watcher.start() {
+                claudeFileWatcher = watcher
+            }
+        }
+    }
+
+    private func stopClaudeServices() {
+        if let poller = claudeUsagePoller {
+            Task { await poller.stop() }
+        }
+        claudeUsagePoller = nil
+        claudeFileWatcher?.stop()
+        claudeFileWatcher = nil
+    }
+
+    private func stopClaudeServicesAndWait() async {
+        if let poller = claudeUsagePoller {
+            await poller.stop()
+        }
+        claudeUsagePoller = nil
+        claudeFileWatcher?.stop()
+        claudeFileWatcher = nil
+    }
+
+    private func applyClaudeUsageResult(_ result: Result<ClaudeUsageSnapshot, Error>) {
+        guard ClaudeUsageSettings.shared.isEnabled else { return }
+        switch result {
+        case .success(let snapshot):
+            state.latestClaudeUsage = snapshot
+            state.claudeUsageStatus = .available
+            state.claudeUsageErrorText = nil
+            state.claudeUsageCooldownUntil = nil
+        case .failure(let error as ClaudeUsageClient.FetchError):
+            switch error {
+            case .noCredentials:
+                state.claudeUsageStatus = .missingCredentials
+                state.claudeUsageErrorText = L10n.text(
+                    "请先在 Claude Code 中登录。",
+                    "Sign in to Claude Code first."
+                )
+            case .insufficientScope, .unauthorized:
+                state.claudeUsageStatus = .signInRequired
+                state.claudeUsageErrorText = L10n.text(
+                    "Claude 登录已失效，请重新登录。",
+                    "Your Claude sign-in has expired. Sign in again."
+                )
+            case .rateLimited(let retryAfter):
+                let until = retryAfter.map { Date().addingTimeInterval($0) }
+                    ?? state.claudeUsageCooldownUntil
+                state.claudeUsageStatus = .limited(until: until)
+                state.claudeUsageErrorText = L10n.text(
+                    "Claude 暂时延迟刷新，将自动重试。",
+                    "Claude refresh is temporarily delayed and will retry automatically."
+                )
+            case .unavailable:
+                state.claudeUsageStatus = .unavailable
+                state.claudeUsageErrorText = L10n.text(
+                    "暂时无法更新 Claude 额度。",
+                    "Claude quota could not be updated right now."
+                )
+            }
+        case .failure:
+            state.claudeUsageStatus = .unavailable
+            state.claudeUsageErrorText = L10n.text(
+                "暂时无法更新 Claude 额度。",
+                "Claude quota could not be updated right now."
+            )
+        }
     }
 
     private func currentStateAccountKey() -> String? {
@@ -708,8 +943,10 @@ public final class AppEnvironment: ObservableObject {
         do {
             async let accountPayload = try? rpcPayload(AccountReadResult.self, method: "account/read")
             async let rateLimitsPayload = try? rpcPayload(RateLimitsReadResult.self, method: "account/rateLimits/read")
+            async let accountUsagePayload = try? rpcPayload(CodexAccountUsagePayload.self, method: "account/usage/read")
             let account = await accountPayload
             let rateLimits = await rateLimitsPayload
+            let accountUsage = await accountUsagePayload
 
             guard isServerSnapshotRequestCurrent(requestGeneration) else {
                 return false
@@ -725,7 +962,8 @@ public final class AppEnvironment: ObservableObject {
                 account: account?.value,
                 accountRawJson: account?.rawJson ?? "{}",
                 rateLimits: rateLimits?.value,
-                rateLimitsRawJson: rateLimits?.rawJson ?? "{}"
+                rateLimitsRawJson: rateLimits?.rawJson ?? "{}",
+                accountUsage: accountUsage?.value
             )
 
             try persistServerSnapshot(snapshot)
@@ -756,7 +994,20 @@ public final class AppEnvironment: ObservableObject {
         params: [String: AnyCodable] = [:],
         timeoutSeconds: Double = 5.0
     ) async throws -> (value: T?, rawJson: String) {
-        let response = try await transport.sendRequest(method: method, params: params, timeoutSeconds: timeoutSeconds)
+        let response: JSONRPCResponse
+        do {
+            response = try await transport.sendRequest(
+                method: method,
+                params: params,
+                timeoutSeconds: timeoutSeconds
+            )
+        } catch {
+            if let data = CodexRPCErrorBodySalvage.data(from: error.localizedDescription),
+               let value = try? JSONDecoder().decode(T.self, from: data) {
+                return (value, String(data: data, encoding: .utf8) ?? "{}")
+            }
+            throw error
+        }
         if let error = response.error {
             throw NSError(domain: "QuotaLens.RPC", code: error.code, userInfo: [NSLocalizedDescriptionKey: error.message])
         }
@@ -885,13 +1136,6 @@ public final class AppEnvironment: ObservableObject {
     }
 
     private func latestQuotaSnapshots(accountKey: String) throws -> [RateLimitSnapshotRecord] {
-        let primarySnapshots = try repositories.getLatestRateLimitSnapshots(
-            accountKey: accountKey,
-            limitId: Self.primaryQuotaLimitId
-        )
-        if !primarySnapshots.isEmpty {
-            return primarySnapshots
-        }
         return try repositories.getLatestRateLimitSnapshots(accountKey: accountKey)
     }
 
@@ -946,6 +1190,7 @@ public final class AppEnvironment: ObservableObject {
         cancelSubscriptionEntitlementRetry()
         resetCreditReminderTask?.cancel()
         resetCreditReminderTask = nil
+        state.codexAccountUsage = nil
         return accountDataGeneration
     }
 
@@ -1036,6 +1281,10 @@ public final class AppEnvironment: ObservableObject {
             try? repositories.upsertAccount(record)
         }
 
+        if let accountUsage = snapshot.accountUsage {
+            state.codexAccountUsage = CodexAccountUsageSnapshot(payload: accountUsage)
+        }
+
         if let rateLimits = snapshot.rateLimits {
             updateResetCreditState(from: rateLimits.rateLimitResetCredits, accountKey: accountKey)
             let liveSnapshots = liveRateLimitSnapshots(
@@ -1098,7 +1347,12 @@ public final class AppEnvironment: ObservableObject {
         var limitIDOrder: [String] = []
         var seen = Set<String>()
         for candidate in candidates {
-            let limitID = candidate.limits.limitId ?? candidate.fallbackID
+            let rawLimitID = candidate.limits.limitId ?? candidate.fallbackID
+            let limitID = candidate.fallbackID == Self.primaryQuotaLimitId
+                ? Self.primaryQuotaLimitId
+                : (candidate.limits.limitName?.isEmpty == false
+                    ? candidate.limits.limitName!
+                    : rawLimitID)
             if snapshotsByLimitID[limitID] == nil {
                 snapshotsByLimitID[limitID] = []
                 limitIDOrder.append(limitID)
@@ -1131,12 +1385,7 @@ public final class AppEnvironment: ObservableObject {
             }
         }
 
-        for limitID in limitIDOrder {
-            if let snapshots = snapshotsByLimitID[limitID], !snapshots.isEmpty {
-                return snapshots
-            }
-        }
-        return []
+        return limitIDOrder.flatMap { snapshotsByLimitID[$0] ?? [] }
     }
 
     private func restoreResetCreditState(for accountKey: String, snapshot: RateLimitSnapshotRecord?) {
@@ -1322,6 +1571,7 @@ public final class AppEnvironment: ObservableObject {
             }
         }
 
+        try RateLimitSnapshotRetention.prune(database: database)
         return insertedCount
     }
 
@@ -1333,7 +1583,10 @@ public final class AppEnvironment: ObservableObject {
         rawJson: String,
         seen: inout Set<String>
     ) throws -> Int {
-        let limitId = limits.limitId ?? fallbackLimitId
+        let rawLimitID = limits.limitId ?? fallbackLimitId
+        let limitId = fallbackLimitId == Self.primaryQuotaLimitId
+            ? Self.primaryQuotaLimitId
+            : (limits.limitName?.isEmpty == false ? limits.limitName! : rawLimitID)
         var insertedCount = 0
         if let primary = limits.primary {
             if try persistRateLimitWindow(
@@ -1440,9 +1693,12 @@ public final class AppEnvironment: ObservableObject {
                 ?? L10n.text(
                     "当前本地记录需要先完成恢复处理，暂时无法重置。",
                     "Local records need recovery before reset can continue."
-                )
+            )
             return
         }
+
+        ClaudeUsageSettings.shared.resetToDefaults()
+        await stopClaudeServicesAndWait()
 
         // 1. 重置偏好设置 (UserDefaults)
         if let bundleID = Bundle.main.bundleIdentifier {
@@ -1452,9 +1708,11 @@ public final class AppEnvironment: ObservableObject {
 
         // 2. 恢复 Feature Flags 默认配置
         UsageFeatureFlags.shared.isAnalyticsEnabled = true
-        UsageFeatureFlags.shared.isOverlayEnabled = false
+        UsageFeatureFlags.shared.isOverlayEnabled = true
         UsageFeatureFlags.shared.isAXSnappingEnabled = false
         UsageFeatureFlags.shared.isForecastEnabled = true
+        ToolOverlayPreferences.reset()
+        ClaudeOAuthCache.clear()
 
         // 3. 清空 SQLite 数据库所有表数据并重新初始化 Schema
         do {
@@ -1496,6 +1754,17 @@ public final class AppEnvironment: ObservableObject {
         state.themeMode = .system
         state.quotaDisplayMode = .used
         state.refreshIntervalSeconds = AppState.defaultRefreshIntervalSeconds
+        state.latestClaudeUsage = nil
+        state.claudeUsageStatus = .disabled
+        state.claudeUsageErrorText = nil
+        state.claudeUsageCooldownUntil = nil
+        enabledToolsStore.resetToDefaults()
+        frontmostToolTracker.refresh()
+        navigationStore.normalize(
+            enabledTools: enabledToolsStore.enabledToolIDs,
+            activeTool: frontmostToolTracker.foregroundTool
+        )
+        toolOverlayCoordinator.refreshConfiguration()
 
         // 5. 重新触发全量数据扫描与重构
         await scanCoordinator.scanNow(forceRebuild: true)

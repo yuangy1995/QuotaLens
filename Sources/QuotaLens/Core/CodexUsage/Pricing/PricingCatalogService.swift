@@ -145,7 +145,7 @@ public final class PricingCatalogService: Sendable {
         let aggregationTimeZone = timeZone
         try ensureRepriceShadowTables(database: database)
         try prepareRepriceRunIfNeeded(database: database, catalogVersion: snapshot.catalogVersion)
-        let totalEvents = try database.intScalar(sql: "SELECT COUNT(*) FROM codex_usage_events;")
+        let totalEvents = try database.intScalar(sql: "SELECT COUNT(*) FROM codex_usage_events WHERE provider = 'codex';")
         onProgress?(0, L10n.text("正在更新费用估算…", "Updating cost estimates..."))
 
         do {
@@ -385,7 +385,7 @@ public final class PricingCatalogService: Sendable {
             sql: """
             SELECT COUNT(*)
             FROM codex_usage_events
-            WHERE COALESCE(pricing_catalog_version, '') != ?;
+            WHERE provider = 'codex' AND COALESCE(pricing_catalog_version, '') != ?;
             """,
             bindings: [catalogVersion]
         )
@@ -460,39 +460,42 @@ public final class PricingCatalogService: Sendable {
         try database.execute(sql: """
         UPDATE codex_sessions
         SET summary_provenance = 'legacyAggregate'
-        WHERE event_count > 0
+        WHERE provider = 'codex' AND event_count > 0
           AND NOT EXISTS (
             SELECT 1
             FROM codex_usage_events e
             WHERE e.session_id = codex_sessions.session_id
+              AND e.provider = 'codex'
               AND e.is_child_replay = 0
           );
 
         UPDATE codex_session_summaries
         SET summary_provenance = 'legacyAggregate'
-        WHERE session_id IN (
+        WHERE provider = 'codex' AND session_id IN (
             SELECT session_id
             FROM codex_sessions
-            WHERE summary_provenance = 'legacyAggregate'
+            WHERE provider = 'codex' AND summary_provenance = 'legacyAggregate'
         )
         AND NOT EXISTS (
             SELECT 1
             FROM codex_usage_events e
             WHERE e.session_id = codex_session_summaries.session_id
+              AND e.provider = 'codex'
               AND e.is_child_replay = 0
         );
 
         UPDATE codex_daily_usage_summaries
         SET summary_provenance = 'legacyAggregate'
-        WHERE session_id IN (
+        WHERE provider = 'codex' AND session_id IN (
             SELECT session_id
             FROM codex_sessions
-            WHERE summary_provenance = 'legacyAggregate'
+            WHERE provider = 'codex' AND summary_provenance = 'legacyAggregate'
         )
         AND NOT EXISTS (
             SELECT 1
             FROM codex_usage_events e
             WHERE e.session_id = codex_daily_usage_summaries.session_id
+              AND e.provider = 'codex'
               AND e.is_child_replay = 0
         );
         """)
@@ -510,12 +513,14 @@ public final class PricingCatalogService: Sendable {
                 estimated_cost_usd_nano,
                 COALESCE(last_event_at, updated_at, created_at)
             FROM codex_sessions
-            WHERE summary_provenance = 'legacyAggregate'
+            WHERE provider = 'codex'
+              AND summary_provenance = 'legacyAggregate'
               AND event_count > 0
               AND NOT EXISTS (
                 SELECT 1
                 FROM codex_usage_events e
                 WHERE e.session_id = codex_sessions.session_id
+                  AND e.provider = 'codex'
                   AND e.is_child_replay = 0
               );
             """
@@ -540,7 +545,7 @@ public final class PricingCatalogService: Sendable {
             for row in rows {
                 let uncachedInput = max(0, row.inputTokens - row.cachedInputTokens - row.cacheWriteInputTokens)
                 let hasSessionSummary = try database.intScalar(
-                    sql: "SELECT COUNT(*) FROM codex_session_summaries WHERE session_id = ?;",
+                    sql: "SELECT COUNT(*) FROM codex_session_summaries WHERE provider = 'codex' AND session_id = ?;",
                     bindings: [row.sessionId]
                 ) > 0
                 if !hasSessionSummary {
@@ -580,7 +585,7 @@ public final class PricingCatalogService: Sendable {
                     timeZone: timeZone
                 )
                 let hasDailySummary = try database.intScalar(
-                    sql: "SELECT COUNT(*) FROM codex_daily_usage_summaries WHERE session_id = ?;",
+                    sql: "SELECT COUNT(*) FROM codex_daily_usage_summaries WHERE provider = 'codex' AND session_id = ?;",
                     bindings: [row.sessionId]
                 ) > 0
                 if !hasDailySummary {
@@ -807,11 +812,12 @@ public final class PricingCatalogService: Sendable {
                 FROM codex_usage_events e
                 WHERE e.rowid = codex_usage_event_reprice_shadow.source_rowid
                   AND e.event_id = codex_usage_event_reprice_shadow.event_id
+                  AND e.provider = 'codex'
             );
             """,
             bindings: []
         )
-        let totalEvents = try database.intScalar(sql: "SELECT COUNT(*) FROM codex_usage_events;")
+        let totalEvents = try database.intScalar(sql: "SELECT COUNT(*) FROM codex_usage_events WHERE provider = 'codex';")
         let shadowEventCount = try database.intScalar(sql: "SELECT COUNT(*) FROM codex_usage_event_reprice_shadow;")
         let shadowWasPruned = shadowEventCount < shadowEventCountBeforePrune
         let canResume = stateCatalog == catalogVersion && targetSHA == catalogSHA
@@ -827,7 +833,7 @@ public final class PricingCatalogService: Sendable {
             FROM codex_usage_events e
             LEFT JOIN codex_usage_event_reprice_shadow r
               ON r.source_rowid = e.rowid AND r.event_id = e.event_id
-            WHERE r.source_rowid IS NULL;
+            WHERE e.provider = 'codex' AND r.source_rowid IS NULL;
             """)
             let resumeLastRowID: Int64
             if let firstUnmatchedRowID {
@@ -904,7 +910,7 @@ public final class PricingCatalogService: Sendable {
             FROM codex_usage_events e
             LEFT JOIN codex_usage_event_reprice_shadow r
               ON r.source_rowid = e.rowid AND r.event_id = e.event_id
-            WHERE e.rowid > ? AND r.source_rowid IS NULL
+            WHERE e.provider = 'codex' AND e.rowid > ? AND r.source_rowid IS NULL
             ORDER BY e.rowid ASC
             LIMIT ?;
             """,
@@ -933,14 +939,14 @@ public final class PricingCatalogService: Sendable {
     }
 
     private func validateRepriceCoverage(database: SQLiteDatabase, catalogVersion: String) throws {
-        let liveEventCount = try database.intScalar(sql: "SELECT COUNT(*) FROM codex_usage_events;")
+        let liveEventCount = try database.intScalar(sql: "SELECT COUNT(*) FROM codex_usage_events WHERE provider = 'codex';")
         let matchedEventCount = try database.intScalar(
             sql: """
             SELECT COUNT(*)
             FROM codex_usage_events e
             JOIN codex_usage_event_reprice_shadow r
               ON r.source_rowid = e.rowid AND r.event_id = e.event_id
-            WHERE r.pricing_catalog_version = ?;
+            WHERE e.provider = 'codex' AND r.pricing_catalog_version = ?;
             """,
             bindings: [catalogVersion]
         )
@@ -1041,7 +1047,7 @@ public final class PricingCatalogService: Sendable {
             FROM codex_usage_events e NOT INDEXED
             JOIN codex_usage_event_reprice_shadow r NOT INDEXED
               ON r.source_rowid = e.rowid AND r.event_id = e.event_id
-            WHERE e.is_child_replay = 0 AND e.rowid > ?
+            WHERE e.provider = 'codex' AND e.is_child_replay = 0 AND e.rowid > ?
             ORDER BY e.rowid ASC LIMIT 5000;
             """, bindings: [lastRowID]) { stmt in
                 let tokens = TokenBreakdown(
@@ -1187,20 +1193,22 @@ public final class PricingCatalogService: Sendable {
             );
 
             DELETE FROM codex_session_summaries
-            WHERE summary_provenance != 'legacyAggregate'
+            WHERE provider = 'codex'
+              AND (summary_provenance != 'legacyAggregate'
                OR session_id IN (
                     SELECT DISTINCT session_id
                     FROM codex_usage_events
-                    WHERE is_child_replay = 0
-               );
+                    WHERE provider = 'codex' AND is_child_replay = 0
+               ));
 
             DELETE FROM codex_daily_usage_summaries
-            WHERE summary_provenance != 'legacyAggregate'
+            WHERE provider = 'codex'
+              AND (summary_provenance != 'legacyAggregate'
                OR session_id IN (
                     SELECT DISTINCT session_id
                     FROM codex_usage_events
-                    WHERE is_child_replay = 0
-               );
+                    WHERE provider = 'codex' AND is_child_replay = 0
+               ));
 
             INSERT INTO codex_session_summaries (
                 session_id, model_canonical, event_count, total_tokens,
@@ -1362,6 +1370,7 @@ public final class PricingCatalogService: Sendable {
                 COALESCE(SUM(CASE WHEN summary_provenance != 'legacyAggregate' THEN 1 ELSE 0 END), 0) AS non_legacy_summary_count,
                 COALESCE(SUM(CASE WHEN summary_provenance = 'reconstructed' THEN 1 ELSE 0 END), 0) AS reconstructed_summary_count
             FROM codex_session_summaries
+            WHERE provider = 'codex'
             GROUP BY session_id
         );
         CREATE UNIQUE INDEX IF NOT EXISTS idx_codex_session_update_totals_session
@@ -1391,7 +1400,8 @@ public final class PricingCatalogService: Sendable {
             unpriced_overflow_token_count = (SELECT unpriced_overflow_token_count FROM codex_session_update_totals t WHERE t.session_id = codex_sessions.session_id),
             pricing_status = (SELECT pricing_status FROM codex_session_update_totals t WHERE t.session_id = codex_sessions.session_id),
             summary_provenance = (SELECT summary_provenance FROM codex_session_update_totals t WHERE t.session_id = codex_sessions.session_id)
-        WHERE EXISTS (
+        WHERE provider = 'codex'
+          AND EXISTS (
             SELECT 1
             FROM codex_session_update_totals t
             WHERE t.session_id = codex_sessions.session_id
@@ -1417,7 +1427,8 @@ public final class PricingCatalogService: Sendable {
             sql: """
             SELECT COUNT(*)
             FROM codex_sessions
-            WHERE summary_provenance = 'legacyAggregate'
+            WHERE provider = 'codex'
+              AND summary_provenance = 'legacyAggregate'
               AND event_count > 0;
             """
         )

@@ -2,7 +2,7 @@
 
 import SwiftUI
 
-public struct DashboardView: View {
+public struct CodexOverviewView: View {
     @ObservedObject var state: AppState
     @Environment(\.colorScheme) var colorScheme
     @State private var pendingCredit: ResetCreditDisplay?
@@ -18,6 +18,10 @@ public struct DashboardView: View {
                     } else {
                         quotaUnavailableHUDCard
                     }
+                }
+
+                if !state.additionalQuotaSnapshots.isEmpty {
+                    additionalQuotaSection
                 }
 
                 // 智能建议模块 (有活跃建议时展示，无建议时自动隐藏)
@@ -229,6 +233,81 @@ public struct DashboardView: View {
             }
         }
         .frame(minWidth: 112, alignment: .leading)
+    }
+
+    private var additionalQuotaSection: some View {
+        let snapshots = state.additionalQuotaSnapshots
+
+        return VStack(alignment: .leading, spacing: 14) {
+            CyberSectionHeader(
+                title: L10n.text("其他模型额度", "Other Model Quotas"),
+                icon: "square.stack.3d.up.fill"
+            )
+
+            CyberDivider()
+
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 250), spacing: 12)],
+                spacing: 12
+            ) {
+                ForEach(Array(snapshots.enumerated()), id: \.offset) { _, snapshot in
+                    additionalQuotaCard(snapshot)
+                }
+            }
+        }
+        .cyberCard(cornerRadius: 16, padding: 18)
+    }
+
+    private func additionalQuotaCard(_ snapshot: RateLimitSnapshotRecord) -> some View {
+        let shown = state.quotaDisplayMode == .used
+            ? snapshot.usedPercent
+            : snapshot.remainingPercent
+        let window = QuotaWindowKind(windowDurationMins: snapshot.windowDurationMins)
+        let suffix = window == .fiveHour ? "5h" : "7d"
+        let tint: Color = snapshot.usedPercent >= 85
+            ? AppTheme.accentRose(for: colorScheme)
+            : snapshot.usedPercent >= 60
+                ? AppTheme.accentAmber(for: colorScheme)
+                : AppTheme.accentEmerald(for: colorScheme)
+
+        return VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 8) {
+                Text(snapshot.limitId)
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                    .lineLimit(1)
+
+                Text(suffix)
+                    .font(.system(size: 9.5, weight: .heavy, design: .monospaced))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(AppTheme.insetSurface(for: colorScheme), in: Capsule())
+
+                Spacer(minLength: 8)
+
+                Text(UsageNumberFormatter.percent(
+                    shown,
+                    maximumFractionDigits: shown < 10 ? 1 : 0
+                ))
+                .font(.system(size: 13, weight: .heavy, design: .monospaced))
+                .foregroundStyle(tint)
+                .monospacedDigit()
+            }
+
+            ProgressView(value: shown / 100)
+                .tint(tint)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            AppTheme.insetSurface(for: colorScheme),
+            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
+        )
     }
 
     // MARK: - 建议日均配额消耗微卡片

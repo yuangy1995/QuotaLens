@@ -16,13 +16,17 @@ public final class CodexUsageOverlayController: NSObject, ObservableObject, @unc
     private static let legacyOriginYDefaultsKey = "QuotaLens.Overlay.OriginY"
 
     private var panel: NSPanel?
+    private var detailsPanel: NSPanel?
     private var trackerTask: Task<Void, Never>?
     private var helpAnchorTask: Task<Void, Never>?
+    private var detailsCloseTask: Task<Void, Never>?
     private var workspaceObservers: [NSObjectProtocol] = []
     private var screenObserver: NSObjectProtocol?
     public private(set) var isExpanded: Bool = false
     private var manualPosition: CodexOverlayRelativePosition?
     private var isDragging: Bool = false
+    private var isSummaryHovered = false
+    private var isDetailsHovered = false
     private var dragStartMouseLocation: NSPoint?
     private var dragStartOrigin: NSPoint?
     private var trackedWindowID: CGWindowID?
@@ -43,7 +47,6 @@ public final class CodexUsageOverlayController: NSObject, ObservableObject, @unc
 
     private enum FocusState: Equatable {
         case codex(pid_t)
-        case quotaLens
         case hidden
     }
 
@@ -91,6 +94,7 @@ public final class CodexUsageOverlayController: NSObject, ObservableObject, @unc
         p.isOpaque = false
         p.backgroundColor = .clear
         p.hasShadow = false
+        p.acceptsMouseMovedEvents = true
         p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
         p.isMovableByWindowBackground = false
         p.hidesOnDeactivate = false
@@ -98,8 +102,11 @@ public final class CodexUsageOverlayController: NSObject, ObservableObject, @unc
         let overlayView = CodexOverlayView(
             state: environment.state,
             isExpanded: savedExpanded,
-            onToggleExpand: { [weak self] expanded in
-                self?.setExpanded(expanded)
+            onToggleExpand: { [weak self] expanded, persist in
+                self?.setExpanded(expanded, persist: persist)
+            },
+            onHoverChanged: { [weak self] hovering in
+                self?.summaryHoverChanged(hovering)
             },
             onDragChanged: { [weak self] in
                 self?.handleDragChanged()
@@ -163,8 +170,12 @@ public final class CodexUsageOverlayController: NSObject, ObservableObject, @unc
             self.screenObserver = nil
         }
 
+        isSummaryHovered = false
         panel?.close()
         panel = nil
+        closeDetails()
+        detailsPanel?.close()
+        detailsPanel = nil
         trackedWindowID = nil
         trackedProcessID = nil
         trackedAppKitFrame = nil
@@ -211,30 +222,30 @@ public final class CodexUsageOverlayController: NSObject, ObservableObject, @unc
 
     @MainActor
     public func updateVisibilityForFrontmostApp() {
-        guard let p = panel, UsageFeatureFlags.shared.isOverlayEnabled else { return }
+        guard let p = panel else { return }
         if isDragging { return }
-
-        let state = focusState(for: NSWorkspace.shared.frontmostApplication)
-        if case .hidden = state, p.isVisible {
-            p.orderOut(nil)
-        }
-    }
-
-    private func focusState(for application: NSRunningApplication?) -> FocusState {
-        guard let application else { return .hidden }
-        if application.processIdentifier == ProcessInfo.processInfo.processIdentifier {
-            return .quotaLens
-        }
-        if CodexOverlayWindowLocator.isCodex(application) {
-            return .codex(application.processIdentifier)
-        }
-        return .hidden
+        _ = refreshTrackedWindow(panel: p)
     }
 
     @MainActor
-    private func setExpanded(_ expanded: Bool) {
+    private func focusState(for application: NSRunningApplication?) -> FocusState {
+        _ = application
+        guard environment?.frontmostToolTracker.foregroundTool == .codex,
+              let processID = environment?.frontmostToolTracker.foregroundApplicationPID else {
+            return .hidden
+        }
+        return .codex(processID)
+    }
+
+    @MainActor
+    private func setExpanded(_ expanded: Bool, persist: Bool) {
         isExpanded = expanded
-        UserDefaults.standard.set(expanded, forKey: Self.overlayExpandedDefaultsKey)
+        if expanded {
+            closeDetails()
+        }
+        if persist {
+            UserDefaults.standard.set(expanded, forKey: Self.overlayExpandedDefaultsKey)
+        }
         guard let p = panel else { return }
 
         let contentSize = expanded ? NSSize(width: 256, height: 196) : NSSize(width: 162, height: 34)
@@ -260,6 +271,137 @@ public final class CodexUsageOverlayController: NSObject, ObservableObject, @unc
             frame = fallbackFrame
         }
         applyFrame(frame, to: p, animate: true)
+    }
+
+    @MainActor
+    private func summaryHoverChanged(_ hovering: Bool) {
+        isSummaryHovered = hovering
+        if hovering, !isExpanded {
+            showDetails()
+        } else if !hovering {
+            scheduleDetailsClose()
+        }
+    }
+
+    @MainActor
+    private func detailsHoverChanged(_ hovering: Bool) {
+        isDetailsHovered = hovering
+        if hovering {
+            detailsCloseTask?.cancel()
+            detailsCloseTask = nil
+        } else {
+            scheduleDetailsClose()
+        }
+    }
+
+    @MainActor
+    private func showDetails() {
+        detailsCloseTask?.cancel()
+        detailsCloseTask = nil
+        guard !isExpanded,
+              panel?.isVisible == true,
+              let trackedAppKitFrame else { return }
+        switch lastFocusState {
+        case .codex:
+            break
+        case .hidden:
+            return
+        }
+
+        let details: NSPanel
+        if let detailsPanel {
+            details = detailsPanel
+        } else {
+            guard let created = makeDetailsPanel() else { return }
+            details = created
+        }
+        updateDetailsPanelFrame(in: trackedAppKitFrame)
+        details.ignoresMouseEvents = false
+        if !details.isVisible {
+            details.orderFrontRegardless()
+        }
+    }
+
+    @MainActor
+    private func scheduleDetailsClose() {
+        detailsCloseTask?.cancel()
+        detailsCloseTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(350))
+            guard !Task.isCancelled,
+                  let self,
+                  !self.isSummaryHovered,
+                  !self.isDetailsHovered else { return }
+            self.closeDetails()
+        }
+    }
+
+    @MainActor
+    private func closeDetails() {
+        detailsCloseTask?.cancel()
+        detailsCloseTask = nil
+        isDetailsHovered = false
+        detailsPanel?.orderOut(nil)
+    }
+
+    @MainActor
+    private func makeDetailsPanel() -> NSPanel? {
+        guard let state = environment?.state else { return nil }
+        let size = NSSize(width: 276, height: 184)
+        let details = NSPanel(
+            contentRect: NSRect(origin: .zero, size: size),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        details.level = .normal
+        details.isFloatingPanel = false
+        details.isOpaque = false
+        details.backgroundColor = .clear
+        details.hasShadow = false
+        details.acceptsMouseMovedEvents = true
+        details.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
+        details.isMovableByWindowBackground = false
+        details.hidesOnDeactivate = false
+        details.contentView = NSHostingView(
+            rootView: CodexOverlayHoverDetailsView(
+                state: state,
+                onHoverChanged: { [weak self] hovering in
+                    self?.detailsHoverChanged(hovering)
+                }
+            )
+        )
+        detailsPanel = details
+        return details
+    }
+
+    @MainActor
+    private func updateDetailsPanelFrame(in codexWindow: CGRect) {
+        guard let summaryFrame = panel?.frame,
+              let detailsPanel else { return }
+        let gap: CGFloat = 0
+        let preferred = CGRect(
+            x: summaryFrame.minX,
+            y: summaryFrame.maxY + gap,
+            width: detailsPanel.frame.width,
+            height: detailsPanel.frame.height
+        )
+        let frame: CGRect
+        if preferred.maxY <= codexWindow.maxY {
+            frame = CodexOverlayLayout.clampedFrame(preferred, in: codexWindow)
+        } else {
+            frame = CodexOverlayLayout.clampedFrame(
+                CGRect(
+                    x: summaryFrame.minX,
+                    y: summaryFrame.minY - gap - detailsPanel.frame.height,
+                    width: detailsPanel.frame.width,
+                    height: detailsPanel.frame.height
+                ),
+                in: codexWindow
+            )
+        }
+        if detailsPanel.frame != frame {
+            detailsPanel.setFrame(frame, display: detailsPanel.isVisible, animate: false)
+        }
     }
 
     private func startWindowTrackerLoop() {
@@ -291,11 +433,6 @@ public final class CodexUsageOverlayController: NSObject, ObservableObject, @unc
         let focus = focusState(for: NSWorkspace.shared.frontmostApplication)
         let focusChanged = focus != lastFocusState
         lastFocusState = focus
-        if case .hidden = focus {
-            hidePanel(panel, clearTarget: false)
-            return 800_000_000
-        }
-
         let runningProcessIDs = CodexOverlayWindowLocator.runningProcessIDs()
         guard !runningProcessIDs.isEmpty else {
             hidePanel(panel, clearTarget: true)
@@ -306,7 +443,7 @@ public final class CodexUsageOverlayController: NSObject, ObservableObject, @unc
         switch focus {
         case let .codex(processID):
             focusedProcessID = processID
-        case .quotaLens, .hidden:
+        case .hidden:
             focusedProcessID = nil
         }
 
@@ -340,26 +477,32 @@ public final class CodexUsageOverlayController: NSObject, ObservableObject, @unc
         let frame = positionedFrame(panelSize: panel.frame.size, in: appKitFrame)
         if panel.frame != frame {
             applyFrame(frame, to: panel, animate: false)
+        } else if detailsPanel?.isVisible == true {
+            updateDetailsPanelFrame(in: appKitFrame)
         }
+        let panelIsAboveTarget = CodexOverlayWindowLocator.isWindow(
+            CGWindowID(panel.windowNumber),
+            above: target.windowID,
+            windows: windows
+        )
 
         switch focus {
         case .codex:
-            if focusChanged || targetChanged || !panel.isVisible {
-                panel.order(.above, relativeTo: Int(target.windowID))
+            panel.ignoresMouseEvents = false
+            if focusChanged || targetChanged || !panel.isVisible || !panelIsAboveTarget {
+                panel.orderFrontRegardless()
             }
             return 100_000_000
-        case .quotaLens:
-            if focusChanged || !panel.isVisible {
-                panel.orderFront(nil)
-            }
-            return 250_000_000
         case .hidden:
-            return 800_000_000
+            hidePanel(panel, clearTarget: false)
+            return 1_000_000_000
         }
     }
 
     @MainActor
     private func hidePanel(_ panel: NSPanel, clearTarget: Bool) {
+        isSummaryHovered = false
+        closeDetails()
         if panel.isVisible {
             panel.orderOut(nil)
         }
@@ -505,6 +648,7 @@ public final class CodexUsageOverlayController: NSObject, ObservableObject, @unc
     @MainActor
     private func handleDragChanged() {
         guard let p = panel, let trackedAppKitFrame else { return }
+        closeDetails()
         isDragging = true
 
         let currentMouse = NSEvent.mouseLocation
@@ -588,6 +732,9 @@ public final class CodexUsageOverlayController: NSObject, ObservableObject, @unc
     @MainActor
     private func applyFrame(_ frame: NSRect, to panel: NSPanel, animate: Bool) {
         panel.setFrame(frame, display: true, animate: animate)
+        if detailsPanel?.isVisible == true, let trackedAppKitFrame {
+            updateDetailsPanelFrame(in: trackedAppKitFrame)
+        }
     }
 
     private static func defaultEdgeOrigin(for size: NSSize, inset: CGFloat) -> NSPoint {
@@ -641,26 +788,30 @@ public final class CodexUsageOverlayController: NSObject, ObservableObject, @unc
 
 // MARK: - 挂件 SwiftUI 视图 (纯净极简科技风 HUD)
 public struct CodexOverlayView: View {
-    let onToggleExpand: (Bool) -> Void
+    let onToggleExpand: (Bool, Bool) -> Void
+    let onHoverChanged: (Bool) -> Void
     let onDragChanged: () -> Void
     let onDragEnded: () -> Void
     @ObservedObject var state: AppState
     @Environment(\.colorScheme) var colorScheme
     @State private var isExpanded: Bool
     @State private var isPulsing = false
+    @State private var isDraggingWidget = false
     @ObservedObject private var flags = UsageFeatureFlags.shared
     @ObservedObject private var overlayController = CodexUsageOverlayController.shared
 
     public init(
         state: AppState,
         isExpanded: Bool = false,
-        onToggleExpand: @escaping (Bool) -> Void,
+        onToggleExpand: @escaping (Bool, Bool) -> Void,
+        onHoverChanged: @escaping (Bool) -> Void,
         onDragChanged: @escaping () -> Void,
         onDragEnded: @escaping () -> Void
     ) {
         self.state = state
         self._isExpanded = State(initialValue: isExpanded)
         self.onToggleExpand = onToggleExpand
+        self.onHoverChanged = onHoverChanged
         self.onDragChanged = onDragChanged
         self.onDragEnded = onDragEnded
     }
@@ -740,6 +891,12 @@ public struct CodexOverlayView: View {
                             .onTapGesture {
                                 toggleExpanded()
                             }
+
+                        if isDraggingWidget {
+                            Image(systemName: "arrow.up.and.down.and.arrow.left.and.right")
+                                .font(.system(size: 8.5, weight: .black))
+                                .foregroundStyle(amber)
+                        }
                     }
                 }
 
@@ -849,11 +1006,9 @@ public struct CodexOverlayView: View {
             .shadow(color: Color.black.opacity(isDark ? 0.45 : 0.20), radius: 6, x: 0, y: 2)
             .padding(10)
             .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 2)
-                    .onChanged { _ in onDragChanged() }
-                    .onEnded { _ in onDragEnded() }
-            )
+            .gesture(moveGesture)
+            .onHover(perform: onHoverChanged)
+            .onDisappear { onHoverChanged(false) }
             .onAppear {
                 withAnimation(.easeInOut(duration: 1.8).repeatForever(autoreverses: true)) {
                     isPulsing = true
@@ -862,11 +1017,23 @@ public struct CodexOverlayView: View {
         }
     }
 
+    private var moveGesture: some Gesture {
+        DragGesture(minimumDistance: 2)
+            .onChanged { _ in
+                isDraggingWidget = true
+                onDragChanged()
+            }
+            .onEnded { _ in
+                onDragEnded()
+                isDraggingWidget = false
+            }
+    }
+
     private func toggleExpanded() {
         withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
             isExpanded.toggle()
         }
-        onToggleExpand(isExpanded)
+        onToggleExpand(isExpanded, true)
     }
 
     private func weeklyQuotaDisplayPercent(for snapshot: RateLimitSnapshotRecord) -> String {
@@ -904,6 +1071,156 @@ public struct CodexOverlayView: View {
                 .lineLimit(1)
                 .monospacedDigit()
                 .fixedSize()
+        }
+    }
+}
+
+private struct CodexOverlayHoverDetailsView: View {
+    @ObservedObject var state: AppState
+    @Environment(\.colorScheme) private var colorScheme
+    let onHoverChanged: (Bool) -> Void
+
+    var body: some View {
+        let cyan = AppTheme.accentCyan(for: colorScheme)
+        let purple = AppTheme.accentPurple(for: colorScheme)
+        let amber = AppTheme.accentAmber(for: colorScheme)
+        let statusColor = state.preferredDisplayQuotaSeverityColor
+        let isDark = colorScheme == .dark
+
+        TimelineView(.periodic(from: .now, by: 1)) { _ in
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Text("Codex")
+                        .font(.system(size: 11, weight: .black, design: .rounded))
+                        .foregroundStyle(cyan)
+                    Spacer()
+                    Text(state.quotaDisplayMode.shortTitle)
+                        .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                        .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                    Text(state.preferredDisplayQuotaPercentString)
+                        .font(.system(size: 11, weight: .heavy, design: .monospaced))
+                        .foregroundStyle(statusColor)
+                        .monospacedDigit()
+                }
+
+                GeometryReader { proxy in
+                    let progress = min(max(state.preferredDisplayQuotaProgress, 0), 1)
+                    ZStack(alignment: .leading) {
+                        Capsule()
+                            .fill(isDark ? Color.white.opacity(0.10) : Color.black.opacity(0.08))
+                            .frame(height: 4)
+                        Capsule()
+                            .fill(
+                                LinearGradient(
+                                    colors: [cyan, statusColor],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .frame(width: max(5, proxy.size.width * CGFloat(progress)), height: 4)
+                    }
+                }
+                .frame(height: 4)
+
+                VStack(spacing: 5) {
+                    detailRow(
+                        icon: "gauge.with.dots.needle.bottom.50percent",
+                        color: statusColor,
+                        title: state.quotaDisplayMode.pickerTitle,
+                        value: state.preferredDisplayQuotaPercentString
+                    )
+                    if state.fiveHourQuotaSnapshot != nil,
+                       let weekly = state.weeklyQuotaSnapshot {
+                        detailRow(
+                            icon: "calendar",
+                            color: AppTheme.accentEmerald(for: colorScheme),
+                            title: L10n.text("周额度", "Weekly Quota"),
+                            value: weeklyQuotaDisplayPercent(for: weekly)
+                        )
+                    }
+                    detailRow(
+                        icon: "hourglass",
+                        color: cyan,
+                        title: L10n.text("距离重置", "Until reset"),
+                        value: state.preferredDisplayResetCountdownString
+                    )
+                    detailRow(
+                        icon: "crown.fill",
+                        color: purple,
+                        title: L10n.text("订阅计划", "Plan"),
+                        value: state.subscriptionPlanTitle.uppercased()
+                    )
+                    detailRow(
+                        icon: "ticket.fill",
+                        color: state.resetCreditAvailableCount > 0
+                            ? amber
+                            : AppTheme.textSecondary(for: colorScheme),
+                        title: L10n.text("重置卡储备", "Reset Cards"),
+                        value: L10n.format(
+                            "%d available",
+                            zhHans: "%d 张可用",
+                            state.resetCreditAvailableCount
+                        )
+                    )
+                }
+            }
+            .padding(12)
+            .background(
+                isDark
+                    ? Color(red: 0.08, green: 0.10, blue: 0.16).opacity(0.96)
+                    : Color.white.opacity(0.98),
+                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [cyan.opacity(0.6), purple.opacity(0.35), cyan.opacity(0.45)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            )
+            .shadow(color: Color.black.opacity(isDark ? 0.45 : 0.20), radius: 6, y: 2)
+            .padding(10)
+            .contentShape(Rectangle())
+            .onHover(perform: onHoverChanged)
+            .onDisappear { onHoverChanged(false) }
+        }
+    }
+
+    private func detailRow(
+        icon: String,
+        color: Color,
+        title: String,
+        value: String
+    ) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 9.5, weight: .bold))
+                .foregroundStyle(color)
+                .frame(width: 14)
+            Text(title)
+                .font(.system(size: 10, weight: .medium, design: .rounded))
+                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                .fixedSize()
+            Spacer()
+            Text(value)
+                .font(.system(size: 10.5, weight: .heavy, design: .monospaced))
+                .foregroundStyle(color)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+                .monospacedDigit()
+        }
+    }
+
+    private func weeklyQuotaDisplayPercent(for snapshot: RateLimitSnapshotRecord) -> String {
+        switch state.quotaDisplayMode {
+        case .used:
+            return UsageNumberFormatter.percent(snapshot.usedPercent)
+        case .remaining:
+            return UsageNumberFormatter.percent(snapshot.remainingPercent)
         }
     }
 }

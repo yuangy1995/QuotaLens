@@ -3,50 +3,21 @@
 import SwiftUI
 import AppKit
 
-public enum NavigationTab: CaseIterable, Identifiable {
-    case dashboard
-    case usageDashboard
-    case history
-    case sessions
-    case resetCards
-    case settings
-    case about
-
-    public var id: Self { self }
-
-    public var title: String {
-        switch self {
-        case .dashboard: return L10n.text("额度概览", "Overview")
-        case .usageDashboard: return L10n.text("用量大盘", "Usage Dashboard")
-        case .history: return L10n.text("历史记录", "History")
-        case .sessions: return L10n.text("会话明细", "Sessions")
-        case .resetCards: return L10n.text("重置卡", "Reset Cards")
-        case .settings: return L10n.text("设置", "Settings")
-        case .about: return L10n.text("关于", "About")
-        }
-    }
-
-    public var icon: String {
-        switch self {
-        case .dashboard: return "gauge.with.needle.fill"
-        case .usageDashboard: return "chart.bar.xaxis"
-        case .history: return "calendar.badge.clock"
-        case .sessions: return "bubble.left.and.bubble.right.fill"
-        case .resetCards: return "ticket.fill"
-        case .settings: return "gearshape.2.fill"
-        case .about: return "info.circle.fill"
-        }
-    }
-}
-
 public struct MainView: View {
     @ObservedObject var state: AppState
+    @ObservedObject var enabledTools: EnabledToolsStore
+    @ObservedObject var navigation: AppNavigationStore
     @EnvironmentObject var env: AppEnvironment
     @Environment(\.colorScheme) var colorScheme
-    @State private var selectedTab: NavigationTab = .dashboard
 
-    public init(state: AppState) {
+    public init(
+        state: AppState,
+        enabledTools: EnabledToolsStore,
+        navigation: AppNavigationStore
+    ) {
         self.state = state
+        self.enabledTools = enabledTools
+        self.navigation = navigation
     }
 
     public var body: some View {
@@ -61,17 +32,39 @@ public struct MainView: View {
 
                 CyberDivider(glowColor: isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.07))
 
-                // 侧边栏导航列表
+                if enabledTools.enabledToolIDs.count >= 2 {
+                    contextSwitcher
+                        .padding(.horizontal, 14)
+                        .padding(.top, 12)
+                }
+
                 VStack(spacing: 6) {
-                    ForEach(NavigationTab.allCases) { tab in
+                    if enabledTools.enabledToolIDs.isEmpty {
                         SidebarNavigationRow(
-                            tab: tab,
-                            isSelected: selectedTab == tab,
-                            colorScheme: colorScheme
-                        ) {
-                            if selectedTab != tab {
-                                selectedTab = tab
-                            }
+                            title: L10n.text("开始使用", "Get Started"),
+                            icon: "plus.circle.fill",
+                            isSelected: navigation.fixedDestination == nil,
+                            colorScheme: colorScheme,
+                            onSelect: { navigation.selectContext(.overview) }
+                        )
+                    } else if navigation.selectedContext == .overview {
+                        SidebarNavigationRow(
+                            title: L10n.text("运营总览", "Operations Overview"),
+                            icon: "square.grid.2x2.fill",
+                            isSelected: navigation.fixedDestination == nil,
+                            colorScheme: colorScheme,
+                            onSelect: { navigation.selectContext(.overview) }
+                        )
+                    } else if case .tool(let toolID) = navigation.selectedContext {
+                        ForEach(availablePages(for: toolID)) { page in
+                            SidebarNavigationRow(
+                                title: page.title,
+                                icon: page.icon,
+                                isSelected: navigation.fixedDestination == nil
+                                    && navigation.selectedPage(for: toolID) == page,
+                                colorScheme: colorScheme,
+                                onSelect: { navigation.selectToolPage(page, for: toolID) }
+                            )
                         }
                     }
                 }
@@ -80,7 +73,20 @@ public struct MainView: View {
 
                 Spacer()
 
-                // 侧边栏底座状态指示坞
+                VStack(spacing: 6) {
+                    ForEach([FixedNavigationDestination.appSettings, .about], id: \.rawValue) { destination in
+                        SidebarNavigationRow(
+                            title: destination.title,
+                            icon: destination.icon,
+                            isSelected: navigation.fixedDestination == destination,
+                            colorScheme: colorScheme,
+                            onSelect: { navigation.showFixedDestination(destination) }
+                        )
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.bottom, 8)
+
                 sidebarBottomHUDDock
             }
             .frame(width: 248)
@@ -95,7 +101,7 @@ public struct MainView: View {
             VStack(spacing: 0) {
                 topChromeBar
 
-                if env.scanCoordinator.isScanning {
+                if isCurrentContextScanning {
                     mainScanProgressStrip
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
@@ -110,24 +116,7 @@ public struct MainView: View {
                     AppTheme.canvasGradient(for: colorScheme)
                         .ignoresSafeArea()
 
-                    Group {
-                        switch selectedTab {
-                        case .dashboard:
-                            DashboardView(state: state)
-                        case .usageDashboard:
-                            UsageDashboardView(facade: env.usageQueryFacade)
-                        case .history:
-                            HistoryView(facade: env.usageQueryFacade)
-                        case .sessions:
-                            SessionsView(facade: env.usageQueryFacade)
-                        case .resetCards:
-                            ResetCardsView(state: state)
-                        case .settings:
-                            SettingsView(state: state)
-                        case .about:
-                            AboutView(state: state, updateManager: env.updateManager)
-                        }
-                    }
+                    currentContent
                 }
                 .frame(minWidth: 780, minHeight: 560)
             }
@@ -140,6 +129,177 @@ public struct MainView: View {
         .overlay {
             UpdateCheckOverlay(updateManager: env.updateManager)
         }
+        .onAppear {
+            navigation.normalize(
+                enabledTools: enabledTools.enabledToolIDs,
+                activeTool: env.frontmostToolTracker.foregroundTool
+            )
+        }
+        .onChange(of: enabledTools.enabledToolIDs) { _, enabled in
+            navigation.normalize(
+                enabledTools: enabled,
+                activeTool: env.frontmostToolTracker.foregroundTool
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var currentContent: some View {
+        if let fixed = navigation.fixedDestination {
+            switch fixed {
+            case .appSettings:
+                GlobalSettingsView(state: state)
+            case .about:
+                AboutView(state: state, updateManager: env.updateManager)
+            }
+        } else if enabledTools.enabledToolIDs.isEmpty {
+            MonitoringSetupView()
+        } else {
+            switch navigation.selectedContext {
+            case .overview:
+                OverviewDashboardView(state: state, facade: env.usageQueryFacade) { tool in
+                    navigation.selectContext(.tool(tool))
+                }
+            case .tool(let toolID):
+                toolContent(toolID)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func toolContent(_ toolID: MonitoringToolID) -> some View {
+        switch (toolID, navigation.selectedPage(for: toolID)) {
+        case (.codex, .quota):
+            CodexOverviewView(state: state)
+        case (.codex, .usage):
+            CodexUsageDashboardView(facade: env.usageQueryFacade)
+        case (.codex, .history):
+            CodexHistoryView(facade: env.usageQueryFacade)
+        case (.codex, .sessions):
+            CodexSessionsView(facade: env.usageQueryFacade)
+        case (.codex, .resetCards):
+            ResetCardsView(state: state)
+        case (.codex, .settings):
+            CodexSettingsView(state: state)
+        case (.claude, .quota):
+            ClaudeOverviewView(state: state, facade: env.usageQueryFacade)
+        case (.claude, .usage):
+            ClaudeUsageDashboardView(facade: env.usageQueryFacade)
+        case (.claude, .history):
+            ClaudeHistoryView(facade: env.usageQueryFacade)
+        case (.claude, .sessions):
+            ClaudeSessionsView(facade: env.usageQueryFacade)
+        case (.claude, .settings):
+            ClaudeSettingsView(state: state)
+        default:
+            MonitoringSetupView()
+        }
+    }
+
+    private var currentPageTitle: String {
+        if let fixed = navigation.fixedDestination {
+            return fixed.title
+        }
+        switch navigation.selectedContext {
+        case .overview:
+            return enabledTools.enabledToolIDs.isEmpty
+                ? L10n.text("设置监控工具", "Set Up Monitoring")
+                : L10n.text("运营总览", "Operations Overview")
+        case .tool(let tool):
+            return navigation.selectedPage(for: tool).title
+        }
+    }
+
+    private func availablePages(for toolID: MonitoringToolID) -> [ToolPage] {
+        guard let descriptor = ToolRegistry.shared.descriptor(for: toolID) else { return [] }
+        return ToolPage.allCases.filter { descriptor.capabilities.contains($0.capability) }
+    }
+
+    private var isCurrentContextScanning: Bool {
+        switch navigation.selectedContext {
+        case .overview:
+            return env.scanCoordinator.isScanning || env.claudeScanCoordinator.isScanning
+        case .tool(.codex):
+            return env.scanCoordinator.isScanning
+        case .tool(.claude):
+            return env.claudeScanCoordinator.isScanning
+        case .tool:
+            return false
+        }
+    }
+
+    private var currentScanProgress: Double? {
+        switch navigation.selectedContext {
+        case .tool(.claude): return nil
+        case .overview where env.claudeScanCoordinator.isScanning && !env.scanCoordinator.isScanning:
+            return nil
+        default:
+            return env.scanCoordinator.progress
+        }
+    }
+
+    private var currentScanStatusText: String {
+        switch navigation.selectedContext {
+        case .tool(.claude): return env.claudeScanCoordinator.statusText
+        case .overview where env.claudeScanCoordinator.isScanning && !env.scanCoordinator.isScanning:
+            return env.claudeScanCoordinator.statusText
+        default:
+            return env.scanCoordinator.statusText
+        }
+    }
+
+    private func refreshCurrentContext() async {
+        switch navigation.selectedContext {
+        case .overview:
+            await env.refreshAllData()
+        case .tool(let tool):
+            await env.refreshMonitoringTool(tool)
+        }
+    }
+
+    private var contextSwitcher: some View {
+        Menu {
+            Button {
+                navigation.selectContext(.overview)
+            } label: {
+                Label(L10n.text("总览", "Overview"), systemImage: "square.grid.2x2.fill")
+            }
+            Divider()
+            ForEach(enabledTools.enabledDescriptors) { descriptor in
+                Button {
+                    navigation.selectContext(.tool(descriptor.id))
+                } label: {
+                    Label(descriptor.displayName, systemImage: descriptor.systemImage)
+                }
+            }
+        } label: {
+            HStack(spacing: 9) {
+                Image(systemName: currentContextDescriptor?.systemImage ?? "square.grid.2x2.fill")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(AppTheme.accentCyan(for: colorScheme))
+                    .frame(width: 24, height: 24)
+                Text(currentContextDescriptor?.displayName ?? L10n.text("总览", "Overview"))
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                Spacer()
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 38)
+            .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 9))
+            .overlay(
+                RoundedRectangle(cornerRadius: 9)
+                    .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
+            )
+        }
+        .menuStyle(.borderlessButton)
+        .accessibilityLabel(L10n.text("切换工具空间", "Switch Tool Space"))
+    }
+
+    private var currentContextDescriptor: MonitoringToolDescriptor? {
+        guard case .tool(let tool) = navigation.selectedContext else { return nil }
+        return ToolRegistry.shared.descriptor(for: tool)
     }
 
     private var topChromeBar: some View {
@@ -147,7 +307,7 @@ public struct MainView: View {
         let isDark = colorScheme == .dark
 
         return HStack(spacing: 12) {
-            Text(selectedTab.title)
+            Text(currentPageTitle)
                 .font(.system(size: 16, weight: .black, design: .rounded))
                 .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
 
@@ -155,7 +315,7 @@ public struct MainView: View {
 
             Button(action: {
                 Task {
-                    await env.refreshAllData()
+                    await refreshCurrentContext()
                 }
             }) {
                 ZStack {
@@ -167,7 +327,7 @@ public struct MainView: View {
                                 .strokeBorder(isDark ? Color.white.opacity(0.14) : Color.black.opacity(0.09), lineWidth: 0.8)
                         )
 
-                    if env.scanCoordinator.isScanning || state.isRefreshing {
+                    if isCurrentContextScanning || state.isRefreshing || state.isRefreshingClaudeUsage {
                         ProgressView()
                             .controlSize(.small)
                             .tint(cyan)
@@ -181,7 +341,7 @@ public struct MainView: View {
             }
             .buttonStyle(.plain)
             .help(L10n.text("立即刷新数据", "Refresh data now"))
-            .disabled(state.isRefreshing || env.scanCoordinator.isScanning)
+            .disabled(state.isRefreshing || state.isRefreshingClaudeUsage || isCurrentContextScanning)
         }
         .frame(height: 64)
         .padding(.horizontal, 28)
@@ -197,7 +357,7 @@ public struct MainView: View {
     private var mainScanProgressStrip: some View {
         let cyan = AppTheme.accentCyan(for: colorScheme)
         let isDark = colorScheme == .dark
-        let progress = env.scanCoordinator.progress
+        let progress = currentScanProgress
 
         return VStack(spacing: 6) {
             HStack(spacing: 8) {
@@ -209,7 +369,7 @@ public struct MainView: View {
                     .font(.system(size: 11, weight: .bold, design: .rounded))
                     .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
 
-                Text(env.scanCoordinator.statusText)
+                Text(currentScanStatusText)
                     .font(.system(size: 10.5, weight: .medium, design: .rounded))
                     .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
                     .lineLimit(1)
@@ -258,7 +418,7 @@ public struct MainView: View {
             Spacer(minLength: 8)
 
             Button(L10n.text("查看设置", "Open Settings")) {
-                selectedTab = .settings
+                navigation.showFixedDestination(.appSettings)
             }
             .buttonStyle(.plain)
             .font(.system(size: 10.5, weight: .bold, design: .rounded))
@@ -296,19 +456,19 @@ public struct MainView: View {
                     )
                     .shadow(color: cyan.opacity(isDark ? 0.4 : 0.2), radius: 5)
 
-                Image(systemName: "person.fill")
+                Image(systemName: currentContextDescriptor?.systemImage ?? "square.grid.2x2.fill")
                     .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(.white)
             }
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(state.displayName(for: state.account?.accountKey))
+                Text(sidebarPrimaryTitle)
                     .font(.system(size: 12, weight: .bold, design: .monospaced))
                     .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
                     .lineLimit(1)
 
                 HStack(spacing: 6) {
-                    Text(state.subscriptionPlanTitle.uppercased())
+                    Text(sidebarSecondaryTitle.uppercased())
                         .font(.system(size: 9, weight: .heavy, design: .monospaced))
                         .lineLimit(1)
                         .minimumScaleFactor(0.75)
@@ -323,12 +483,12 @@ public struct MainView: View {
 
                     ZStack {
                         Circle()
-                            .fill((state.connectionStatus.isConnected ? emerald : Color.gray).opacity(0.3))
+                            .fill((currentContextIsConnected ? emerald : Color.gray).opacity(0.3))
                             .frame(width: 8, height: 8)
                             .blur(radius: 1.5)
 
                         Circle()
-                            .fill(state.connectionStatus.isConnected ? emerald : Color.gray.opacity(0.6))
+                            .fill(currentContextIsConnected ? emerald : Color.gray.opacity(0.6))
                             .frame(width: 5, height: 5)
                     }
                 }
@@ -349,6 +509,46 @@ public struct MainView: View {
         .padding(.horizontal, 14)
     }
 
+    private var sidebarPrimaryTitle: String {
+        switch navigation.selectedContext {
+        case .overview:
+            return L10n.text("所有监控工具", "All Monitored Tools")
+        case .tool(.codex):
+            return state.displayName(for: state.account?.accountKey)
+        case .tool(.claude):
+            return "Claude"
+        case .tool(let id):
+            return ToolRegistry.shared.descriptor(for: id)?.displayName ?? "QuotaLens"
+        }
+    }
+
+    private var sidebarSecondaryTitle: String {
+        switch navigation.selectedContext {
+        case .overview:
+            return L10n.format("%d tools enabled", zhHans: "已启用 %d 个工具", enabledTools.enabledToolIDs.count)
+        case .tool(.codex):
+            return state.subscriptionPlanTitle
+        case .tool(.claude):
+            return state.latestClaudeUsage?.tier ?? L10n.text("等待同步", "Waiting for Sync")
+        case .tool:
+            return L10n.text("监控中", "Monitoring")
+        }
+    }
+
+    private var currentContextIsConnected: Bool {
+        switch navigation.selectedContext {
+        case .overview:
+            return (enabledTools.enabledToolIDs.contains(.codex) && state.connectionStatus.isConnected)
+                || (enabledTools.enabledToolIDs.contains(.claude) && state.latestClaudeUsage?.hasQuota == true)
+        case .tool(.codex):
+            return state.connectionStatus.isConnected
+        case .tool(.claude):
+            return state.latestClaudeUsage?.hasQuota == true
+        case .tool:
+            return false
+        }
+    }
+
     // MARK: - 侧边栏底座状态指示坞
     private var sidebarBottomHUDDock: some View {
         let emerald = AppTheme.accentEmerald(for: colorScheme)
@@ -362,12 +562,12 @@ public struct MainView: View {
             HStack {
                 HStack(spacing: 5) {
                     Circle()
-                        .fill(state.connectionStatus.isConnected ? emerald : AppTheme.textSecondary(for: colorScheme))
+                        .fill(currentContextIsConnected ? emerald : AppTheme.textSecondary(for: colorScheme))
                         .frame(width: 5, height: 5)
 
-                    Text(state.connectionStatus.isConnected ? L10n.text("已连接", "Connected") : L10n.text("未连接", "Offline"))
+                    Text(currentContextIsConnected ? L10n.text("已连接", "Connected") : L10n.text("等待同步", "Waiting for Sync"))
                         .font(.system(size: 9.5, weight: .heavy, design: .monospaced))
-                        .foregroundStyle(state.connectionStatus.isConnected ? emerald : AppTheme.textSecondary(for: colorScheme))
+                        .foregroundStyle(currentContextIsConnected ? emerald : AppTheme.textSecondary(for: colorScheme))
                 }
 
                 Spacer()
@@ -720,7 +920,8 @@ private struct UpdateCheckDialog: View {
 }
 
 private struct SidebarNavigationRow: View {
-    let tab: NavigationTab
+    let title: String
+    let icon: String
     let isSelected: Bool
     let colorScheme: ColorScheme
     let onSelect: () -> Void
@@ -738,12 +939,12 @@ private struct SidebarNavigationRow: View {
                         .fill(isSelected ? Color.white.opacity(0.18) : (isDark ? Color.white.opacity(0.05) : Color.black.opacity(0.04)))
                         .frame(width: 26, height: 26)
 
-                    Image(systemName: tab.icon)
+                    Image(systemName: icon)
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(isSelected ? selectedPrimary : AppTheme.textSecondary(for: colorScheme))
                 }
 
-                Text(tab.title)
+                Text(title)
                     .font(.system(size: 13, weight: .bold, design: .rounded))
                     .foregroundStyle(isSelected ? selectedPrimary : AppTheme.textPrimary(for: colorScheme))
                     .shadow(color: isSelected ? Color.black.opacity(0.22) : Color.clear, radius: 1, x: 0, y: 1)

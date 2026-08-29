@@ -8,6 +8,7 @@ public struct CodexSessionDTO: Identifiable, Hashable, Sendable {
     public var id: String { sessionId }
 
     public let sessionId: String
+    public let provider: UsageProvider
     public let rootSessionId: String
     public let parentSessionId: String?
     public let depth: Int
@@ -30,6 +31,7 @@ public struct CodexSessionDTO: Identifiable, Hashable, Sendable {
 
     public init(
         sessionId: String,
+        provider: UsageProvider = .codex,
         rootSessionId: String,
         parentSessionId: String? = nil,
         depth: Int = 0,
@@ -51,6 +53,7 @@ public struct CodexSessionDTO: Identifiable, Hashable, Sendable {
         subagentCount: Int = 0
     ) {
         self.sessionId = sessionId
+        self.provider = provider
         self.rootSessionId = rootSessionId
         self.parentSessionId = parentSessionId
         self.depth = depth
@@ -169,6 +172,7 @@ public struct CodexUsageEventDTO: Identifiable, Hashable, Sendable {
     public var id: String { eventId }
 
     public let eventId: String
+    public let provider: UsageProvider
     public let sessionId: String
     public let rootSessionId: String
     public let turnIndex: Int
@@ -194,6 +198,7 @@ public struct CodexUsageEventDTO: Identifiable, Hashable, Sendable {
 
     public init(
         eventId: String,
+        provider: UsageProvider = .codex,
         sessionId: String,
         rootSessionId: String,
         turnIndex: Int,
@@ -218,6 +223,7 @@ public struct CodexUsageEventDTO: Identifiable, Hashable, Sendable {
         lineOffset: Int64 = 0
     ) {
         self.eventId = eventId
+        self.provider = provider
         self.sessionId = sessionId
         self.rootSessionId = rootSessionId
         self.turnIndex = turnIndex

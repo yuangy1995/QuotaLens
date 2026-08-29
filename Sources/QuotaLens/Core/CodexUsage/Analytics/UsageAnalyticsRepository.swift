@@ -137,14 +137,15 @@ public final class UsageAnalyticsRepository: Sendable {
     }
 
     // MARK: - 1. 会话列表查询 (支持 Keyset 分页、项目过滤与搜索)
-    public func fetchProjectNames() throws -> [String] {
+    public func fetchProjectNames(providerFilter: UsageProviderFilter = .all) throws -> [String] {
+        let provider = Self.providerPredicate(providerFilter)
         let sql = """
         SELECT DISTINCT project_name
         FROM codex_sessions
-        WHERE project_name IS NOT NULL AND TRIM(project_name) != ''
+        WHERE project_name IS NOT NULL AND TRIM(project_name) != ''\(provider.sql)
         ORDER BY project_name COLLATE NOCASE ASC;
         """
-        return try database.executeQuery(sql: sql, bindings: []) { stmt in
+        return try database.executeQuery(sql: sql, bindings: provider.bindings) { stmt in
             if sqlite3_column_type(stmt, 0) != SQLITE_NULL, let text = sqlite3_column_text(stmt, 0) {
                 return String(cString: text)
             }
@@ -157,9 +158,10 @@ public final class UsageAnalyticsRepository: Sendable {
         search: String? = nil,
         project: String? = nil,
         limit: Int = 50,
-        cursor: String? = nil
+        cursor: String? = nil,
+        providerFilter: UsageProviderFilter = .all
     ) throws -> [CodexSessionDTO] {
-        try fetchSessionPage(sort: sort, search: search, project: project, limit: limit, cursor: cursor).sessions
+        try fetchSessionPage(sort: sort, search: search, project: project, limit: limit, cursor: cursor, providerFilter: providerFilter).sessions
     }
 
     public func fetchSessionPage(
@@ -167,7 +169,8 @@ public final class UsageAnalyticsRepository: Sendable {
         search: String? = nil,
         project: String? = nil,
         limit: Int = 50,
-        cursor: String? = nil
+        cursor: String? = nil,
+        providerFilter: UsageProviderFilter = .all
     ) throws -> CodexSessionPageDTO {
         let requestedLimit = min(max(1, limit), 500)
         if let query = search?.trimmingCharacters(in: .whitespacesAndNewlines), !query.isEmpty {
@@ -176,7 +179,8 @@ public final class UsageAnalyticsRepository: Sendable {
                 sort: sort,
                 project: project,
                 limit: requestedLimit,
-                cursor: cursor
+                cursor: cursor,
+                providerFilter: providerFilter
             )
         }
 
@@ -185,6 +189,10 @@ public final class UsageAnalyticsRepository: Sendable {
 
         // 只查询主会话（或顶层会话），深度为 0
         conditions.append("(depth = 0 OR parent_session_id IS NULL)")
+        if let provider = providerFilter.provider {
+            conditions.append("provider = ?")
+            bindings.append(provider.rawValue)
+        }
 
         if let project = project?.trimmingCharacters(in: .whitespacesAndNewlines), !project.isEmpty {
             conditions.append("project_name = ?")
@@ -231,7 +239,7 @@ public final class UsageAnalyticsRepository: Sendable {
             unpriced_unsupported_context_event_count, unpriced_unsupported_context_token_count,
             unpriced_invalid_record_event_count, unpriced_invalid_record_token_count,
             unpriced_overflow_event_count, unpriced_overflow_token_count,
-            summary_provenance
+            summary_provenance, provider
         FROM codex_sessions
         \(whereClause)
         \(orderClause)
@@ -259,12 +267,14 @@ public final class UsageAnalyticsRepository: Sendable {
         sort: SessionSort,
         project: String?,
         limit: Int,
-        cursor: String?
+        cursor: String?,
+        providerFilter: UsageProviderFilter
     ) throws -> CodexSessionPageDTO {
         let candidates = try fetchConversationSearchCandidates(
             sort: sort,
             project: project,
-            cursor: cursor
+            cursor: cursor,
+            providerFilter: providerFilter
         )
         var matches: [CodexSessionDTO] = []
         matches.reserveCapacity(limit + 1)
@@ -285,7 +295,9 @@ public final class UsageAnalyticsRepository: Sendable {
             }
 
             var contentMatches = false
-            if !metadataMatches, !candidate.sourcePath.isEmpty {
+            if !metadataMatches,
+               candidate.session.provider == .codex,
+               !candidate.sourcePath.isEmpty {
                 do {
                     contentMatches = try CodexConversationReader.containsConversationText(
                         fileURL: URL(fileURLWithPath: candidate.sourcePath),
@@ -317,10 +329,15 @@ public final class UsageAnalyticsRepository: Sendable {
     private func fetchConversationSearchCandidates(
         sort: SessionSort,
         project: String?,
-        cursor: String?
+        cursor: String?,
+        providerFilter: UsageProviderFilter
     ) throws -> [ConversationSearchCandidate] {
         var conditions = ["(depth = 0 OR parent_session_id IS NULL)"]
         var bindings: [Any?] = []
+        if let provider = providerFilter.provider {
+            conditions.append("provider = ?")
+            bindings.append(provider.rawValue)
+        }
 
         if let project = project?.trimmingCharacters(in: .whitespacesAndNewlines), !project.isEmpty {
             conditions.append("project_name = ?")
@@ -366,7 +383,7 @@ public final class UsageAnalyticsRepository: Sendable {
             unpriced_unsupported_context_event_count, unpriced_unsupported_context_token_count,
             unpriced_invalid_record_event_count, unpriced_invalid_record_token_count,
             unpriced_overflow_event_count, unpriced_overflow_token_count,
-            summary_provenance, source_path, relative_path,
+            summary_provenance, provider, source_path, relative_path,
             COALESCE((
                 SELECT GROUP_CONCAT(model_canonical, ' ')
                 FROM codex_session_summaries summary
@@ -379,13 +396,13 @@ public final class UsageAnalyticsRepository: Sendable {
 
         return try database.executeQuery(sql: sql, bindings: bindings) { statement in
             let session = Self.mapSessionRow(statement)
-            let storedSource = Self.stringColumn(statement, index: 35) ?? ""
-            let relativePath = Self.stringColumn(statement, index: 36) ?? ""
+            let storedSource = Self.stringColumn(statement, index: 36) ?? ""
+            let relativePath = Self.stringColumn(statement, index: 37) ?? ""
             let preferredSource = storedSource.isEmpty ? relativePath : storedSource
             return ConversationSearchCandidate(
                 session: session,
                 sourcePath: Self.absoluteSourcePath(preferredSource),
-                modelNames: Self.stringColumn(statement, index: 37) ?? ""
+                modelNames: Self.stringColumn(statement, index: 38) ?? ""
             )
         }
     }
@@ -410,7 +427,7 @@ public final class UsageAnalyticsRepository: Sendable {
             unpriced_unsupported_context_event_count, unpriced_unsupported_context_token_count,
             unpriced_invalid_record_event_count, unpriced_invalid_record_token_count,
             unpriced_overflow_event_count, unpriced_overflow_token_count,
-            summary_provenance
+            summary_provenance, provider
         FROM codex_sessions
         WHERE session_id = ?;
         """
@@ -445,7 +462,7 @@ public final class UsageAnalyticsRepository: Sendable {
             unpriced_unsupported_context_event_count, unpriced_unsupported_context_token_count,
             unpriced_invalid_record_event_count, unpriced_invalid_record_token_count,
             unpriced_overflow_event_count, unpriced_overflow_token_count,
-            summary_provenance
+            summary_provenance, provider
         FROM codex_sessions
         WHERE parent_session_id = ?
         ORDER BY created_at ASC;
@@ -557,15 +574,19 @@ public final class UsageAnalyticsRepository: Sendable {
 
     public func fetchSessionConversation(sessionId: String) throws -> CodexSessionConversationDTO? {
         let rows = try database.executeQuery(
-            sql: "SELECT source_path, relative_path FROM codex_sessions WHERE session_id = ? LIMIT 1;",
+            sql: "SELECT source_path, relative_path, provider FROM codex_sessions WHERE session_id = ? LIMIT 1;",
             bindings: [sessionId]
         ) { statement in
             (
                 Self.stringColumn(statement, index: 0) ?? "",
-                Self.stringColumn(statement, index: 1) ?? ""
+                Self.stringColumn(statement, index: 1) ?? "",
+                Self.stringColumn(statement, index: 2) ?? UsageProvider.codex.rawValue
             )
         }
         guard let source = rows.first else { return nil }
+        guard source.2 == UsageProvider.codex.rawValue else {
+            return CodexSessionConversationDTO(sessionId: sessionId, messages: [])
+        }
 
         let preferredSource = source.0.isEmpty ? source.1 : source.0
         let sourcePath = Self.absoluteSourcePath(preferredSource)
@@ -608,6 +629,13 @@ public final class UsageAnalyticsRepository: Sendable {
             let trashCandidateURL: URL
         }
 
+        let provider = try database.stringScalar(
+            sql: "SELECT provider FROM codex_sessions WHERE session_id = ? LIMIT 1;",
+            bindings: [sessionId]
+        )
+        guard provider == nil || provider == UsageProvider.codex.rawValue else {
+            throw SessionDeletionError.unsafeSourcePath("Claude")
+        }
         try assertNoIncompleteSessionDeletionJournal(historyRootURL: historyRootURL)
 
         let records = try database.executeQuery(
@@ -1023,7 +1051,8 @@ public final class UsageAnalyticsRepository: Sendable {
     public func fetchHistoryDays(
         daysCount: Int = 30,
         calendar: Calendar = UsageDayBucketer.calendar(),
-        now: Date = Date()
+        now: Date = Date(),
+        providerFilter: UsageProviderFilter = .all
     ) throws -> [DayUsageSummaryDTO] {
         let normalizedDayCount = max(1, daysCount)
         let todayStart = calendar.startOfDay(for: now)
@@ -1034,7 +1063,8 @@ public final class UsageAnalyticsRepository: Sendable {
         let slices = try fetchUsageAggregateSlices(
             rangeStart: startDate,
             endExclusive: endDate,
-            calendar: calendar
+            calendar: calendar,
+            providerFilter: providerFilter
         )
 
         // 按日历日分组聚合
@@ -1134,7 +1164,8 @@ public final class UsageAnalyticsRepository: Sendable {
         dayKey: LocalDayKey,
         calendar: Calendar = UsageDayBucketer.calendar(),
         eventLimit: Int = 500,
-        eventCursor: String? = nil
+        eventCursor: String? = nil,
+        providerFilter: UsageProviderFilter = .all
     ) throws -> DayDetailDTO {
         let startDate = dayKey.date(calendar: calendar)
         guard let endDate = calendar.date(byAdding: .day, value: 1, to: startDate) else {
@@ -1158,7 +1189,8 @@ public final class UsageAnalyticsRepository: Sendable {
         let aggregateSlices = try fetchUsageAggregateSlices(
             rangeStart: startDate,
             endExclusive: endDate,
-            calendar: calendar
+            calendar: calendar,
+            providerFilter: providerFilter
         )
         var sessionAggregates: [String: (
             eventCount: Int,
@@ -1232,9 +1264,10 @@ public final class UsageAnalyticsRepository: Sendable {
             )
         }.sorted { $0.tokens.canonicalTotalTokens > $1.tokens.canonicalTotalTokens }
 
+        let eventProvider = Self.providerPredicate(providerFilter)
         let eventPage = try fetchEventPage(
-            whereClause: "is_child_replay = 0 AND timestamp_ms >= ? AND timestamp_ms < ?",
-            bindings: [startMs, endMs],
+            whereClause: "is_child_replay = 0 AND timestamp_ms >= ? AND timestamp_ms < ?\(eventProvider.sql)",
+            bindings: [startMs, endMs] + eventProvider.bindings,
             limit: eventLimit,
             cursor: eventCursor
         )
@@ -1298,30 +1331,33 @@ public final class UsageAnalyticsRepository: Sendable {
     }
 
     // MARK: - 4. 仪表盘全局指标 (Dashboard)
-    public func fetchDashboardMetrics(days: Int = 30, calendar: Calendar = UsageDayBucketer.calendar()) throws -> DashboardMetricsDTO {
+    public func fetchDashboardMetrics(days: Int = 30, calendar: Calendar = UsageDayBucketer.calendar(), providerFilter: UsageProviderFilter = .all) throws -> DashboardMetricsDTO {
         let now = Date()
         let rangeSeconds = Double(max(1, days)) * 86_400.0
         let startDate = now.addingTimeInterval(-rangeSeconds)
-        return try fetchDashboardMetrics(rangeStart: startDate, endExclusive: now, calendar: calendar)
+        return try fetchDashboardMetrics(rangeStart: startDate, endExclusive: now, calendar: calendar, providerFilter: providerFilter)
     }
 
-    public func fetchTodayMetrics(calendar: Calendar = UsageDayBucketer.calendar(), now: Date = Date()) throws -> DashboardMetricsDTO {
+    public func fetchTodayMetrics(calendar: Calendar = UsageDayBucketer.calendar(), now: Date = Date(), providerFilter: UsageProviderFilter = .all) throws -> DashboardMetricsDTO {
         try fetchDashboardMetrics(
             rangeStart: calendar.startOfDay(for: now),
             endExclusive: now,
-            calendar: calendar
+            calendar: calendar,
+            providerFilter: providerFilter
         )
     }
 
     public func fetchDashboardMetrics(
         rangeStart startDate: Date,
         endExclusive endDate: Date,
-        calendar: Calendar = UsageDayBucketer.calendar()
+        calendar: Calendar = UsageDayBucketer.calendar(),
+        providerFilter: UsageProviderFilter = .all
     ) throws -> DashboardMetricsDTO {
         let slices = try fetchUsageAggregateSlices(
             rangeStart: startDate,
             endExclusive: endDate,
-            calendar: calendar
+            calendar: calendar,
+            providerFilter: providerFilter
         )
 
         var totalTokens = TokenBreakdown.zero
@@ -1528,7 +1564,7 @@ public final class UsageAnalyticsRepository: Sendable {
     }
 
     // MARK: - 6. 活动热力图与画像 (Activity Heatmap)
-    public func fetchActivityHeatmap(year: Int = UsageDayBucketer.calendar().component(.year, from: Date()), calendar: Calendar = UsageDayBucketer.calendar()) throws -> [ActivityHeatmapCellDTO] {
+    public func fetchActivityHeatmap(year: Int = UsageDayBucketer.calendar().component(.year, from: Date()), calendar: Calendar = UsageDayBucketer.calendar(), providerFilter: UsageProviderFilter = .all) throws -> [ActivityHeatmapCellDTO] {
         var startComps = DateComponents()
         startComps.year = year
         startComps.month = 1
@@ -1545,6 +1581,7 @@ public final class UsageAnalyticsRepository: Sendable {
         let startTs = Int64(startDate.timeIntervalSince1970 * 1000)
         let endTs = Int64(endExclusive.timeIntervalSince1970 * 1000)
 
+        let provider = Self.providerPredicate(providerFilter)
         let sql = """
         SELECT
             day_key,
@@ -1554,12 +1591,12 @@ public final class UsageAnalyticsRepository: Sendable {
             SUM(CASE WHEN summary_provenance = 'legacyAggregate' THEN 0 ELSE estimated_cost_usd_nano END),
             SUM(CASE WHEN summary_provenance = 'legacyAggregate' THEN estimated_cost_usd_nano ELSE 0 END)
         FROM codex_daily_usage_summaries
-        WHERE day_start_ms >= ? AND day_start_ms < ?
+        WHERE day_start_ms >= ? AND day_start_ms < ?\(provider.sql)
         GROUP BY day_key, day_start_ms;
         """
 
         var tokenByDay: [LocalDayKey: (tokens: Int64, count: Int, cost: MoneyNanoUSD, legacyCost: MoneyNanoUSD)] = [:]
-        _ = try database.executeQuery(sql: sql, bindings: [startTs, endTs]) { stmt in
+        _ = try database.executeQuery(sql: sql, bindings: [startTs, endTs] + provider.bindings) { stmt in
             let dayStartMs = sqlite3_column_int64(stmt, 1)
             let tok = sqlite3_column_int64(stmt, 2)
             let count = Int(sqlite3_column_int(stmt, 3))
@@ -1987,7 +2024,7 @@ public final class UsageAnalyticsRepository: Sendable {
                 output_tokens, reasoning_output_tokens, total_tokens, estimated_cost_usd_nano,
                 pricing_rule_id, pricing_status, usage_derivation, attribution_quality,
                 is_child_replay, source_path, line_offset, timestamp_quality,
-                timestamp_source, timestamp_conflict_count, pricing_catalog_version
+                timestamp_source, timestamp_conflict_count, pricing_catalog_version, provider
             FROM codex_usage_events
             WHERE \(combinedWhere)
             ORDER BY timestamp_ms DESC, line_offset DESC, event_id DESC
@@ -2030,7 +2067,7 @@ public final class UsageAnalyticsRepository: Sendable {
                     unpriced_unsupported_context_event_count, unpriced_unsupported_context_token_count,
                     unpriced_invalid_record_event_count, unpriced_invalid_record_token_count,
                     unpriced_overflow_event_count, unpriced_overflow_token_count,
-                    summary_provenance
+                    summary_provenance, provider
                 FROM codex_sessions
                 WHERE session_id IN (\(placeholders));
                 """,
@@ -2117,14 +2154,15 @@ public final class UsageAnalyticsRepository: Sendable {
     private func fetchUsageAggregateSlices(
         rangeStart startDate: Date,
         endExclusive endDate: Date,
-        calendar: Calendar
+        calendar: Calendar,
+        providerFilter: UsageProviderFilter
     ) throws -> [UsageAggregateSlice] {
         guard startDate < endDate else { return [] }
 
         let startDay = calendar.startOfDay(for: startDate)
         let endDay = calendar.startOfDay(for: endDate)
         guard let dayAfterStart = calendar.date(byAdding: .day, value: 1, to: startDay) else {
-            return try fetchRawUsageSlices(rangeStart: startDate, endExclusive: endDate, calendar: calendar)
+            return try fetchRawUsageSlices(rangeStart: startDate, endExclusive: endDate, calendar: calendar, providerFilter: providerFilter)
         }
 
         let startsOnDayBoundary = abs(startDate.timeIntervalSince(startDay)) < 0.001
@@ -2132,7 +2170,7 @@ public final class UsageAnalyticsRepository: Sendable {
 
         // No complete calendar day exists inside this range.
         guard summaryStart < endDay else {
-            return try fetchRawUsageSlices(rangeStart: startDate, endExclusive: endDate, calendar: calendar)
+            return try fetchRawUsageSlices(rangeStart: startDate, endExclusive: endDate, calendar: calendar, providerFilter: providerFilter)
         }
 
         var slices: [UsageAggregateSlice] = []
@@ -2140,21 +2178,24 @@ public final class UsageAnalyticsRepository: Sendable {
             slices += try fetchRawUsageSlices(
                 rangeStart: startDate,
                 endExclusive: min(summaryStart, endDate),
-                calendar: calendar
+                calendar: calendar,
+                providerFilter: providerFilter
             )
         }
 
         slices += try fetchFullDayUsageSlices(
             rangeStart: summaryStart,
             endExclusive: endDay,
-            calendar: calendar
+            calendar: calendar,
+            providerFilter: providerFilter
         )
 
         if endDay < endDate {
             slices += try fetchRawUsageSlices(
                 rangeStart: max(endDay, startDate),
                 endExclusive: endDate,
-                calendar: calendar
+                calendar: calendar,
+                providerFilter: providerFilter
             )
         }
         return slices
@@ -2163,12 +2204,14 @@ public final class UsageAnalyticsRepository: Sendable {
     private func fetchFullDayUsageSlices(
         rangeStart startDate: Date,
         endExclusive endDate: Date,
-        calendar: Calendar
+        calendar: Calendar,
+        providerFilter: UsageProviderFilter
     ) throws -> [UsageAggregateSlice] {
         guard startDate < endDate else { return [] }
         let startMs = Int64(startDate.timeIntervalSince1970 * 1_000)
         let endMs = Int64(endDate.timeIntervalSince1970 * 1_000)
 
+        let provider = Self.providerPredicate(providerFilter)
         let summaries = try database.executeQuery(
             sql: """
             SELECT
@@ -2184,10 +2227,10 @@ public final class UsageAnalyticsRepository: Sendable {
                 unpriced_overflow_event_count, unpriced_overflow_token_count,
                 summary_provenance
             FROM codex_daily_usage_summaries
-            WHERE day_start_ms >= ? AND day_start_ms < ?
+            WHERE day_start_ms >= ? AND day_start_ms < ?\(provider.sql)
             ORDER BY day_start_ms ASC, session_id ASC, model_canonical ASC;
             """,
-            bindings: [startMs, endMs]
+            bindings: [startMs, endMs] + provider.bindings
         ) { statement -> UsageAggregateSlice in
             let total = sqlite3_column_int64(statement, 4)
             let uncached = sqlite3_column_int64(statement, 5)
@@ -2231,26 +2274,28 @@ public final class UsageAnalyticsRepository: Sendable {
             sql: """
             SELECT EXISTS(
                 SELECT 1 FROM codex_usage_events
-                WHERE is_child_replay = 0 AND timestamp_ms >= ? AND timestamp_ms < ?
+                WHERE is_child_replay = 0 AND timestamp_ms >= ? AND timestamp_ms < ?\(provider.sql)
                 LIMIT 1
             );
             """,
-            bindings: [startMs, endMs]
+            bindings: [startMs, endMs] + provider.bindings
         ) > 0
         return hasRawEvents
-            ? try fetchRawUsageSlices(rangeStart: startDate, endExclusive: endDate, calendar: calendar)
+            ? try fetchRawUsageSlices(rangeStart: startDate, endExclusive: endDate, calendar: calendar, providerFilter: providerFilter)
             : []
     }
 
     private func fetchRawUsageSlices(
         rangeStart startDate: Date,
         endExclusive endDate: Date,
-        calendar: Calendar
+        calendar: Calendar,
+        providerFilter: UsageProviderFilter
     ) throws -> [UsageAggregateSlice] {
         guard startDate < endDate else { return [] }
         let startMs = Int64(startDate.timeIntervalSince1970 * 1_000)
         let endMs = Int64(endDate.timeIntervalSince1970 * 1_000)
 
+        let provider = Self.providerPredicate(providerFilter)
         return try database.executeQuery(
             sql: """
             SELECT
@@ -2258,9 +2303,9 @@ public final class UsageAnalyticsRepository: Sendable {
                 input_tokens, cached_input_tokens, cache_write_input_tokens,
                 output_tokens, reasoning_output_tokens, total_tokens, estimated_cost_usd_nano
             FROM codex_usage_events
-            WHERE is_child_replay = 0 AND timestamp_ms >= ? AND timestamp_ms < ?;
+            WHERE is_child_replay = 0 AND timestamp_ms >= ? AND timestamp_ms < ?\(provider.sql);
             """,
-            bindings: [startMs, endMs]
+            bindings: [startMs, endMs] + provider.bindings
         ) { statement -> UsageAggregateSlice in
             let timestampMs = sqlite3_column_int64(statement, 0)
             let total = sqlite3_column_int64(statement, 9)
@@ -2361,6 +2406,13 @@ public final class UsageAnalyticsRepository: Sendable {
         return .reconstructed
     }
 
+    private static func providerPredicate(
+        _ filter: UsageProviderFilter
+    ) -> (sql: String, bindings: [Any?]) {
+        guard let provider = filter.provider else { return ("", []) }
+        return (" AND provider = ?", [provider.rawValue])
+    }
+
     // MARK: - Row Mappers
     private static func mapSessionRow(_ stmt: OpaquePointer) -> CodexSessionDTO {
         let sid = String(cString: sqlite3_column_text(stmt, 0))
@@ -2399,9 +2451,15 @@ public final class UsageAnalyticsRepository: Sendable {
             && sqlite3_column_text(stmt, 34) != nil
             ? String(cString: sqlite3_column_text(stmt, 34)!)
             : nil
+        let providerRaw = sqlite3_column_count(stmt) >= 36
+            && sqlite3_column_type(stmt, 35) != SQLITE_NULL
+            && sqlite3_column_text(stmt, 35) != nil
+            ? String(cString: sqlite3_column_text(stmt, 35)!)
+            : UsageProvider.codex.rawValue
 
         return CodexSessionDTO(
             sessionId: sid,
+            provider: UsageProvider(rawValue: providerRaw) ?? .codex,
             rootSessionId: rootId,
             parentSessionId: parentId,
             depth: depth,
@@ -3144,9 +3202,15 @@ public final class UsageAnalyticsRepository: Sendable {
         let catalogVersion = sqlite3_column_type(stmt, 27) != SQLITE_NULL && sqlite3_column_text(stmt, 27) != nil
             ? String(cString: sqlite3_column_text(stmt, 27)!)
             : nil
+        let providerRaw = sqlite3_column_count(stmt) >= 29
+            && sqlite3_column_type(stmt, 28) != SQLITE_NULL
+            && sqlite3_column_text(stmt, 28) != nil
+            ? String(cString: sqlite3_column_text(stmt, 28)!)
+            : UsageProvider.codex.rawValue
 
         return CodexUsageEventDTO(
             eventId: eid,
+            provider: UsageProvider(rawValue: providerRaw) ?? .codex,
             sessionId: sid,
             rootSessionId: rootId,
             turnIndex: turnIdx,

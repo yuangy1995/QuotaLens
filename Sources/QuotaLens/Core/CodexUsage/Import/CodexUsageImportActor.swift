@@ -1256,6 +1256,15 @@ public actor CodexUsageImportActor {
         unknownEventTypeCount: Int,
         timestampConflictCount: Int
     ) throws {
+        try database.execute(sql: """
+        UPDATE codex_usage_events_parser_shadow
+        SET provider = COALESCE(NULLIF(provider, ''), 'codex'),
+            cache_write_5m_input_tokens = COALESCE(cache_write_5m_input_tokens, 0),
+            cache_write_1h_input_tokens = COALESCE(cache_write_1h_input_tokens, 0);
+        UPDATE codex_sessions_parser_shadow SET provider = 'codex' WHERE provider IS NULL OR provider = '';
+        UPDATE codex_session_summaries_parser_shadow SET provider = 'codex' WHERE provider IS NULL OR provider = '';
+        UPDATE codex_daily_usage_summaries_parser_shadow SET provider = 'codex' WHERE provider IS NULL OR provider = '';
+        """)
         try validateParserRebuildShadow(sessionId: sessionId)
         try database.transaction {
             try validateParserRebuildShadow(sessionId: sessionId)

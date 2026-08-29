@@ -217,6 +217,12 @@ public final class AppState: ObservableObject {
     @Published public var appInitializationWarningText: String?
     @Published public var activeResetCreditReminder: ResetCreditReminderAlert?
     @Published public var nextResetCreditReminderAt: Date?
+    @Published public var latestClaudeUsage: ClaudeUsageSnapshot?
+    @Published public var claudeUsageStatus: ClaudeUsageStatus = .disabled
+    @Published public var claudeUsageErrorText: String?
+    @Published public var claudeUsageCooldownUntil: Date?
+    @Published public var isRefreshingClaudeUsage: Bool = false
+    @Published public var codexAccountUsage: CodexAccountUsageSnapshot?
 
     private var acknowledgedResetCreditId: String?
     private var acknowledgedResetCreditExpiresAt: Int64?
@@ -276,10 +282,21 @@ public final class AppState: ObservableObject {
 
     // 格式化辅助方法
     private var quotaSnapshotPool: [RateLimitSnapshotRecord] {
-        if !currentQuotaSnapshots.isEmpty {
-            return currentQuotaSnapshots
+        let primary = currentQuotaSnapshots.filter { $0.limitId == "codex" }
+        if !primary.isEmpty {
+            return primary
         }
         return latestRateLimit.map { [$0] } ?? []
+    }
+
+    public var additionalQuotaSnapshots: [RateLimitSnapshotRecord] {
+        let now = Int64(Date().timeIntervalSince1970)
+        return currentQuotaSnapshots
+            .filter { $0.limitId != "codex" && $0.isCurrentQuotaWindow(at: now) }
+            .sorted {
+                if $0.limitId != $1.limitId { return $0.limitId < $1.limitId }
+                return ($0.windowDurationMins ?? 0) < ($1.windowDurationMins ?? 0)
+            }
     }
 
     private var effectiveQuotaSnapshot: RateLimitSnapshotRecord? {
@@ -492,6 +509,17 @@ public final class AppState: ObservableObject {
 
     public var menuBarQuotaString: String {
         "\(quotaDisplayMode.shortTitle) \(displayedQuotaPercentString)"
+    }
+
+    public var claudeMenuBarQuotaString: String {
+        guard let window = latestClaudeUsage?.fiveHourForDisplay
+            ?? latestClaudeUsage?.sevenDay else {
+            return "Claude --"
+        }
+        let percent = quotaDisplayMode == .used
+            ? window.usedPercent
+            : window.remainingPercent
+        return "Claude \(formatPercent(percent))"
     }
 
     public var hasQuotaSnapshot: Bool {

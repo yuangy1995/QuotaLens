@@ -9,14 +9,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         environment.applyDockIconVisibility()
         environment.applyThemeAppearance()
         environment.installStartupMenuBarController()
-        NSApp.activate(ignoringOtherApps: true)
+        environment.mainWindowCoordinator.showMainWindow()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if AppEnvironment.shared.focusExistingMainWindow() {
-            return false
-        }
-        return true
+        AppEnvironment.shared.mainWindowCoordinator.showMainWindow()
+        return false
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -34,32 +32,18 @@ struct QuotaLensApp: App {
         _env = StateObject(wrappedValue: environment)
     }
 
-    @Environment(\.openWindow) private var openWindow
-
     var body: some Scene {
-        // 主窗口
-        Window("QuotaLens", id: "main") {
-            MainView(state: env.state)
-                .environmentObject(env)
-                .frame(minWidth: 960, minHeight: 650)
-                .onAppear {
-                    env.installMenuBarController(
-                        onOpenMainWindow: {
-                            env.openOrFocusMainWindow {
-                                openWindow(id: "main")
-                            }
-                        },
-                        onRefresh: {
-                            Task {
-                                await env.refreshAllData()
-                            }
-                        }
-                    )
-                }
+        Settings {
+            EmptyView()
         }
-        .windowStyle(.hiddenTitleBar)
         .commands {
             CommandGroup(replacing: .newItem) {}
+            CommandGroup(replacing: .appSettings) {
+                Button(L10n.text("应用设置", "App Settings")) {
+                    env.mainWindowCoordinator.showAppSettings()
+                }
+                .keyboardShortcut(",", modifiers: .command)
+            }
             CommandGroup(after: .appInfo) {
                 Button(L10n.text("检查更新...", "Check for Updates...")) {
                     env.updateManager.checkForUpdates()

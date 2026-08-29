@@ -1,6 +1,7 @@
 // Codex CLI 二进制路径检索与版本探测
 
 import Foundation
+import Darwin
 
 public struct CodexBinaryLookupResult: Sendable {
     public let binaryPath: String?
@@ -17,6 +18,8 @@ public struct CodexBinaryLocator: Sendable {
         "~/.codex/bin/codex",
         "/Applications/ChatGPT.app/Contents/Resources/codex",
         "~/Applications/ChatGPT.app/Contents/Resources/codex",
+        "/Applications/Codex.app/Contents/Resources/codex",
+        "~/Applications/Codex.app/Contents/Resources/codex",
         "/opt/homebrew/bin/codex",
         "/usr/local/bin/codex",
         "~/.local/bin/codex",
@@ -98,10 +101,27 @@ public struct CodexBinaryLocator: Sendable {
     }
 
     private static func locateViaLoginShell() -> LoginShellLookupResult {
+        let result = runLoginShell(command: "command -v codex", timeout: 2)
+        if let output = result.output, !output.isEmpty {
+            return LoginShellLookupResult(path: output, errorMessage: nil)
+        }
+        return LoginShellLookupResult(
+            path: nil,
+            errorMessage: result.errorMessage ?? L10n.text(
+                "登录 Shell 的 PATH 中没有 codex。",
+                "codex was not found in the login shell PATH."
+            )
+        )
+    }
+
+    private static func runLoginShell(
+        command: String,
+        timeout: TimeInterval
+    ) -> (output: String?, errorMessage: String?) {
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
         let process = Process()
         process.executableURL = URL(fileURLWithPath: shell)
-        process.arguments = ["-lc", "command -v codex"]
+        process.arguments = ["-ilc", command]
 
         let stdout = Pipe()
         let stderr = Pipe()
@@ -110,13 +130,27 @@ public struct CodexBinaryLocator: Sendable {
 
         do {
             try process.run()
-            process.waitUntilExit()
+            let deadline = Date().addingTimeInterval(timeout)
+            while process.isRunning && Date() < deadline {
+                Thread.sleep(forTimeInterval: 0.02)
+            }
+            if process.isRunning {
+                process.terminate()
+                let stopDeadline = Date().addingTimeInterval(0.2)
+                while process.isRunning && Date() < stopDeadline {
+                    Thread.sleep(forTimeInterval: 0.01)
+                }
+                if process.isRunning {
+                    kill(process.processIdentifier, SIGKILL)
+                }
+                return (nil, L10n.text("登录 Shell 检查超时。", "Login shell inspection timed out."))
+            }
             let outputData = stdout.fileHandleForReading.readDataToEndOfFile()
             let errorData = stderr.fileHandleForReading.readDataToEndOfFile()
             let output = String(data: outputData, encoding: .utf8)?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             if process.terminationStatus == 0, let output, !output.isEmpty {
-                return LoginShellLookupResult(path: output, errorMessage: nil)
+                return (output, nil)
             }
 
             let shellError = String(data: errorData, encoding: .utf8)?
@@ -124,13 +158,31 @@ public struct CodexBinaryLocator: Sendable {
             let message = shellError?.isEmpty == false
                 ? shellError
                 : L10n.text("登录 Shell 的 PATH 中没有 codex。", "codex was not found in the login shell PATH.")
-            return LoginShellLookupResult(path: nil, errorMessage: message)
+            return (nil, message)
         } catch {
-            return LoginShellLookupResult(
-                path: nil,
-                errorMessage: L10n.format("Unable to inspect the login shell PATH: %@", zhHans: "无法检查登录 Shell 的 PATH：%@", error.localizedDescription)
-            )
+            return (nil, L10n.format("Unable to inspect the login shell PATH: %@", zhHans: "无法检查登录 Shell 的 PATH：%@", error.localizedDescription))
         }
+    }
+
+    private static let cachedLoginShellPATH: String? = {
+        runLoginShell(command: "printf %s \"$PATH\"", timeout: 2).output
+    }()
+
+    public static func augmentedEnvironment() -> [String: String] {
+        var environment = ProcessInfo.processInfo.environment
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let extras = [
+            "/opt/homebrew/bin", "/usr/local/bin",
+            "\(home)/.npm-global/bin", "\(home)/.local/bin",
+            "\(home)/.cargo/bin", "\(home)/.bun/bin"
+        ]
+        let shellParts = (cachedLoginShellPATH ?? "").split(separator: ":").map(String.init)
+        let currentParts = (environment["PATH"] ?? "").split(separator: ":").map(String.init)
+        var seen = Set<String>()
+        environment["PATH"] = (extras + shellParts + currentParts)
+            .filter { !$0.isEmpty && seen.insert($0).inserted }
+            .joined(separator: ":")
+        return environment
     }
 
     private static func expandedPath(_ path: String, homePath: String) -> String {
@@ -171,6 +223,7 @@ public struct CodexBinaryLocator: Sendable {
                 let process = Process()
                 process.executableURL = URL(fileURLWithPath: binaryPath)
                 process.arguments = ["--version"]
+                process.environment = augmentedEnvironment()
 
                 let pipe = Pipe()
                 process.standardOutput = pipe
@@ -178,7 +231,15 @@ public struct CodexBinaryLocator: Sendable {
 
                 do {
                     try process.run()
-                    process.waitUntilExit()
+                    let deadline = Date().addingTimeInterval(2)
+                    while process.isRunning && Date() < deadline {
+                        Thread.sleep(forTimeInterval: 0.02)
+                    }
+                    if process.isRunning {
+                        process.terminate()
+                        continuation.resume(returning: nil)
+                        return
+                    }
                     let data = pipe.fileHandleForReading.readDataToEndOfFile()
                     if let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines), !output.isEmpty {
                         continuation.resume(returning: output)

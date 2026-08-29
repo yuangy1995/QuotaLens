@@ -3,6 +3,44 @@
 
 import Foundation
 
+public enum UsageProvider: String, CaseIterable, Identifiable, Sendable, Codable, Hashable {
+    case codex
+    case claude
+
+    public var id: String { rawValue }
+
+    public var localizedName: String {
+        switch self {
+        case .codex: return "Codex"
+        case .claude: return "Claude"
+        }
+    }
+}
+
+public enum UsageProviderFilter: String, CaseIterable, Identifiable, Sendable, Codable, Hashable {
+    case all
+    case codex
+    case claude
+
+    public var id: String { rawValue }
+
+    public var localizedName: String {
+        switch self {
+        case .all: return L10n.text("全部", "All")
+        case .codex: return "Codex"
+        case .claude: return "Claude"
+        }
+    }
+
+    public var provider: UsageProvider? {
+        switch self {
+        case .all: return nil
+        case .codex: return .codex
+        case .claude: return .claude
+        }
+    }
+}
+
 // MARK: - nano-USD 货币模型 (1 USD = 1,000,000,000 nano_usd)
 public struct MoneyNanoUSD: Hashable, Comparable, Sendable, Codable {
     public static let nanoMultiplier: Int64 = 1_000_000_000

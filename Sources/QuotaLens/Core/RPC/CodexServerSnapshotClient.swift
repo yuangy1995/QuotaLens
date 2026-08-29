@@ -2,6 +2,7 @@
 // Used by refresh/startup to pull account and rate-limit data directly from the server.
 
 import Foundation
+import Darwin
 
 public struct CodexServerSnapshot: Sendable {
     public let version: String
@@ -10,6 +11,7 @@ public struct CodexServerSnapshot: Sendable {
     public let accountRawJson: String
     public let rateLimits: RateLimitsReadResult?
     public let rateLimitsRawJson: String
+    public let accountUsage: CodexAccountUsagePayload?
 }
 
 public struct CodexServerSnapshotClient: Sendable {
@@ -26,6 +28,7 @@ public struct CodexServerSnapshotClient: Sendable {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: binaryPath)
         process.arguments = ["app-server", "--stdio"]
+        process.environment = CodexBinaryLocator.augmentedEnvironment()
 
         let stdin = Pipe()
         let stdout = Pipe()
@@ -50,10 +53,7 @@ public struct CodexServerSnapshotClient: Sendable {
         defer {
             stdout.fileHandleForReading.readabilityHandler = nil
             stderr.fileHandleForReading.readabilityHandler = nil
-            if process.isRunning {
-                process.terminate()
-                process.waitUntilExit()
-            }
+            stop(process)
         }
 
         let writer = stdin.fileHandleForWriting
@@ -63,18 +63,21 @@ public struct CodexServerSnapshotClient: Sendable {
         ], to: writer)
         try writeRequest(id: 2, method: "account/read", params: [:], to: writer)
         try writeRequest(id: 3, method: "account/rateLimits/read", params: [:], to: writer)
+        try writeRequest(id: 4, method: "account/usage/read", params: [:], to: writer)
 
         let deadline = Date().addingTimeInterval(timeoutSeconds)
         while Date() < deadline {
-            if collector.result(for: 2) != nil,
-               collector.result(for: 3) != nil {
+            if collector.hasCompleted(id: 2),
+               collector.hasCompleted(id: 3),
+               collector.hasCompleted(id: 4) {
                 break
             }
             Thread.sleep(forTimeInterval: 0.05)
         }
 
         let accountResult = collector.result(for: 2)
-        let rateResult = collector.result(for: 3)
+        let rateResult = collector.result(for: 3) ?? collector.salvagedResult(for: 3)
+        let accountUsageResult = collector.result(for: 4)
 
         if accountResult == nil && rateResult == nil {
             let error = collector.error(for: 2) ?? collector.error(for: 3) ?? L10n.text("读取额度超时", "Timed out while reading quota data")
@@ -89,7 +92,10 @@ public struct CodexServerSnapshotClient: Sendable {
             account: accountResult.flatMap { decode(AccountReadResult.self, fromJSONObject: $0) },
             accountRawJson: accountResult.map(jsonString) ?? "{}",
             rateLimits: rateResult.flatMap { decode(RateLimitsReadResult.self, fromJSONObject: $0) },
-            rateLimitsRawJson: rateResult.map(jsonString) ?? "{}"
+            rateLimitsRawJson: rateResult.map(jsonString) ?? "{}",
+            accountUsage: accountUsageResult.flatMap {
+                decode(CodexAccountUsagePayload.self, fromJSONObject: $0)
+            }
         )
     }
 
@@ -126,18 +132,78 @@ public struct CodexServerSnapshotClient: Sendable {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: binaryPath)
         process.arguments = ["--version"]
+        process.environment = CodexBinaryLocator.augmentedEnvironment()
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe
 
         do {
             try process.run()
-            process.waitUntilExit()
+            let deadline = Date().addingTimeInterval(2)
+            while process.isRunning && Date() < deadline {
+                Thread.sleep(forTimeInterval: 0.02)
+            }
+            guard !process.isRunning else {
+                stop(process)
+                return nil
+            }
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
             return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
         } catch {
             return nil
         }
+    }
+
+    private static func stop(_ process: Process) {
+        guard process.isRunning else { return }
+        process.terminate()
+        let deadline = Date().addingTimeInterval(0.25)
+        while process.isRunning && Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+        if process.isRunning {
+            kill(process.processIdentifier, SIGKILL)
+        }
+    }
+}
+
+enum CodexRPCErrorBodySalvage {
+    static func data(from message: String) -> Data? {
+        guard let marker = message.range(of: "body=") else { return nil }
+        let tail = message[marker.upperBound...]
+        guard let start = tail.firstIndex(of: "{") else { return nil }
+        var depth = 0
+        var inString = false
+        var escaped = false
+        var end: String.Index?
+        for index in tail[start...].indices {
+            let character = tail[index]
+            if escaped {
+                escaped = false
+                continue
+            }
+            if inString {
+                if character == "\\" { escaped = true }
+                else if character == "\"" { inString = false }
+                continue
+            }
+            if character == "\"" { inString = true }
+            else if character == "{" { depth += 1 }
+            else if character == "}" {
+                depth -= 1
+                if depth == 0 {
+                    end = index
+                    break
+                }
+            }
+        }
+        guard let end else { return nil }
+        return String(tail[start...end]).data(using: .utf8)
+    }
+
+    static func jsonObject(from message: String) -> Any? {
+        guard let data = data(from: message) else { return nil }
+        return try? JSONSerialization.jsonObject(with: data)
     }
 }
 
@@ -169,6 +235,17 @@ private final class JSONLineCollector: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return errors[id]
+    }
+
+    func hasCompleted(id: Int) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return results[id] != nil || errors[id] != nil
+    }
+
+    func salvagedResult(for id: Int) -> Any? {
+        guard let message = error(for: id) else { return nil }
+        return CodexRPCErrorBodySalvage.jsonObject(from: message)
     }
 
     private func parseLine(_ data: Data) {

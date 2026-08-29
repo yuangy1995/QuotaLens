@@ -4,14 +4,19 @@ import SwiftUI
 import AppKit
 import Combine
 
-public struct SessionsView: View {
+struct ProviderSessionsView: View {
     @StateObject private var store: SessionsStore
     @EnvironmentObject var env: AppEnvironment
     @Environment(\.colorScheme) var colorScheme
     @State private var sessionPendingDeletion: CodexSessionDTO?
 
-    public init(facade: UsageQueryFacade) {
-        _store = StateObject(wrappedValue: SessionsStore(facade: facade))
+    init(facade: UsageQueryFacade, providerFilter: UsageProviderFilter) {
+        _store = StateObject(
+            wrappedValue: SessionsStore(
+                facade: facade,
+                providerFilter: providerFilter
+            )
+        )
     }
 
     public var body: some View {
@@ -25,14 +30,18 @@ public struct SessionsView: View {
                 .frame(minWidth: 460, maxWidth: .infinity)
         }
         .task {
-            guard !env.scanCoordinator.isScanning else { return }
+            guard !isRelevantScanActive else { return }
             await store.reloadSessions()
         }
         .onChange(of: env.scanCoordinator.isScanning) { _, isScanning in
-            guard !isScanning else { return }
+            guard store.providerFilter == .codex, !isScanning else { return }
             Task {
                 await store.reloadSessions()
             }
+        }
+        .onChange(of: env.claudeScanCoordinator.isScanning) { _, isScanning in
+            guard store.providerFilter == .claude, !isScanning else { return }
+            Task { await store.reloadSessions() }
         }
         .confirmationDialog(
             L10n.text("删除会话？", "Delete Session?"),
@@ -75,6 +84,14 @@ public struct SessionsView: View {
         }
     }
 
+    private var isRelevantScanActive: Bool {
+        switch store.providerFilter {
+        case .codex: return env.scanCoordinator.isScanning
+        case .claude: return env.claudeScanCoordinator.isScanning
+        case .all: return env.scanCoordinator.isScanning || env.claudeScanCoordinator.isScanning
+        }
+    }
+
     // MARK: - 左栏：会话列表
     private var sessionsSidebar: some View {
         let cyan = AppTheme.accentCyan(for: colorScheme)
@@ -87,7 +104,12 @@ public struct SessionsView: View {
                         .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
 
-                    TextField(L10n.text("搜索标题或对话内容…", "Search titles or conversation text..."), text: $store.searchText)
+                    TextField(
+                        store.providerFilter == .claude
+                            ? L10n.text("搜索标题或项目…", "Search titles or projects...")
+                            : L10n.text("搜索标题或对话内容…", "Search titles or conversation text..."),
+                        text: $store.searchText
+                    )
                         .textFieldStyle(.plain)
                         .font(.system(size: 11.5, design: .rounded))
                         .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
@@ -341,9 +363,9 @@ public struct SessionsView: View {
                                                 onSelect: {
                                                     store.selectedSessionId = session.sessionId
                                                 },
-                                                onDelete: {
+                                                onDelete: session.provider == .codex ? {
                                                     sessionPendingDeletion = session
-                                                },
+                                                } : nil,
                                                 onFilterProject: { proj in
                                                     withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
                                                         store.selectedProject = proj
@@ -381,9 +403,9 @@ public struct SessionsView: View {
                                 onSelect: {
                                     store.selectedSessionId = session.sessionId
                                 },
-                                onDelete: {
-                                    sessionPendingDeletion = session
-                                },
+                                        onDelete: session.provider == .codex ? {
+                                            sessionPendingDeletion = session
+                                        } : nil,
                                 onFilterProject: { proj in
                                     withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
                                         store.selectedProject = proj
@@ -458,7 +480,7 @@ private struct SessionSidebarRow: View {
     let isSelected: Bool
     let colorScheme: ColorScheme
     let onSelect: () -> Void
-    let onDelete: () -> Void
+    let onDelete: (() -> Void)?
     var onFilterProject: ((String) -> Void)? = nil
 
     var body: some View {
@@ -469,6 +491,10 @@ private struct SessionSidebarRow: View {
         Button(action: onSelect) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
+                    Text(session.provider.localizedName)
+                        .font(.system(size: 8.5, weight: .heavy, design: .rounded))
+                        .foregroundStyle(isSelected ? Color.white.opacity(0.9) : (session.provider == .claude ? AppTheme.accentAmber(for: colorScheme) : cyan))
+
                     if session.hasSubagents {
                         Image(systemName: "person.2.fill")
                             .font(.system(size: 9))
@@ -558,8 +584,10 @@ private struct SessionSidebarRow: View {
                 }
             }
 
-            Button(role: .destructive, action: onDelete) {
-                Label(L10n.text("删除", "Delete"), systemImage: "trash")
+            if let onDelete {
+                Button(role: .destructive, action: onDelete) {
+                    Label(L10n.text("删除", "Delete"), systemImage: "trash")
+                }
             }
         }
     }

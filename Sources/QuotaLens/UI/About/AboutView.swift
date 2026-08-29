@@ -53,6 +53,17 @@ public struct AboutView: View {
     private var defaultChangelogs: [ChangelogEntry] {
         [
             ChangelogEntry(
+                id: "v1.0.20",
+                version: "v1.0.20",
+                date: "2026-08-29",
+                changes: [
+                    L10n.text("引入 Claude (Claude Code / Cursor) 多工具生态用量监控体系，支持 OAuth 授权与多周期配额轮询", "Introduced Claude (Claude Code / Cursor) multi-tool usage monitoring with OAuth authorization and multi-cycle quota polling"),
+                    L10n.text("全新升级统一「总览」看板与多工具导航中心，支持 Codex 与 Claude 跨工具配额一览与智能联动", "Upgraded unified Overview dashboard and multi-tool navigation hub for seamless cross-tool quota overview and smart linkage"),
+                    L10n.text("重构全息悬浮挂件多工具协同调度器，支持根据当前前台活跃的 AI 编程工具智能自动切换展示视角", "Restructured floating overlay multi-tool coordinator to intelligently auto-switch display perspectives based on the active foreground tool"),
+                    L10n.text("全面完善 10 种语言的多语言本地化翻译字典与更新日志多语言映射", "Comprehensive localization dictionary refinements and changelog translation mapping across 10 supported languages")
+                ]
+            ),
+            ChangelogEntry(
                 id: "v1.0.19",
                 version: "v1.0.19",
                 date: "2026-08-29",

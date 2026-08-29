@@ -55,6 +55,7 @@ public actor CodexProcessManager {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: binaryPath)
         proc.arguments = ["app-server", "--stdio"]
+        proc.environment = CodexBinaryLocator.augmentedEnvironment()
 
         let inPipe = Pipe()
         let outPipe = Pipe()

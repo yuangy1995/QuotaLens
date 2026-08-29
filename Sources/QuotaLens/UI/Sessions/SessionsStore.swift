@@ -46,6 +46,7 @@ public final class SessionsStore: ObservableObject {
             scheduleSessionsReload()
         }
     }
+    public let providerFilter: UsageProviderFilter
     @Published public var isGroupedByProject: Bool = false
     @Published public var collapsedProjects: Set<String> = []
 
@@ -68,8 +69,9 @@ public final class SessionsStore: ObservableObject {
 
     public var hasMoreSessions: Bool { nextCursor != nil }
 
-    public init(facade: UsageQueryFacade) {
+    public init(facade: UsageQueryFacade, providerFilter: UsageProviderFilter) {
         self.facade = facade
+        self.providerFilter = providerFilter
     }
 
     public var groupedSessions: [ProjectSessionGroup] {
@@ -149,7 +151,7 @@ public final class SessionsStore: ObservableObject {
         }
 
         do {
-            if let projects = try? await facade.getProjectNames() {
+            if let projects = try? await facade.getProjectNames(providerFilter: providerFilter) {
                 self.availableProjects = projects
             }
             try Task.checkCancellation()
@@ -158,7 +160,8 @@ public final class SessionsStore: ObservableObject {
                 sort: sortOption,
                 search: query.isEmpty ? nil : query,
                 project: selectedProject,
-                limit: pageSize
+                limit: pageSize,
+                providerFilter: providerFilter
             )
             guard generation == queryGeneration else { return }
             self.sessions = page.sessions
@@ -191,7 +194,8 @@ public final class SessionsStore: ObservableObject {
                 search: query.isEmpty ? nil : query,
                 project: selectedProject,
                 limit: pageSize,
-                cursor: cursor
+                cursor: cursor,
+                providerFilter: providerFilter
             )
             guard generation == queryGeneration else { return }
             let existingIDs = Set(sessions.map(\.sessionId))
@@ -238,7 +242,13 @@ public final class SessionsStore: ObservableObject {
 
         guard selectedSessionId == sid else { return }
         isLoadingDetail = false
-        guard selectedDetail != nil else { return }
+        guard let selectedDetail else { return }
+
+        guard selectedDetail.session.provider == .codex else {
+            selectedConversation = CodexSessionConversationDTO(sessionId: sid, messages: [])
+            isLoadingConversation = false
+            return
+        }
 
         isLoadingConversation = true
         do {
@@ -302,6 +312,7 @@ public final class SessionsStore: ObservableObject {
 
     @discardableResult
     public func deleteSession(_ session: CodexSessionDTO) async -> Bool {
+        guard session.provider == .codex else { return false }
         guard !isDeletingSession else { return false }
         isDeletingSession = true
         errorMessage = nil
