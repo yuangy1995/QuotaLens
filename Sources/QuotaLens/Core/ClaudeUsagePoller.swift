@@ -155,7 +155,7 @@ enum ClaudeQuotaRepository {
 
 actor ClaudeUsagePoller {
     static let defaultInterval: TimeInterval = 600
-    static let minimumGap: TimeInterval = 60
+    static let minimumGap: TimeInterval = 15
 
     private let client: ClaudeUsageClient
     private let database: SQLiteDatabase

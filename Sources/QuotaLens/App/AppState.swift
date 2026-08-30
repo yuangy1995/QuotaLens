@@ -142,6 +142,8 @@ public final class AppState: ObservableObject {
     private static let themeModeDefaultsKey = "QuotaLens.themeMode"
     private static let quotaDisplayModeDefaultsKey = "QuotaLens.quotaDisplayMode"
     private static let refreshIntervalDefaultsKey = "QuotaLens.refreshIntervalSeconds"
+    private static let claudeRefreshIntervalDefaultsKey = "QuotaLens.claudeRefreshIntervalSeconds"
+    private static let antigravityRefreshIntervalDefaultsKey = "QuotaLens.antigravityRefreshIntervalSeconds"
     private static let hideDockIconDefaultsKey = "QuotaLens.hideDockIcon"
     private static let resetCreditReminderEnabledDefaultsKey = "QuotaLens.resetCreditReminder.enabled"
     private static let resetCreditReminderAcknowledgedCreditIdDefaultsKey = "QuotaLens.resetCreditReminder.acknowledgedCreditId"
@@ -154,6 +156,8 @@ public final class AppState: ObservableObject {
     private static let dismissedSuggestionCycleKeysDefaultsKey = "QuotaLens.dismissedSuggestionCycleKeys"
     private static let quotaExhaustionThreshold = 0.000_1
     nonisolated public static let defaultRefreshIntervalSeconds = 60
+    nonisolated public static let defaultClaudeRefreshIntervalSeconds = 600
+    nonisolated public static let defaultAntigravityRefreshIntervalSeconds = 300
 
     // 当前账户与外观主题
     @Published public var themeMode: AppThemeMode {
@@ -187,6 +191,22 @@ public final class AppState: ObservableObject {
     @Published public var refreshIntervalSeconds: Int {
         didSet {
             UserDefaults.standard.set(refreshIntervalSeconds, forKey: Self.refreshIntervalDefaultsKey)
+        }
+    }
+    @Published public var claudeRefreshIntervalSeconds: Int {
+        didSet {
+            UserDefaults.standard.set(
+                claudeRefreshIntervalSeconds,
+                forKey: Self.claudeRefreshIntervalDefaultsKey
+            )
+        }
+    }
+    @Published public var antigravityRefreshIntervalSeconds: Int {
+        didSet {
+            UserDefaults.standard.set(
+                antigravityRefreshIntervalSeconds,
+                forKey: Self.antigravityRefreshIntervalDefaultsKey
+            )
         }
     }
     @Published public var hideDockIcon: Bool {
@@ -239,6 +259,10 @@ public final class AppState: ObservableObject {
     @Published public var antigravityQuotaErrorText: String?
     @Published public var isRefreshingAntigravityQuota: Bool = false
     @Published public var latestAntigravityActivity: AntigravityActivitySnapshot?
+    @Published public var antigravityActivitySnapshotsByProfile: [AntigravityStateProfile: AntigravityActivitySnapshot] = [:]
+    @Published public var providerQuotaInsights: [UsageProvider: [ProviderQuotaInsight]] = [:]
+    @Published public var quotaRecommendations: [QuotaRecommendation] = []
+    @Published public var antigravitySyncState = ProviderSyncState(provider: .antigravity)
 
     private var acknowledgedResetCreditId: String?
     private var acknowledgedResetCreditExpiresAt: Int64?
@@ -259,6 +283,22 @@ public final class AppState: ObservableObject {
         let storedInterval = UserDefaults.standard.integer(forKey: Self.refreshIntervalDefaultsKey)
         self.refreshIntervalSeconds = Self.clampedRefreshInterval(
             storedInterval > 0 ? storedInterval : Self.defaultRefreshIntervalSeconds
+        )
+        let storedClaudeInterval = UserDefaults.standard.integer(
+            forKey: Self.claudeRefreshIntervalDefaultsKey
+        )
+        self.claudeRefreshIntervalSeconds = Self.clampedClaudeRefreshInterval(
+            storedClaudeInterval > 0
+                ? storedClaudeInterval
+                : Self.defaultClaudeRefreshIntervalSeconds
+        )
+        let storedAntigravityInterval = UserDefaults.standard.integer(
+            forKey: Self.antigravityRefreshIntervalDefaultsKey
+        )
+        self.antigravityRefreshIntervalSeconds = Self.clampedAntigravityRefreshInterval(
+            storedAntigravityInterval > 0
+                ? storedAntigravityInterval
+                : Self.defaultAntigravityRefreshIntervalSeconds
         )
         self.hideDockIcon = UserDefaults.standard.bool(forKey: Self.hideDockIconDefaultsKey)
         if UserDefaults.standard.object(forKey: Self.resetCreditReminderEnabledDefaultsKey) == nil {
@@ -608,6 +648,47 @@ public final class AppState: ObservableObject {
         latestAntigravityQuota?.lowestRemainingPercent
     }
 
+    public var antigravityQuotaInsights: [ProviderQuotaInsight] {
+        providerQuotaInsights[.antigravity] ?? []
+    }
+
+    public var primaryAntigravityQuotaInsight: ProviderQuotaInsight? {
+        antigravityQuotaInsights.first
+    }
+
+    public var primaryQuotaRecommendation: QuotaRecommendation? {
+        quotaRecommendations.first
+    }
+
+    public func quotaInsights(for provider: UsageProvider) -> [ProviderQuotaInsight] {
+        providerQuotaInsights[provider] ?? []
+    }
+
+    public func primaryQuotaInsight(for provider: UsageProvider) -> ProviderQuotaInsight? {
+        providerQuotaInsights[provider]?.first
+    }
+
+    public func primaryRecommendation(for provider: UsageProvider) -> QuotaRecommendation? {
+        quotaRecommendations.first { $0.provider == provider }
+    }
+
+    public var antigravityDataFreshness: ProviderDataFreshness {
+        antigravitySyncState.freshness(
+            refreshInterval: TimeInterval(antigravityRefreshIntervalSeconds)
+        )
+    }
+
+    public var antigravityActivityProfiles: [AntigravityStateProfile] {
+        AntigravityStateProfile.allCases.filter { antigravityActivitySnapshotsByProfile[$0] != nil }
+    }
+
+    public func antigravityActivitySnapshot(
+        for profile: AntigravityStateProfile?
+    ) -> AntigravityActivitySnapshot? {
+        guard let profile else { return latestAntigravityActivity }
+        return antigravityActivitySnapshotsByProfile[profile]
+    }
+
     public var antigravityHasQuota: Bool {
         latestAntigravityQuota?.hasQuota == true
     }
@@ -703,6 +784,14 @@ public final class AppState: ObservableObject {
         refreshIntervalSeconds = Self.clampedRefreshInterval(seconds)
     }
 
+    public func setClaudeRefreshInterval(seconds: Int) {
+        claudeRefreshIntervalSeconds = Self.clampedClaudeRefreshInterval(seconds)
+    }
+
+    public func setAntigravityRefreshInterval(seconds: Int) {
+        antigravityRefreshIntervalSeconds = Self.clampedAntigravityRefreshInterval(seconds)
+    }
+
     public func setDockIconHidden(_ hidden: Bool) {
         hideDockIcon = hidden
     }
@@ -795,7 +884,23 @@ public final class AppState: ObservableObject {
         L10n.duration(seconds: refreshIntervalSeconds)
     }
 
+    public var claudeRefreshIntervalDescription: String {
+        L10n.duration(seconds: claudeRefreshIntervalSeconds)
+    }
+
+    public var antigravityRefreshIntervalDescription: String {
+        L10n.duration(seconds: antigravityRefreshIntervalSeconds)
+    }
+
     nonisolated public static func clampedRefreshInterval(_ seconds: Int) -> Int {
+        min(max(seconds, 15), 3600)
+    }
+
+    nonisolated public static func clampedClaudeRefreshInterval(_ seconds: Int) -> Int {
+        min(max(seconds, 15), 3600)
+    }
+
+    nonisolated public static func clampedAntigravityRefreshInterval(_ seconds: Int) -> Int {
         min(max(seconds, 15), 3600)
     }
 

@@ -236,6 +236,7 @@ public struct MenuBarContentView: View {
             antigravityHeaderBar
             CyberDivider()
             antigravityQuotaCard
+            antigravityInsightCard
             antigravityActivityCard
             CyberDivider(glowColor: isDark ? Color.white.opacity(0.12) : Color.black.opacity(0.08))
             actionDock
@@ -330,11 +331,16 @@ public struct MenuBarContentView: View {
             if state.isRefreshingAntigravityQuota {
                 ProgressView().controlSize(.small)
             } else {
-                Text(state.antigravityHasQuota
-                    ? L10n.text("已同步", "Synced")
-                    : L10n.text("等待同步", "Waiting"))
-                    .font(.system(size: 9.5, weight: .heavy, design: .monospaced))
-                    .foregroundStyle(state.antigravityHasQuota ? AppTheme.accentEmerald(for: colorScheme) : cyan)
+                Label(
+                    state.antigravityHasQuota
+                        ? state.antigravityDataFreshness.localizedTitle
+                        : L10n.text("等待同步", "Waiting"),
+                    systemImage: state.antigravityHasQuota
+                        ? state.antigravityDataFreshness.symbolName
+                        : "ellipsis.circle.fill"
+                )
+                .font(.system(size: 9.5, weight: .heavy, design: .monospaced))
+                .foregroundStyle(antigravityFreshnessColor)
             }
         }
     }
@@ -448,6 +454,15 @@ public struct MenuBarContentView: View {
                 Text(L10n.text("本机活动", "Local Activity"))
                     .font(.system(size: 10.5, weight: .bold, design: .rounded))
                     .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                if !state.antigravityActivityProfiles.isEmpty {
+                    Text(L10n.format(
+                        "%d local sources",
+                        zhHans: "%d 个本机来源",
+                        state.antigravityActivityProfiles.count
+                    ))
+                    .font(.system(size: 8.5, weight: .bold, design: .rounded))
+                    .foregroundStyle(cyan)
+                }
                 Spacer()
                 if let activity = state.latestAntigravityActivity {
                     Text(L10n.format("%d tasks", zhHans: "%d 个任务", activity.taskCount30Days))
@@ -466,6 +481,11 @@ public struct MenuBarContentView: View {
                     value: state.latestAntigravityActivity.map { L10n.format("%d days", zhHans: "%d 天", $0.activeDays30Days) } ?? "--",
                     accent: AppTheme.accentEmerald(for: colorScheme)
                 )
+                AntigravityActivityPill(
+                    title: L10n.text("步骤", "Steps"),
+                    value: state.latestAntigravityActivity.map { UsageNumberFormatter.compactTokenCount($0.stepCount30Days) } ?? "--",
+                    accent: AppTheme.accentAmber(for: colorScheme)
+                )
             }
         }
         .padding(.horizontal, 10)
@@ -474,6 +494,188 @@ public struct MenuBarContentView: View {
             colorScheme == .dark ? Color.white.opacity(0.04) : Color.black.opacity(0.03),
             in: RoundedRectangle(cornerRadius: 8)
         )
+    }
+
+    private var antigravityInsightCard: some View {
+        let insight = state.primaryAntigravityQuotaInsight
+        let tint = antigravityInsightColor(insight)
+        return TimelineView(.periodic(from: .now, by: 30)) { _ in
+            VStack(alignment: .leading, spacing: 9) {
+                HStack(spacing: 7) {
+                    Image(systemName: antigravityInsightIcon(insight))
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(tint)
+                    Text(L10n.text("使用节奏与预测", "Usage Pace & Forecast"))
+                        .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                        .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                    Spacer()
+                    Text(antigravityInsightTitle(insight))
+                        .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                        .foregroundStyle(tint)
+                }
+
+                Grid(horizontalSpacing: 7, verticalSpacing: 7) {
+                    GridRow {
+                        antigravityInsightTile(
+                            title: L10n.text("消耗速度", "Usage Pace"),
+                            value: antigravityRateText(insight),
+                            icon: "speedometer",
+                            tint: tint
+                        )
+                        antigravityInsightTile(
+                            title: L10n.text("额度预测", "Quota Forecast"),
+                            value: antigravityForecastText(insight),
+                            icon: "chart.line.uptrend.xyaxis",
+                            tint: tint
+                        )
+                    }
+                    GridRow {
+                        antigravityInsightTile(
+                            title: L10n.text("上次同步", "Last Sync"),
+                            value: antigravityLastSyncText,
+                            icon: "checkmark.circle",
+                            tint: antigravityFreshnessColor
+                        )
+                        antigravityInsightTile(
+                            title: L10n.text("下次刷新", "Next Refresh"),
+                            value: antigravityNextSyncText,
+                            icon: "arrow.triangle.2.circlepath",
+                            tint: AppTheme.accentCyan(for: colorScheme)
+                        )
+                    }
+                }
+
+                if let recommendation = state.primaryRecommendation(for: .antigravity) {
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: recommendation.severity.symbolName)
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(antigravityRecommendationColor(recommendation.severity))
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(recommendation.title)
+                                .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                            Text(recommendation.message)
+                                .font(.system(size: 8.8, weight: .medium))
+                                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                                .lineLimit(2)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .padding(10)
+            .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .strokeBorder(tint.opacity(0.28), lineWidth: 0.8)
+            )
+        }
+    }
+
+    private func antigravityInsightTile(
+        title: String,
+        value: String,
+        icon: String,
+        tint: Color
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Label(title, systemImage: icon)
+                .font(.system(size: 8.3, weight: .bold, design: .rounded))
+                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+            Text(value)
+                .font(.system(size: 10, weight: .black, design: .monospaced))
+                .foregroundStyle(tint)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+        }
+        .frame(maxWidth: .infinity, minHeight: 35, alignment: .leading)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(
+            colorScheme == .dark ? Color.white.opacity(0.04) : Color.black.opacity(0.025),
+            in: RoundedRectangle(cornerRadius: 7)
+        )
+    }
+
+    private var antigravityLastSyncText: String {
+        let date = state.antigravitySyncState.lastSuccessAt ?? state.latestAntigravityQuota?.capturedAt
+        return date.map { UsageNumberFormatter.relativeTimeString(from: $0) } ?? "--"
+    }
+
+    private var antigravityNextSyncText: String {
+        let last = state.antigravitySyncState.lastSuccessAt ?? state.latestAntigravityQuota?.capturedAt
+        let date = state.antigravitySyncState.cooldownUntil
+            ?? state.antigravitySyncState.nextAttemptAt
+            ?? last?.addingTimeInterval(TimeInterval(state.antigravityRefreshIntervalSeconds))
+        return date.map { UsageNumberFormatter.relativeTimeString(from: $0) } ?? "--"
+    }
+
+    private func antigravityRateText(_ insight: ProviderQuotaInsight?) -> String {
+        guard let insight, insight.hasUsableForecast else { return L10n.text("正在积累", "Collecting") }
+        return String(format: "%.2f %@", insight.burnRateForDisplay, insight.rateUnitTitle)
+    }
+
+    private func antigravityForecastText(_ insight: ProviderQuotaInsight?) -> String {
+        guard let insight, insight.hasUsableForecast else { return L10n.text("正在积累", "Collecting") }
+        if insight.risk == .critical, let date = insight.forecast.estimatedExhaustionDate {
+            return L10n.format(
+                "Runs out %@",
+                zhHans: "%@耗尽",
+                UsageNumberFormatter.relativeTimeString(from: date)
+            )
+        }
+        guard let remaining = insight.forecast.projectedRemainingAtReset else { return "--" }
+        return L10n.format(
+            "%@ at reset",
+            zhHans: "重置时 %@",
+            UsageNumberFormatter.percent(remaining, maximumFractionDigits: 0)
+        )
+    }
+
+    private func antigravityInsightTitle(_ insight: ProviderQuotaInsight?) -> String {
+        guard let insight else { return L10n.text("正在积累", "Collecting") }
+        if insight.freshness == .stale { return insight.freshness.localizedTitle }
+        return insight.risk.localizedTitle
+    }
+
+    private func antigravityInsightIcon(_ insight: ProviderQuotaInsight?) -> String {
+        guard let insight else { return "ellipsis.circle.fill" }
+        if insight.freshness == .stale { return insight.freshness.symbolName }
+        switch insight.risk {
+        case .critical: return "exclamationmark.triangle.fill"
+        case .warning: return "speedometer"
+        case .onTrack: return "checkmark.circle.fill"
+        case .underPaced: return "leaf.fill"
+        case .insufficientData: return "ellipsis.circle.fill"
+        }
+    }
+
+    private func antigravityInsightColor(_ insight: ProviderQuotaInsight?) -> Color {
+        guard let insight else { return AppTheme.accentCyan(for: colorScheme) }
+        if insight.freshness == .stale { return AppTheme.accentRose(for: colorScheme) }
+        switch insight.risk {
+        case .critical: return AppTheme.accentRose(for: colorScheme)
+        case .warning: return AppTheme.accentAmber(for: colorScheme)
+        case .onTrack, .underPaced: return AppTheme.accentEmerald(for: colorScheme)
+        case .insufficientData: return AppTheme.accentCyan(for: colorScheme)
+        }
+    }
+
+    private var antigravityFreshnessColor: Color {
+        switch state.antigravityDataFreshness {
+        case .fresh: return AppTheme.accentEmerald(for: colorScheme)
+        case .delayed: return AppTheme.accentAmber(for: colorScheme)
+        case .stale: return AppTheme.accentRose(for: colorScheme)
+        case .unknown: return AppTheme.accentCyan(for: colorScheme)
+        }
+    }
+
+    private func antigravityRecommendationColor(_ severity: QuotaRecommendationSeverity) -> Color {
+        switch severity {
+        case .healthy: return AppTheme.accentEmerald(for: colorScheme)
+        case .information: return AppTheme.accentCyan(for: colorScheme)
+        case .warning: return AppTheme.accentAmber(for: colorScheme)
+        case .critical: return AppTheme.accentRose(for: colorScheme)
+        }
     }
 
     private func updateLocalUsageForecast() {

@@ -584,7 +584,7 @@ public final class MenuBarStatusItemController: NSObject {
         switch currentDisplayTool {
         case .codex: return minimumPopoverHeight
         case .claude: return 330
-        case .antigravity: return 430
+        case .antigravity: return 575
         default: return 180
         }
     }

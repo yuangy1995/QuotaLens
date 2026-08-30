@@ -82,28 +82,7 @@ public struct AntigravityOverviewView: View {
     }
 
     public var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 18) {
-                header
-                if let quota = state.latestAntigravityQuota, quota.hasQuota {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 250), spacing: 12)], spacing: 12) {
-                        ForEach(quota.orderedDisplayBuckets) { item in
-                            AntigravityBucketCard(
-                                groupTitle: item.groupTitle,
-                                bucket: item.bucket,
-                                displayMode: state.quotaDisplayMode
-                            )
-                        }
-                    }
-                    if !quota.models.isEmpty {
-                        modelCard(quota.models)
-                    }
-                } else {
-                    emptyState
-                }
-            }
-            .padding(24)
-        }
+        AntigravityQuotaAnalyticsView(state: state)
     }
 
     private var header: some View {
@@ -203,23 +182,7 @@ public struct AntigravityActivityView: View {
     }
 
     public var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 18) {
-                activityHeader
-                if let activity = state.latestAntigravityActivity {
-                    activityMetrics(activity)
-                    activityChart(activity)
-                    projectCard(activity)
-                } else {
-                    Text(L10n.text("尚未读取到 Antigravity 本机活动", "Antigravity local activity is not available yet"))
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-                        .frame(maxWidth: .infinity, minHeight: 180)
-                        .cyberCard(cornerRadius: 16, padding: 18)
-                }
-            }
-            .padding(24)
-        }
+        AntigravityActivityAnalyticsView(state: state)
     }
 
     private var activityHeader: some View {

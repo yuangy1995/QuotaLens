@@ -131,6 +131,28 @@ public struct AntigravityQuotaSnapshot: Equatable, Sendable, Codable {
         }
     }
 
+    public struct AggregatedModel: Identifiable, Equatable, Sendable {
+        public let id: String
+        public let displayName: String
+        public let remainingPercent: Double
+        public let resetAt: Date?
+        public let modelCount: Int
+
+        public init(
+            id: String,
+            displayName: String,
+            remainingPercent: Double,
+            resetAt: Date?,
+            modelCount: Int
+        ) {
+            self.id = id
+            self.displayName = displayName
+            self.remainingPercent = remainingPercent
+            self.resetAt = resetAt
+            self.modelCount = modelCount
+        }
+    }
+
     public let sourceProfile: String
     public let accountKey: String
     public let accountDisplayName: String?
@@ -224,6 +246,56 @@ public struct AntigravityQuotaSnapshot: Equatable, Sendable, Codable {
         return values.min()
     }
 
+    public var aggregatedModels: [AggregatedModel] {
+        struct Aggregate {
+            var displayName: String
+            var remainingPercent: Double
+            var resetAt: Date?
+            var count: Int
+        }
+
+        var aggregates: [String: Aggregate] = [:]
+        for model in models {
+            let trimmed = model.displayName?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let displayName = trimmed?.isEmpty == false
+                ? trimmed!
+                : L10n.text("其他模型", "Other models")
+            let key = displayName.folding(
+                options: [.caseInsensitive, .diacriticInsensitive],
+                locale: .current
+            )
+            if var existing = aggregates[key] {
+                existing.remainingPercent = min(existing.remainingPercent, model.remainingPercent)
+                if let reset = model.resetAt {
+                    existing.resetAt = existing.resetAt.map { min($0, reset) } ?? reset
+                }
+                existing.count += 1
+                aggregates[key] = existing
+            } else {
+                aggregates[key] = Aggregate(
+                    displayName: displayName,
+                    remainingPercent: model.remainingPercent,
+                    resetAt: model.resetAt,
+                    count: 1
+                )
+            }
+        }
+        return aggregates.map { key, value in
+            AggregatedModel(
+                id: key,
+                displayName: value.displayName,
+                remainingPercent: value.remainingPercent,
+                resetAt: value.resetAt,
+                modelCount: value.count
+            )
+        }.sorted {
+            if $0.remainingPercent != $1.remainingPercent {
+                return $0.remainingPercent < $1.remainingPercent
+            }
+            return $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
+        }
+    }
+
     public var hasQuota: Bool {
         !groups.isEmpty || !models.isEmpty
     }
@@ -238,6 +310,28 @@ public struct AntigravityActivitySnapshot: Equatable, Sendable {
         public var id: Date { date }
     }
 
+    public struct PeriodMetrics: Equatable, Sendable {
+        public let days: Int
+        public let taskCount: Int
+        public let activeDays: Int
+        public let stepCount: Int64
+
+        public init(days: Int, taskCount: Int, activeDays: Int, stepCount: Int64) {
+            self.days = days
+            self.taskCount = taskCount
+            self.activeDays = activeDays
+            self.stepCount = stepCount
+        }
+
+        public var averageStepsPerTask: Double {
+            taskCount > 0 ? Double(stepCount) / Double(taskCount) : 0
+        }
+
+        public var tasksPerActiveDay: Double {
+            activeDays > 0 ? Double(taskCount) / Double(activeDays) : 0
+        }
+    }
+
     public let capturedAt: Date
     public let taskCount7Days: Int
     public let taskCount30Days: Int
@@ -246,6 +340,10 @@ public struct AntigravityActivitySnapshot: Equatable, Sendable {
     public let latestActivityAt: Date?
     public let daily: [Day]
     public let projectCounts: [String: Int]
+    public let sevenDayMetrics: PeriodMetrics
+    public let previousSevenDayMetrics: PeriodMetrics
+    public let thirtyDayMetrics: PeriodMetrics
+    public let previousThirtyDayMetrics: PeriodMetrics
 
     public init(
         capturedAt: Date,
@@ -255,7 +353,11 @@ public struct AntigravityActivitySnapshot: Equatable, Sendable {
         stepCount30Days: Int64,
         latestActivityAt: Date?,
         daily: [Day],
-        projectCounts: [String: Int]
+        projectCounts: [String: Int],
+        sevenDayMetrics: PeriodMetrics,
+        previousSevenDayMetrics: PeriodMetrics,
+        thirtyDayMetrics: PeriodMetrics,
+        previousThirtyDayMetrics: PeriodMetrics
     ) {
         self.capturedAt = capturedAt
         self.taskCount7Days = taskCount7Days
@@ -265,10 +367,33 @@ public struct AntigravityActivitySnapshot: Equatable, Sendable {
         self.latestActivityAt = latestActivityAt
         self.daily = daily
         self.projectCounts = projectCounts
+        self.sevenDayMetrics = sevenDayMetrics
+        self.previousSevenDayMetrics = previousSevenDayMetrics
+        self.thirtyDayMetrics = thirtyDayMetrics
+        self.previousThirtyDayMetrics = previousThirtyDayMetrics
+    }
+
+    public func metrics(days: Int) -> PeriodMetrics {
+        days == 7 ? sevenDayMetrics : thirtyDayMetrics
+    }
+
+    public func previousMetrics(days: Int) -> PeriodMetrics {
+        days == 7 ? previousSevenDayMetrics : previousThirtyDayMetrics
+    }
+
+    public func dailyPoints(days: Int) -> [Day] {
+        Array(daily.suffix(days == 7 ? 7 : 30))
+    }
+
+    public func taskChangePercent(days: Int) -> Double? {
+        let current = metrics(days: days).taskCount
+        let previous = previousMetrics(days: days).taskCount
+        guard previous > 0 else { return current == 0 ? 0 : nil }
+        return Double(current - previous) / Double(previous) * 100
     }
 }
 
-public enum AntigravityStateProfile: String, Codable, Sendable {
+public enum AntigravityStateProfile: String, Codable, CaseIterable, Hashable, Sendable {
     case ide
     case legacy
 

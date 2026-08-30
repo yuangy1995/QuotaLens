@@ -23,6 +23,14 @@ public final class FrontmostToolTracker: ObservableObject {
     @Published public private(set) var foregroundApplicationPID: pid_t?
     @Published public private(set) var foregroundBundleIdentifier: String?
 
+    public var foregroundAntigravityProfile: AntigravityStateProfile? {
+        switch foregroundBundleIdentifier {
+        case "com.google.antigravity-ide": return .ide
+        case "com.google.antigravity": return .legacy
+        default: return nil
+        }
+    }
+
     private let enabledTools: EnabledToolsStore
     private var workspaceObservers: [NSObjectProtocol] = []
     private var pollTask: Task<Void, Never>?

@@ -111,6 +111,7 @@ public struct SettingsView: View {
     @ObservedObject private var overlayController = CodexUsageOverlayController.shared
 
     private let presetIntervals: [Int] = [15, 30, 60, 300, 900]
+    private let providerPresetIntervals: [Int] = [15, 30, 60, 300, 600, 900, 1_800]
 
     public init(state: AppState, scope: SettingsScope) {
         self.state = state
@@ -460,6 +461,20 @@ public struct SettingsView: View {
                 .padding(12)
                 .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))
 
+                providerRefreshIntervalControl(
+                    title: L10n.text("Claude 刷新频率", "Claude Refresh Rate"),
+                    detail: L10n.format(
+                        "Refreshes Claude quota every %@.",
+                        zhHans: "每 %@ 自动刷新 Claude 额度",
+                        state.claudeRefreshIntervalDescription
+                    ),
+                    tint: amber,
+                    selection: Binding(
+                        get: { state.claudeRefreshIntervalSeconds },
+                        set: { env.setClaudeRefreshInterval(seconds: $0) }
+                    )
+                )
+
                 HStack {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(L10n.text("Claude 窗口悬浮挂件", "Claude Window Overlay"))
@@ -567,6 +582,20 @@ public struct SettingsView: View {
             }
             .padding(12)
             .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))
+
+            providerRefreshIntervalControl(
+                title: L10n.text("Antigravity 刷新频率", "Antigravity Refresh Rate"),
+                detail: L10n.format(
+                    "Refreshes Antigravity quota every %@.",
+                    zhHans: "每 %@ 自动刷新 Antigravity 额度",
+                    state.antigravityRefreshIntervalDescription
+                ),
+                tint: cyan,
+                selection: Binding(
+                    get: { state.antigravityRefreshIntervalSeconds },
+                    set: { env.setAntigravityRefreshInterval(seconds: $0) }
+                )
+            )
 
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
@@ -1961,6 +1990,86 @@ public struct SettingsView: View {
             return "\(seconds)s"
         }
         return "\(seconds / 60)m"
+    }
+
+    private func providerRefreshIntervalControl(
+        title: String,
+        detail: String,
+        tint: Color,
+        selection: Binding<Int>
+    ) -> some View {
+        let isDark = colorScheme == .dark
+        return HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                Text(detail)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+            }
+
+            Spacer(minLength: 8)
+
+            HStack(spacing: 6) {
+                ForEach(providerPresetIntervals, id: \.self) { seconds in
+                    providerRefreshPresetButton(
+                        seconds,
+                        tint: tint,
+                        isDark: isDark,
+                        selection: selection
+                    )
+                }
+            }
+
+            Stepper(
+                "",
+                value: selection,
+                in: 15...3_600,
+                step: 15
+            )
+            .labelsHidden()
+            .accessibilityLabel(title)
+        }
+        .padding(12)
+        .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
+        )
+    }
+
+    private func providerRefreshPresetButton(
+        _ seconds: Int,
+        tint: Color,
+        isDark: Bool,
+        selection: Binding<Int>
+    ) -> some View {
+        let isSelected = selection.wrappedValue == seconds
+        let background = isSelected
+            ? tint.opacity(isDark ? 0.24 : 0.18)
+            : (isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.04))
+        let border = isSelected
+            ? tint.opacity(0.65)
+            : (isDark ? Color.white.opacity(0.18) : Color.black.opacity(0.10))
+        return Button {
+            selection.wrappedValue = seconds
+        } label: {
+            Text(displayPreset(seconds))
+                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(background, in: RoundedRectangle(cornerRadius: 5))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 5)
+                        .strokeBorder(border, lineWidth: isSelected ? 1 : 0.6)
+                )
+                .foregroundStyle(isSelected ? tint : AppTheme.textPrimary(for: colorScheme))
+        }
+        .buttonStyle(.plain)
+        .accessibilityValue(isSelected
+            ? L10n.text("已选择", "Selected")
+            : L10n.text("未选择", "Not selected"))
     }
 
     private var cliBinaryTargetDescription: String {

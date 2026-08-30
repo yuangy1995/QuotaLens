@@ -19,6 +19,7 @@ public final class AppEnvironment: ObservableObject {
     public let accountProbe: AccountProbeActor
     public let updateManager: UpdateManager
     public let usageQueryFacade: UsageQueryFacade
+    public let quotaInsightsService: ProviderQuotaInsightsService
     public let scanCoordinator: CodexUsageScanCoordinator
     public let claudeScanCoordinator: ClaudeUsageScanCoordinator
     public let antigravityActivityCoordinator: AntigravityActivityScanCoordinator
@@ -43,6 +44,7 @@ public final class AppEnvironment: ObservableObject {
     private var refreshDataRequestGeneration = 0
     private var serverSnapshotRequestGeneration = 0
     private var subscriptionEntitlementRequestGeneration = 0
+    private var quotaInsightsGeneration = 0
     private var serverSnapshotInFlightAccountKey: String?
     private var subscriptionEntitlementInFlightAccountKey: String?
     private var menuBarController: MenuBarStatusItemController?
@@ -150,6 +152,7 @@ public final class AppEnvironment: ObservableObject {
         self.state.appInitializationWarningText = initializationWarning
 
         self.repositories = Repositories(database: database)
+        self.quotaInsightsService = ProviderQuotaInsightsService(database: database)
         self.transport = JSONRPCTransport()
         self.processManager = CodexProcessManager(transport: transport)
         self.accountProbe = AccountProbeActor(transport: transport, repositories: repositories)
@@ -185,6 +188,10 @@ public final class AppEnvironment: ObservableObject {
                ) {
                 self.state.latestAntigravityQuota = hydrated
                 self.state.antigravityQuotaStatus = .available
+                self.state.antigravitySyncState = ProviderSyncState(
+                    provider: .antigravity,
+                    lastSuccessAt: hydrated.capturedAt
+                )
             } else {
                 self.state.antigravityQuotaStatus = .loading
             }
@@ -211,6 +218,9 @@ public final class AppEnvironment: ObservableObject {
                 await self.scanAntigravityActivity()
                 await self.refreshAntigravityQuota(force: true)
             }
+        }
+        Task { @MainActor [weak self] in
+            await self?.refreshProviderQuotaInsights()
         }
         let localPeriod = ChatGPTSubscriptionClient.localSubscriptionPeriodFromAuth()
         self.state.applyLocalSubscriptionPeriodFallback(startsAt: localPeriod.startsAt, endsAt: localPeriod.endsAt)
@@ -278,6 +288,37 @@ public final class AppEnvironment: ObservableObject {
     public func setRefreshInterval(seconds: Int) {
         state.setRefreshInterval(seconds: seconds)
         scheduleRefreshTimer()
+        Task { @MainActor [weak self] in
+            await self?.refreshProviderQuotaInsights()
+        }
+    }
+
+    public func setClaudeRefreshInterval(seconds: Int) {
+        state.setClaudeRefreshInterval(seconds: seconds)
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            if let poller = self.claudeUsagePoller {
+                await poller.stop()
+            }
+            self.claudeUsagePoller = nil
+            self.startClaudeServices()
+            await self.refreshClaudeUsage(force: true)
+            await self.refreshProviderQuotaInsights()
+        }
+    }
+
+    public func setAntigravityRefreshInterval(seconds: Int) {
+        state.setAntigravityRefreshInterval(seconds: seconds)
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            if let poller = self.antigravityQuotaPoller {
+                await poller.stop()
+            }
+            self.antigravityQuotaPoller = nil
+            self.startAntigravityServices()
+            await self.refreshAntigravityQuota(force: true)
+            await self.refreshProviderQuotaInsights()
+        }
     }
 
     public func setDockIconHidden(_ hidden: Bool) {
@@ -764,6 +805,7 @@ public final class AppEnvironment: ObservableObject {
         } catch {
             // 刷新容错
         }
+        await refreshProviderQuotaInsights()
     }
 
     /// 刷新所有用户可见数据：本地 Codex 用量先完成索引，再读取服务器额度快照。
@@ -789,7 +831,122 @@ public final class AppEnvironment: ObservableObject {
         }
         if enabledToolsStore.isEnabled(.codex) {
             await refreshData(fetchServer: fetchServer, scheduleRetryOnFailure: scheduleRetryOnFailure)
+        } else {
+            await refreshProviderQuotaInsights()
         }
+    }
+
+    public func refreshProviderQuotaInsights() async {
+        quotaInsightsGeneration += 1
+        let generation = quotaInsightsGeneration
+        let inputs = quotaInsightInputs()
+        let refreshIntervals: [UsageProvider: TimeInterval] = [
+            .codex: TimeInterval(state.refreshIntervalSeconds),
+            .claude: TimeInterval(state.claudeRefreshIntervalSeconds),
+            .antigravity: TimeInterval(state.antigravityRefreshIntervalSeconds)
+        ]
+        let enabledProviders = Set(enabledToolsStore.enabledToolIDs.compactMap { tool -> UsageProvider? in
+            switch tool {
+            case .codex: return .codex
+            case .claude: return .claude
+            case .antigravity: return .antigravity
+            default: return nil
+            }
+        })
+        var errors: [UsageProvider: String] = [:]
+        if enabledProviders.contains(.codex), !state.hasQuotaSnapshot {
+            errors[.codex] = state.quotaUnavailableDescription
+        }
+        if enabledProviders.contains(.claude),
+           state.latestClaudeUsage?.hasQuota != true,
+           let error = state.claudeUsageErrorText {
+            errors[.claude] = error
+        }
+        if enabledProviders.contains(.antigravity),
+           !state.antigravityHasQuota,
+           let error = state.antigravityQuotaErrorText {
+            errors[.antigravity] = error
+        }
+        let activity = state.latestAntigravityActivity
+        let result = await quotaInsightsService.build(
+            inputs: inputs,
+            refreshIntervals: refreshIntervals
+        )
+        guard generation == quotaInsightsGeneration else { return }
+        state.providerQuotaInsights = result
+        state.quotaRecommendations = QuotaRecommendationEngine.make(
+            insights: result,
+            enabledProviders: enabledProviders,
+            errors: errors,
+            antigravityActivity: activity
+        )
+    }
+
+    private func quotaInsightInputs() -> [ProviderQuotaPoolInput] {
+        var inputs: [ProviderQuotaPoolInput] = []
+        if enabledToolsStore.isEnabled(.codex) {
+            inputs.append(contentsOf: state.currentQuotaSnapshots.map { snapshot in
+                let window = QuotaWindowKind(windowDurationMins: snapshot.windowDurationMins)
+                return ProviderQuotaPoolInput(
+                    provider: .codex,
+                    accountKey: snapshot.accountKey,
+                    limitID: snapshot.limitId,
+                    slot: snapshot.slot,
+                    groupTitle: Self.codexWeeklyDisplayName(for: snapshot.limitId) ?? "Codex",
+                    windowTitle: window == .fiveHour
+                        ? L10n.text("5 小时", "5 Hours")
+                        : L10n.text("7 天", "7 Days"),
+                    usedPercent: snapshot.usedPercent,
+                    windowDurationMins: snapshot.windowDurationMins,
+                    resetAt: snapshot.resetsAt.map { Date(timeIntervalSince1970: Double($0)) },
+                    capturedAt: Date(timeIntervalSince1970: Double(snapshot.observedAt))
+                )
+            })
+        }
+        if enabledToolsStore.isEnabled(.claude), let usage = state.latestClaudeUsage {
+            let windows = [usage.fiveHourForDisplay, usage.sevenDay].compactMap { $0 } + usage.scopedWeekly
+            inputs.append(contentsOf: windows.map { window in
+                ProviderQuotaPoolInput(
+                    provider: .claude,
+                    accountKey: usage.accountKey,
+                    limitID: window.id,
+                    slot: window.windowDuration <= 18_000 ? "primary" : "secondary",
+                    groupTitle: "Claude",
+                    windowTitle: window.localizedTitle,
+                    usedPercent: window.usedPercent,
+                    windowDurationMins: Int(window.windowDuration / 60),
+                    resetAt: window.resetAt,
+                    capturedAt: usage.capturedAt
+                )
+            })
+        }
+        if enabledToolsStore.isEnabled(.antigravity), let quota = state.latestAntigravityQuota {
+            for group in quota.groups {
+                for bucket in group.buckets {
+                    let duration: Int?
+                    switch bucket.window {
+                    case .fiveHour: duration = 300
+                    case .weekly: duration = 10_080
+                    case .other: duration = nil
+                    }
+                    inputs.append(
+                        ProviderQuotaPoolInput(
+                            provider: .antigravity,
+                            accountKey: quota.accountKey,
+                            limitID: group.id,
+                            slot: bucket.id,
+                            groupTitle: group.title,
+                            windowTitle: bucket.window.localizedTitle,
+                            usedPercent: 100 - bucket.remainingPercent,
+                            windowDurationMins: duration,
+                            resetAt: bucket.resetAt,
+                            capturedAt: quota.capturedAt
+                        )
+                    )
+                }
+            }
+        }
+        return inputs
     }
 
     public func refreshMonitoringTool(_ tool: MonitoringToolID) async {
@@ -812,6 +969,9 @@ public final class AppEnvironment: ObservableObject {
             await refreshAntigravityQuota(force: true)
         default:
             break
+        }
+        Task { @MainActor [weak self] in
+            await self?.refreshProviderQuotaInsights()
         }
     }
 
@@ -853,6 +1013,9 @@ public final class AppEnvironment: ObservableObject {
             setAntigravityEnabled(enabled)
         default:
             break
+        }
+        Task { @MainActor [weak self] in
+            await self?.refreshProviderQuotaInsights()
         }
     }
 
@@ -902,6 +1065,7 @@ public final class AppEnvironment: ObservableObject {
         if claudeUsagePoller == nil {
             let poller = ClaudeUsagePoller(
                 database: database,
+                interval: TimeInterval(state.claudeRefreshIntervalSeconds),
                 initialSnapshot: state.latestClaudeUsage,
                 onResult: { [weak self] result in
                     await MainActor.run {
@@ -1000,6 +1164,9 @@ public final class AppEnvironment: ObservableObject {
                 "Claude quota could not be updated right now."
             )
         }
+        Task { @MainActor [weak self] in
+            await self?.refreshProviderQuotaInsights()
+        }
     }
 
     public func setAntigravityEnabled(_ enabled: Bool) {
@@ -1012,6 +1179,10 @@ public final class AppEnvironment: ObservableObject {
                ) {
                 state.latestAntigravityQuota = hydrated
                 state.antigravityQuotaStatus = .available
+                state.antigravitySyncState = ProviderSyncState(
+                    provider: .antigravity,
+                    lastSuccessAt: hydrated.capturedAt
+                )
                 state.establishWeeklyQuotaRecoveryBaseline(
                     tool: .antigravity,
                     samples: weeklyQuotaSamples(from: hydrated),
@@ -1030,9 +1201,15 @@ public final class AppEnvironment: ObservableObject {
             stopAntigravityServices()
             state.latestAntigravityQuota = nil
             state.latestAntigravityActivity = nil
+            state.antigravityActivitySnapshotsByProfile = [:]
             state.antigravityQuotaStatus = .disabled
             state.antigravityQuotaErrorText = nil
             state.isRefreshingAntigravityQuota = false
+            state.antigravitySyncState = ProviderSyncState(provider: .antigravity)
+            state.providerQuotaInsights[.antigravity] = nil
+        }
+        Task { @MainActor [weak self] in
+            await self?.refreshProviderQuotaInsights()
         }
         toolOverlayCoordinator.refreshConfiguration()
     }
@@ -1049,6 +1226,8 @@ public final class AppEnvironment: ObservableObject {
     private func scanAntigravityActivity() async {
         await antigravityActivityCoordinator.scanNow(preferredProfile: preferredAntigravityProfile)
         state.latestAntigravityActivity = antigravityActivityCoordinator.latestSnapshot
+        state.antigravityActivitySnapshotsByProfile = antigravityActivityCoordinator.snapshotsByProfile
+        await refreshProviderQuotaInsights()
     }
 
     private func startAntigravityServices() {
@@ -1056,10 +1235,16 @@ public final class AppEnvironment: ObservableObject {
         if antigravityQuotaPoller == nil {
             let poller = AntigravityQuotaPoller(
                 database: database,
+                interval: TimeInterval(state.antigravityRefreshIntervalSeconds),
                 initialSnapshot: state.latestAntigravityQuota,
                 onResult: { [weak self] result in
                     await MainActor.run {
                         self?.applyAntigravityQuotaResult(result)
+                    }
+                },
+                onSyncState: { [weak self] syncState in
+                    await MainActor.run {
+                        self?.state.antigravitySyncState = syncState
                     }
                 }
             )
@@ -1147,14 +1332,13 @@ public final class AppEnvironment: ObservableObject {
                 "Antigravity quota could not be updated right now."
             )
         }
+        Task { @MainActor [weak self] in
+            await self?.refreshProviderQuotaInsights()
+        }
     }
 
     private var preferredAntigravityProfile: AntigravityStateProfile? {
-        switch frontmostToolTracker.foregroundBundleIdentifier {
-        case "com.google.antigravity-ide": return .ide
-        case "com.google.antigravity": return .legacy
-        default: return nil
-        }
+        frontmostToolTracker.foregroundAntigravityProfile
     }
 
     private func currentStateAccountKey() -> String? {
@@ -2090,6 +2274,8 @@ public final class AppEnvironment: ObservableObject {
         state.themeMode = .system
         state.quotaDisplayMode = .used
         state.refreshIntervalSeconds = AppState.defaultRefreshIntervalSeconds
+        state.claudeRefreshIntervalSeconds = AppState.defaultClaudeRefreshIntervalSeconds
+        state.antigravityRefreshIntervalSeconds = AppState.defaultAntigravityRefreshIntervalSeconds
         state.resetWeeklyQuotaRecoveryToFactoryDefaults()
         state.latestClaudeUsage = nil
         state.claudeUsageStatus = .disabled
@@ -2099,6 +2285,10 @@ public final class AppEnvironment: ObservableObject {
         state.antigravityQuotaStatus = .disabled
         state.antigravityQuotaErrorText = nil
         state.latestAntigravityActivity = nil
+        state.antigravityActivitySnapshotsByProfile = [:]
+        state.providerQuotaInsights = [:]
+        state.quotaRecommendations = []
+        state.antigravitySyncState = ProviderSyncState(provider: .antigravity)
         enabledToolsStore.resetToDefaults()
         frontmostToolTracker.refresh()
         navigationStore.normalize(

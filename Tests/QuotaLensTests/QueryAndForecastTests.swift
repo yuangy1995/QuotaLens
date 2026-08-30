@@ -3,6 +3,19 @@ import XCTest
 @testable import QuotaLens
 
 final class QueryAndForecastTests: XCTestCase {
+    func testProviderRefreshIntervalsClampToSafePollingRanges() {
+        XCTAssertEqual(AppState.clampedRefreshInterval(1), 15)
+        XCTAssertEqual(AppState.clampedRefreshInterval(7_200), 3_600)
+        XCTAssertEqual(AppState.clampedClaudeRefreshInterval(1), 15)
+        XCTAssertEqual(AppState.clampedClaudeRefreshInterval(7_200), 3_600)
+        XCTAssertEqual(AppState.clampedAntigravityRefreshInterval(1), 15)
+        XCTAssertEqual(AppState.clampedAntigravityRefreshInterval(7_200), 3_600)
+        XCTAssertEqual(AppState.defaultClaudeRefreshIntervalSeconds, 600)
+        XCTAssertEqual(AppState.defaultAntigravityRefreshIntervalSeconds, 300)
+        XCTAssertEqual(ClaudeUsagePoller.minimumGap, 15)
+        XCTAssertEqual(AntigravityQuotaPoller.minimumGap, 15)
+    }
+
     func testKeysetPaginationHasNoDuplicatesOrOmissionsForEverySort() throws {
         let directory = try makeTemporaryDirectory()
         let database = try makeMigratedDatabase(in: directory)
@@ -588,6 +601,496 @@ final class QueryAndForecastTests: XCTestCase {
         }
     }
 
+    func testAntigravityQuotaPersistenceStoresPoolsAndPrunesHistoryAfterSevenDays() throws {
+        let directory = try makeTemporaryDirectory()
+        let database = try makeMigratedDatabase(in: directory)
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        let reset = now.addingTimeInterval(2 * 3_600)
+
+        try insertRateLimitHistory(
+            database,
+            provider: .antigravity,
+            accountKey: "antigravity-test",
+            observedAt: Int64(now.timeIntervalSince1970) - RateLimitSnapshotRetention.retentionSeconds - 1,
+            limitID: "old-group",
+            slot: "old-window",
+            usedPercent: 10,
+            durationMinutes: 300,
+            resetAt: Int64(reset.timeIntervalSince1970)
+        )
+
+        let snapshot = AntigravityQuotaSnapshot(
+            sourceProfile: "ide",
+            accountKey: "antigravity-test",
+            accountDisplayName: "Fixture",
+            planName: "Pro",
+            capturedAt: now,
+            groups: [
+                .init(
+                    id: "gemini-group",
+                    title: "Gemini",
+                    buckets: [
+                        .init(id: "five-hour", title: "Five Hour", window: .fiveHour, remainingPercent: 72.5, resetAt: reset),
+                        .init(id: "weekly", title: "Weekly", window: .weekly, remainingPercent: 41, resetAt: reset.addingTimeInterval(86_400))
+                    ]
+                )
+            ],
+            models: [
+                .init(id: "gemini-1", displayName: "Gemini", remainingPercent: 5, resetAt: reset)
+            ]
+        )
+
+        try AntigravityQuotaRepository.persist(snapshot, database: database)
+
+        let rows = try database.executeQuery(
+            sql: """
+            SELECT limit_id, slot, used_percent_milli, window_duration_mins, plan_type
+            FROM rate_limit_snapshots
+            WHERE provider = 'antigravity'
+            ORDER BY slot;
+            """
+        ) { statement in
+            (
+                String(cString: sqlite3_column_text(statement, 0)),
+                String(cString: sqlite3_column_text(statement, 1)),
+                Int(sqlite3_column_int(statement, 2)),
+                Int(sqlite3_column_int(statement, 3)),
+                String(cString: sqlite3_column_text(statement, 4))
+            )
+        }
+
+        XCTAssertEqual(rows.count, 2)
+        XCTAssertEqual(Set(rows.map(\.0)), Set(["gemini-group"]))
+        XCTAssertEqual(Set(rows.map(\.1)), Set(["five-hour", "weekly"]))
+        XCTAssertEqual(Set(rows.map(\.3)), Set([300, 10_080]))
+        XCTAssertTrue(rows.allSatisfy { $0.4 == "Pro" })
+        XCTAssertEqual(rows.first(where: { $0.1 == "five-hour" })?.2, 27_500)
+        XCTAssertFalse(rows.contains(where: { $0.0 == "gemini-1" }))
+        XCTAssertEqual(
+            try database.intScalar(sql: "SELECT COUNT(*) FROM antigravity_quota_cache WHERE account_key = 'antigravity-test';"),
+            1
+        )
+    }
+
+    func testProviderQuotaHistoryIsProviderScopedAndBuildsCurrentCycleForecast() async throws {
+        let directory = try makeTemporaryDirectory()
+        let database = try makeMigratedDatabase(in: directory)
+        let now = Date(timeIntervalSince1970: 2_010_000_000)
+        let resetAt = Int64(now.addingTimeInterval(2 * 3_600).timeIntervalSince1970)
+
+        for sample in [(seconds: -600, used: 20.0), (seconds: -300, used: 35.0)] {
+            try insertRateLimitHistory(
+                database,
+                provider: .antigravity,
+                accountKey: "shared-account",
+                observedAt: Int64(now.timeIntervalSince1970) + Int64(sample.seconds),
+                limitID: "shared-limit",
+                slot: "primary",
+                usedPercent: sample.used,
+                durationMinutes: 300,
+                resetAt: resetAt
+            )
+            try insertRateLimitHistory(
+                database,
+                provider: .codex,
+                accountKey: "shared-account",
+                observedAt: Int64(now.timeIntervalSince1970) + Int64(sample.seconds),
+                limitID: "shared-limit",
+                slot: "primary",
+                usedPercent: 95 - sample.used,
+                durationMinutes: 300,
+                resetAt: resetAt
+            )
+        }
+
+        let antigravityHistory = try ProviderQuotaHistoryRepository.fetch(
+            database: database,
+            provider: .antigravity,
+            accountKey: "shared-account",
+            since: now.addingTimeInterval(-3_600)
+        )
+        let codexHistory = try ProviderQuotaHistoryRepository.fetch(
+            database: database,
+            provider: .codex,
+            accountKey: "shared-account",
+            since: now.addingTimeInterval(-3_600)
+        )
+        XCTAssertEqual(antigravityHistory.map(\.usedPercent), [20, 35])
+        XCTAssertEqual(codexHistory.map(\.usedPercent), [75, 60])
+
+        let service = ProviderQuotaInsightsService(database: database)
+        let result = await service.build(
+            inputs: [makeQuotaInput(
+                provider: .antigravity,
+                accountKey: "shared-account",
+                limitID: "shared-limit",
+                slot: "primary",
+                usedPercent: 50,
+                durationMinutes: 300,
+                resetAt: Date(timeIntervalSince1970: Double(resetAt)),
+                capturedAt: now
+            )],
+            refreshIntervals: [.antigravity: 300],
+            now: now
+        )
+        let insight = try XCTUnwrap(result[.antigravity]?.first)
+        XCTAssertEqual(insight.trendPoints.map(\.usedPercent), [20, 35, 50])
+        XCTAssertEqual(insight.forecast.burnRatePercentPerHour, 180, accuracy: 0.5)
+        XCTAssertEqual(insight.risk, .critical)
+        XCTAssertTrue(insight.hasUsableForecast)
+    }
+
+    func testProviderQuotaInsightsHandleInsufficientDelayedAndStaleData() async throws {
+        let directory = try makeTemporaryDirectory()
+        let database = try makeMigratedDatabase(in: directory)
+        let service = ProviderQuotaInsightsService(database: database)
+        let now = Date(timeIntervalSince1970: 2_020_000_000)
+        let reset = now.addingTimeInterval(3_600)
+
+        let fresh = await service.build(
+            inputs: [makeQuotaInput(
+                provider: .antigravity,
+                usedPercent: 20,
+                durationMinutes: 300,
+                resetAt: reset,
+                capturedAt: now
+            )],
+            refreshIntervals: [.antigravity: 300],
+            now: now
+        )
+        let freshInsight = try XCTUnwrap(fresh[.antigravity]?.first)
+        XCTAssertEqual(freshInsight.freshness, .fresh)
+        XCTAssertEqual(freshInsight.forecast.confidence, .insufficientData)
+        XCTAssertFalse(freshInsight.hasUsableForecast)
+
+        let delayed = await service.build(
+            inputs: [makeQuotaInput(
+                provider: .antigravity,
+                usedPercent: 20,
+                durationMinutes: 300,
+                resetAt: reset,
+                capturedAt: now.addingTimeInterval(-601)
+            )],
+            refreshIntervals: [.antigravity: 300],
+            now: now
+        )
+        XCTAssertEqual(delayed[.antigravity]?.first?.freshness, .delayed)
+
+        let stale = await service.build(
+            inputs: [makeQuotaInput(
+                provider: .antigravity,
+                usedPercent: 20,
+                durationMinutes: 300,
+                resetAt: reset,
+                capturedAt: now.addingTimeInterval(-1_201)
+            )],
+            refreshIntervals: [.antigravity: 300],
+            now: now
+        )
+        let staleInsight = try XCTUnwrap(stale[.antigravity]?.first)
+        XCTAssertEqual(staleInsight.freshness, .stale)
+        XCTAssertEqual(staleInsight.risk, .insufficientData)
+        XCTAssertFalse(staleInsight.hasUsableForecast)
+
+        let weekly = ProviderQuotaInsight(
+            input: makeQuotaInput(
+                provider: .antigravity,
+                usedPercent: 30,
+                durationMinutes: 10_080,
+                resetAt: reset,
+                capturedAt: now
+            ),
+            forecast: QuotaForecastDTO(
+                risk: .onTrack,
+                confidence: .medium,
+                burnRatePercentPerHour: 2,
+                projectedRemainingAtReset: 60
+            ),
+            freshness: .fresh,
+            sustainableRatePercentPerHour: 1,
+            trendPoints: []
+        )
+        XCTAssertEqual(weekly.rateMultiplier, 24)
+        XCTAssertEqual(weekly.burnRateForDisplay, 48)
+        XCTAssertEqual(weekly.sustainableRateForDisplay, 24)
+    }
+
+    func testQuotaRecommendationsFollowOperationalPriorityAndDowngradeLowConfidence() {
+        let now = Date(timeIntervalSince1970: 2_030_000_000)
+        let critical = makeQuotaInsight(
+            group: "Gemini",
+            remainingPercent: 10,
+            risk: .critical,
+            confidence: .high,
+            now: now
+        )
+        let roomy = makeQuotaInsight(
+            group: "Claude/GPT",
+            remainingPercent: 60,
+            risk: .onTrack,
+            confidence: .medium,
+            now: now
+        )
+        let recommendations = QuotaRecommendationEngine.make(
+            insights: [.antigravity: [critical, roomy]],
+            enabledProviders: [.codex, .antigravity],
+            errors: [.codex: "Offline"],
+            antigravityActivity: nil
+        )
+
+        XCTAssertEqual(recommendations.map(\.id), [
+            "sync-error-codex",
+            "critical-\(critical.id)",
+            "imbalance-300"
+        ])
+
+        let uncertain = makeQuotaInsight(
+            group: "Gemini",
+            remainingPercent: 10,
+            risk: .critical,
+            confidence: .low,
+            now: now
+        )
+        let cautious = QuotaRecommendationEngine.make(
+            insights: [.antigravity: [uncertain]],
+            enabledProviders: [.antigravity],
+            errors: [:],
+            antigravityActivity: nil
+        )
+        XCTAssertEqual(cautious.first?.severity, .warning)
+    }
+
+    func testAntigravityActivityMetricsCoverCurrentPreviousAndCalendarPeriods() async throws {
+        let directory = try makeTemporaryDirectory()
+        let database = try makeMigratedDatabase(in: directory)
+        let calendar = UsageDayBucketer.calendar()
+        let today = calendar.startOfDay(for: Date())
+        let samples: [(offset: Int, steps: Int64, project: String)] = [
+            (0, 10, "Current"), (-1, 20, "Current"), (-6, 30, "Current"),
+            (-7, 15, "Previous"), (-12, 25, "Previous"),
+            (-20, 40, "Current"), (-35, 50, "Historical")
+        ]
+        for (index, sample) in samples.enumerated() {
+            let date = try XCTUnwrap(calendar.date(byAdding: .day, value: sample.offset, to: today))
+                .addingTimeInterval(12 * 3_600)
+            try insertAntigravityActivity(
+                database,
+                id: "activity-\(index)",
+                date: date,
+                steps: sample.steps,
+                project: sample.project
+            )
+        }
+
+        let snapshot = try await AntigravityActivityStore(database: database)
+            .cachedSnapshot(preferredProfile: .ide)
+
+        XCTAssertEqual(snapshot.sevenDayMetrics.taskCount, 3)
+        XCTAssertEqual(snapshot.sevenDayMetrics.activeDays, 3)
+        XCTAssertEqual(snapshot.sevenDayMetrics.stepCount, 60)
+        XCTAssertEqual(snapshot.previousSevenDayMetrics.taskCount, 2)
+        XCTAssertEqual(snapshot.previousSevenDayMetrics.stepCount, 40)
+        XCTAssertEqual(snapshot.thirtyDayMetrics.taskCount, 6)
+        XCTAssertEqual(snapshot.previousThirtyDayMetrics.taskCount, 1)
+        XCTAssertEqual(try XCTUnwrap(snapshot.taskChangePercent(days: 7)), 50, accuracy: 0.001)
+        XCTAssertEqual(snapshot.daily.count, 30)
+        XCTAssertEqual(snapshot.dailyPoints(days: 7).reduce(0) { $0 + $1.taskCount }, 3)
+        XCTAssertEqual(snapshot.projectCounts["Historical"], nil)
+    }
+
+    func testAntigravityActivityKeepsLastHistoricalActivityForEmptyRecentPeriod() async throws {
+        let directory = try makeTemporaryDirectory()
+        let database = try makeMigratedDatabase(in: directory)
+        let calendar = UsageDayBucketer.calendar()
+        let historical = try XCTUnwrap(calendar.date(byAdding: .day, value: -45, to: Date()))
+        try insertAntigravityActivity(
+            database,
+            id: "historical-only",
+            date: historical,
+            steps: 12,
+            project: "Archive"
+        )
+
+        let snapshot = try await AntigravityActivityStore(database: database)
+            .cachedSnapshot(preferredProfile: .ide)
+        XCTAssertEqual(snapshot.sevenDayMetrics.taskCount, 0)
+        XCTAssertEqual(snapshot.thirtyDayMetrics.taskCount, 0)
+        XCTAssertNotNil(snapshot.latestActivityAt)
+        XCTAssertEqual(snapshot.daily.count, 30)
+        XCTAssertTrue(snapshot.daily.allSatisfy { $0.taskCount == 0 })
+    }
+
+    func testAntigravityActivityAggregatesProfilesAndDeduplicatesTrajectories() async throws {
+        let directory = try makeTemporaryDirectory()
+        let database = try makeMigratedDatabase(in: directory)
+        let newer = Date().addingTimeInterval(-60)
+        let older = newer.addingTimeInterval(-60)
+
+        try insertAntigravityActivity(
+            database,
+            id: "shared",
+            date: older,
+            steps: 10,
+            project: "IDE",
+            source: .ide
+        )
+        try insertAntigravityActivity(
+            database,
+            id: "shared",
+            date: newer,
+            steps: 30,
+            project: "Legacy",
+            source: .legacy
+        )
+        try insertAntigravityActivity(
+            database,
+            id: "ide-only",
+            date: newer,
+            steps: 20,
+            project: "IDE",
+            source: .ide
+        )
+        try insertAntigravityActivity(
+            database,
+            id: "legacy-only",
+            date: newer,
+            steps: 40,
+            project: "Legacy",
+            source: .legacy
+        )
+
+        let store = AntigravityActivityStore(database: database)
+        let combined = try await store.cachedSnapshot()
+        let byProfile = try await store.cachedSnapshotsByProfile()
+
+        XCTAssertEqual(combined.sevenDayMetrics.taskCount, 3)
+        XCTAssertEqual(combined.sevenDayMetrics.stepCount, 90)
+        XCTAssertEqual(combined.projectCounts["IDE"], 1)
+        XCTAssertEqual(combined.projectCounts["Legacy"], 2)
+        XCTAssertEqual(byProfile[.ide]?.sevenDayMetrics.taskCount, 2)
+        XCTAssertEqual(byProfile[.ide]?.sevenDayMetrics.stepCount, 30)
+        XCTAssertEqual(byProfile[.legacy]?.sevenDayMetrics.taskCount, 2)
+        XCTAssertEqual(byProfile[.legacy]?.sevenDayMetrics.stepCount, 70)
+    }
+
+    func testAntigravityLocalStateReaderReturnsEveryAvailableProfile() throws {
+        let directory = try makeTemporaryDirectory()
+        let ideURL = directory.appendingPathComponent("ide/state.vscdb")
+        let legacyURL = directory.appendingPathComponent("legacy/state.vscdb")
+        let ideDatabase = try SQLiteDatabase(path: ideURL.path)
+        let legacyDatabase = try SQLiteDatabase(path: legacyURL.path)
+        for database in [ideDatabase, legacyDatabase] {
+            try database.execute(sql: "CREATE TABLE ItemTable (key TEXT PRIMARY KEY, value TEXT NOT NULL);")
+        }
+        try ideDatabase.executeUpdate(
+            sql: "INSERT INTO ItemTable (key, value) VALUES (?, ?);",
+            bindings: ["activity", "ide-value"]
+        )
+        try legacyDatabase.executeUpdate(
+            sql: "INSERT INTO ItemTable (key, value) VALUES (?, ?);",
+            bindings: ["activity", "legacy-value"]
+        )
+
+        let reader = AntigravityLocalStateReader(sources: [
+            AntigravityStateSource(profile: .ide, databaseURL: ideURL),
+            AntigravityStateSource(profile: .legacy, databaseURL: legacyURL)
+        ])
+        let values = try reader.readRawValues(key: "activity", preferredProfile: .legacy)
+
+        XCTAssertEqual(values.map(\.source.profile), [.legacy, .ide])
+        XCTAssertEqual(values.map(\.value), ["legacy-value", "ide-value"])
+    }
+
+    func testAntigravityActivityScanMergesLegacyAndConversationFormats() async throws {
+        let directory = try makeTemporaryDirectory()
+        let database = try makeMigratedDatabase(in: directory)
+        let stateURL = directory.appendingPathComponent("legacy/state.vscdb")
+        let stateDatabase = try SQLiteDatabase(path: stateURL.path)
+        try stateDatabase.execute(sql: "CREATE TABLE ItemTable (key TEXT PRIMARY KEY, value TEXT NOT NULL);")
+
+        let now = Date()
+        let oldDate = now.addingTimeInterval(-20 * 86_400)
+        let sharedOldDate = now.addingTimeInterval(-2 * 86_400)
+        let legacyValue = makeLegacyAntigravityActivityValue([
+            (id: "old-only", date: oldDate, steps: 5),
+            (id: "shared", date: sharedOldDate, steps: 10)
+        ])
+        try stateDatabase.executeUpdate(
+            sql: "INSERT INTO ItemTable (key, value) VALUES (?, ?);",
+            bindings: ["antigravityUnifiedStateSync.trajectorySummaries", legacyValue]
+        )
+
+        let conversationsURL = directory.appendingPathComponent("conversations", isDirectory: true)
+        let sharedNewDate = now.addingTimeInterval(-86_400)
+        let newOnlyDate = now.addingTimeInterval(-3_600)
+        try createAntigravityConversationDatabase(
+            at: conversationsURL.appendingPathComponent("shared.db"),
+            trajectoryID: "shared",
+            createdAt: sharedOldDate,
+            lastActivityAt: sharedNewDate,
+            steps: 3,
+            projectName: "CurrentProject"
+        )
+        try createAntigravityConversationDatabase(
+            at: conversationsURL.appendingPathComponent("new-only.db"),
+            trajectoryID: "new-only",
+            createdAt: newOnlyDate.addingTimeInterval(-60),
+            lastActivityAt: newOnlyDate,
+            steps: 4,
+            projectName: "CurrentProject"
+        )
+
+        let store = AntigravityActivityStore(
+            database: database,
+            reader: AntigravityLocalStateReader(sources: [
+                AntigravityStateSource(profile: .legacy, databaseURL: stateURL)
+            ]),
+            conversationReader: AntigravityConversationReader(directoryURL: conversationsURL)
+        )
+        let result = try await store.scan(preferredProfile: .legacy)
+
+        XCTAssertEqual(result.recordsRead, 3)
+        XCTAssertEqual(result.sourceProfiles, [.legacy])
+        XCTAssertEqual(result.snapshot.sevenDayMetrics.taskCount, 2)
+        XCTAssertEqual(result.snapshot.sevenDayMetrics.stepCount, 7)
+        XCTAssertEqual(result.snapshot.thirtyDayMetrics.taskCount, 3)
+        XCTAssertEqual(result.snapshot.thirtyDayMetrics.stepCount, 12)
+        XCTAssertEqual(result.snapshot.projectCounts["CurrentProject"], 2)
+        XCTAssertEqual(
+            try XCTUnwrap(result.snapshot.latestActivityAt).timeIntervalSince1970,
+            newOnlyDate.timeIntervalSince1970,
+            accuracy: 1
+        )
+    }
+
+    func testAntigravityModelAggregationUsesTightestAvailabilityAndEarliestReset() throws {
+        let later = Date(timeIntervalSince1970: 2_040_010_000)
+        let earlier = later.addingTimeInterval(-1_000)
+        let snapshot = AntigravityQuotaSnapshot(
+            sourceProfile: "ide",
+            accountKey: "models",
+            accountDisplayName: nil,
+            planName: nil,
+            capturedAt: earlier,
+            groups: [],
+            models: [
+                .init(id: "one", displayName: " Gemini Pro ", remainingPercent: 70, resetAt: later),
+                .init(id: "two", displayName: "gemini pro", remainingPercent: 25, resetAt: earlier),
+                .init(id: "three", displayName: nil, remainingPercent: 80, resetAt: later),
+                .init(id: "four", displayName: "", remainingPercent: 60, resetAt: earlier)
+            ]
+        )
+
+        XCTAssertEqual(snapshot.aggregatedModels.count, 2)
+        let gemini = try XCTUnwrap(snapshot.aggregatedModels.first(where: { $0.id.contains("gemini pro") }))
+        XCTAssertEqual(gemini.remainingPercent, 25)
+        XCTAssertEqual(gemini.resetAt, earlier)
+        XCTAssertEqual(gemini.modelCount, 2)
+        let other = try XCTUnwrap(snapshot.aggregatedModels.first(where: { $0.id != gemini.id }))
+        XCTAssertEqual(other.remainingPercent, 60)
+        XCTAssertEqual(other.modelCount, 2)
+    }
+
     func testLocalProjectionThresholdsOutliersBootstrapOrderAndCoverage() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
@@ -705,6 +1208,227 @@ final class QueryAndForecastTests: XCTestCase {
         XCTAssertFalse(json.localizedCaseInsensitiveContains("prompt"))
         XCTAssertFalse(json.localizedCaseInsensitiveContains("sourcePath"))
         XCTAssertFalse(json.localizedCaseInsensitiveContains("response"))
+    }
+
+    private func insertRateLimitHistory(
+        _ database: SQLiteDatabase,
+        provider: UsageProvider,
+        accountKey: String,
+        observedAt: Int64,
+        limitID: String,
+        slot: String,
+        usedPercent: Double,
+        durationMinutes: Int,
+        resetAt: Int64
+    ) throws {
+        try database.executeUpdate(
+            sql: """
+            INSERT INTO rate_limit_snapshots (
+                account_key, observed_at, limit_id, slot, used_percent_milli,
+                window_duration_mins, resets_at, plan_type, raw_json, provider
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'test', '{}', ?);
+            """,
+            bindings: [
+                accountKey,
+                observedAt,
+                limitID,
+                slot,
+                Int((usedPercent * 1_000).rounded()),
+                durationMinutes,
+                resetAt,
+                provider.rawValue
+            ]
+        )
+    }
+
+    private func makeQuotaInput(
+        provider: UsageProvider,
+        accountKey: String = "antigravity-account",
+        limitID: String = "gemini-group",
+        slot: String = "primary",
+        usedPercent: Double,
+        durationMinutes: Int,
+        resetAt: Date,
+        capturedAt: Date
+    ) -> ProviderQuotaPoolInput {
+        ProviderQuotaPoolInput(
+            provider: provider,
+            accountKey: accountKey,
+            limitID: limitID,
+            slot: slot,
+            groupTitle: limitID,
+            windowTitle: durationMinutes == 300 ? "5 Hours" : "7 Days",
+            usedPercent: usedPercent,
+            windowDurationMins: durationMinutes,
+            resetAt: resetAt,
+            capturedAt: capturedAt
+        )
+    }
+
+    private func makeQuotaInsight(
+        group: String,
+        remainingPercent: Double,
+        risk: QuotaForecastRisk,
+        confidence: ForecastConfidence,
+        now: Date
+    ) -> ProviderQuotaInsight {
+        let input = makeQuotaInput(
+            provider: .antigravity,
+            limitID: group.lowercased(),
+            slot: "primary",
+            usedPercent: 100 - remainingPercent,
+            durationMinutes: 300,
+            resetAt: now.addingTimeInterval(3_600),
+            capturedAt: now
+        )
+        return ProviderQuotaInsight(
+            input: ProviderQuotaPoolInput(
+                provider: input.provider,
+                accountKey: input.accountKey,
+                limitID: input.limitID,
+                slot: input.slot,
+                groupTitle: group,
+                windowTitle: input.windowTitle,
+                usedPercent: input.usedPercent,
+                windowDurationMins: input.windowDurationMins,
+                resetAt: input.resetAt,
+                capturedAt: input.capturedAt
+            ),
+            forecast: QuotaForecastDTO(
+                risk: risk,
+                confidence: confidence,
+                burnRatePercentPerHour: risk == .critical ? 40 : 1,
+                paceRatio: risk == .critical ? 2 : 1,
+                estimatedExhaustionDate: risk == .critical ? now.addingTimeInterval(1_800) : nil,
+                naturalResetDate: now.addingTimeInterval(3_600),
+                projectedRemainingAtReset: risk == .critical ? 0 : remainingPercent,
+                samplePointsCount: 4,
+                fitQuality: 0.95,
+                lastSampleAgeSeconds: 0
+            ),
+            freshness: .fresh,
+            sustainableRatePercentPerHour: remainingPercent,
+            trendPoints: []
+        )
+    }
+
+    private func insertAntigravityActivity(
+        _ database: SQLiteDatabase,
+        id: String,
+        date: Date,
+        steps: Int64,
+        project: String,
+        source: AntigravityStateProfile = .ide
+    ) throws {
+        try database.executeUpdate(
+            sql: """
+            INSERT INTO antigravity_activity_records (
+                source_profile, trajectory_id, created_at, last_modified_at,
+                last_user_input_at, step_count, project_name
+            ) VALUES (?, ?, ?, ?, ?, ?, ?);
+            """,
+            bindings: [
+                source.rawValue,
+                id,
+                Int64(date.timeIntervalSince1970),
+                Int64(date.timeIntervalSince1970),
+                Int64(date.timeIntervalSince1970),
+                steps,
+                project
+            ]
+        )
+    }
+
+    private func createAntigravityConversationDatabase(
+        at url: URL,
+        trajectoryID: String,
+        createdAt: Date,
+        lastActivityAt: Date,
+        steps: Int,
+        projectName: String
+    ) throws {
+        let database = try SQLiteDatabase(path: url.path)
+        try database.execute(sql: """
+            CREATE TABLE trajectory_meta (
+                trajectory_id TEXT PRIMARY KEY,
+                cascade_id TEXT,
+                trajectory_type INTEGER,
+                source INTEGER
+            );
+            CREATE TABLE steps (
+                idx INTEGER PRIMARY KEY,
+                metadata BLOB
+            );
+            CREATE TABLE trajectory_metadata_blob (
+                id TEXT PRIMARY KEY,
+                data BLOB
+            );
+            """)
+        try database.executeUpdate(
+            sql: "INSERT INTO trajectory_meta (trajectory_id, cascade_id, trajectory_type, source) VALUES (?, ?, 4, 1);",
+            bindings: [trajectoryID, trajectoryID]
+        )
+
+        let fileURL = URL(fileURLWithPath: "/tmp/\(projectName)").absoluteString
+        let workspace = protoBytesField(1, Data(fileURL.utf8))
+        let trajectoryMetadata = protoBytesField(1, workspace)
+            + protoBytesField(2, protoTimestamp(createdAt))
+        try database.executeUpdate(
+            sql: "INSERT INTO trajectory_metadata_blob (id, data) VALUES ('main', ?);",
+            bindings: [trajectoryMetadata]
+        )
+
+        for index in 0..<steps {
+            let timestamp = index == steps - 1
+                ? lastActivityAt
+                : createdAt.addingTimeInterval(Double(index))
+            let metadata = protoBytesField(1, protoTimestamp(timestamp))
+                + protoBytesField(32, protoTimestamp(timestamp))
+            try database.executeUpdate(
+                sql: "INSERT INTO steps (idx, metadata) VALUES (?, ?);",
+                bindings: [index, metadata]
+            )
+        }
+    }
+
+    private func makeLegacyAntigravityActivityValue(
+        _ records: [(id: String, date: Date, steps: Int64)]
+    ) -> String {
+        let outer = records.reduce(into: Data()) { result, record in
+            let summary = protoVarintField(2, UInt64(record.steps))
+                + protoBytesField(3, protoTimestamp(record.date))
+                + protoBytesField(7, protoTimestamp(record.date))
+                + protoBytesField(10, protoTimestamp(record.date))
+            let row = protoBytesField(1, Data(summary.base64EncodedString().utf8))
+            let entry = protoBytesField(1, Data(record.id.utf8))
+                + protoBytesField(2, row)
+            result.append(protoBytesField(1, entry))
+        }
+        return outer.base64EncodedString()
+    }
+
+    private func protoTimestamp(_ date: Date) -> Data {
+        protoVarintField(1, UInt64(max(0, Int64(date.timeIntervalSince1970))))
+    }
+
+    private func protoVarintField(_ number: Int, _ value: UInt64) -> Data {
+        protoVarint(UInt64(number << 3)) + protoVarint(value)
+    }
+
+    private func protoBytesField(_ number: Int, _ value: Data) -> Data {
+        protoVarint(UInt64(number << 3 | 2)) + protoVarint(UInt64(value.count)) + value
+    }
+
+    private func protoVarint(_ value: UInt64) -> Data {
+        var value = value
+        var data = Data()
+        repeat {
+            var byte = UInt8(value & 0x7F)
+            value >>= 7
+            if value != 0 { byte |= 0x80 }
+            data.append(byte)
+        } while value != 0
+        return data
     }
 
     private func makeHistory(days: Int, now: Date, calendar: Calendar) -> [DayUsageSummaryDTO] {

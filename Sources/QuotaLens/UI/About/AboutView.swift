@@ -317,38 +317,38 @@ public struct AboutView: View {
         return [
             FeatureItem(
                 icon: "gauge.with.needle.fill",
-                title: L10n.text("配额实时追踪", "Real-Time Quota Tracking"),
-                description: L10n.text("毫秒级捕获 Codex 与 AI 配额用量及剩余百分比", "Track Codex & AI quota usage and remaining percentage instantly."),
+                title: L10n.text("多工具额度总览", "Cross-Tool Quota Overview"),
+                description: L10n.text("统一查看 Codex、Claude 与 Antigravity 的多周期及模型额度", "See multi-window and model quotas for Codex, Claude, and Antigravity."),
                 tintColor: cyan
             ),
             FeatureItem(
-                icon: "calendar.badge.clock",
-                title: L10n.text("智能周期识别", "Smart Cycle Detection"),
-                description: L10n.text("自动计算 5 小时重置窗口、周度配额与续订周期", "Detect 5-hour reset windows, weekly quotas, and renewal dates."),
+                icon: "chart.bar.xaxis",
+                title: L10n.text("用量与活动分析", "Usage & Activity Analytics"),
+                description: L10n.text("汇总会话、Token、模型构成、任务趋势与项目活动", "Explore sessions, tokens, model mix, task trends, and project activity."),
                 tintColor: blue
             ),
             FeatureItem(
-                icon: "ticket.fill",
-                title: L10n.text("重置卡失效预警", "Reset Card Alerts"),
-                description: L10n.text("多张重置卡储备追踪，智能预警最近到期时间", "Monitor multiple reset card reserves and get timely expiry alerts."),
+                icon: "clock.arrow.2.circlepath",
+                title: L10n.text("节奏与恢复预测", "Pace & Recovery Forecasts"),
+                description: L10n.text("根据近期趋势预测额度耗尽与重置，并给出节奏建议", "Forecast quota runout and resets from recent trends, with practical pace guidance."),
                 tintColor: amber
             ),
             FeatureItem(
-                icon: "menubar.rectangle",
-                title: L10n.text("极简菜单栏模式", "Menu Bar Compact Mode"),
-                description: L10n.text("支持常驻 macOS 菜单栏与隐藏 Dock 图标静默运行", "Run quietly in the macOS menu bar with an optional hidden Dock icon."),
+                icon: "macwindow.badge.plus",
+                title: L10n.text("智能窗口挂件", "Context-Aware Overlays"),
+                description: L10n.text("随前台 Codex、Claude 或 Antigravity 自动切换并贴靠窗口", "Follow the foreground Codex, Claude, or Antigravity window automatically."),
                 tintColor: purple
             ),
             FeatureItem(
-                icon: "clock.arrow.2.circlepath",
-                title: L10n.text("自适应双模同步", "Adaptive Dual-Sync Engine"),
-                description: L10n.text("智能后台自适应轮询与即时一键快照刷新", "Combine intelligent background polling with one-click snapshot sync."),
+                icon: "menubar.rectangle",
+                title: L10n.text("菜单栏即时监控", "Menu Bar Monitoring"),
+                description: L10n.text("常驻显示已用或可用额度、重置倒计时与同步状态", "Keep used or available quota, reset timing, and sync status at a glance."),
                 tintColor: emerald
             ),
             FeatureItem(
-                icon: "arrow.triangle.2.circlepath.circle.fill",
-                title: L10n.text("无缝在线热更新", "Seamless In-App Updates"),
-                description: L10n.text("支持一键在线检测与平滑升级", "Supports one-click update checks and smooth installations."),
+                icon: "lock.shield.fill",
+                title: L10n.text("本地优先与隐私", "Local-First Privacy"),
+                description: L10n.text("只读取已启用工具的数据，分析结果保存在本机", "Read only enabled tool data and keep analytics on your Mac."),
                 tintColor: cyan
             )
         ]
@@ -430,7 +430,7 @@ public struct AboutView: View {
                     }
 
                     // Slogan 定位
-                    Text(L10n.text("实时掌控 Codex 与 AI 模型配额的桌面助手", "A desktop dashboard for tracking Codex & AI model quotas in real time."))
+                    Text(L10n.text("在 macOS 上统一掌握 Codex、Claude 与 Antigravity 的额度和用量", "Quota and usage insights for Codex, Claude, and Antigravity on macOS."))
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
                         .lineLimit(2)

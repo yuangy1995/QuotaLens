@@ -80,15 +80,23 @@ public struct AntigravityLocalStateReader: Sendable {
         key: String,
         preferredProfile: AntigravityStateProfile? = nil
     ) throws -> (source: AntigravityStateSource, value: String)? {
+        try readRawValues(key: key, preferredProfile: preferredProfile).first
+    }
+
+    public func readRawValues(
+        key: String,
+        preferredProfile: AntigravityStateProfile? = nil
+    ) throws -> [(source: AntigravityStateSource, value: String)] {
         let candidates = (configuredSources ?? Self.candidateSources())
             .filter { FileManager.default.fileExists(atPath: $0.databaseURL.path) }
         let ordered = orderedSources(candidates, preferredProfile: preferredProfile)
+        var values: [(source: AntigravityStateSource, value: String)] = []
         for source in ordered {
             if let value = try readItemValue(from: source.databaseURL, key: key) {
-                return (source, value)
+                values.append((source, value))
             }
         }
-        return nil
+        return values
     }
 
     private func orderedSources(
@@ -469,14 +477,17 @@ public struct AntigravityQuotaClient: Sendable {
 
 public actor AntigravityQuotaPoller {
     public static let defaultInterval: TimeInterval = 300
-    public static let minimumGap: TimeInterval = 60
+    public static let minimumGap: TimeInterval = 15
 
     private let client: AntigravityQuotaClient
     private let database: SQLiteDatabase
     private let interval: TimeInterval
     private let onResult: @Sendable (Result<AntigravityQuotaSnapshot, Error>) async -> Void
+    private let onSyncState: @Sendable (ProviderSyncState) async -> Void
     private var loopTask: Task<Void, Never>?
     private var lastAttemptAt: Date?
+    private var lastSuccessAt: Date?
+    private var nextAttemptAt: Date?
     private var cooldownUntil: Date?
     private var latestSnapshot: AntigravityQuotaSnapshot?
     private var isStopped = false
@@ -486,24 +497,31 @@ public actor AntigravityQuotaPoller {
         database: SQLiteDatabase,
         interval: TimeInterval = AntigravityQuotaPoller.defaultInterval,
         initialSnapshot: AntigravityQuotaSnapshot? = nil,
-        onResult: @escaping @Sendable (Result<AntigravityQuotaSnapshot, Error>) async -> Void
+        onResult: @escaping @Sendable (Result<AntigravityQuotaSnapshot, Error>) async -> Void,
+        onSyncState: @escaping @Sendable (ProviderSyncState) async -> Void = { _ in }
     ) {
         self.client = client
         self.database = database
         self.interval = interval
         self.latestSnapshot = initialSnapshot
+        self.lastSuccessAt = initialSnapshot?.capturedAt
         self.onResult = onResult
+        self.onSyncState = onSyncState
     }
 
     public func start() {
         guard loopTask == nil else { return }
         isStopped = false
+        nextAttemptAt = Date().addingTimeInterval(2)
+        let initialState = syncState()
+        Task { await onSyncState(initialState) }
         loopTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             while !Task.isCancelled {
                 await self?.pollOnce(force: false, preferredProfile: nil)
                 guard let self else { return }
                 let delay = await self.nextDelay()
+                await self.scheduleNextAttempt(after: delay)
                 try? await Task.sleep(nanoseconds: UInt64(max(1, delay) * 1_000_000_000))
             }
         }
@@ -513,6 +531,9 @@ public actor AntigravityQuotaPoller {
         isStopped = true
         loopTask?.cancel()
         loopTask = nil
+        nextAttemptAt = nil
+        let state = syncState()
+        Task { await onSyncState(state) }
     }
 
     public func pollOnce(force: Bool, preferredProfile: AntigravityStateProfile?) async {
@@ -521,23 +542,37 @@ public actor AntigravityQuotaPoller {
         if let cooldownUntil, cooldownUntil > now { return }
         if !force, let lastAttemptAt, now.timeIntervalSince(lastAttemptAt) < Self.minimumGap { return }
         lastAttemptAt = now
+        await onSyncState(syncState())
         do {
             let snapshot = try await client.fetch(preferredProfile: preferredProfile)
             guard !isStopped else { return }
             latestSnapshot = snapshot
+            lastSuccessAt = snapshot.capturedAt
             cooldownUntil = nil
+            nextAttemptAt = Date().addingTimeInterval(interval)
             try? AntigravityQuotaRepository.persist(snapshot, database: database)
+            await onSyncState(syncState())
             await onResult(.success(snapshot))
         } catch let error as AntigravityFetchError {
             guard !isStopped else { return }
             if case .rateLimited(let retryAfter) = error {
                 cooldownUntil = now.addingTimeInterval(max(60, retryAfter ?? 300))
+                nextAttemptAt = cooldownUntil
+            } else {
+                nextAttemptAt = Date().addingTimeInterval(interval)
             }
+            await onSyncState(syncState())
             await onResult(.failure(error))
         } catch {
             guard !isStopped else { return }
+            nextAttemptAt = Date().addingTimeInterval(interval)
+            await onSyncState(syncState())
             await onResult(.failure(error))
         }
+    }
+
+    public func currentSyncState() -> ProviderSyncState {
+        syncState()
     }
 
     private func nextDelay() -> TimeInterval {
@@ -545,6 +580,21 @@ public actor AntigravityQuotaPoller {
             return cooldownUntil.timeIntervalSinceNow
         }
         return interval
+    }
+
+    private func scheduleNextAttempt(after delay: TimeInterval) async {
+        nextAttemptAt = Date().addingTimeInterval(max(1, delay))
+        await onSyncState(syncState())
+    }
+
+    private func syncState() -> ProviderSyncState {
+        ProviderSyncState(
+            provider: .antigravity,
+            lastAttemptAt: lastAttemptAt,
+            lastSuccessAt: lastSuccessAt,
+            nextAttemptAt: nextAttemptAt,
+            cooldownUntil: cooldownUntil
+        )
     }
 }
 

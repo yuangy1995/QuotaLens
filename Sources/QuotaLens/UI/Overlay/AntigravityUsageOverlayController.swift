@@ -9,8 +9,8 @@ public final class AntigravityUsageOverlayController: NSObject, ObservableObject
     private static let positionXDefaultsKey = "QuotaLens.Overlay.Antigravity.RelativeX"
     private static let positionYDefaultsKey = "QuotaLens.Overlay.Antigravity.RelativeY"
     private static let compactContentSize = NSSize(width: 240, height: 34)
-    private static let expandedContentSize = NSSize(width: 300, height: 278)
-    private static let detailsContentSize = NSSize(width: 310, height: 278)
+    private static let expandedContentSize = NSSize(width: 340, height: 392)
+    private static let detailsContentSize = NSSize(width: 350, height: 392)
 
     private weak var environment: AppEnvironment?
     private var panel: NSPanel?
@@ -70,6 +70,7 @@ public final class AntigravityUsageOverlayController: NSObject, ObservableObject
         panel.contentView = NSHostingView(
             rootView: AntigravityOverlaySummaryView(
                 state: environment.state,
+                toolTracker: environment.frontmostToolTracker,
                 isExpanded: isExpanded,
                 onToggleExpand: { [weak self] expanded, persist in
                     self?.setExpanded(expanded, persist: persist)
@@ -154,7 +155,11 @@ public final class AntigravityUsageOverlayController: NSObject, ObservableObject
             fallback.size = newSize
             frame = fallback
         }
-        panel.setFrame(frame, display: true, animate: true)
+        panel.setFrame(
+            frame,
+            display: true,
+            animate: !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        )
 
         if !expanded, isSummaryHovered {
             showDetails()
@@ -328,7 +333,7 @@ public final class AntigravityUsageOverlayController: NSObject, ObservableObject
     }
 
     private func makeDetailsPanel() -> NSPanel? {
-        guard let state = environment?.state else { return nil }
+        guard let environment else { return nil }
         let details = NSPanel(
             contentRect: NSRect(origin: .zero, size: Self.detailsContentSize),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -346,7 +351,8 @@ public final class AntigravityUsageOverlayController: NSObject, ObservableObject
         details.isMovableByWindowBackground = false
         details.contentView = NSHostingView(
             rootView: AntigravityOverlayDetailsView(
-                state: state,
+                state: environment.state,
+                toolTracker: environment.frontmostToolTracker,
                 onHoverChanged: { [weak self] hovering in
                     self?.detailsHoverChanged(hovering)
                 }
@@ -434,7 +440,9 @@ public final class AntigravityUsageOverlayController: NSObject, ObservableObject
 
 private struct AntigravityOverlaySummaryView: View {
     @ObservedObject var state: AppState
+    @ObservedObject var toolTracker: FrontmostToolTracker
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isExpanded: Bool
     @State private var isPulsing = false
     let onToggleExpand: (Bool, Bool) -> Void
@@ -444,6 +452,7 @@ private struct AntigravityOverlaySummaryView: View {
 
     init(
         state: AppState,
+        toolTracker: FrontmostToolTracker,
         isExpanded: Bool,
         onToggleExpand: @escaping (Bool, Bool) -> Void,
         onHoverChanged: @escaping (Bool) -> Void,
@@ -451,6 +460,7 @@ private struct AntigravityOverlaySummaryView: View {
         onDragEnded: @escaping () -> Void
     ) {
         self.state = state
+        self.toolTracker = toolTracker
         self._isExpanded = State(initialValue: isExpanded)
         self.onToggleExpand = onToggleExpand
         self.onHoverChanged = onHoverChanged
@@ -473,13 +483,16 @@ private struct AntigravityOverlaySummaryView: View {
                             .frame(width: 12, height: 12)
                             .scaleEffect(isPulsing ? 1.15 : 0.9)
                             .animation(
-                                .easeInOut(duration: 1.8).repeatForever(autoreverses: true),
+                                reduceMotion
+                                    ? nil
+                                    : .easeInOut(duration: 1.8).repeatForever(autoreverses: true),
                                 value: isPulsing
                             )
                         Circle()
                             .fill(statusColor)
                             .frame(width: 6, height: 6)
                     }
+                    .help(compactStatusHelp)
 
                 }
                 .contentShape(Rectangle())
@@ -515,7 +528,10 @@ private struct AntigravityOverlaySummaryView: View {
             if isExpanded {
                 Divider()
                     .opacity(isDark ? 0.25 : 0.4)
-                AntigravityQuotaRowsView(state: state)
+                AntigravityQuotaRowsView(
+                    state: state,
+                    activityProfile: toolTracker.foregroundAntigravityProfile
+                )
             }
         }
         .padding(.horizontal, isExpanded ? 12 : 10)
@@ -552,20 +568,34 @@ private struct AntigravityOverlaySummaryView: View {
         .onHover(perform: onHoverChanged)
         .onDisappear { onHoverChanged(false) }
         .onAppear {
-            isPulsing = true
+            isPulsing = !reduceMotion
         }
-        .animation(.spring(response: 0.32, dampingFraction: 0.82), value: isExpanded)
+        .onChange(of: reduceMotion) { _, shouldReduce in
+            isPulsing = !shouldReduce
+        }
+        .animation(
+            reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.82),
+            value: isExpanded
+        )
         .preferredColorScheme(state.colorScheme)
     }
 
     private func toggleExpanded() {
-        withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+        withAnimation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.82)) {
             isExpanded.toggle()
         }
         onToggleExpand(isExpanded, true)
     }
 
     private var compactQuotaStatusColor: Color {
+        if let insight = state.primaryAntigravityQuotaInsight {
+            if insight.freshness == .stale || insight.risk == .critical {
+                return AppTheme.accentRose(for: colorScheme)
+            }
+            if insight.freshness == .delayed || insight.risk == .warning {
+                return AppTheme.accentAmber(for: colorScheme)
+            }
+        }
         guard let remaining = state.latestAntigravityQuota?
             .orderedCompactFiveHourBuckets
             .map(\.bucket.remainingPercent)
@@ -576,10 +606,18 @@ private struct AntigravityOverlaySummaryView: View {
         if remaining <= 35 { return AppTheme.accentAmber(for: colorScheme) }
         return AppTheme.accentEmerald(for: colorScheme)
     }
+
+    private var compactStatusHelp: String {
+        guard let insight = state.primaryAntigravityQuotaInsight else {
+            return state.antigravityDataFreshness.localizedTitle
+        }
+        return "\(insight.freshness.localizedTitle) · \(insight.risk.localizedTitle)"
+    }
 }
 
 private struct AntigravityOverlayDetailsView: View {
     @ObservedObject var state: AppState
+    @ObservedObject var toolTracker: FrontmostToolTracker
     let onHoverChanged: (Bool) -> Void
     @Environment(\.colorScheme) private var colorScheme
 
@@ -590,14 +628,17 @@ private struct AntigravityOverlayDetailsView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 7) {
                 ToolAppIcon(tool: .antigravity, size: 16)
-                Text("Antigravity")
+                Text(toolTracker.foregroundAntigravityProfile?.displayName ?? "Antigravity")
                     .font(.system(size: 11, weight: .black, design: .rounded))
                     .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
                 Spacer()
                 AntigravityCompactQuotaSummary(state: state)
             }
 
-            AntigravityQuotaRowsView(state: state)
+            AntigravityQuotaRowsView(
+                state: state,
+                activityProfile: toolTracker.foregroundAntigravityProfile
+            )
         }
         .padding(12)
         .background(
@@ -633,14 +674,28 @@ private struct AntigravityOverlayDetailsView: View {
 
 private struct AntigravityQuotaRowsView: View {
     @ObservedObject var state: AppState
+    let activityProfile: AntigravityStateProfile?
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if let quota = state.latestAntigravityQuota, quota.hasQuota {
+            if !state.antigravityQuotaInsights.isEmpty {
+                ForEach(Array(state.antigravityQuotaInsights.prefix(4))) { insight in
+                    quotaInsightRow(insight)
+                }
+                if state.antigravityQuotaInsights.count > 4 {
+                    Text(L10n.format(
+                        "%d more quota pools are available in the main window",
+                        zhHans: "主窗口中还有 %d 个额度池",
+                        state.antigravityQuotaInsights.count - 4
+                    ))
+                    .font(.system(size: 8.5, weight: .medium))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                }
+            } else if let quota = state.latestAntigravityQuota, quota.hasQuota {
                 ForEach(quota.orderedDisplayBuckets.filter {
                     $0.bucket.window == .fiveHour || $0.bucket.window == .weekly
-                }) { item in
+                }.prefix(4)) { item in
                     quotaRow(groupTitle: item.groupTitle, bucket: item.bucket)
                 }
             } else {
@@ -653,14 +708,29 @@ private struct AntigravityQuotaRowsView: View {
                 .lineLimit(2)
             }
 
-            if let activity = state.latestAntigravityActivity {
-                HStack {
-                    Text(L10n.text("30 天活动", "30-Day Activity"))
-                    Spacer()
-                    Text(L10n.format("%d tasks", zhHans: "%d 个任务", activity.taskCount30Days))
-                        .foregroundStyle(AppTheme.accentCyan(for: colorScheme))
-                }
-                .font(.system(size: 9, weight: .bold, design: .monospaced))
+            Divider().opacity(0.35)
+
+            syncAndActivitySummary
+
+            if let recommendation = state.primaryRecommendation(for: .antigravity) {
+                Label(recommendation.title, systemImage: recommendation.severity.symbolName)
+                    .font(.system(size: 9, weight: .bold, design: .rounded))
+                    .foregroundStyle(recommendationTint(recommendation.severity))
+                    .lineLimit(2)
+                    .help(recommendation.message)
+            }
+
+            if let activity = state.antigravityActivitySnapshot(for: activityProfile) {
+                Text(activity.latestActivityAt.map {
+                    L10n.format(
+                        "Last activity %@",
+                        zhHans: "最后活动 %@",
+                        UsageNumberFormatter.relativeTimeString(from: $0)
+                    )
+                } ?? L10n.text("尚未发现本机活动", "No local activity found"))
+                .font(.system(size: 8.5, weight: .medium))
+                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                .lineLimit(1)
             }
 
             if let message = state.antigravityQuotaErrorText,
@@ -671,6 +741,84 @@ private struct AntigravityQuotaRowsView: View {
                     .lineLimit(1)
             }
         }
+    }
+
+    private func quotaInsightRow(_ insight: ProviderQuotaInsight) -> some View {
+        let shown = state.quotaDisplayMode == .used
+            ? insight.input.usedPercent
+            : insight.remainingPercent
+        let tint = insightTint(insight)
+
+        return VStack(alignment: .leading, spacing: 3) {
+            HStack {
+                Label(
+                    "\(AntigravityQuotaSnapshot.groupDisplayTitle(for: insight.input.groupTitle)) · \(insight.input.windowTitle)",
+                    systemImage: insight.risk == .critical
+                        ? "exclamationmark.triangle.fill"
+                        : insight.freshness.symbolName
+                )
+                .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                Spacer()
+                Text(UsageNumberFormatter.percent(shown, maximumFractionDigits: 0))
+                    .foregroundStyle(tint)
+            }
+            .font(.system(size: 9, weight: .bold, design: .monospaced))
+
+            HStack(spacing: 5) {
+                Text(rateText(insight))
+                Text("·")
+                Text(forecastText(insight))
+                Spacer(minLength: 4)
+                if let reset = insight.input.resetAt {
+                    Text(L10n.format(
+                        "Reset %@",
+                        zhHans: "%@重置",
+                        UsageNumberFormatter.relativeTimeString(from: reset)
+                    ))
+                }
+            }
+            .font(.system(size: 8, weight: .medium, design: .monospaced))
+            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+            .lineLimit(1)
+
+            AdaptiveQuotaProgress(value: shown / 100, tint: tint)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var syncAndActivitySummary: some View {
+        let freshness = state.antigravityDataFreshness
+        let last = state.antigravitySyncState.lastSuccessAt ?? state.latestAntigravityQuota?.capturedAt
+        let next = state.antigravitySyncState.cooldownUntil
+            ?? state.antigravitySyncState.nextAttemptAt
+            ?? last?.addingTimeInterval(TimeInterval(state.antigravityRefreshIntervalSeconds))
+        let activity = state.antigravityActivitySnapshot(for: activityProfile)?.sevenDayMetrics
+
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Label(freshness.localizedTitle, systemImage: freshness.symbolName)
+                    .foregroundStyle(freshnessTint(freshness))
+                Spacer()
+                Text(L10n.format(
+                    "%d tasks · %@ steps",
+                    zhHans: "%d 个任务 · %@ 步",
+                    activity?.taskCount ?? 0,
+                    UsageNumberFormatter.compactTokenCount(activity?.stepCount ?? 0)
+                ))
+                    .foregroundStyle(AppTheme.accentCyan(for: colorScheme))
+            }
+            HStack {
+                Text(last.map {
+                    L10n.format("Last %@", zhHans: "上次 %@", UsageNumberFormatter.relativeTimeString(from: $0))
+                } ?? L10n.text("尚未成功同步", "No successful sync"))
+                Spacer()
+                if let next {
+                    Text(L10n.format("Next %@", zhHans: "下次 %@", UsageNumberFormatter.relativeTimeString(from: next)))
+                }
+            }
+            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+        }
+        .font(.system(size: 8.5, weight: .bold, design: .monospaced))
     }
 
     private func quotaRow(
@@ -696,6 +844,58 @@ private struct AntigravityQuotaRowsView: View {
             }
             .font(.system(size: 9, weight: .bold, design: .monospaced))
             AdaptiveQuotaProgress(value: shown / 100, tint: tint)
+        }
+    }
+
+    private func rateText(_ insight: ProviderQuotaInsight) -> String {
+        guard insight.hasUsableForecast else { return L10n.text("正在积累数据", "Collecting data") }
+        return String(format: "%.2f %@", insight.burnRateForDisplay, insight.rateUnitTitle)
+    }
+
+    private func forecastText(_ insight: ProviderQuotaInsight) -> String {
+        guard insight.hasUsableForecast else { return L10n.text("预测待积累", "Forecast pending") }
+        if insight.risk == .critical, let exhaustion = insight.forecast.estimatedExhaustionDate {
+            return L10n.format(
+                "Runs out %@",
+                zhHans: "%@耗尽",
+                UsageNumberFormatter.relativeTimeString(from: exhaustion)
+            )
+        }
+        guard let remaining = insight.forecast.projectedRemainingAtReset else {
+            return L10n.text("预测待积累", "Forecast pending")
+        }
+        return L10n.format(
+            "%@ left at reset",
+            zhHans: "重置时剩余 %@",
+            UsageNumberFormatter.percent(remaining, maximumFractionDigits: 0)
+        )
+    }
+
+    private func insightTint(_ insight: ProviderQuotaInsight) -> Color {
+        if insight.freshness == .stale || insight.risk == .critical {
+            return AppTheme.accentRose(for: colorScheme)
+        }
+        if insight.freshness == .delayed || insight.risk == .warning {
+            return AppTheme.accentAmber(for: colorScheme)
+        }
+        return AppTheme.accentEmerald(for: colorScheme)
+    }
+
+    private func freshnessTint(_ freshness: ProviderDataFreshness) -> Color {
+        switch freshness {
+        case .fresh: return AppTheme.accentEmerald(for: colorScheme)
+        case .delayed: return AppTheme.accentAmber(for: colorScheme)
+        case .stale: return AppTheme.accentRose(for: colorScheme)
+        case .unknown: return AppTheme.textSecondary(for: colorScheme)
+        }
+    }
+
+    private func recommendationTint(_ severity: QuotaRecommendationSeverity) -> Color {
+        switch severity {
+        case .critical: return AppTheme.accentRose(for: colorScheme)
+        case .warning: return AppTheme.accentAmber(for: colorScheme)
+        case .information: return AppTheme.accentCyan(for: colorScheme)
+        case .healthy: return AppTheme.accentEmerald(for: colorScheme)
         }
     }
 }

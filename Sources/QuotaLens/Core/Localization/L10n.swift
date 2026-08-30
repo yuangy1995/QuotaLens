@@ -389,7 +389,7 @@ private let multiToolTranslations: [AppLanguage: [String: String]] = [
         "Waiting for Sync": "等待同步",
         "Monitoring": "監控中",
         "Waiting for a Monitored Tool": "等待識別監控工具",
-        "Open Codex or Claude and its quota will appear here automatically.": "開啟 Codex 或 Claude 後，這裡會自動顯示對應的額度。",
+        "Open Codex, Claude, or Antigravity and its quota will appear here automatically.": "開啟 Codex、Claude 或 Antigravity 後，這裡會自動顯示對應的額度。",
         "Quota Monitoring": "額度監控",
         "Synced": "已同步",
         "Waiting": "等待中",
@@ -397,7 +397,7 @@ private let multiToolTranslations: [AppLanguage: [String: String]] = [
         "Last synced %@": "最後同步 %@",
         "Waiting for the first sync": "等待首次同步",
         "Choose AI Tools to Monitor": "選擇要監控的 AI 工具",
-        "Enable Codex or Claude to see its quota, usage, and history.": "啟用 Codex 或 Claude 後，即可查看對應的額度、用量和歷史記錄。",
+        "Enable Codex, Claude, or Antigravity to see its quota and local activity.": "啟用 Codex、Claude 或 Antigravity 後，即可查看對應的額度與本機活動。",
         "Open App Settings": "開啟 App 設定",
         "Open the tool space": "開啟工具專屬頁面",
         "Needs Attention": "需要處理",
@@ -449,7 +449,7 @@ private let multiToolTranslations: [AppLanguage: [String: String]] = [
         "Waiting for Sync": "同期待ち",
         "Monitoring": "監視中",
         "Waiting for a Monitored Tool": "監視対象ツールを待機中",
-        "Open Codex or Claude and its quota will appear here automatically.": "Codex または Claude を開くと、対応するクォータが自動的に表示されます。",
+        "Open Codex, Claude, or Antigravity and its quota will appear here automatically.": "Codex、Claude、Antigravity のいずれかを開くと、対応するクォータが自動的に表示されます。",
         "Quota Monitoring": "クォータ監視",
         "Synced": "同期済み",
         "Waiting": "待機中",
@@ -457,7 +457,7 @@ private let multiToolTranslations: [AppLanguage: [String: String]] = [
         "Last synced %@": "最終同期 %@",
         "Waiting for the first sync": "初回同期を待機中",
         "Choose AI Tools to Monitor": "監視する AI ツールを選択",
-        "Enable Codex or Claude to see its quota, usage, and history.": "Codex または Claude を有効にすると、クォータ、使用量、履歴を確認できます。",
+        "Enable Codex, Claude, or Antigravity to see its quota and local activity.": "Codex、Claude、Antigravity のいずれかを有効にすると、クォータとローカルアクティビティを確認できます。",
         "Open App Settings": "アプリ設定を開く",
         "Open the tool space": "ツール専用ページを開く",
         "Needs Attention": "対応が必要",
@@ -509,7 +509,7 @@ private let multiToolTranslations: [AppLanguage: [String: String]] = [
         "Waiting for Sync": "동기화 대기 중",
         "Monitoring": "모니터링 중",
         "Waiting for a Monitored Tool": "모니터링 도구를 기다리는 중",
-        "Open Codex or Claude and its quota will appear here automatically.": "Codex 또는 Claude를 열면 해당 할당량이 자동으로 표시됩니다.",
+        "Open Codex, Claude, or Antigravity and its quota will appear here automatically.": "Codex, Claude 또는 Antigravity를 열면 해당 할당량이 자동으로 표시됩니다.",
         "Quota Monitoring": "할당량 모니터링",
         "Synced": "동기화됨",
         "Waiting": "대기 중",
@@ -517,7 +517,7 @@ private let multiToolTranslations: [AppLanguage: [String: String]] = [
         "Last synced %@": "마지막 동기화 %@",
         "Waiting for the first sync": "첫 동기화 대기 중",
         "Choose AI Tools to Monitor": "모니터링할 AI 도구 선택",
-        "Enable Codex or Claude to see its quota, usage, and history.": "Codex 또는 Claude를 활성화하면 할당량, 사용량, 기록을 볼 수 있습니다.",
+        "Enable Codex, Claude, or Antigravity to see its quota and local activity.": "Codex, Claude 또는 Antigravity를 활성화하면 할당량과 로컬 활동을 볼 수 있습니다.",
         "Open App Settings": "앱 설정 열기",
         "Open the tool space": "도구 전용 페이지 열기",
         "Needs Attention": "확인 필요",
@@ -569,7 +569,7 @@ private let multiToolTranslations: [AppLanguage: [String: String]] = [
         "Waiting for Sync": "Esperando sincronización",
         "Monitoring": "Monitorizando",
         "Waiting for a Monitored Tool": "Esperando una herramienta monitorizada",
-        "Open Codex or Claude and its quota will appear here automatically.": "Abre Codex o Claude y su cuota aparecerá aquí automáticamente.",
+        "Open Codex, Claude, or Antigravity and its quota will appear here automatically.": "Abre Codex, Claude o Antigravity y su cuota aparecerá aquí automáticamente.",
         "Quota Monitoring": "Monitorización de cuota",
         "Synced": "Sincronizado",
         "Waiting": "En espera",
@@ -577,7 +577,7 @@ private let multiToolTranslations: [AppLanguage: [String: String]] = [
         "Last synced %@": "Última sincronización %@",
         "Waiting for the first sync": "Esperando la primera sincronización",
         "Choose AI Tools to Monitor": "Elige las herramientas de IA que quieres monitorizar",
-        "Enable Codex or Claude to see its quota, usage, and history.": "Activa Codex o Claude para ver su cuota, uso e historial.",
+        "Enable Codex, Claude, or Antigravity to see its quota and local activity.": "Activa Codex, Claude o Antigravity para ver su cuota y actividad local.",
         "Open App Settings": "Abrir ajustes de la app",
         "Open the tool space": "Abrir la página de la herramienta",
         "Needs Attention": "Requiere atención",
@@ -629,7 +629,7 @@ private let multiToolTranslations: [AppLanguage: [String: String]] = [
         "Waiting for Sync": "Warten auf Synchronisierung",
         "Monitoring": "Überwachung aktiv",
         "Waiting for a Monitored Tool": "Warten auf ein überwachtes Tool",
-        "Open Codex or Claude and its quota will appear here automatically.": "Öffne Codex oder Claude; das zugehörige Kontingent erscheint hier automatisch.",
+        "Open Codex, Claude, or Antigravity and its quota will appear here automatically.": "Öffne Codex, Claude oder Antigravity; das zugehörige Kontingent erscheint hier automatisch.",
         "Quota Monitoring": "Kontingentüberwachung",
         "Synced": "Synchronisiert",
         "Waiting": "Warten",
@@ -637,7 +637,7 @@ private let multiToolTranslations: [AppLanguage: [String: String]] = [
         "Last synced %@": "Zuletzt synchronisiert %@",
         "Waiting for the first sync": "Warten auf die erste Synchronisierung",
         "Choose AI Tools to Monitor": "Zu überwachende KI-Tools auswählen",
-        "Enable Codex or Claude to see its quota, usage, and history.": "Aktiviere Codex oder Claude, um Kontingent, Nutzung und Verlauf zu sehen.",
+        "Enable Codex, Claude, or Antigravity to see its quota and local activity.": "Aktiviere Codex, Claude oder Antigravity, um Kontingent und lokale Aktivität zu sehen.",
         "Open App Settings": "App-Einstellungen öffnen",
         "Open the tool space": "Tool-Bereich öffnen",
         "Needs Attention": "Handlungsbedarf",
@@ -689,7 +689,7 @@ private let multiToolTranslations: [AppLanguage: [String: String]] = [
         "Waiting for Sync": "En attente de synchronisation",
         "Monitoring": "Suivi en cours",
         "Waiting for a Monitored Tool": "En attente d’un outil suivi",
-        "Open Codex or Claude and its quota will appear here automatically.": "Ouvrez Codex ou Claude et son quota apparaîtra automatiquement ici.",
+        "Open Codex, Claude, or Antigravity and its quota will appear here automatically.": "Ouvrez Codex, Claude ou Antigravity et son quota apparaîtra automatiquement ici.",
         "Quota Monitoring": "Suivi du quota",
         "Synced": "Synchronisé",
         "Waiting": "En attente",
@@ -697,7 +697,7 @@ private let multiToolTranslations: [AppLanguage: [String: String]] = [
         "Last synced %@": "Dernière synchronisation %@",
         "Waiting for the first sync": "En attente de la première synchronisation",
         "Choose AI Tools to Monitor": "Choisissez les outils d’IA à suivre",
-        "Enable Codex or Claude to see its quota, usage, and history.": "Activez Codex ou Claude pour voir son quota, son utilisation et son historique.",
+        "Enable Codex, Claude, or Antigravity to see its quota and local activity.": "Activez Codex, Claude ou Antigravity pour voir son quota et son activité locale.",
         "Open App Settings": "Ouvrir les réglages de l’app",
         "Open the tool space": "Ouvrir la page de l’outil",
         "Needs Attention": "Action requise",
@@ -749,7 +749,7 @@ private let multiToolTranslations: [AppLanguage: [String: String]] = [
         "Waiting for Sync": "A aguardar sincronização",
         "Monitoring": "A monitorizar",
         "Waiting for a Monitored Tool": "A aguardar uma ferramenta monitorizada",
-        "Open Codex or Claude and its quota will appear here automatically.": "Abra o Codex ou o Claude e a respetiva quota aparecerá aqui automaticamente.",
+        "Open Codex, Claude, or Antigravity and its quota will appear here automatically.": "Abra o Codex, o Claude ou o Antigravity e a respetiva quota aparecerá aqui automaticamente.",
         "Quota Monitoring": "Monitorização de quota",
         "Synced": "Sincronizado",
         "Waiting": "A aguardar",
@@ -757,7 +757,7 @@ private let multiToolTranslations: [AppLanguage: [String: String]] = [
         "Last synced %@": "Última sincronização %@",
         "Waiting for the first sync": "A aguardar a primeira sincronização",
         "Choose AI Tools to Monitor": "Escolha as ferramentas de IA a monitorizar",
-        "Enable Codex or Claude to see its quota, usage, and history.": "Ative o Codex ou o Claude para ver a quota, a utilização e o histórico.",
+        "Enable Codex, Claude, or Antigravity to see its quota and local activity.": "Ative o Codex, o Claude ou o Antigravity para ver a quota e a atividade local.",
         "Open App Settings": "Abrir definições da aplicação",
         "Open the tool space": "Abrir a página da ferramenta",
         "Needs Attention": "Requer atenção",
@@ -809,7 +809,7 @@ private let multiToolTranslations: [AppLanguage: [String: String]] = [
         "Waiting for Sync": "Aguardando sincronização",
         "Monitoring": "Monitorando",
         "Waiting for a Monitored Tool": "Aguardando uma ferramenta monitorada",
-        "Open Codex or Claude and its quota will appear here automatically.": "Abra o Codex ou o Claude e a cota correspondente aparecerá aqui automaticamente.",
+        "Open Codex, Claude, or Antigravity and its quota will appear here automatically.": "Abra o Codex, o Claude ou o Antigravity e a cota correspondente aparecerá aqui automaticamente.",
         "Quota Monitoring": "Monitoramento de cota",
         "Synced": "Sincronizado",
         "Waiting": "Aguardando",
@@ -817,7 +817,7 @@ private let multiToolTranslations: [AppLanguage: [String: String]] = [
         "Last synced %@": "Última sincronização %@",
         "Waiting for the first sync": "Aguardando a primeira sincronização",
         "Choose AI Tools to Monitor": "Escolha as ferramentas de IA para monitorar",
-        "Enable Codex or Claude to see its quota, usage, and history.": "Ative o Codex ou o Claude para ver a cota, o uso e o histórico.",
+        "Enable Codex, Claude, or Antigravity to see its quota and local activity.": "Ative o Codex, o Claude ou o Antigravity para ver a cota e a atividade local.",
         "Open App Settings": "Abrir configurações do app",
         "Open the tool space": "Abrir a página da ferramenta",
         "Needs Attention": "Requer atenção",
@@ -853,6 +853,741 @@ private let multiToolTranslations: [AppLanguage: [String: String]] = [
 ]
 
 private let keyedTranslations: [String: [AppLanguage: String]] = [
+    "Tightest Pool": [
+        .traditionalChinese: "最吃緊額度池", .japanese: "最も厳しいプール", .korean: "가장 여유가 적은 풀",
+        .spanish: "Grupo más ajustado", .german: "Knappster Pool", .french: "Réserve la plus limitée",
+        .portuguese: "Grupo mais limitado", .portugueseBrazil: "Grupo mais restrito"
+    ],
+    "Tight Pool": [
+        .traditionalChinese: "吃緊池", .japanese: "厳しいプール", .korean: "여유 부족 풀",
+        .spanish: "Grupo ajustado", .german: "Knapper Pool", .french: "Réserve limitée",
+        .portuguese: "Grupo limitado", .portugueseBrazil: "Grupo restrito"
+    ],
+    "Current cycle · used quota percentage over time": [
+        .traditionalChinese: "目前週期 · 已用額度百分比變化", .japanese: "現在のサイクル · 使用済みクォータの推移", .korean: "현재 주기 · 사용 할당량 백분율 변화",
+        .spanish: "Ciclo actual · porcentaje de cuota usada a lo largo del tiempo", .german: "Aktueller Zyklus · genutztes Kontingent im Zeitverlauf", .french: "Cycle actuel · pourcentage de quota utilisé au fil du temps",
+        .portuguese: "Ciclo atual · percentagem de quota utilizada ao longo do tempo", .portugueseBrazil: "Ciclo atual · porcentagem de cota usada ao longo do tempo"
+    ],
+    "Sample Progress: %d/%d": [
+        .traditionalChinese: "採樣進度：%d/%d", .japanese: "サンプリング進捗：%d/%d", .korean: "샘플링 진행률: %d/%d",
+        .spanish: "Progreso de muestreo: %d/%d", .german: "Abtastfortschritt: %d/%d", .french: "Progression de l'échantillonnage : %d/%d",
+        .portuguese: "Progresso de amostragem: %d/%d", .portugueseBrazil: "Progresso de amostragem: %d/%d"
+    ],
+    "Pace:": [
+        .traditionalChinese: "消耗速度:", .japanese: "消費ペース:", .korean: "소진 속도:",
+        .spanish: "Ritmo:", .german: "Tempo:", .french: "Rythme :",
+        .portuguese: "Ritmo:", .portugueseBrazil: "Ritmo:"
+    ],
+    "%@ · No activity in the last %d days": [
+        .traditionalChinese: "%@ · 最近 %d 天沒有活動", .japanese: "%@ · 直近%d日間にアクティビティなし", .korean: "%@ · 최근 %d일 동안 활동 없음",
+        .spanish: "%@ · Sin actividad en los últimos %d días", .german: "%@ · Keine Aktivität in den letzten %d Tagen", .french: "%@ · Aucune activité au cours des %d derniers jours",
+        .portuguese: "%@ · Sem atividade nos últimos %d dias", .portugueseBrazil: "%@ · Nenhuma atividade nos últimos %d dias"
+    ],
+    "%+.0f%% vs prior period": [
+        .traditionalChinese: "較上期 %+.0f%%",
+        .japanese: "前期間比 %+.0f%%",
+        .korean: "이전 기간 대비 %+.0f%%",
+        .spanish: "%+.0f%% frente al periodo anterior",
+        .german: "%+.0f%% gegenüber dem vorherigen Zeitraum",
+        .french: "%+.0f%% par rapport à la période précédente",
+        .portuguese: "%+.0f%% face ao período anterior",
+        .portugueseBrazil: "%+.0f%% em relação ao período anterior"
+    ],
+    "%/day": [
+        .traditionalChinese: "%/天", .japanese: "%/日", .korean: "%/일",
+        .spanish: "%/día", .german: "%/Tag", .french: "%/jour",
+        .portuguese: "%/dia", .portugueseBrazil: "%/dia"
+    ],
+    "%/hour": [
+        .traditionalChinese: "%/小時", .japanese: "%/時", .korean: "%/시간",
+        .spanish: "%/hora", .german: "%/Stunde", .french: "%/heure",
+        .portuguese: "%/hora", .portugueseBrazil: "%/hora"
+    ],
+    "%d local sources": [
+        .traditionalChinese: "%d 個本機來源", .japanese: "%d 個のローカルソース", .korean: "로컬 소스 %d개",
+        .spanish: "%d fuentes locales", .german: "%d lokale Quellen", .french: "%d sources locales",
+        .portuguese: "%d fontes locais", .portugueseBrazil: "%d fontes locais"
+    ],
+    "Activity source": [
+        .traditionalChinese: "活動來源", .japanese: "アクティビティソース", .korean: "활동 소스",
+        .spanish: "Fuente de actividad", .german: "Aktivitätsquelle", .french: "Source d’activité",
+        .portuguese: "Fonte de atividade", .portugueseBrazil: "Fonte de atividade"
+    ],
+    "All sources (%d)": [
+        .traditionalChinese: "全部來源（%d）", .japanese: "すべてのソース（%d）", .korean: "모든 소스(%d)",
+        .spanish: "Todas las fuentes (%d)", .german: "Alle Quellen (%d)", .french: "Toutes les sources (%d)",
+        .portuguese: "Todas as fontes (%d)", .portugueseBrazil: "Todas as fontes (%d)"
+    ],
+    "Read %d local sources · %d Antigravity tasks": [
+        .traditionalChinese: "已從 %d 個本機來源讀取 %d 個 Antigravity 任務", .japanese: "%d 個のローカルソースから Antigravity タスクを %d 件読み取りました", .korean: "로컬 소스 %d개에서 Antigravity 작업 %d개를 읽었습니다",
+        .spanish: "Se leyeron %d fuentes locales · %d tareas de Antigravity", .german: "%d lokale Quellen gelesen · %d Antigravity-Aufgaben", .french: "%d sources locales lues · %d tâches Antigravity",
+        .portuguese: "%d fontes locais lidas · %d tarefas do Antigravity", .portugueseBrazil: "%d fontes locais lidas · %d tarefas do Antigravity"
+    ],
+    "%@ %@ quota, %@ available": [
+        .traditionalChinese: "%@ %@ 額度，可用 %@",
+        .japanese: "%@ %@ クォータ、利用可能 %@",
+        .korean: "%@ %@ 할당량, %@ 사용 가능",
+        .spanish: "Cuota %@ %@, %@ disponible",
+        .german: "%@ %@-Kontingent, %@ verfügbar",
+        .french: "Quota %@ %@, %@ disponible",
+        .portuguese: "Quota %@ %@, %@ disponível",
+        .portugueseBrazil: "Cota %@ %@, %@ disponível"
+    ],
+    "%@ at reset": [
+        .traditionalChinese: "重設時 %@", .japanese: "リセット時 %@", .korean: "재설정 시 %@",
+        .spanish: "%@ al restablecer", .german: "%@ beim Zurücksetzen", .french: "%@ à la réinitialisation",
+        .portuguese: "%@ na reposição", .portugueseBrazil: "%@ na redefinição"
+    ],
+    "%@ available · %@": [
+        .traditionalChinese: "可用 %@ · %@", .japanese: "利用可能 %@ · %@", .korean: "%@ 사용 가능 · %@",
+        .spanish: "%@ disponible · %@", .german: "%@ verfügbar · %@", .french: "%@ disponible · %@",
+        .portuguese: "%@ disponível · %@", .portugueseBrazil: "%@ disponível · %@"
+    ],
+    "%@ data is stale": [
+        .traditionalChinese: "%@ 資料已過期", .japanese: "%@ のデータが古くなっています", .korean: "%@ 데이터가 오래되었습니다",
+        .spanish: "Los datos de %@ están obsoletos", .german: "Die Daten von %@ sind veraltet", .french: "Les données de %@ sont obsolètes",
+        .portuguese: "Os dados de %@ estão desatualizados", .portugueseBrazil: "Os dados de %@ estão desatualizados"
+    ],
+    "%@ has more room than %@. Use it for flexible work when appropriate.": [
+        .traditionalChinese: "%@ 比 %@ 有更多餘量，適合時可優先用於彈性工作。",
+        .japanese: "%@ は %@ より余裕があります。適切な場合は柔軟な作業に優先してください。",
+        .korean: "%@에 %@보다 여유가 많습니다. 적절한 경우 유연한 작업에 우선 사용하세요.",
+        .spanish: "%@ tiene más margen que %@. Úsalo para trabajo flexible cuando convenga.",
+        .german: "%@ hat mehr Spielraum als %@. Nutzen Sie es bei Bedarf für flexible Aufgaben.",
+        .french: "%@ offre plus de marge que %@. Utilisez-le pour les tâches flexibles lorsque cela convient.",
+        .portuguese: "%@ tem mais margem do que %@. Utilize-o em trabalho flexível quando for adequado.",
+        .portugueseBrazil: "%@ tem mais margem que %@. Use-o em trabalhos flexíveis quando for adequado."
+    ],
+    "%@ left at reset": [
+        .traditionalChinese: "重設時剩餘 %@", .japanese: "リセット時に %@ 残存", .korean: "재설정 시 %@ 남음",
+        .spanish: "Quedará %@ al restablecer", .german: "%@ beim Zurücksetzen übrig", .french: "%@ restant à la réinitialisation",
+        .portuguese: "%@ restante na reposição", .portugueseBrazil: "%@ restante na redefinição"
+    ],
+    "%@ needs attention": [
+        .traditionalChinese: "%@ 需要處理", .japanese: "%@ は確認が必要です", .korean: "%@에 주의가 필요합니다",
+        .spanish: "%@ requiere atención", .german: "%@ erfordert Aufmerksamkeit", .french: "%@ nécessite votre attention",
+        .portuguese: "%@ requer atenção", .portugueseBrazil: "%@ requer atenção"
+    ],
+    "%@ steps": [
+        .traditionalChinese: "%@ 步", .japanese: "%@ ステップ", .korean: "%@단계",
+        .spanish: "%@ pasos", .german: "%@ Schritte", .french: "%@ étapes",
+        .portuguese: "%@ passos", .portugueseBrazil: "%@ etapas"
+    ],
+    "%@ · %@ is %.1fx the sustainable pace.": [
+        .traditionalChinese: "%@ · %@ 目前是可持續速度的 %.1f 倍。",
+        .japanese: "%@ · %@ は持続可能なペースの %.1f 倍です。",
+        .korean: "%@ · %@은(는) 지속 가능한 속도의 %.1f배입니다.",
+        .spanish: "%@ · %@ está a %.1f veces el ritmo sostenible.",
+        .german: "%@ · %@ liegt beim %.1f-Fachen des nachhaltigen Tempos.",
+        .french: "%@ · %@ atteint %.1f fois le rythme soutenable.",
+        .portuguese: "%@ · %@ está a %.1f vezes o ritmo sustentável.",
+        .portugueseBrazil: "%@ · %@ está em %.1f vezes o ritmo sustentável."
+    ],
+    "%@ · %@ is using quota faster than the sustainable pace.": [
+        .traditionalChinese: "%@ · %@ 的額度消耗快於可持續速度。",
+        .japanese: "%@ · %@ は持続可能なペースより速くクォータを消費しています。",
+        .korean: "%@ · %@의 할당량 소모가 지속 가능한 속도보다 빠릅니다.",
+        .spanish: "%@ · %@ consume la cuota más rápido que el ritmo sostenible.",
+        .german: "%@ · %@ verbraucht das Kontingent schneller als nachhaltig.",
+        .french: "%@ · %@ consomme le quota plus vite que le rythme soutenable.",
+        .portuguese: "%@ · %@ está a consumir a quota acima do ritmo sustentável.",
+        .portugueseBrazil: "%@ · %@ está consumindo a cota acima do ritmo sustentável."
+    ],
+    "%d active days": [
+        .traditionalChinese: "%d 個活躍日", .japanese: "アクティブ日数 %d 日", .korean: "활동일 %d일",
+        .spanish: "%d días activos", .german: "%d aktive Tage", .french: "%d jours actifs",
+        .portuguese: "%d dias ativos", .portugueseBrazil: "%d dias ativos"
+    ],
+    "%d model groups": [
+        .traditionalChinese: "%d 個模型群組", .japanese: "%d モデルグループ", .korean: "모델 그룹 %d개",
+        .spanish: "%d grupos de modelos", .german: "%d Modellgruppen", .french: "%d groupes de modèles",
+        .portuguese: "%d grupos de modelos", .portugueseBrazil: "%d grupos de modelos"
+    ],
+    "%d more quota pools": [
+        .traditionalChinese: "另有 %d 個額度池", .japanese: "ほかに %d 個のクォータプール", .korean: "할당량 풀 %d개 더 있음",
+        .spanish: "%d grupos de cuota más", .german: "%d weitere Kontingentpools", .french: "%d réserves de quota supplémentaires",
+        .portuguese: "Mais %d grupos de quota", .portugueseBrazil: "Mais %d grupos de cota"
+    ],
+    "%d more quota pools are available in the main window": [
+        .traditionalChinese: "主視窗中還有 %d 個額度池", .japanese: "メインウインドウにほかに %d 個のクォータプールがあります", .korean: "기본 창에 할당량 풀 %d개가 더 있습니다",
+        .spanish: "Hay %d grupos de cuota más en la ventana principal", .german: "Im Hauptfenster sind %d weitere Kontingentpools verfügbar", .french: "%d réserves de quota supplémentaires sont disponibles dans la fenêtre principale",
+        .portuguese: "Estão disponíveis mais %d grupos de quota na janela principal", .portugueseBrazil: "Há mais %d grupos de cota na janela principal"
+    ],
+    "%d samples collected. The chart appears after more refreshes.": [
+        .traditionalChinese: "已收集 %d 個樣本，繼續重新整理後會顯示趨勢圖。",
+        .japanese: "%d 件のサンプルを収集しました。更新を重ねるとグラフが表示されます。",
+        .korean: "샘플 %d개를 수집했습니다. 몇 번 더 새로 고치면 차트가 표시됩니다.",
+        .spanish: "Se han recopilado %d muestras. El gráfico aparecerá tras más actualizaciones.",
+        .german: "%d Stichproben erfasst. Nach weiteren Aktualisierungen wird das Diagramm angezeigt.",
+        .french: "%d échantillons collectés. Le graphique apparaîtra après d’autres actualisations.",
+        .portuguese: "%d amostras recolhidas. O gráfico aparece após mais atualizações.",
+        .portugueseBrazil: "%d amostras coletadas. O gráfico aparecerá após mais atualizações."
+    ],
+    "%d tasks": [
+        .traditionalChinese: "%d 個任務", .japanese: "%d タスク", .korean: "작업 %d개",
+        .spanish: "%d tareas", .german: "%d Aufgaben", .french: "%d tâches",
+        .portuguese: "%d tarefas", .portugueseBrazil: "%d tarefas"
+    ],
+    "%d tasks across %d active days": [
+        .traditionalChinese: "%d 個任務，分布於 %d 個活躍日", .japanese: "%d タスク、アクティブ日数 %d 日", .korean: "활동일 %d일 동안 작업 %d개",
+        .spanish: "%d tareas en %d días activos", .german: "%d Aufgaben an %d aktiven Tagen", .french: "%d tâches sur %d jours actifs",
+        .portuguese: "%d tarefas em %d dias ativos", .portugueseBrazil: "%d tarefas em %d dias ativos"
+    ],
+    "%d tasks · %@ steps": [
+        .traditionalChinese: "%d 個任務 · %@ 步", .japanese: "%d タスク · %@ ステップ", .korean: "작업 %d개 · %@단계",
+        .spanish: "%d tareas · %@ pasos", .german: "%d Aufgaben · %@ Schritte", .french: "%d tâches · %@ étapes",
+        .portuguese: "%d tarefas · %@ passos", .portugueseBrazil: "%d tarefas · %@ etapas"
+    ],
+    "30 Days": [
+        .traditionalChinese: "30 天", .japanese: "30日間", .korean: "30일",
+        .spanish: "30 días", .german: "30 Tage", .french: "30 jours",
+        .portuguese: "30 dias", .portugueseBrazil: "30 dias"
+    ],
+    "A task complexity indicator": [
+        .traditionalChinese: "任務複雜度參考", .japanese: "タスクの複雑さの目安", .korean: "작업 복잡도 참고 지표",
+        .spanish: "Un indicador de complejidad de tareas", .german: "Ein Hinweis auf die Aufgabenkomplexität", .french: "Un indicateur de complexité des tâches",
+        .portuguese: "Um indicador da complexidade das tarefas", .portugueseBrazil: "Um indicador da complexidade das tarefas"
+    ],
+    "Active Days": [
+        .traditionalChinese: "活躍天數", .japanese: "アクティブ日数", .korean: "활동일",
+        .spanish: "Días activos", .german: "Aktive Tage", .french: "Jours actifs",
+        .portuguese: "Dias ativos", .portugueseBrazil: "Dias ativos"
+    ],
+    "Activity time range": [
+        .traditionalChinese: "活動時間範圍", .japanese: "アクティビティ期間", .korean: "활동 기간",
+        .spanish: "Intervalo de actividad", .german: "Aktivitätszeitraum", .french: "Période d’activité",
+        .portuguese: "Período de atividade", .portugueseBrazil: "Período de atividade"
+    ],
+    "Actual": [
+        .traditionalChinese: "實際", .japanese: "実績", .korean: "실제",
+        .spanish: "Real", .german: "Tatsächlich", .french: "Réel",
+        .portuguese: "Real", .portugueseBrazil: "Real"
+    ],
+    "Antigravity Local Activity": [
+        .traditionalChinese: "Antigravity 本機活動", .japanese: "Antigravity ローカルアクティビティ", .korean: "Antigravity 로컬 활동",
+        .spanish: "Actividad local de Antigravity", .german: "Lokale Antigravity-Aktivität", .french: "Activité locale d’Antigravity",
+        .portuguese: "Atividade local do Antigravity", .portugueseBrazil: "Atividade local do Antigravity"
+    ],
+    "Antigravity Refresh Rate": [
+        .traditionalChinese: "Antigravity 重新整理頻率", .japanese: "Antigravity の更新頻度", .korean: "Antigravity 새로 고침 주기",
+        .spanish: "Frecuencia de actualización de Antigravity", .german: "Antigravity-Aktualisierungsintervall", .french: "Fréquence d’actualisation d’Antigravity",
+        .portuguese: "Frequência de atualização do Antigravity", .portugueseBrazil: "Frequência de atualização do Antigravity"
+    ],
+    "Claude Refresh Rate": [
+        .traditionalChinese: "Claude 重新整理頻率", .japanese: "Claude の更新頻度", .korean: "Claude 새로 고침 주기",
+        .spanish: "Frecuencia de actualización de Claude", .german: "Claude-Aktualisierungsintervall", .french: "Fréquence d’actualisation de Claude",
+        .portuguese: "Frequência de atualização do Claude", .portugueseBrazil: "Frequência de atualização do Claude"
+    ],
+    "Antigravity activity increased from no tasks in the previous 7 days. Watch quota pace as activity grows.": [
+        .traditionalChinese: "前 7 天沒有任務，本週 Antigravity 活動已恢復；活動增加時請留意額度速度。",
+        .japanese: "前の7日間はタスクがありませんでしたが、Antigravity のアクティビティが増えました。増加に伴うクォータのペースに注意してください。",
+        .korean: "이전 7일에는 작업이 없었지만 Antigravity 활동이 증가했습니다. 활동 증가에 따라 할당량 속도를 확인하세요.",
+        .spanish: "La actividad de Antigravity aumentó desde cero tareas en los 7 días anteriores. Vigila el ritmo de la cuota al crecer la actividad.",
+        .german: "Die Antigravity-Aktivität ist gegenüber null Aufgaben in den vorherigen 7 Tagen gestiegen. Behalten Sie das Kontingenttempo im Blick.",
+        .french: "L’activité Antigravity a augmenté après une période de 7 jours sans tâche. Surveillez le rythme du quota à mesure que l’activité progresse.",
+        .portuguese: "A atividade do Antigravity aumentou após 7 dias sem tarefas. Acompanhe o ritmo da quota à medida que a atividade cresce.",
+        .portugueseBrazil: "A atividade do Antigravity aumentou após 7 dias sem tarefas. Acompanhe o ritmo da cota conforme a atividade cresce."
+    ],
+    "Antigravity daily task trend chart": [
+        .traditionalChinese: "Antigravity 每日任務趨勢圖", .japanese: "Antigravity の日別タスク推移グラフ", .korean: "Antigravity 일별 작업 추세 차트",
+        .spanish: "Gráfico de tendencia diaria de tareas de Antigravity", .german: "Diagramm des täglichen Antigravity-Aufgabentrends", .french: "Graphique de tendance quotidienne des tâches Antigravity",
+        .portuguese: "Gráfico da tendência diária de tarefas do Antigravity", .portugueseBrazil: "Gráfico de tendência diária de tarefas do Antigravity"
+    ],
+    "Antigravity local activity is not available yet": [
+        .traditionalChinese: "Antigravity 本機活動暫不可用", .japanese: "Antigravity のローカルアクティビティはまだ利用できません", .korean: "Antigravity 로컬 활동을 아직 사용할 수 없습니다",
+        .spanish: "La actividad local de Antigravity aún no está disponible", .german: "Lokale Antigravity-Aktivität ist noch nicht verfügbar", .french: "L’activité locale d’Antigravity n’est pas encore disponible",
+        .portuguese: "A atividade local do Antigravity ainda não está disponível", .portugueseBrazil: "A atividade local do Antigravity ainda não está disponível"
+    ],
+    "Antigravity quota is not available yet": [
+        .traditionalChinese: "Antigravity 額度暫不可用", .japanese: "Antigravity のクォータはまだ利用できません", .korean: "Antigravity 할당량을 아직 사용할 수 없습니다",
+        .spanish: "La cuota de Antigravity aún no está disponible", .german: "Das Antigravity-Kontingent ist noch nicht verfügbar", .french: "Le quota Antigravity n’est pas encore disponible",
+        .portuguese: "A quota do Antigravity ainda não está disponível", .portugueseBrazil: "A cota do Antigravity ainda não está disponível"
+    ],
+    "Antigravity quota trend chart": [
+        .traditionalChinese: "Antigravity 額度趨勢圖", .japanese: "Antigravity クォータ推移グラフ", .korean: "Antigravity 할당량 추세 차트",
+        .spanish: "Gráfico de tendencia de cuota de Antigravity", .german: "Diagramm des Antigravity-Kontingenttrends", .french: "Graphique de tendance du quota Antigravity",
+        .portuguese: "Gráfico da tendência da quota do Antigravity", .portugueseBrazil: "Gráfico de tendência da cota do Antigravity"
+    ],
+    "Antigravity tasks are down %.0f%% from the previous 7 days.": [
+        .traditionalChinese: "Antigravity 任務數比前 7 天減少 %.0f%%。", .japanese: "Antigravity のタスク数は前の7日間から %.0f%% 減少しています。", .korean: "Antigravity 작업 수가 이전 7일보다 %.0f%% 감소했습니다.",
+        .spanish: "Las tareas de Antigravity bajaron un %.0f%% respecto a los 7 días anteriores.", .german: "Antigravity-Aufgaben sind gegenüber den vorherigen 7 Tagen um %.0f%% gesunken.", .french: "Les tâches Antigravity ont diminué de %.0f%% par rapport aux 7 jours précédents.",
+        .portuguese: "As tarefas do Antigravity diminuíram %.0f%% face aos 7 dias anteriores.", .portugueseBrazil: "As tarefas do Antigravity caíram %.0f%% em relação aos 7 dias anteriores."
+    ],
+    "Antigravity tasks are up %.0f%% from the previous 7 days. Watch quota pace as activity grows.": [
+        .traditionalChinese: "Antigravity 任務數比前 7 天增加 %.0f%%，活動增加時請留意額度速度。",
+        .japanese: "Antigravity のタスク数は前の7日間から %.0f%% 増加しています。アクティビティ増加に伴うクォータのペースに注意してください。",
+        .korean: "Antigravity 작업 수가 이전 7일보다 %.0f%% 증가했습니다. 활동 증가에 따라 할당량 속도를 확인하세요.",
+        .spanish: "Las tareas de Antigravity subieron un %.0f%% respecto a los 7 días anteriores. Vigila el ritmo de la cuota al crecer la actividad.",
+        .german: "Antigravity-Aufgaben sind gegenüber den vorherigen 7 Tagen um %.0f%% gestiegen. Behalten Sie das Kontingenttempo bei wachsender Aktivität im Blick.",
+        .french: "Les tâches Antigravity ont augmenté de %.0f%% par rapport aux 7 jours précédents. Surveillez le rythme du quota à mesure que l’activité progresse.",
+        .portuguese: "As tarefas do Antigravity aumentaram %.0f%% face aos 7 dias anteriores. Acompanhe o ritmo da quota à medida que a atividade cresce.",
+        .portugueseBrazil: "As tarefas do Antigravity aumentaram %.0f%% em relação aos 7 dias anteriores. Acompanhe o ritmo da cota conforme a atividade cresce."
+    ],
+    "At Reset": [
+        .traditionalChinese: "重設時預計", .japanese: "リセット時の予測", .korean: "재설정 시 예상",
+        .spanish: "Al restablecer", .german: "Beim Zurücksetzen", .french: "À la réinitialisation",
+        .portuguese: "Na reposição", .portugueseBrazil: "Na redefinição"
+    ],
+    "Attempt %@ · Success %@": [
+        .traditionalChinese: "嘗試 %@ · 成功 %@", .japanese: "試行 %@ · 成功 %@", .korean: "시도 %@ · 성공 %@",
+        .spanish: "Intento %@ · Éxito %@", .german: "Versuch %@ · Erfolg %@", .french: "Tentative %@ · Réussite %@",
+        .portuguese: "Tentativa %@ · Sucesso %@", .portugueseBrazil: "Tentativa %@ · Sucesso %@"
+    ],
+    "Attempt %@ · Success %@ · Next %@": [
+        .traditionalChinese: "嘗試 %@ · 成功 %@ · 下次 %@", .japanese: "試行 %@ · 成功 %@ · 次回 %@", .korean: "시도 %@ · 성공 %@ · 다음 %@",
+        .spanish: "Intento %@ · Éxito %@ · Próximo %@", .german: "Versuch %@ · Erfolg %@ · Nächster %@", .french: "Tentative %@ · Réussite %@ · Prochaine %@",
+        .portuguese: "Tentativa %@ · Sucesso %@ · Próxima %@", .portugueseBrazil: "Tentativa %@ · Sucesso %@ · Próxima %@"
+    ],
+    "Attempt %@ · Success %@ · Retry %@": [
+        .traditionalChinese: "嘗試 %@ · 成功 %@ · %@後重試", .japanese: "試行 %@ · 成功 %@ · %@ に再試行", .korean: "시도 %@ · 성공 %@ · %@ 재시도",
+        .spanish: "Intento %@ · Éxito %@ · Reintento %@", .german: "Versuch %@ · Erfolg %@ · Erneuter Versuch %@", .french: "Tentative %@ · Réussite %@ · Nouvel essai %@",
+        .portuguese: "Tentativa %@ · Sucesso %@ · Nova tentativa %@", .portugueseBrazil: "Tentativa %@ · Sucesso %@ · Nova tentativa %@"
+    ],
+    "Building a clearer usage picture": [
+        .traditionalChinese: "正在完善用量判斷", .japanese: "使用状況の判断を整えています", .korean: "사용량 판단을 개선하는 중",
+        .spanish: "Mejorando la visión del uso", .german: "Das Nutzungsbild wird vervollständigt", .french: "Affinement de l’analyse d’utilisation",
+        .portuguese: "A aperfeiçoar a análise de utilização", .portugueseBrazil: "Aprimorando a análise de uso"
+    ],
+    "Collecting": [
+        .traditionalChinese: "正在累積", .japanese: "収集中", .korean: "수집 중",
+        .spanish: "Recopilando", .german: "Wird erfasst", .french: "Collecte en cours",
+        .portuguese: "A recolher", .portugueseBrazil: "Coletando"
+    ],
+    "Collecting trend data": [
+        .traditionalChinese: "正在累積趨勢資料", .japanese: "推移データを収集中", .korean: "추세 데이터 수집 중",
+        .spanish: "Recopilando datos de tendencia", .german: "Trenddaten werden erfasst", .french: "Collecte des données de tendance",
+        .portuguese: "A recolher dados de tendência", .portugueseBrazil: "Coletando dados de tendência"
+    ],
+    "Counts active days only": [
+        .traditionalChinese: "僅計算有活動的日期", .japanese: "アクティブな日のみを集計", .korean: "활동이 있는 날짜만 계산",
+        .spanish: "Solo cuenta los días activos", .german: "Nur aktive Tage werden gezählt", .french: "Compte uniquement les jours actifs",
+        .portuguese: "Conta apenas os dias ativos", .portugueseBrazil: "Conta apenas os dias ativos"
+    ],
+    "Current Pace": [
+        .traditionalChinese: "目前速度", .japanese: "現在のペース", .korean: "현재 속도",
+        .spanish: "Ritmo actual", .german: "Aktuelles Tempo", .french: "Rythme actuel",
+        .portuguese: "Ritmo atual", .portugueseBrazil: "Ritmo atual"
+    ],
+    "Current cycle · used quota percentage": [
+        .traditionalChinese: "目前週期 · 已用額度百分比", .japanese: "現在のサイクル · 使用済みクォータの割合", .korean: "현재 주기 · 사용한 할당량 비율",
+        .spanish: "Ciclo actual · porcentaje de cuota usado", .german: "Aktueller Zyklus · verwendetes Kontingent in Prozent", .french: "Cycle actuel · pourcentage de quota utilisé",
+        .portuguese: "Ciclo atual · percentagem de quota utilizada", .portugueseBrazil: "Ciclo atual · percentual da cota usado"
+    ],
+    "Current usage pace is healthy": [
+        .traditionalChinese: "目前使用節奏平穩", .japanese: "現在の使用ペースは良好です", .korean: "현재 사용 속도가 안정적입니다",
+        .spanish: "El ritmo de uso actual es saludable", .german: "Das aktuelle Nutzungstempo ist unbedenklich", .french: "Le rythme d’utilisation actuel est sain",
+        .portuguese: "O ritmo de utilização atual é saudável", .portugueseBrazil: "O ritmo de uso atual está saudável"
+    ],
+    "Current usage pace needs attention": [
+        .traditionalChinese: "目前消耗速度需要關注", .japanese: "現在の使用ペースに注意が必要です", .korean: "현재 사용 속도에 주의가 필요합니다",
+        .spanish: "El ritmo de uso actual requiere atención", .german: "Das aktuelle Nutzungstempo erfordert Aufmerksamkeit", .french: "Le rythme d’utilisation actuel nécessite votre attention",
+        .portuguese: "O ritmo de utilização atual requer atenção", .portugueseBrazil: "O ritmo de uso atual requer atenção"
+    ],
+    "Current used quota is %@.": [
+        .traditionalChinese: "目前已用額度為 %@。", .japanese: "現在の使用済みクォータは %@ です。", .korean: "현재 사용한 할당량은 %@입니다.",
+        .spanish: "La cuota usada actualmente es %@.", .german: "Aktuell sind %@ des Kontingents verbraucht.", .french: "Le quota actuellement utilisé est de %@.",
+        .portuguese: "A quota utilizada atualmente é %@.", .portugueseBrazil: "A cota usada atualmente é %@."
+    ],
+    "Daily Task Trend": [
+        .traditionalChinese: "每日任務趨勢", .japanese: "日別タスク推移", .korean: "일별 작업 추세",
+        .spanish: "Tendencia diaria de tareas", .german: "Täglicher Aufgabentrend", .french: "Tendance quotidienne des tâches",
+        .portuguese: "Tendência diária de tarefas", .portugueseBrazil: "Tendência diária de tarefas"
+    ],
+    "Data is stale": [
+        .traditionalChinese: "資料已過期", .japanese: "データが古くなっています", .korean: "데이터가 오래되었습니다",
+        .spanish: "Los datos están obsoletos", .german: "Die Daten sind veraltet", .french: "Les données sont obsolètes",
+        .portuguese: "Os dados estão desatualizados", .portugueseBrazil: "Os dados estão desatualizados"
+    ],
+    "Down %.0f%% vs previous period": [
+        .traditionalChinese: "比上一週期減少 %.0f%%", .japanese: "前期間比 %.0f%% 減", .korean: "이전 기간 대비 %.0f%% 감소",
+        .spanish: "Baja un %.0f%% frente al periodo anterior", .german: "%.0f%% weniger als im vorherigen Zeitraum", .french: "Baisse de %.0f%% par rapport à la période précédente",
+        .portuguese: "Menos %.0f%% face ao período anterior", .portugueseBrazil: "Queda de %.0f%% em relação ao período anterior"
+    ],
+    "Each tool keeps its native units without cross-tool ranking.": [
+        .traditionalChinese: "各工具保留各自的統計單位，不進行跨工具排名。",
+        .japanese: "各ツールは固有の単位で表示し、ツール間の順位付けは行いません。",
+        .korean: "각 도구는 고유한 단위를 유지하며 도구 간 순위를 매기지 않습니다.",
+        .spanish: "Cada herramienta conserva sus unidades propias, sin clasificar herramientas entre sí.",
+        .german: "Jedes Tool behält seine eigenen Einheiten; es gibt keine toolübergreifende Rangliste.",
+        .french: "Chaque outil conserve ses propres unités, sans classement entre les outils.",
+        .portuguese: "Cada ferramenta mantém as suas unidades, sem classificação entre ferramentas.",
+        .portugueseBrazil: "Cada ferramenta mantém suas próprias unidades, sem classificação entre ferramentas."
+    ],
+    "Expected to run out before reset": [
+        .traditionalChinese: "預計會在重設前耗盡", .japanese: "リセット前に使い切る見込みです", .korean: "재설정 전에 소진될 것으로 예상됩니다",
+        .spanish: "Se espera que se agote antes del restablecimiento", .german: "Voraussichtlich vor dem Zurücksetzen aufgebraucht", .french: "Épuisement prévu avant la réinitialisation",
+        .portuguese: "Prevê-se que esgote antes da reposição", .portugueseBrazil: "Previsão de esgotamento antes da redefinição"
+    ],
+    "Forecast": [
+        .traditionalChinese: "預測", .japanese: "予測", .korean: "예측",
+        .spanish: "Previsión", .german: "Prognose", .french: "Prévision",
+        .portuguese: "Previsão", .portugueseBrazil: "Previsão"
+    ],
+    "Forecast paused": [
+        .traditionalChinese: "預測已暫停", .japanese: "予測を一時停止しました", .korean: "예측 일시 중지됨",
+        .spanish: "Previsión pausada", .german: "Prognose pausiert", .french: "Prévision suspendue",
+        .portuguese: "Previsão em pausa", .portugueseBrazil: "Previsão pausada"
+    ],
+    "Forecast pending": [
+        .traditionalChinese: "預測待累積", .japanese: "予測データを収集中", .korean: "예측 데이터 수집 중",
+        .spanish: "Previsión pendiente", .german: "Prognose steht aus", .french: "Prévision en attente",
+        .portuguese: "Previsão pendente", .portugueseBrazil: "Previsão pendente"
+    ],
+    "Forecasting is paused. Refresh quota before judging usage pace.": [
+        .traditionalChinese: "預測已暫停，請重新整理額度後再判斷使用節奏。",
+        .japanese: "予測は一時停止中です。使用ペースを判断する前にクォータを更新してください。",
+        .korean: "예측이 일시 중지되었습니다. 사용 속도를 판단하기 전에 할당량을 새로 고치세요.",
+        .spanish: "La previsión está pausada. Actualiza la cuota antes de valorar el ritmo de uso.",
+        .german: "Die Prognose ist pausiert. Aktualisieren Sie das Kontingent, bevor Sie das Nutzungstempo beurteilen.",
+        .french: "La prévision est suspendue. Actualisez le quota avant d’évaluer le rythme d’utilisation.",
+        .portuguese: "A previsão está em pausa. Atualize a quota antes de avaliar o ritmo de utilização.",
+        .portugueseBrazil: "A previsão está pausada. Atualize a cota antes de avaliar o ritmo de uso."
+    ],
+    "Highest-Risk Quota": [
+        .traditionalChinese: "最高風險額度", .japanese: "最もリスクの高いクォータ", .korean: "가장 위험한 할당량",
+        .spanish: "Cuota de mayor riesgo", .german: "Kontingent mit höchstem Risiko", .french: "Quota le plus à risque",
+        .portuguese: "Quota de maior risco", .portugueseBrazil: "Cota de maior risco"
+    ],
+    "Last %@": [
+        .traditionalChinese: "上次 %@", .japanese: "前回 %@", .korean: "마지막 %@",
+        .spanish: "Último %@", .german: "Zuletzt %@", .french: "Dernière %@",
+        .portuguese: "Última %@", .portugueseBrazil: "Última %@"
+    ],
+    "Last %d days · tasks per day": [
+        .traditionalChinese: "最近 %d 天 · 每日任務數", .japanese: "直近%d日 · 1日あたりのタスク数", .korean: "최근 %d일 · 일별 작업 수",
+        .spanish: "Últimos %d días · tareas por día", .german: "Letzte %d Tage · Aufgaben pro Tag", .french: "%d derniers jours · tâches par jour",
+        .portuguese: "Últimos %d dias · tarefas por dia", .portugueseBrazil: "Últimos %d dias · tarefas por dia"
+    ],
+    "Last Sync": [
+        .traditionalChinese: "上次同步", .japanese: "前回の同期", .korean: "마지막 동기화",
+        .spanish: "Última sincronización", .german: "Letzte Synchronisierung", .french: "Dernière synchronisation",
+        .portuguese: "Última sincronização", .portugueseBrazil: "Última sincronização"
+    ],
+    "Last activity %@": [
+        .traditionalChinese: "最後活動 %@", .japanese: "最終アクティビティ %@", .korean: "마지막 활동 %@",
+        .spanish: "Última actividad %@", .german: "Letzte Aktivität %@", .french: "Dernière activité %@",
+        .portuguese: "Última atividade %@", .portugueseBrazil: "Última atividade %@"
+    ],
+    "Local data is syncing": [
+        .traditionalChinese: "本機資料正在同步", .japanese: "ローカルデータを同期中", .korean: "로컬 데이터 동기화 중",
+        .spanish: "Sincronizando datos locales", .german: "Lokale Daten werden synchronisiert", .french: "Synchronisation des données locales",
+        .portuguese: "A sincronizar dados locais", .portugueseBrazil: "Sincronizando dados locais"
+    ],
+    "Model Availability": [
+        .traditionalChinese: "模型餘量", .japanese: "モデルの利用可能量", .korean: "모델 사용 가능량",
+        .spanish: "Disponibilidad de modelos", .german: "Modellverfügbarkeit", .french: "Disponibilité des modèles",
+        .portuguese: "Disponibilidade dos modelos", .portugueseBrazil: "Disponibilidade dos modelos"
+    ],
+    "Next Refresh": [
+        .traditionalChinese: "下次重新整理", .japanese: "次回の更新", .korean: "다음 새로 고침",
+        .spanish: "Próxima actualización", .german: "Nächste Aktualisierung", .french: "Prochaine actualisation",
+        .portuguese: "Próxima atualização", .portugueseBrazil: "Próxima atualização"
+    ],
+    "No Antigravity activity in the last %d days": [
+        .traditionalChinese: "最近 %d 天沒有 Antigravity 活動", .japanese: "直近%d日間に Antigravity のアクティビティはありません", .korean: "최근 %d일 동안 Antigravity 활동이 없습니다",
+        .spanish: "No hubo actividad de Antigravity en los últimos %d días", .german: "Keine Antigravity-Aktivität in den letzten %d Tagen", .french: "Aucune activité Antigravity au cours des %d derniers jours",
+        .portuguese: "Sem atividade do Antigravity nos últimos %d dias", .portugueseBrazil: "Nenhuma atividade do Antigravity nos últimos %d dias"
+    ],
+    "No activity recorded yet": [
+        .traditionalChinese: "尚無活動記錄", .japanese: "アクティビティはまだ記録されていません", .korean: "아직 기록된 활동이 없습니다",
+        .spanish: "Aún no hay actividad registrada", .german: "Noch keine Aktivität erfasst", .french: "Aucune activité enregistrée pour le moment",
+        .portuguese: "Ainda não há atividade registada", .portugueseBrazil: "Ainda não há atividade registrada"
+    ],
+    "No attempt yet": [
+        .traditionalChinese: "尚未嘗試", .japanese: "まだ試行していません", .korean: "아직 시도하지 않음",
+        .spanish: "Aún no se ha intentado", .german: "Noch kein Versuch", .french: "Aucune tentative pour le moment",
+        .portuguese: "Ainda sem tentativa", .portugueseBrazil: "Ainda não houve tentativa"
+    ],
+    "No local activity found": [
+        .traditionalChinese: "尚未發現本機活動", .japanese: "ローカルアクティビティが見つかりません", .korean: "로컬 활동을 찾지 못했습니다",
+        .spanish: "No se encontró actividad local", .german: "Keine lokale Aktivität gefunden", .french: "Aucune activité locale détectée",
+        .portuguese: "Não foi encontrada atividade local", .portugueseBrazil: "Nenhuma atividade local encontrada"
+    ],
+    "No prior baseline": [
+        .traditionalChinese: "暫無上期基準", .japanese: "前期間の基準なし", .korean: "이전 기간 기준 없음",
+        .spanish: "Sin referencia anterior", .german: "Keine vorherige Vergleichsbasis", .french: "Aucune référence antérieure",
+        .portuguese: "Sem referência anterior", .portugueseBrazil: "Sem referência anterior"
+    ],
+    "No project activity is available": [
+        .traditionalChinese: "暫無可統計的專案活動", .japanese: "集計できるプロジェクトアクティビティはありません", .korean: "집계할 수 있는 프로젝트 활동이 없습니다",
+        .spanish: "No hay actividad de proyectos disponible", .german: "Keine Projektaktivität verfügbar", .french: "Aucune activité de projet disponible",
+        .portuguese: "Não há atividade de projetos disponível", .portugueseBrazil: "Nenhuma atividade de projeto disponível"
+    ],
+    "No quota or sync issues need attention right now.": [
+        .traditionalChinese: "目前沒有需要處理的額度或同步問題。", .japanese: "現在、対応が必要なクォータまたは同期の問題はありません。", .korean: "현재 확인이 필요한 할당량 또는 동기화 문제가 없습니다.",
+        .spanish: "Ahora mismo no hay problemas de cuota o sincronización que requieran atención.", .german: "Derzeit gibt es keine Kontingent- oder Synchronisierungsprobleme, die Aufmerksamkeit erfordern.", .french: "Aucun problème de quota ou de synchronisation ne nécessite votre attention pour le moment.",
+        .portuguese: "Neste momento, não há problemas de quota ou sincronização que exijam atenção.", .portugueseBrazil: "No momento, não há problemas de cota ou sincronização que exijam atenção."
+    ],
+    "No successful sync": [
+        .traditionalChinese: "尚未成功", .japanese: "同期成功なし", .korean: "성공한 동기화 없음",
+        .spanish: "Aún no hay sincronización correcta", .german: "Noch keine erfolgreiche Synchronisierung", .french: "Aucune synchronisation réussie",
+        .portuguese: "Ainda sem sincronização bem-sucedida", .portugueseBrazil: "Ainda sem sincronização bem-sucedida"
+    ],
+    "No tasks in the previous period": [
+        .traditionalChinese: "上一週期沒有任務", .japanese: "前期間にタスクなし", .korean: "이전 기간에 작업 없음",
+        .spanish: "Sin tareas en el periodo anterior", .german: "Keine Aufgaben im vorherigen Zeitraum", .french: "Aucune tâche sur la période précédente",
+        .portuguese: "Sem tarefas no período anterior", .portugueseBrazil: "Sem tarefas no período anterior"
+    ],
+    "Not scheduled": [
+        .traditionalChinese: "等待安排", .japanese: "未定", .korean: "예약되지 않음",
+        .spanish: "Sin programar", .german: "Nicht geplant", .french: "Non planifié",
+        .portuguese: "Não agendado", .portugueseBrazil: "Não agendado"
+    ],
+    "Not selected": [
+        .traditionalChinese: "未選取", .japanese: "未選択", .korean: "선택되지 않음",
+        .spanish: "No seleccionado", .german: "Nicht ausgewählt", .french: "Non sélectionné",
+        .portuguese: "Não selecionado", .portugueseBrazil: "Não selecionado"
+    ],
+    "Other models": [
+        .traditionalChinese: "其他模型", .japanese: "その他のモデル", .korean: "기타 모델",
+        .spanish: "Otros modelos", .german: "Weitere Modelle", .french: "Autres modèles",
+        .portuguese: "Outros modelos", .portugueseBrazil: "Outros modelos"
+    ],
+    "Overall quota status is healthy": [
+        .traditionalChinese: "整體額度狀態健康", .japanese: "全体のクォータ状態は良好です", .korean: "전체 할당량 상태가 양호합니다",
+        .spanish: "El estado general de la cuota es saludable", .german: "Der allgemeine Kontingentstatus ist unbedenklich", .french: "L’état global des quotas est sain",
+        .portuguese: "O estado geral das quotas é saudável", .portugueseBrazil: "O estado geral das cotas está saudável"
+    ],
+    "Overall status and recommendations": [
+        .traditionalChinese: "整體狀態與建議", .japanese: "全体の状態と提案", .korean: "전체 상태 및 제안",
+        .spanish: "Estado general y recomendaciones", .german: "Gesamtstatus und Empfehlungen", .french: "État global et recommandations",
+        .portuguese: "Estado geral e recomendações", .portugueseBrazil: "Status geral e recomendações"
+    ],
+    "Project Activity · 30 Days": [
+        .traditionalChinese: "最近 30 天專案活動", .japanese: "プロジェクトアクティビティ · 30日間", .korean: "프로젝트 활동 · 30일",
+        .spanish: "Actividad de proyectos · 30 días", .german: "Projektaktivität · 30 Tage", .french: "Activité des projets · 30 jours",
+        .portuguese: "Atividade de projetos · 30 dias", .portugueseBrazil: "Atividade de projetos · 30 dias"
+    ],
+    "Quota Reset": [
+        .traditionalChinese: "額度重設", .japanese: "クォータのリセット", .korean: "할당량 재설정",
+        .spanish: "Restablecimiento de cuota", .german: "Kontingent zurücksetzen", .french: "Réinitialisation du quota",
+        .portuguese: "Reposição da quota", .portugueseBrazil: "Redefinição da cota"
+    ],
+    "Quota Trend": [
+        .traditionalChinese: "額度趨勢", .japanese: "クォータの推移", .korean: "할당량 추세",
+        .spanish: "Tendencia de cuota", .german: "Kontingenttrend", .french: "Tendance du quota",
+        .portuguese: "Tendência da quota", .portugueseBrazil: "Tendência da cota"
+    ],
+    "Quota pools are imbalanced": [
+        .traditionalChinese: "額度池餘量不均衡", .japanese: "クォータプールの残量に偏りがあります", .korean: "할당량 풀의 잔여량이 고르지 않습니다",
+        .spanish: "Los grupos de cuota están desequilibrados", .german: "Die Kontingentpools sind unausgewogen", .french: "Les réserves de quota sont déséquilibrées",
+        .portuguese: "Os grupos de quota estão desequilibrados", .portugueseBrazil: "Os grupos de cota estão desequilibrados"
+    ],
+    "Quota risk needs attention": [
+        .traditionalChinese: "有額度風險需要處理", .japanese: "クォータのリスクに対応が必要です", .korean: "할당량 위험에 주의가 필요합니다",
+        .spanish: "Un riesgo de cuota requiere atención", .german: "Ein Kontingentrisiko erfordert Aufmerksamkeit", .french: "Un risque de quota nécessite votre attention",
+        .portuguese: "Um risco de quota requer atenção", .portugueseBrazil: "Um risco de cota requer atenção"
+    ],
+    "Quota risks and recommended actions will appear after the first sync.": [
+        .traditionalChinese: "完成首次同步後，這裡會彙總額度風險和行動建議。",
+        .japanese: "最初の同期後に、クォータのリスクと推奨アクションがここに表示されます。",
+        .korean: "첫 동기화 후 할당량 위험과 권장 조치가 여기에 표시됩니다.",
+        .spanish: "Los riesgos de cuota y las acciones recomendadas aparecerán tras la primera sincronización.",
+        .german: "Kontingentrisiken und empfohlene Maßnahmen erscheinen nach der ersten Synchronisierung.",
+        .french: "Les risques de quota et les actions recommandées apparaîtront après la première synchronisation.",
+        .portuguese: "Os riscos de quota e as ações recomendadas aparecem após a primeira sincronização.",
+        .portugueseBrazil: "Os riscos de cota e as ações recomendadas aparecerão após a primeira sincronização."
+    ],
+    "Quota usage is elevated": [
+        .traditionalChinese: "額度消耗偏快", .japanese: "クォータ消費が速めです", .korean: "할당량 소모가 빠릅니다",
+        .spanish: "El uso de cuota es elevado", .german: "Der Kontingentverbrauch ist erhöht", .french: "L’utilisation du quota est élevée",
+        .portuguese: "A utilização da quota está elevada", .portugueseBrazil: "O uso da cota está elevado"
+    ],
+    "Recent activity decreased": [
+        .traditionalChinese: "近期活動減少", .japanese: "最近のアクティビティが減少", .korean: "최근 활동 감소",
+        .spanish: "La actividad reciente disminuyó", .german: "Die jüngste Aktivität ist gesunken", .french: "L’activité récente a diminué",
+        .portuguese: "A atividade recente diminuiu", .portugueseBrazil: "A atividade recente diminuiu"
+    ],
+    "Recent activity increased": [
+        .traditionalChinese: "近期活動增加", .japanese: "最近のアクティビティが増加", .korean: "최근 활동 증가",
+        .spanish: "La actividad reciente aumentó", .german: "Die jüngste Aktivität ist gestiegen", .french: "L’activité récente a augmenté",
+        .portuguese: "A atividade recente aumentou", .portugueseBrazil: "A atividade recente aumentou"
+    ],
+    "Refresh limited": [
+        .traditionalChinese: "重新整理受限", .japanese: "更新が制限されています", .korean: "새로 고침 제한됨",
+        .spanish: "Actualización limitada", .german: "Aktualisierung eingeschränkt", .french: "Actualisation limitée",
+        .portuguese: "Atualização limitada", .portugueseBrazil: "Atualização limitada"
+    ],
+    "Refreshes Antigravity quota every %@.": [
+        .traditionalChinese: "每 %@ 自動重新整理 Antigravity 額度。", .japanese: "%@ ごとに Antigravity のクォータを更新します。", .korean: "%@마다 Antigravity 할당량을 새로 고칩니다.",
+        .spanish: "Actualiza la cuota de Antigravity cada %@.", .german: "Aktualisiert das Antigravity-Kontingent alle %@.", .french: "Actualise le quota Antigravity toutes les %@.",
+        .portuguese: "Atualiza a quota do Antigravity a cada %@.", .portugueseBrazil: "Atualiza a cota do Antigravity a cada %@."
+    ],
+    "Refreshes Claude quota every %@.": [
+        .traditionalChinese: "每 %@ 自動重新整理 Claude 額度。", .japanese: "%@ ごとに Claude のクォータを更新します。", .korean: "%@마다 Claude 할당량을 새로 고칩니다.",
+        .spanish: "Actualiza la cuota de Claude cada %@.", .german: "Aktualisiert das Claude-Kontingent alle %@.", .french: "Actualise le quota Claude toutes les %@.",
+        .portuguese: "Atualiza a quota do Claude a cada %@.", .portugueseBrazil: "Atualiza a cota do Claude a cada %@."
+    ],
+    "Reset %@": [
+        .traditionalChinese: "%@ 重設", .japanese: "リセット %@", .korean: "재설정 %@",
+        .spanish: "Restablecimiento %@", .german: "Zurücksetzen %@", .french: "Réinitialisation %@",
+        .portuguese: "Reposição %@", .portugueseBrazil: "Redefinição %@"
+    ],
+    "Reset time unknown": [
+        .traditionalChinese: "重設時間未知", .japanese: "リセット時刻不明", .korean: "재설정 시간 알 수 없음",
+        .spanish: "Hora de restablecimiento desconocida", .german: "Zeitpunkt des Zurücksetzens unbekannt", .french: "Heure de réinitialisation inconnue",
+        .portuguese: "Hora de reposição desconhecida", .portugueseBrazil: "Horário de redefinição desconhecido"
+    ],
+    "Reset unknown": [
+        .traditionalChinese: "重設時間未知", .japanese: "リセット不明", .korean: "재설정 시간 알 수 없음",
+        .spanish: "Restablecimiento desconocido", .german: "Zurücksetzen unbekannt", .french: "Réinitialisation inconnue",
+        .portuguese: "Reposição desconhecida", .portugueseBrazil: "Redefinição desconhecida"
+    ],
+    "Runs out %@": [
+        .traditionalChinese: "%@ 耗盡", .japanese: "%@ に使い切る見込み", .korean: "%@ 소진 예상",
+        .spanish: "Se agota %@", .german: "Aufgebraucht %@", .french: "Épuisement %@",
+        .portuguese: "Esgota %@", .portugueseBrazil: "Esgota %@"
+    ],
+    "Scanned %@": [
+        .traditionalChinese: "%@ 完成掃描", .japanese: "%@ にスキャン", .korean: "%@ 스캔됨",
+        .spanish: "Escaneado %@", .german: "Gescannt %@", .french: "Analyse %@",
+        .portuguese: "Analisado %@", .portugueseBrazil: "Verificado %@"
+    ],
+    "Select to view this quota pool trend": [
+        .traditionalChinese: "選取後查看此額度池趨勢", .japanese: "選択してこのクォータプールの推移を表示", .korean: "선택하여 이 할당량 풀 추세 보기",
+        .spanish: "Selecciona para ver la tendencia de este grupo de cuota", .german: "Auswählen, um den Trend dieses Kontingentpools anzuzeigen", .french: "Sélectionnez pour afficher la tendance de cette réserve de quota",
+        .portuguese: "Selecione para ver a tendência deste grupo de quota", .portugueseBrazil: "Selecione para ver a tendência deste grupo de cota"
+    ],
+    "Selected": [
+        .traditionalChinese: "已選取", .japanese: "選択済み", .korean: "선택됨",
+        .spanish: "Seleccionado", .german: "Ausgewählt", .french: "Sélectionné",
+        .portuguese: "Selecionado", .portugueseBrazil: "Selecionado"
+    ],
+    "Show all %d model groups": [
+        .traditionalChinese: "展開全部 %d 個模型群組", .japanese: "%d モデルグループをすべて表示", .korean: "모델 그룹 %d개 모두 표시",
+        .spanish: "Mostrar los %d grupos de modelos", .german: "Alle %d Modellgruppen anzeigen", .french: "Afficher les %d groupes de modèles",
+        .portuguese: "Mostrar todos os %d grupos de modelos", .portugueseBrazil: "Mostrar todos os %d grupos de modelos"
+    ],
+    "Show fewer models": [
+        .traditionalChinese: "收起模型", .japanese: "表示するモデルを減らす", .korean: "모델 접기",
+        .spanish: "Mostrar menos modelos", .german: "Weniger Modelle anzeigen", .french: "Afficher moins de modèles",
+        .portuguese: "Mostrar menos modelos", .portugueseBrazil: "Mostrar menos modelos"
+    ],
+    "Steps": [
+        .traditionalChinese: "步驟", .japanese: "ステップ", .korean: "단계",
+        .spanish: "Pasos", .german: "Schritte", .french: "Étapes",
+        .portuguese: "Passos", .portugueseBrazil: "Etapas"
+    ],
+    "Steps per Task": [
+        .traditionalChinese: "平均每任務步驟", .japanese: "タスクあたりのステップ数", .korean: "작업당 단계 수",
+        .spanish: "Pasos por tarea", .german: "Schritte pro Aufgabe", .french: "Étapes par tâche",
+        .portuguese: "Passos por tarefa", .portugueseBrazil: "Etapas por tarefa"
+    ],
+    "Sustainable %.2f %@": [
+        .traditionalChinese: "可持續 %.2f %@", .japanese: "持続可能 %.2f %@", .korean: "지속 가능 %.2f %@",
+        .spanish: "Sostenible %.2f %@", .german: "Nachhaltig %.2f %@", .french: "Soutenable %.2f %@",
+        .portuguese: "Sustentável %.2f %@", .portugueseBrazil: "Sustentável %.2f %@"
+    ],
+    "Sustainable limit": [
+        .traditionalChinese: "可持續上限", .japanese: "持続可能な上限", .korean: "지속 가능한 상한",
+        .spanish: "Límite sostenible", .german: "Nachhaltige Obergrenze", .french: "Limite soutenable",
+        .portuguese: "Limite sustentável", .portugueseBrazil: "Limite sustentável"
+    ],
+    "Sync Status": [
+        .traditionalChinese: "同步狀態", .japanese: "同期状態", .korean: "동기화 상태",
+        .spanish: "Estado de sincronización", .german: "Synchronisierungsstatus", .french: "État de synchronisation",
+        .portuguese: "Estado da sincronização", .portugueseBrazil: "Status da sincronização"
+    ],
+    "Sync issue": [
+        .traditionalChinese: "同步異常", .japanese: "同期の問題", .korean: "동기화 문제",
+        .spanish: "Problema de sincronización", .german: "Synchronisierungsproblem", .french: "Problème de synchronisation",
+        .portuguese: "Problema de sincronização", .portugueseBrazil: "Problema de sincronização"
+    ],
+    "Syncing Antigravity quota...": [
+        .traditionalChinese: "正在同步 Antigravity 額度…", .japanese: "Antigravity のクォータを同期中…", .korean: "Antigravity 할당량 동기화 중...",
+        .spanish: "Sincronizando la cuota de Antigravity...", .german: "Antigravity-Kontingent wird synchronisiert...", .french: "Synchronisation du quota Antigravity...",
+        .portuguese: "A sincronizar a quota do Antigravity...", .portugueseBrazil: "Sincronizando a cota do Antigravity..."
+    ],
+    "Tasks": [
+        .traditionalChinese: "任務數", .japanese: "タスク", .korean: "작업",
+        .spanish: "Tareas", .german: "Aufgaben", .french: "Tâches",
+        .portuguese: "Tarefas", .portugueseBrazil: "Tarefas"
+    ],
+    "Tasks per Active Day": [
+        .traditionalChinese: "每日活躍任務", .japanese: "アクティブ日あたりのタスク数", .korean: "활동일당 작업 수",
+        .spanish: "Tareas por día activo", .german: "Aufgaben pro aktivem Tag", .french: "Tâches par jour actif",
+        .portuguese: "Tarefas por dia ativo", .portugueseBrazil: "Tarefas por dia ativo"
+    ],
+    "Time unknown": [
+        .traditionalChinese: "時間未知", .japanese: "時刻不明", .korean: "시간 알 수 없음",
+        .spanish: "Hora desconocida", .german: "Zeit unbekannt", .french: "Heure inconnue",
+        .portuguese: "Hora desconhecida", .portugueseBrazil: "Horário desconhecido"
+    ],
+    "Total for this period": [
+        .traditionalChinese: "目前週期合計", .japanese: "現在の期間の合計", .korean: "현재 기간 합계",
+        .spanish: "Total de este periodo", .german: "Summe für diesen Zeitraum", .french: "Total pour cette période",
+        .portuguese: "Total deste período", .portugueseBrazil: "Total deste período"
+    ],
+    "Unchanged from previous period": [
+        .traditionalChinese: "與上一週期持平", .japanese: "前期間から変化なし", .korean: "이전 기간과 동일",
+        .spanish: "Sin cambios frente al periodo anterior", .german: "Unverändert gegenüber dem vorherigen Zeitraum", .french: "Stable par rapport à la période précédente",
+        .portuguese: "Sem alterações face ao período anterior", .portugueseBrazil: "Sem alteração em relação ao período anterior"
+    ],
+    "Unchanged from prior": [
+        .traditionalChinese: "與上期持平", .japanese: "前期間から変化なし", .korean: "이전 기간과 동일",
+        .spanish: "Sin cambios respecto al anterior", .german: "Unverändert zum vorherigen Zeitraum", .french: "Stable par rapport à la période précédente",
+        .portuguese: "Sem alterações face ao anterior", .portugueseBrazil: "Sem alteração em relação ao anterior"
+    ],
+    "Up %.0f%% vs previous period": [
+        .traditionalChinese: "比上一週期增加 %.0f%%", .japanese: "前期間比 %.0f%% 増", .korean: "이전 기간 대비 %.0f%% 증가",
+        .spanish: "Sube un %.0f%% frente al periodo anterior", .german: "%.0f%% mehr als im vorherigen Zeitraum", .french: "Hausse de %.0f%% par rapport à la période précédente",
+        .portuguese: "Mais %.0f%% face ao período anterior", .portugueseBrazil: "Alta de %.0f%% em relação ao período anterior"
+    ],
+    "Up to date": [
+        .traditionalChinese: "資料最新", .japanese: "最新", .korean: "최신 상태",
+        .spanish: "Actualizado", .german: "Aktuell", .french: "À jour",
+        .portuguese: "Atualizado", .portugueseBrazil: "Atualizado"
+    ],
+    "Update delayed": [
+        .traditionalChinese: "更新延遲", .japanese: "更新が遅れています", .korean: "업데이트 지연",
+        .spanish: "Actualización retrasada", .german: "Aktualisierung verzögert", .french: "Actualisation retardée",
+        .portuguese: "Atualização atrasada", .portugueseBrazil: "Atualização atrasada"
+    ],
+    "Usage Pace": [
+        .traditionalChinese: "消耗速度", .japanese: "使用ペース", .korean: "사용 속도",
+        .spanish: "Ritmo de uso", .german: "Nutzungstempo", .french: "Rythme d’utilisation",
+        .portuguese: "Ritmo de utilização", .portugueseBrazil: "Ritmo de uso"
+    ],
+    "Usage Pace & Forecast": [
+        .traditionalChinese: "使用節奏與預測", .japanese: "使用ペースと予測", .korean: "사용 속도 및 예측",
+        .spanish: "Ritmo de uso y previsión", .german: "Nutzungstempo und Prognose", .french: "Rythme d’utilisation et prévision",
+        .portuguese: "Ritmo de utilização e previsão", .portugueseBrazil: "Ritmo de uso e previsão"
+    ],
+    "Usage may be too fast": [
+        .traditionalChinese: "消耗可能偏快", .japanese: "使用ペースが速すぎる可能性があります", .korean: "사용 속도가 너무 빠를 수 있습니다",
+        .spanish: "El uso puede ser demasiado rápido", .german: "Die Nutzung könnte zu schnell sein", .french: "L’utilisation est peut-être trop rapide",
+        .portuguese: "A utilização pode estar demasiado rápida", .portugueseBrazil: "O uso pode estar rápido demais"
+    ],
+    "Usage pace and forecasts will appear after the first sync.": [
+        .traditionalChinese: "首次同步完成後會顯示消耗速度和預測。", .japanese: "最初の同期後に使用ペースと予測が表示されます。", .korean: "첫 동기화 후 사용 속도와 예측이 표시됩니다.",
+        .spanish: "El ritmo de uso y las previsiones aparecerán tras la primera sincronización.", .german: "Nutzungstempo und Prognosen erscheinen nach der ersten Synchronisierung.", .french: "Le rythme d’utilisation et les prévisions apparaîtront après la première synchronisation.",
+        .portuguese: "O ritmo de utilização e as previsões aparecem após a primeira sincronização.", .portugueseBrazil: "O ritmo de uso e as previsões aparecerão após a primeira sincronização."
+    ],
+    "Waiting for %@ quota": [
+        .traditionalChinese: "等待 %@ 額度", .japanese: "%@ のクォータを待機中", .korean: "%@ 할당량 대기 중",
+        .spanish: "Esperando la cuota de %@", .german: "Warten auf das %@-Kontingent", .french: "En attente du quota %@",
+        .portuguese: "A aguardar a quota de %@", .portugueseBrazil: "Aguardando a cota de %@"
+    ],
+    "Waiting for first sync": [
+        .traditionalChinese: "等待首次同步", .japanese: "最初の同期を待機中", .korean: "첫 동기화 대기 중",
+        .spanish: "Esperando la primera sincronización", .german: "Warten auf die erste Synchronisierung", .french: "En attente de la première synchronisation",
+        .portuguese: "A aguardar a primeira sincronização", .portugueseBrazil: "Aguardando a primeira sincronização"
+    ],
+    "Waiting for synced data": [
+        .traditionalChinese: "等待同步資料", .japanese: "同期データを待機中", .korean: "동기화된 데이터 대기 중",
+        .spanish: "Esperando datos sincronizados", .german: "Warten auf synchronisierte Daten", .french: "En attente des données synchronisées",
+        .portuguese: "A aguardar dados sincronizados", .portugueseBrazil: "Aguardando dados sincronizados"
+    ],
+    "available in the tightest pool": [
+        .traditionalChinese: "最吃緊額度池可用", .japanese: "最も厳しいプールで利用可能", .korean: "가장 여유가 적은 풀에서 사용 가능",
+        .spanish: "disponible en el grupo más ajustado", .german: "im knappsten Pool verfügbar", .french: "disponible dans la réserve la plus limitée",
+        .portuguese: "disponível no grupo mais limitado", .portugueseBrazil: "disponível no grupo mais restrito"
+    ],
+    "of %d days": [
+        .traditionalChinese: "共 %d 天", .japanese: "%d日中", .korean: "총 %d일",
+        .spanish: "de %d días", .german: "von %d Tagen", .french: "sur %d jours",
+        .portuguese: "de %d dias", .portugueseBrazil: "de %d dias"
+    ],
     "All": [
         .traditionalChinese: "全部",
         .japanese: "すべて",
@@ -4363,15 +5098,15 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Sobre o QuotaLens",
         .portugueseBrazil: "Sobre o QuotaLens"
     ],
-    "A desktop dashboard for tracking Codex & AI model quotas in real time.": [
-        .traditionalChinese: "即時掌控 Codex 與 AI 模型配額的桌面助手",
-        .japanese: "Codex と AI モデルのクォータをリアルタイムで追跡するデスクトップツール",
-        .korean: "Codex 및 AI 모델 할당량을 실시간으로 추적하는 데스크톱 대시보드",
-        .spanish: "Panel de escritorio para supervisar cuotas de Codex e IA en tiempo real.",
-        .german: "Desktop-Dashboard zur Echtzeit-Überwachung von Codex- und KI-Quotas.",
-        .french: "Tableau de bord de bureau pour suivre les quotas Codex et IA en temps réel.",
-        .portuguese: "Painel para monitorizar quotas de Codex e IA em tempo real.",
-        .portugueseBrazil: "Painel para monitorar cotas de Codex e IA em tempo real."
+    "Quota and usage insights for Codex, Claude, and Antigravity on macOS.": [
+        .traditionalChinese: "在 macOS 上統一掌握 Codex、Claude 與 Antigravity 的額度和用量",
+        .japanese: "macOS で Codex、Claude、Antigravity のクォータと使用状況をまとめて把握",
+        .korean: "macOS에서 Codex, Claude 및 Antigravity 할당량과 사용량을 한눈에 확인",
+        .spanish: "Cuotas y uso de Codex, Claude y Antigravity en macOS.",
+        .german: "Kontingente und Nutzung von Codex, Claude und Antigravity auf macOS.",
+        .french: "Quotas et utilisation de Codex, Claude et Antigravity sur macOS.",
+        .portuguese: "Quotas e utilização do Codex, Claude e Antigravity no macOS.",
+        .portugueseBrazil: "Cotas e uso do Codex, Claude e Antigravity no macOS."
     ],
     "Build": [
         .traditionalChinese: "組建",
@@ -4493,125 +5228,125 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Principais funcionalidades",
         .portugueseBrazil: "Principais recursos"
     ],
-    "Real-Time Quota Tracking": [
-        .traditionalChinese: "配額即時追蹤",
-        .japanese: "クォータのリアルタイム追跡",
-        .korean: "할당량 실시간 추적",
-        .spanish: "Seguimiento de cuota en tiempo real",
-        .german: "Echtzeit-Quota-Tracking",
-        .french: "Suivi du quota en temps réel",
-        .portuguese: "Acompanhamento da quota em tempo real",
-        .portugueseBrazil: "Acompanhamento da cota em tempo real"
+    "Cross-Tool Quota Overview": [
+        .traditionalChinese: "跨工具額度總覽",
+        .japanese: "ツール横断クォータ概要",
+        .korean: "도구 통합 할당량 개요",
+        .spanish: "Resumen de cuotas entre herramientas",
+        .german: "Toolübergreifende Kontingentübersicht",
+        .french: "Vue d’ensemble des quotas",
+        .portuguese: "Visão geral de quotas entre ferramentas",
+        .portugueseBrazil: "Visão geral de cotas entre ferramentas"
     ],
-    "Track Codex & AI quota usage and remaining percentage instantly.": [
-        .traditionalChinese: "毫秒級擷取 Codex 與 AI 配額用量及剩餘百分比",
-        .japanese: "Codex と AI のクォータ使用量と残量を即座に把握",
-        .korean: "Codex 및 AI 할당량 사용량과 잔여율을 즉시 확인",
-        .spanish: "Obtén al instante el consumo de cuota y el porcentaje restante de Codex e IA.",
-        .german: "Erfasse Codex- und KI-Nutzung sowie verbleibende Prozente sofort.",
-        .french: "Suivez instantanément l’utilisation et le pourcentage restant de Codex et IA.",
-        .portuguese: "Obtenha instantaneamente a utilização e a percentagem restante de Codex e IA.",
-        .portugueseBrazil: "Obtenha instantaneamente a utilização e a porcentagem restante de Codex e IA."
+    "See multi-window and model quotas for Codex, Claude, and Antigravity.": [
+        .traditionalChinese: "統一查看 Codex、Claude 與 Antigravity 的多週期及模型額度",
+        .japanese: "Codex、Claude、Antigravity の複数期間とモデル別クォータをまとめて確認。",
+        .korean: "Codex, Claude 및 Antigravity의 다중 주기 및 모델별 할당량을 한눈에 확인하세요.",
+        .spanish: "Consulta cuotas por periodo y modelo de Codex, Claude y Antigravity.",
+        .german: "Kontingente nach Zeitraum und Modell für Codex, Claude und Antigravity anzeigen.",
+        .french: "Consultez les quotas par période et par modèle de Codex, Claude et Antigravity.",
+        .portuguese: "Consulte quotas por período e modelo do Codex, Claude e Antigravity.",
+        .portugueseBrazil: "Veja cotas por período e modelo do Codex, Claude e Antigravity."
     ],
-    "Smart Cycle Detection": [
-        .traditionalChinese: "智慧週期識別",
-        .japanese: "スマートな周期検出",
-        .korean: "스마트 주기 감지",
-        .spanish: "Detección inteligente de ciclos",
-        .german: "Intelligente Zykluserkennung",
-        .french: "Détection intelligente des cycles",
-        .portuguese: "Deteção inteligente de ciclos",
-        .portugueseBrazil: "Detecção inteligente de ciclos"
+    "Usage & Activity Analytics": [
+        .traditionalChinese: "用量與活動分析",
+        .japanese: "使用量とアクティビティ分析",
+        .korean: "사용량 및 활동 분석",
+        .spanish: "Análisis de uso y actividad",
+        .german: "Nutzungs- und Aktivitätsanalyse",
+        .french: "Analyse de l’utilisation et de l’activité",
+        .portuguese: "Análise de utilização e atividade",
+        .portugueseBrazil: "Análise de uso e atividade"
     ],
-    "Detect 5-hour reset windows, weekly quotas, and renewal dates.": [
-        .traditionalChinese: "自動計算 5 小時重置窗口、週配額與續訂週期",
-        .japanese: "5時間のリセット枠、週間クォータ、更新日を自動検出",
-        .korean: "5시간 리셋 윈도우, 주간 할당량 및 갱신 주기 자동 계산",
-        .spanish: "Detecta ventanas de 5 horas, cuotas semanales y fechas de renovación.",
-        .german: "Erkennt 5-Stunden-Resetfenster, wöchentliche Quotas und Verlängerungsdaten.",
-        .french: "Détecte les fenêtres de réinitialisation de 5 h, quotas hebdo et renouvellements.",
-        .portuguese: "Deteta janelas de 5 horas, quotas semanais e datas de renovação.",
-        .portugueseBrazil: "Detecta janelas de 5 horas, cotas semanais e datas de renovação."
+    "Explore sessions, tokens, model mix, task trends, and project activity.": [
+        .traditionalChinese: "彙整工作階段、Token、模型構成、任務趨勢與專案活動",
+        .japanese: "セッション、トークン、モデル構成、タスク傾向、プロジェクト活動を分析。",
+        .korean: "세션, 토큰, 모델 구성, 작업 추세 및 프로젝트 활동을 분석하세요.",
+        .spanish: "Analiza sesiones, tokens, modelos, tendencias de tareas y actividad de proyectos.",
+        .german: "Sessions, Token, Modellmix, Aufgabentrends und Projektaktivität auswerten.",
+        .french: "Analysez les sessions, tokens, modèles, tendances des tâches et activités des projets.",
+        .portuguese: "Analise sessões, tokens, modelos, tendências de tarefas e atividade de projetos.",
+        .portugueseBrazil: "Analise sessões, tokens, modelos, tendências de tarefas e atividade de projetos."
     ],
-    "Reset Card Alerts": [
-        .traditionalChinese: "重置卡失效預警",
-        .japanese: "リセットカード期限警告",
-        .korean: "리셋 카드 만료 알림",
-        .spanish: "Alertas de tarjetas de reinicio",
-        .german: "Reset-Karten-Warnungen",
-        .french: "Alertes de cartes de réinitialisation",
-        .portuguese: "Alertas de cartões de reinício",
-        .portugueseBrazil: "Alertas de cartões de reinício"
+    "Pace & Recovery Forecasts": [
+        .traditionalChinese: "節奏與恢復預測",
+        .japanese: "ペースと回復予測",
+        .korean: "사용 속도 및 회복 예측",
+        .spanish: "Ritmo y previsiones de recuperación",
+        .german: "Tempo- und Erholungsprognosen",
+        .french: "Rythme et prévisions de récupération",
+        .portuguese: "Ritmo e previsões de recuperação",
+        .portugueseBrazil: "Ritmo e previsões de recuperação"
     ],
-    "Monitor multiple reset card reserves and get timely expiry alerts.": [
-        .traditionalChinese: "多張重置卡儲備追蹤，智慧預警最近到期時間",
-        .japanese: "複数のリセットカード残数を管理し、期限切れを事前に通知",
-        .korean: "여러 장의 리셋 카드 보유량을 추적하고 최근 만료 시점을 사전 경고",
-        .spanish: "Controla reservas de tarjetas de reinicio y recibe alertas de vencimiento.",
-        .german: "Verwalte Reset-Karten und erhalte rechtzeitige Ablaufwarnungen.",
-        .french: "Gérez vos réserves de cartes et recevez des alertes avant expiration.",
-        .portuguese: "Monitorize reservas de cartões e receba alertas de expiração a tempo.",
-        .portugueseBrazil: "Monitore reservas de cartões e receba alertas de expiração a tempo."
+    "Forecast quota runout and resets from recent trends, with practical pace guidance.": [
+        .traditionalChinese: "根據近期趨勢預測額度耗盡與重置，並提供實用的節奏建議",
+        .japanese: "最近の傾向からクォータの使い切りとリセットを予測し、実用的なペースの目安を提示。",
+        .korean: "최근 추세로 할당량 소진과 재설정을 예측하고 실용적인 사용 속도 지침을 제공합니다.",
+        .spanish: "Prevé el agotamiento y los reinicios según tendencias recientes y ofrece una guía de ritmo.",
+        .german: "Prognostiziert Verbrauch und Zurücksetzungen aus aktuellen Trends und gibt Tempoempfehlungen.",
+        .french: "Prévoyez l’épuisement et les réinitialisations selon les tendances récentes, avec des conseils de rythme.",
+        .portuguese: "Preveja o esgotamento e as reposições com base nas tendências recentes e receba orientações de ritmo.",
+        .portugueseBrazil: "Preveja o esgotamento e as redefinições com base nas tendências recentes e receba orientações de ritmo."
     ],
-    "Menu Bar Compact Mode": [
-        .traditionalChinese: "極簡選單列模式",
-        .japanese: "メニューバー常駐モード",
-        .korean: "메뉴 막대 컴팩트 모드",
-        .spanish: "Modo compacto en la barra de menús",
-        .german: "Kompakter Menüleistenmodus",
-        .french: "Mode compact barre de menus",
-        .portuguese: "Modo compacto na barra de menus",
-        .portugueseBrazil: "Modo compacto na barra de menus"
+    "Context-Aware Overlays": [
+        .traditionalChinese: "智慧視窗掛件",
+        .japanese: "状況連動オーバーレイ",
+        .korean: "상황 인식 창 오버레이",
+        .spanish: "Superposiciones sensibles al contexto",
+        .german: "Kontextabhängige Overlays",
+        .french: "Superpositions adaptées au contexte",
+        .portuguese: "Sobreposições sensíveis ao contexto",
+        .portugueseBrazil: "Sobreposições sensíveis ao contexto"
     ],
-    "Run quietly in the macOS menu bar with an optional hidden Dock icon.": [
-        .traditionalChinese: "支援常駐 macOS 選單列與隱藏 Dock 圖示靜默運行",
-        .japanese: "Dock アイコンを非表示にして macOS メニューバーで静かに動作",
-        .korean: "Dock 아이콘을 숨기고 macOS 메뉴 막대에서 조용히 실행 가능",
-        .spanish: "Ejecución discreta en la barra de menús con opción de ocultar el Dock.",
-        .german: "Läuft diskret in der Menüleiste mit optional ausgeblendetem Dock-Symbol.",
-        .french: "Fonctionne discrètement dans la barre des menus en masquant le Dock.",
-        .portuguese: "Executa discretamente na barra de menus com ícone da Dock ocultável.",
-        .portugueseBrazil: "Executa discretamente na barra de menus com ícone do Dock ocultável."
+    "Follow the foreground Codex, Claude, or Antigravity window automatically.": [
+        .traditionalChinese: "隨前台 Codex、Claude 或 Antigravity 自動切換並貼靠視窗",
+        .japanese: "前面にある Codex、Claude、Antigravity のウインドウへ自動的に追従。",
+        .korean: "전면의 Codex, Claude 또는 Antigravity 창을 자동으로 따라갑니다.",
+        .spanish: "Sigue automáticamente la ventana activa de Codex, Claude o Antigravity.",
+        .german: "Folgt automatisch dem aktiven Fenster von Codex, Claude oder Antigravity.",
+        .french: "Suit automatiquement la fenêtre active de Codex, Claude ou Antigravity.",
+        .portuguese: "Acompanha automaticamente a janela ativa do Codex, Claude ou Antigravity.",
+        .portugueseBrazil: "Acompanha automaticamente a janela ativa do Codex, Claude ou Antigravity."
     ],
-    "Adaptive Dual-Sync Engine": [
-        .traditionalChinese: "自適應雙模同步",
-        .japanese: "デュアル同期エンジン",
-        .korean: "적응형 듀얼 동기화 엔진",
-        .spanish: "Motor de sincronización dual adaptable",
-        .german: "Adaptive Dual-Sync-Engine",
-        .french: "Moteur de double synchronisation",
-        .portuguese: "Motor de sincronização dupla adaptável",
-        .portugueseBrazil: "Motor de sincronização dupla adaptável"
+    "Menu Bar Monitoring": [
+        .traditionalChinese: "選單列即時監控",
+        .japanese: "メニューバー監視",
+        .korean: "메뉴 막대 모니터링",
+        .spanish: "Supervisión en la barra de menús",
+        .german: "Menüleisten-Monitoring",
+        .french: "Suivi dans la barre des menus",
+        .portuguese: "Monitorização na barra de menus",
+        .portugueseBrazil: "Monitoramento na barra de menus"
     ],
-    "Combine intelligent background polling with one-click snapshot sync.": [
-        .traditionalChinese: "智慧背景自適應輪詢與即時一鍵快照刷新",
-        .japanese: "バックグラウンド自動同期とワンクリック即時更新を両立",
-        .korean: "스마트 백그라운드 폴링과 원클릭 즉시 스냅샷 새로고침 지원",
-        .spanish: "Combina sondeo inteligente en segundo plano con sincronización inmediata.",
-        .german: "Kombiniert intelligente Hintergrundabfragen mit Sofort-Aktualisierung.",
-        .french: "Associe interrogation automatique en arrière-plan et actualisation instantanée.",
-        .portuguese: "Combina sondagem em segundo plano com sincronização imediata.",
-        .portugueseBrazil: "Combina sondagem em segundo plano com sincronização imediata."
+    "Keep used or available quota, reset timing, and sync status at a glance.": [
+        .traditionalChinese: "常駐顯示已用或可用額度、重置倒數與同步狀態",
+        .japanese: "使用済みまたは利用可能なクォータ、リセット時刻、同期状態を常に確認。",
+        .korean: "사용 또는 남은 할당량, 재설정 시간 및 동기화 상태를 한눈에 확인하세요.",
+        .spanish: "Consulta de un vistazo la cuota usada o disponible, el reinicio y la sincronización.",
+        .german: "Verbrauchtes oder verfügbares Kontingent, Resetzeit und Syncstatus auf einen Blick.",
+        .french: "Consultez en un coup d’œil le quota utilisé ou disponible, la réinitialisation et la synchronisation.",
+        .portuguese: "Consulte rapidamente a quota utilizada ou disponível, a reposição e a sincronização.",
+        .portugueseBrazil: "Veja rapidamente a cota usada ou disponível, a redefinição e a sincronização."
     ],
-    "Seamless In-App Updates": [
-        .traditionalChinese: "無縫線上熱更新",
-        .japanese: "シームレスなオンライン更新",
-        .korean: "원활한 인앱 온라인 업데이트",
-        .spanish: "Actualizaciones fluidas en la app",
-        .german: "Nahtlose In-App-Updates",
-        .french: "Mises à jour intégrées fluides",
-        .portuguese: "Atualizações integradas sem interrupções",
-        .portugueseBrazil: "Atualizações integradas sem interrupções"
+    "Local-First Privacy": [
+        .traditionalChinese: "本機優先與隱私",
+        .japanese: "ローカル優先のプライバシー",
+        .korean: "로컬 우선 개인정보 보호",
+        .spanish: "Privacidad local primero",
+        .german: "Lokaler Datenschutz",
+        .french: "Confidentialité locale",
+        .portuguese: "Privacidade com prioridade local",
+        .portugueseBrazil: "Privacidade com prioridade local"
     ],
-    "High-security delta updates and smooth installations powered by Sparkle.": [
-        .traditionalChinese: "基於 Sparkle 框架的一鍵增量線上檢測與平滑升級",
-        .japanese: "Sparkle による安全な差分検出とスムーズな自動インストール",
-        .korean: "Sparkle 기반의 안전한 델타 업데이트 및 원활한 자동 설치",
-        .spanish: "Actualizaciones delta seguras e instalaciones fluidas mediante Sparkle.",
-        .german: "Sichere Delta-Updates und reibungslose Installation via Sparkle.",
-        .french: "Mises à jour delta sécurisées et installation fluide via Sparkle.",
-        .portuguese: "Atualizações delta seguras e instalação fluida com tecnologia Sparkle.",
-        .portugueseBrazil: "Atualizações delta seguras e instalação fluida com tecnologia Sparkle."
+    "Read only enabled tool data and keep analytics on your Mac.": [
+        .traditionalChinese: "只讀取已啟用工具的資料，分析結果保存在 Mac 上",
+        .japanese: "有効にしたツールのデータだけを読み取り、分析結果は Mac に保存。",
+        .korean: "활성화한 도구의 데이터만 읽고 분석 결과는 Mac에 보관합니다.",
+        .spanish: "Lee solo los datos de las herramientas activadas y guarda el análisis en tu Mac.",
+        .german: "Liest nur Daten aktivierter Tools und speichert Analysen auf deinem Mac.",
+        .french: "Lit uniquement les données des outils activés et conserve les analyses sur votre Mac.",
+        .portuguese: "Lê apenas os dados das ferramentas ativadas e mantém as análises no Mac.",
+        .portugueseBrazil: "Lê apenas os dados das ferramentas ativadas e mantém as análises no Mac."
     ],
     "Designed for macOS · Powered by SwiftUI": [
         .traditionalChinese: "專為 macOS 打造 · 基於 SwiftUI 構建",

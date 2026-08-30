@@ -31,6 +31,7 @@ The script reads `VERSION` and detects the current Mac architecture automaticall
 ```
 
 Packages use ad-hoc signing.
+Local ad-hoc packaging keeps an architecture-specific Swift build cache and uses incremental optimized compilation by default. Pass `--clean` to rebuild that cache, or `--full-optimization` to use the whole-module release compilation used by CI and Developer ID builds.
 
 ## Publishing A GitHub Release
 

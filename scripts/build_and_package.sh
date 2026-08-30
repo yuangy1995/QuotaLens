@@ -26,6 +26,9 @@ SIGN_IDENTITY="${DEVELOPER_ID_APPLICATION:-"-"}"
 SIGNING_MODE="${QUOTALENS_SIGNING_MODE:-adhoc}"
 NOTARIZE="${QUOTALENS_NOTARIZE:-0}"
 SPARKLE_PUBLIC_ED_KEY="${SPARKLE_PUBLIC_ED_KEY:-}"
+CLEAN_BUILD="${QUOTALENS_CLEAN_BUILD:-0}"
+FAST_LOCAL_BUILD="${QUOTALENS_FAST_LOCAL_BUILD:-auto}"
+PIPELINE_START_SECONDS="${SECONDS}"
 
 usage() {
     cat <<EOF
@@ -40,6 +43,13 @@ Options:
       CFBundleVersion. Defaults to git commit count, or 1 outside git.
   --configuration <debug|release>
       Swift build configuration. Defaults to release.
+  --clean
+      Delete the architecture-specific Swift build cache before compiling.
+  --fast-local
+      Use incremental optimized compilation for local packaging.
+  --full-optimization
+      Use Swift release whole-module optimization. This is always used for
+      Developer ID and CI builds unless --fast-local is passed explicitly.
   --dist-dir <path>
       Output directory. Defaults to ./dist.
   --signing-mode <adhoc|developer-id>
@@ -70,6 +80,18 @@ while [[ $# -gt 0 ]]; do
         --configuration)
             CONFIGURATION="${2:-}"
             shift 2
+            ;;
+        --clean)
+            CLEAN_BUILD="1"
+            shift
+            ;;
+        --fast-local)
+            FAST_LOCAL_BUILD="1"
+            shift
+            ;;
+        --full-optimization)
+            FAST_LOCAL_BUILD="0"
+            shift
             ;;
         --dist-dir)
             DIST_DIR="${2:-}"
@@ -113,6 +135,34 @@ fi
 if [[ "${NOTARIZE}" == "1" && "${SIGNING_MODE}" != "developer-id" ]]; then
     echo -e "${RED}Notarization requires --signing-mode developer-id.${NC}"
     exit 1
+fi
+
+case "${CLEAN_BUILD}" in
+    0|1) ;;
+    *)
+        echo -e "${RED}QUOTALENS_CLEAN_BUILD must be 0 or 1.${NC}"
+        exit 2
+        ;;
+esac
+
+case "${FAST_LOCAL_BUILD}" in
+    auto|0|1) ;;
+    *)
+        echo -e "${RED}QUOTALENS_FAST_LOCAL_BUILD must be auto, 0, or 1.${NC}"
+        exit 2
+        ;;
+esac
+
+if [[ "${FAST_LOCAL_BUILD}" == "auto" ]]; then
+    if [[ "${CONFIGURATION}" == "release" && "${SIGNING_MODE}" == "adhoc" && -z "${CI:-}" ]]; then
+        FAST_LOCAL_BUILD="1"
+    else
+        FAST_LOCAL_BUILD="0"
+    fi
+fi
+
+if [[ "${CONFIGURATION}" != "release" ]]; then
+    FAST_LOCAL_BUILD="0"
 fi
 
 notarytool_submit() {
@@ -215,17 +265,39 @@ echo -e "Build number: ${BLUE}${BUILD_NUMBER}${NC}"
 echo -e "Architecture: ${BLUE}${ARCH_LABEL}${NC}"
 echo -e "Signing     : ${BLUE}${SIGNING_MODE}${NC}"
 echo -e "Notarize    : ${BLUE}${NOTARIZE}${NC}"
+if [[ "${FAST_LOCAL_BUILD}" == "1" ]]; then
+    echo -e "Compilation : ${BLUE}incremental optimized local build${NC}"
+else
+    echo -e "Compilation : ${BLUE}${CONFIGURATION} full optimization${NC}"
+fi
+echo -e "Clean build : ${BLUE}${CLEAN_BUILD}${NC}"
 echo -e "Output      : ${BLUE}${DIST_DIR}${NC}"
 
 echo -e "\n${YELLOW}[1/6] Preparing output directories...${NC}"
-rm -rf "${DIST_DIR}" "${BUILD_ROOT}"
+rm -rf "${DIST_DIR}"
+if [[ "${CLEAN_BUILD}" == "1" ]]; then
+    rm -rf "${BUILD_ROOT}"
+fi
 mkdir -p "${DIST_DIR}" "${BUILD_ROOT}"
 
 build_for_arch() {
     local arch="$1"
     local scratch="${BUILD_ROOT}/${arch}"
     echo -e "${YELLOW}Building ${APP_NAME} for ${arch}...${NC}"
-    swift build -c "${CONFIGURATION}" --arch "${arch}" --scratch-path "${scratch}"
+    local build_args=(
+        -c "${CONFIGURATION}"
+        --arch "${arch}"
+        --scratch-path "${scratch}"
+        --disable-index-store
+    )
+    if [[ "${FAST_LOCAL_BUILD}" == "1" ]]; then
+        build_args+=(
+            -Xswiftc -no-whole-module-optimization
+            -Xswiftc -enable-batch-mode
+            -Xswiftc -incremental
+        )
+    fi
+    swift build "${build_args[@]}"
 
     local bin="${scratch}/${arch}-apple-macosx/${CONFIGURATION}/${APP_NAME}"
     if [[ ! -f "${bin}" ]]; then
@@ -245,6 +317,7 @@ build_for_arch() {
 
 echo -e "\n${YELLOW}[2/6] Compiling Swift package...${NC}"
 cd "${PROJECT_DIR}"
+BUILD_START_SECONDS="${SECONDS}"
 
 if [[ "${#SWIFT_ARCHES[@]}" -eq 1 ]]; then
     build_for_arch "${SWIFT_ARCHES[0]}"
@@ -259,7 +332,7 @@ else
 fi
 
 lipo -info "${RELEASE_BIN}"
-echo -e "${GREEN}Release build succeeded${NC}"
+echo -e "${GREEN}Release build succeeded in $((SECONDS - BUILD_START_SECONDS))s${NC}"
 
 echo -e "\n${YELLOW}[3/6] Assembling .app bundle...${NC}"
 mkdir -p "${APP_BUNDLE}/Contents/MacOS"
@@ -435,4 +508,5 @@ echo -e "DMG        : ${BLUE}${DMG_PATH}${NC} ($(du -sh "${DMG_PATH}" | awk '{pr
 echo -e "ZIP        : ${BLUE}${ZIP_PATH}${NC} ($(du -sh "${ZIP_PATH}" | awk '{print $1}'))"
 echo -e "SHA-256 DMG: $(shasum -a 256 "${DMG_PATH}" | awk '{print $1}')"
 echo -e "SHA-256 ZIP: $(shasum -a 256 "${ZIP_PATH}" | awk '{print $1}')"
+echo -e "Elapsed     : ${BLUE}$((SECONDS - PIPELINE_START_SECONDS))s${NC}"
 echo -e "${CYAN}======================================================${NC}"
