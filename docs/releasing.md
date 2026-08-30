@@ -21,15 +21,13 @@ Use semantic versioning:
 Build one locally signed downloadable package:
 
 ```bash
-./scripts/build_and_package.sh --arch apple-silicon
-./scripts/build_and_package.sh --arch intel
-./scripts/build_and_package.sh --arch universal
+./scripts/build_and_package.sh
 ```
 
-The script reads `VERSION` automatically. You can override it:
+The script reads `VERSION` and detects the current Mac architecture automatically, producing only the matching Apple Silicon or Intel package. You can override the architecture or version explicitly:
 
 ```bash
-./scripts/build_and_package.sh --arch universal --version 1.0.1 --build-number 42
+./scripts/build_and_package.sh --arch apple-silicon --version 1.0.1 --build-number 42
 ```
 
 Packages use ad-hoc signing.

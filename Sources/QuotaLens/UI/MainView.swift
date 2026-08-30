@@ -120,7 +120,6 @@ public struct MainView: View {
                     currentContent
                 }
                 .frame(
-                    minWidth: 780,
                     maxWidth: .infinity,
                     minHeight: 560,
                     maxHeight: .infinity,

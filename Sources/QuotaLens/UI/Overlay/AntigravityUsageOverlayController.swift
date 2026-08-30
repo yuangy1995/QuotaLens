@@ -472,6 +472,10 @@ private struct AntigravityOverlaySummaryView: View {
                             .fill(statusColor.opacity(isPulsing ? 0.34 : 0.16))
                             .frame(width: 12, height: 12)
                             .scaleEffect(isPulsing ? 1.15 : 0.9)
+                            .animation(
+                                .easeInOut(duration: 1.8).repeatForever(autoreverses: true),
+                                value: isPulsing
+                            )
                         Circle()
                             .fill(statusColor)
                             .frame(width: 6, height: 6)
@@ -548,9 +552,7 @@ private struct AntigravityOverlaySummaryView: View {
         .onHover(perform: onHoverChanged)
         .onDisappear { onHoverChanged(false) }
         .onAppear {
-            withAnimation(.easeInOut(duration: 1.8).repeatForever(autoreverses: true)) {
-                isPulsing = true
-            }
+            isPulsing = true
         }
         .animation(.spring(response: 0.32, dampingFraction: 0.82), value: isExpanded)
         .preferredColorScheme(state.colorScheme)

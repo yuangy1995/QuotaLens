@@ -19,7 +19,7 @@ APP_NAME="QuotaLens"
 BUNDLE_IDENTIFIER="com.quotalens.macos"
 CONFIGURATION="release"
 DIST_DIR="${PROJECT_DIR}/dist"
-REQUESTED_ARCH="${ARCH:-universal}"
+REQUESTED_ARCH="${ARCH:-auto}"
 APP_VERSION="${VERSION:-}"
 BUILD_NUMBER="${BUILD_NUMBER:-}"
 SIGN_IDENTITY="${DEVELOPER_ID_APPLICATION:-"-"}"
@@ -32,8 +32,8 @@ usage() {
 Usage: $0 [options]
 
 Options:
-  --arch <apple-silicon|arm64|intel|x86_64|universal>
-      Build architecture. Defaults to universal.
+  --arch <auto|apple-silicon|arm64|intel|x86_64|universal>
+      Build architecture. Defaults to the current Mac's native architecture.
   --version <semver>
       Marketing version. Defaults to VERSION file.
   --build-number <number>
@@ -158,6 +158,19 @@ if [[ ! "${BUILD_NUMBER}" =~ ^[0-9]+([.][0-9]+)*$ ]]; then
     echo -e "${RED}Invalid build number: ${BUILD_NUMBER}${NC}"
     echo "Use an integer or dot-separated integer string such as 42 or 42.1."
     exit 2
+fi
+
+if [[ "${REQUESTED_ARCH}" == "auto" ]]; then
+    HOST_ARCH="$(uname -m)"
+    IS_TRANSLATED="$(sysctl -in sysctl.proc_translated 2>/dev/null || true)"
+    if [[ "${HOST_ARCH}" == "arm64" || "${IS_TRANSLATED}" == "1" ]]; then
+        REQUESTED_ARCH="arm64"
+    elif [[ "${HOST_ARCH}" == "x86_64" ]]; then
+        REQUESTED_ARCH="x86_64"
+    else
+        echo -e "${RED}Unsupported host architecture: ${HOST_ARCH}${NC}"
+        exit 2
+    fi
 fi
 
 case "${REQUESTED_ARCH}" in

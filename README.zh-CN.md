@@ -56,12 +56,12 @@ swift build -c release
 生成 `.app`、`.zip` 和 `.dmg` 安装包：
 
 ```bash
-./scripts/build_and_package.sh --arch universal
+./scripts/build_and_package.sh
 ```
 
-打包脚本使用 ad-hoc 本地签名。
+打包脚本会自动识别当前 Mac 是 Apple 芯片还是 Intel，只生成对应的单架构安装包，并使用 ad-hoc 本地签名。
 
-构建不同架构的下载包：
+手动指定构建架构：
 
 ```bash
 ./scripts/build_and_package.sh --arch apple-silicon

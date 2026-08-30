@@ -56,12 +56,12 @@ swift build -c release
 Create an `.app`, `.zip`, and `.dmg` package:
 
 ```bash
-./scripts/build_and_package.sh --arch universal
+./scripts/build_and_package.sh
 ```
 
-The packaging script uses ad-hoc signing.
+The packaging script detects whether the current Mac uses Apple Silicon or Intel, produces only the matching single-architecture package, and uses ad-hoc signing.
 
-Build architecture-specific downloads:
+Override the build architecture manually:
 
 ```bash
 ./scripts/build_and_package.sh --arch apple-silicon
