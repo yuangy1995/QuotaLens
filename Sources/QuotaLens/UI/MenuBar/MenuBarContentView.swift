@@ -918,29 +918,28 @@ public struct MenuBarContentView: View {
             }
 
             if scanCoordinator.isScanning {
-                VStack(alignment: .leading, spacing: 5) {
+                VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 6) {
-                        ProgressView()
-                            .controlSize(.small)
-                            .tint(cyan)
+                        CyberScanIndicator(size: 16, accentColor: cyan)
                         Text(L10n.text("正在扫描本地记录", "Scanning local history"))
                             .font(.system(size: 9.5, weight: .bold, design: .rounded))
-                            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                            .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
                         Spacer()
                         if let progress = scanCoordinator.progress {
                             Text(UsageNumberFormatter.percent(progress * 100.0, maximumFractionDigits: 0))
-                                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                .font(.system(size: 9, weight: .heavy, design: .monospaced))
                                 .foregroundStyle(cyan)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1.5)
+                                .background(cyan.opacity(isDark ? 0.16 : 0.10), in: Capsule())
+                                .overlay(
+                                    Capsule()
+                                        .strokeBorder(cyan.opacity(isDark ? 0.35 : 0.25), lineWidth: 0.7)
+                                )
                         }
                     }
 
-                    if let progress = scanCoordinator.progress {
-                        ProgressView(value: progress)
-                            .tint(cyan)
-                    } else {
-                        ProgressView()
-                            .tint(cyan)
-                    }
+                    CyberProgressBar(value: scanCoordinator.progress, height: 4, accentColor: cyan)
 
                     if !scanCoordinator.statusText.isEmpty {
                         Text(scanCoordinator.statusText)
@@ -984,8 +983,7 @@ public struct MenuBarContentView: View {
                     .foregroundStyle(prediction.color)
             }
 
-            ProgressView(value: state.preferredDisplayQuotaRiskProgress)
-                .tint(prediction.color)
+            CyberProgressBar(value: state.preferredDisplayQuotaRiskProgress, height: 4, accentColor: prediction.color)
 
             Text(prediction.text)
                 .font(.system(size: 10.5, weight: .heavy, design: .rounded))

@@ -75,8 +75,9 @@ public actor CodexProcessManager {
     /// 用户或上层恢复流程发起一次新的连接。
     public func start(resetReconnectAttempts: Bool = true) async -> Bool {
         if !resetReconnectAttempts {
-            guard reconnectTask == nil,
-                  reconnectAttempts < maximumReconnectAttempts else {
+            // 自动重连任务仍在等待时不重复启动；重试次数到达上限后，
+            // 仍允许上层的低频恢复或定时刷新再尝试一次。
+            guard reconnectTask == nil else {
                 return false
             }
         }

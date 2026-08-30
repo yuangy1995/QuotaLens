@@ -53,6 +53,17 @@ public struct AboutView: View {
     private var defaultChangelogs: [ChangelogEntry] {
         [
             ChangelogEntry(
+                id: "v1.0.24",
+                version: "v1.0.24",
+                date: "2026-08-30",
+                changes: [
+                    L10n.text("全新引入全息科技感线性进度条与动态雷达扫描指示器，显著提升扫描与更新过程的视觉体验", "Introduced cyber linear progress bars and dynamic radar scanner indicators for a refined visual scanning and updating experience"),
+                    L10n.text("优化 Codex App Server 连接恢复与自动重连调度生命周期，防止无效重试并支持即时强制重连", "Optimized Codex App Server connection recovery and reconnection lifecycle to prevent redundant retries and enable instant manual reconnect"),
+                    L10n.text("升级主界面扫描横幅、更新检查对话框与菜单栏风险进度条的视觉呈现与暗色模式适配", "Upgraded visual styling and dark mode adaptation for main view scan banners, update check dialogs, and menu bar risk progress bars"),
+                    L10n.text("全面完善 10 种语言的多语言本地化翻译字典与更新日志多语言映射", "Comprehensive localization dictionary refinements and changelog translation mapping across 10 supported languages")
+                ]
+            ),
+            ChangelogEntry(
                 id: "v1.0.23",
                 version: "v1.0.23",
                 date: "2026-08-30",

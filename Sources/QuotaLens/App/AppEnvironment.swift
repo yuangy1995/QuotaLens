@@ -31,6 +31,7 @@ public final class AppEnvironment: ObservableObject {
 
     private var refreshLoopTask: Task<Void, Never>?
     private var serverRecoveryTask: Task<Void, Never>?
+    private var serverRecoveryGeneration: UInt64 = 0
     private var resetCreditReminderTask: Task<Void, Never>?
     private var subscriptionEntitlementRetryTask: Task<Void, Never>?
     private var claudeUsagePoller: ClaudeUsagePoller?
@@ -730,6 +731,7 @@ public final class AppEnvironment: ObservableObject {
 
     /// 连接真实 Codex App Server
     public func connectCodex() async {
+        cancelServerRecovery()
         state.connectionStatus = .launching
         let success = await processManager.start()
         let status = await processManager.getStatus()
@@ -749,7 +751,11 @@ public final class AppEnvironment: ObservableObject {
     }
 
     /// 全量刷新数据视图
-    public func refreshData(fetchServer: Bool = true, scheduleRetryOnFailure: Bool = true) async {
+    public func refreshData(
+        fetchServer: Bool = true,
+        scheduleRetryOnFailure: Bool = true,
+        forceReconnect: Bool = false
+    ) async {
         guard enabledToolsStore.isEnabled(.codex) else { return }
         refreshDataRequestGeneration += 1
         let requestGeneration = refreshDataRequestGeneration
@@ -769,8 +775,11 @@ public final class AppEnvironment: ObservableObject {
                         scheduleRetryOnFailure: scheduleRetryOnFailure
                     )
                 } else {
+                    if forceReconnect {
+                        cancelServerRecovery()
+                    }
                     let started = await processManager.start(
-                        resetReconnectAttempts: false
+                        resetReconnectAttempts: forceReconnect
                     )
                     if started {
                         state.connectionStatus = .handshaking
@@ -826,7 +835,11 @@ public final class AppEnvironment: ObservableObject {
     }
 
     /// 刷新所有用户可见数据：本地 Codex 用量先完成索引，再读取服务器额度快照。
-    public func refreshAllData(fetchServer: Bool = true, scheduleRetryOnFailure: Bool = true) async {
+    public func refreshAllData(
+        fetchServer: Bool = true,
+        scheduleRetryOnFailure: Bool = true,
+        forceCodexReconnect: Bool = true
+    ) async {
         if enabledToolsStore.isEnabled(.claude) {
             startClaudeServices()
         }
@@ -847,7 +860,11 @@ public final class AppEnvironment: ObservableObject {
             await refreshAntigravityQuota(force: true)
         }
         if enabledToolsStore.isEnabled(.codex) {
-            await refreshData(fetchServer: fetchServer, scheduleRetryOnFailure: scheduleRetryOnFailure)
+            await refreshData(
+                fetchServer: fetchServer,
+                scheduleRetryOnFailure: scheduleRetryOnFailure,
+                forceReconnect: forceCodexReconnect
+            )
         } else {
             await refreshProviderQuotaInsights()
         }
@@ -970,10 +987,10 @@ public final class AppEnvironment: ObservableObject {
         guard enabledToolsStore.isEnabled(tool) else { return }
         switch tool {
         case .codex:
+            await refreshData(forceReconnect: true)
             if UsageFeatureFlags.shared.isAnalyticsEnabled {
                 await scanCoordinator.scanNow()
             }
-            await refreshData()
         case .claude:
             startClaudeServices()
             if UsageFeatureFlags.shared.isAnalyticsEnabled {
@@ -1651,16 +1668,27 @@ public final class AppEnvironment: ObservableObject {
 
     private func scheduleServerRecovery() {
         guard serverRecoveryTask == nil else { return }
+        guard enabledToolsStore.isEnabled(.codex) else { return }
         state.isRetryingServerConnection = true
+        serverRecoveryGeneration &+= 1
+        let recoveryGeneration = serverRecoveryGeneration
 
         serverRecoveryTask = Task { @MainActor [weak self] in
             guard let self else { return }
             defer {
-                self.serverRecoveryTask = nil
-                self.state.isRetryingServerConnection = false
+                if recoveryGeneration == self.serverRecoveryGeneration {
+                    self.serverRecoveryTask = nil
+                    self.state.isRetryingServerConnection = false
+                }
             }
 
-            for delaySeconds in Self.serverRetryDelaysSeconds {
+            var retryIndex = 0
+            while !Task.isCancelled,
+                  self.enabledToolsStore.isEnabled(.codex) {
+                let delaySeconds = Self.serverRetryDelaysSeconds[
+                    min(retryIndex, Self.serverRetryDelaysSeconds.count - 1)
+                ]
+                retryIndex += 1
                 do {
                     try await Task.sleep(nanoseconds: delaySeconds * 1_000_000_000)
                 } catch {
@@ -1705,6 +1733,7 @@ public final class AppEnvironment: ObservableObject {
     }
 
     private func cancelServerRecovery() {
+        serverRecoveryGeneration &+= 1
         serverRecoveryTask?.cancel()
         serverRecoveryTask = nil
         state.isRetryingServerConnection = false
@@ -1712,9 +1741,14 @@ public final class AppEnvironment: ObservableObject {
 
     private func recoverServerSnapshotOnce() async -> Bool {
         let currentStatus = await processManager.getStatus()
-        if !currentStatus.isConnected {
+        switch currentStatus {
+        case .connected:
+            break
+        case .launching, .handshaking, .reconnecting:
+            return false
+        case .disconnected, .failed:
             let started = await processManager.start(
-                resetReconnectAttempts: false
+                resetReconnectAttempts: true
             )
             if started {
                 state.connectionStatus = .handshaking
@@ -2312,9 +2346,27 @@ public final class AppEnvironment: ObservableObject {
             await processManager.onStatusChange { [weak self] status in
                 Task { @MainActor [weak self] in
                     guard let self else { return }
+                    if status.isConnected {
+                        guard self.serverRecoveryTask != nil,
+                              !self.isFetchingServerSnapshot else { return }
+                        if await self.fetchConnectedServerSnapshotIfPossible(
+                            scheduleRetryOnFailure: true
+                        ) {
+                            await self.refreshData(
+                                fetchServer: false,
+                                scheduleRetryOnFailure: false
+                            )
+                        }
+                        return
+                    }
+
                     // UI 的 connected 还要求核心额度响应通过严格解码。
-                    if !status.isConnected {
-                        self.state.connectionStatus = status
+                    self.state.connectionStatus = status
+                    switch status {
+                    case .failed, .reconnecting:
+                        self.scheduleServerRecovery()
+                    case .disconnected, .launching, .handshaking, .connected:
+                        break
                     }
                 }
             }

@@ -1265,7 +1265,7 @@ public struct SettingsView: View {
 
                 Button(action: {
                     Task {
-                        await env.refreshData()
+                        await env.refreshData(forceReconnect: true)
                     }
                 }) {
                     HStack(spacing: 5) {

@@ -258,6 +258,9 @@ public enum L10n {
     }
 
     public static let changelogZhToEnMap: [String: String] = [
+        "全新引入全息科技感线性进度条与动态雷达扫描指示器，显著提升扫描与更新过程的视觉体验": "Introduced cyber linear progress bars and dynamic radar scanner indicators for a refined visual scanning and updating experience",
+        "优化 Codex App Server 连接恢复与自动重连调度生命周期，防止无效重试并支持即时强制重连": "Optimized Codex App Server connection recovery and reconnection lifecycle to prevent redundant retries and enable instant manual reconnect",
+        "升级主界面扫描横幅、更新检查对话框与菜单栏风险进度条的视觉呈现与暗色模式适配": "Upgraded visual styling and dark mode adaptation for main view scan banners, update check dialogs, and menu bar risk progress bars",
         "重构 Codex 连接、重连与额度刷新状态，连接失败和缓存数据现在会准确显示": "Reworked Codex connection, reconnection, and quota refresh states so failures and cached data are shown accurately",
         "严格校验额度与重置卡响应，并将 Claude 登录凭据安全迁移至 macOS 钥匙串": "Added strict validation for quota and reset card responses, and moved Claude sign-in credentials to macOS Keychain",
         "优化大型历史记录导入、汇总查询和后台监听，显著降低启动、CPU 与内存占用": "Optimized large history imports, summary queries, and background monitoring to significantly reduce startup time, CPU use, and memory use",
@@ -2122,6 +2125,36 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .french: "Impossible de vérifier le PATH du shell de connexion : %@",
         .portuguese: "Não foi possível verificar o PATH da shell de início de sessão: %@",
         .portugueseBrazil: "Não foi possível verificar o PATH do shell de login: %@"
+    ],
+    "Introduced cyber linear progress bars and dynamic radar scanner indicators for a refined visual scanning and updating experience": [
+        .traditionalChinese: "全新引入全息科技感線性進度條與動態雷達掃描指示器，顯著提升掃描與更新過程的視覺體驗",
+        .japanese: "サイバー調のリニアプログレスバーと動的レーダースキャナーインジケーターを導入し、スキャンや更新時の視覚体験を大幅に向上",
+        .korean: "사이버 스타일 선형 진행률 표시줄 및 동적 레이더 스캐너 표시기를 도입하여 스캔 및 업데이트 과정의 시각적 경험 대폭 향상",
+        .spanish: "Barras de progreso lineales cibernéticas e indicadores dinámicos de radar para una experiencia visual mejorada durante el escaneo y actualización",
+        .german: "Cyber-Linear-Fortschrittsbalken und dynamische Radar-Scanner-Anzeigen für ein optimiertes visuelles Scan- und Update-Erlebnis eingeführt",
+        .french: "Barres de progression linéaires de style cyber et indicateurs radar dynamiques pour une expérience visuelle améliorée lors de l'analyse et des mises à jour",
+        .portuguese: "Barras de progresso lineares de estilo cibernético e indicadores de radar dinâmicos para uma experiência visual aperfeiçoada durante a análise e atualização",
+        .portugueseBrazil: "Barras de progresso lineares de estilo cibernético e indicadores de radar dinâmicos para uma experiência visual aprimorada durante o escaneamento e atualização"
+    ],
+    "Optimized Codex App Server connection recovery and reconnection lifecycle to prevent redundant retries and enable instant manual reconnect": [
+        .traditionalChinese: "優化 Codex App Server 連線恢復與自動重連排程生命週期，防止無效重試並支援即時強制重連",
+        .japanese: "Codex App Server の接続復旧と自動再接続ライフサイクルを最適化し、無駄な再試行を抑制して即時手動再接続に対応",
+        .korean: "Codex App Server 연결 복구 및 자동 재연결 라이프사이클을 최적화하여 불필요한 재시도를 방지하고 즉시 수동 재연결 지원",
+        .spanish: "Recuperación de conexión y ciclo de reconexión de Codex App Server optimizados para evitar reintentos innecesarios y permitir reconexión manual inmediata",
+        .german: "Verbindungswiederherstellung und Wiederverbindungs-Lebenszyklus des Codex App Servers optimiert, um unnötige Neuversuche zu verhindern und sofortiges manuelles Wiederverbinden zu ermöglichen",
+        .french: "Récupération de connexion et cycle de reconnexion du serveur Codex optimisés pour éviter les tentatives superflues et permettre une reconnexion manuelle immédiate",
+        .portuguese: "Recuperação de ligação e ciclo de reconexão do Codex App Server otimizados para evitar tentativas desnecessárias e permitir reconexão manual imediata",
+        .portugueseBrazil: "Recuperação de conexão e ciclo de reconexão do Codex App Server otimizados para evitar tentativas desnecessárias e permitir reconexão manual imediata"
+    ],
+    "Upgraded visual styling and dark mode adaptation for main view scan banners, update check dialogs, and menu bar risk progress bars": [
+        .traditionalChinese: "升級主介面掃描橫幅、更新檢查對話框與選單列風險進度條的視覺呈現與深色模式適配",
+        .japanese: "メイン画面のスキャンバナー、更新確認ダイアログ、メニューバーのリスクプログレスバーのビジュアル表示とダークモード対応を刷新",
+        .korean: "메인 화면 스캔 배너, 업데이트 확인 대화상자 및 메뉴 바 위험 진행률 표시줄의 시각적 디자인 및 다크 모드 적응 개선",
+        .spanish: "Diseño visual y adaptación al modo oscuro mejorados para el banner de escaneo, diálogo de actualización y barra de riesgo de la barra de menús",
+        .german: "Visuelles Design und Dark-Mode-Anpassung für Scan-Banner der Hauptansicht, Update-Prüfdialoge und Menüleisten-Risikofortschrittsbalken aktualisiert",
+        .french: "Style visuel et adaptation au mode sombre mis à jour pour les bannières d'analyse, boîtes de dialogue de mise à jour et barres de progression de la barre de menus",
+        .portuguese: "Estilo visual e adaptação ao modo escuro atualizados para as faixas de análise, caixas de diálogo de atualização e barras de risco da barra de menus",
+        .portugueseBrazil: "Estilo visual e adaptação ao modo escuro atualizados para os banners de escaneamento, diálogos de atualização e barras de risco da barra de menus"
     ],
     "Introduced weekly quota full recovery (100%) notification bubbles with cross-tool status alerts and quick interactions": [
         .traditionalChinese: "新增週度配額完全恢復（100%）智慧氣泡提醒，支援多工具額度滿血通知與一鍵快捷互動",

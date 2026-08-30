@@ -398,45 +398,50 @@ public struct MainView: View {
         let isDark = colorScheme == .dark
         let progress = currentScanProgress
 
-        return VStack(spacing: 6) {
-            HStack(spacing: 8) {
-                ProgressView()
-                    .controlSize(.small)
-                    .tint(cyan)
+        return VStack(spacing: 8) {
+            HStack(spacing: 9) {
+                CyberScanIndicator(size: 20, accentColor: cyan)
 
                 Text(L10n.text("正在扫描本地记录", "Scanning local history"))
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .font(.system(size: 11.5, weight: .bold, design: .rounded))
                     .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
 
-                Text(currentScanStatusText)
-                    .font(.system(size: 10.5, weight: .medium, design: .rounded))
-                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                if !currentScanStatusText.isEmpty {
+                    Text(currentScanStatusText)
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
 
-                Spacer()
+                Spacer(minLength: 8)
 
                 if let progress {
                     Text(UsageNumberFormatter.percent(progress * 100.0, maximumFractionDigits: 0))
-                        .font(.system(size: 10.5, weight: .black, design: .monospaced))
+                        .font(.system(size: 11, weight: .heavy, design: .monospaced))
                         .foregroundStyle(cyan)
                         .monospacedDigit()
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                        .background(cyan.opacity(isDark ? 0.16 : 0.10), in: Capsule())
+                        .overlay(
+                            Capsule()
+                                .strokeBorder(cyan.opacity(isDark ? 0.38 : 0.26), lineWidth: 0.8)
+                        )
                 }
             }
 
-            if let progress {
-                ProgressView(value: progress)
-                    .tint(cyan)
-            } else {
-                ProgressView()
-                    .tint(cyan)
-            }
+            CyberProgressBar(value: progress, height: 4.5, accentColor: cyan)
         }
         .padding(.horizontal, 28)
-        .padding(.vertical, 8)
-        .background(isDark ? Color.white.opacity(0.045) : Color.black.opacity(0.035))
+        .padding(.vertical, 9)
+        .background(
+            (isDark
+                ? Color(red: 0.055, green: 0.07, blue: 0.12).opacity(0.96)
+                : Color(red: 0.95, green: 0.965, blue: 0.985).opacity(0.96))
+        )
         .overlay(alignment: .bottom) {
-            CyberDivider(glowColor: isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.07))
+            CyberDivider(glowColor: cyan.opacity(isDark ? 0.28 : 0.18))
         }
     }
 
@@ -821,21 +826,20 @@ private struct UpdateCheckDialog: View {
                     }
                 } else if dialog.kind == .progress || dialog.kind == .installing || dialog.progress != nil {
                     let currentProgress = dialog.progress ?? 0.0
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             Text(dialog.message)
                                 .font(.system(size: 12, weight: .medium))
                                 .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
                             Spacer()
                             Text("\(Int(currentProgress * 100))%")
-                                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                                .font(.system(size: 11.5, weight: .bold, design: .monospaced))
                                 .foregroundStyle(cyan)
                         }
 
-                        ProgressView(value: max(0.0, min(1.0, currentProgress)))
-                            .tint(cyan)
+                        CyberProgressBar(value: max(0.0, min(1.0, currentProgress)), height: 5, accentColor: cyan)
                     }
-                    .padding(10)
+                    .padding(12)
                     .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 8))
                     .overlay(
                         RoundedRectangle(cornerRadius: 8)
