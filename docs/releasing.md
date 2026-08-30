@@ -31,7 +31,7 @@ The script reads `VERSION` and detects the current Mac architecture automaticall
 ```
 
 Packages use ad-hoc signing.
-Local ad-hoc packaging keeps an architecture-specific Swift build cache and uses incremental optimized compilation by default. Pass `--clean` to rebuild that cache, or `--full-optimization` to use the whole-module release compilation used by CI and Developer ID builds.
+Local ad-hoc packaging keeps an architecture-specific Swift build cache and uses incremental optimized compilation by default. Pass `--clean` to rebuild that cache, or `--full-optimization` to use the whole-module release compilation used by CI and the release workflow.
 
 ## Publishing A GitHub Release
 
@@ -40,17 +40,7 @@ Before publishing an update-capable build, configure the Sparkle update-signing 
 - `SPARKLE_PUBLIC_ED_KEY`: public EdDSA key embedded into the app bundle.
 - `SPARKLE_PRIVATE_ED_KEY`: private EdDSA key used only by GitHub Actions to sign update archives and appcasts.
 
-Official tag releases also require all Developer ID and notarization secrets:
-
-- `DEVELOPER_ID_APPLICATION`
-- `DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64`
-- `DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD`
-- `APPLE_BUILD_KEYCHAIN_PASSWORD`
-- `APPLE_ID`
-- `APPLE_TEAM_ID`
-- `APPLE_APP_SPECIFIC_PASSWORD`
-
-The release workflow fails if any required signing, notarization, or Sparkle secret is missing. Ad-hoc signing is only supported by the local packaging command.
+Official tag releases use ad-hoc signing and are not submitted for Apple notarization. The release workflow only requires the two Sparkle keys and fails if either one is missing. Because these packages are not notarized, macOS may ask users to approve the first launch in System Settings.
 
 Generate the key pair once with Sparkle's tools, then keep the private key out of git:
 
@@ -91,7 +81,7 @@ The `Release macOS` workflow builds and uploads:
 - Legacy in-app update feed: `appcast.xml` with both architecture items for older clients
 - `SHA256SUMS.txt`
 
-The workflow validates that the pushed tag resolves to the checked-out commit and matches `VERSION`, runs the quality gate (`swift test`, focused migration/parser/pricing tests, `swift build -c release`, and `git diff --check`), verifies every packaged Mach-O architecture and required Sparkle helper, launches the app on the matching runner, and then publishes the notarized packages. Pull requests and pushes to `main` also run the test suite and a release build through the separate CI workflow.
+The workflow validates that the pushed tag resolves to the checked-out commit and matches `VERSION`, runs the quality gate (`swift test`, focused migration/parser/pricing tests, `swift build -c release`, and `git diff --check`), verifies every packaged Mach-O architecture and required Sparkle helper, launches the app on the matching runner, and then publishes the ad-hoc-signed packages. Pull requests and pushes to `main` also run the test suite and a release build through the separate CI workflow.
 
 ## In-App Updates
 

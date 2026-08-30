@@ -119,48 +119,14 @@ jobs:
           echo "APP_VERSION=${version}" >> "${GITHUB_ENV}"
           echo "RELEASE_TAG=${tag}" >> "${GITHUB_ENV}"
 
-      - name: Import Developer ID certificate
-        shell: bash
-        env:
-          DEVELOPER_ID_APPLICATION: ${{ secrets.DEVELOPER_ID_APPLICATION }}
-          DEVELOPER_ID_CERTIFICATE_BASE64: ${{ secrets.DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64 }}
-          DEVELOPER_ID_CERTIFICATE_PASSWORD: ${{ secrets.DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD }}
-          BUILD_KEYCHAIN_PASSWORD: ${{ secrets.APPLE_BUILD_KEYCHAIN_PASSWORD }}
-        run: |
-          set -euo pipefail
-          if [[ -z "${DEVELOPER_ID_APPLICATION:-}" || -z "${DEVELOPER_ID_CERTIFICATE_BASE64:-}" || -z "${DEVELOPER_ID_CERTIFICATE_PASSWORD:-}" || -z "${BUILD_KEYCHAIN_PASSWORD:-}" ]]; then
-            echo "Official releases require all Developer ID signing secrets."
-            exit 1
-          fi
-
-          CERT_PATH="${RUNNER_TEMP}/developer-id.p12"
-          KEYCHAIN_PATH="${RUNNER_TEMP}/quotalens-signing.keychain-db"
-          printf '%s' "${DEVELOPER_ID_CERTIFICATE_BASE64}" | base64 -D > "${CERT_PATH}"
-          security create-keychain -p "${BUILD_KEYCHAIN_PASSWORD}" "${KEYCHAIN_PATH}"
-          security set-keychain-settings -lut 21600 "${KEYCHAIN_PATH}"
-          security unlock-keychain -p "${BUILD_KEYCHAIN_PASSWORD}" "${KEYCHAIN_PATH}"
-          security import "${CERT_PATH}" \
-            -P "${DEVELOPER_ID_CERTIFICATE_PASSWORD}" \
-            -A \
-            -t cert \
-            -f pkcs12 \
-            -k "${KEYCHAIN_PATH}"
-          security list-keychains -d user -s "${KEYCHAIN_PATH}" $(security list-keychains -d user | sed 's/[ "]//g')
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${BUILD_KEYCHAIN_PASSWORD}" "${KEYCHAIN_PATH}"
-          security find-identity -v -p codesigning "${KEYCHAIN_PATH}" | grep -F "${DEVELOPER_ID_APPLICATION}"
-
       - name: Build package
         shell: bash
         env:
           SPARKLE_PUBLIC_ED_KEY: ${{ secrets.SPARKLE_PUBLIC_ED_KEY }}
-          DEVELOPER_ID_APPLICATION: ${{ secrets.DEVELOPER_ID_APPLICATION }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
         run: |
           set -euo pipefail
-          if [[ -z "${SPARKLE_PUBLIC_ED_KEY:-}" || -z "${DEVELOPER_ID_APPLICATION:-}" || -z "${APPLE_ID:-}" || -z "${APPLE_TEAM_ID:-}" || -z "${APPLE_APP_SPECIFIC_PASSWORD:-}" ]]; then
-            echo "Official releases require Sparkle, Developer ID, and Apple notarization secrets."
+          if [[ -z "${SPARKLE_PUBLIC_ED_KEY:-}" ]]; then
+            echo "Official releases require the Sparkle public key."
             exit 1
           fi
 
@@ -168,8 +134,7 @@ jobs:
             --arch "${{ matrix.arch }}" \
             --version "${APP_VERSION}" \
             --build-number "${GITHUB_RUN_NUMBER}" \
-            --signing-mode developer-id \
-            --notarize
+            --signing-mode adhoc
 
       - name: Launch packaged app smoke test
         shell: bash
@@ -272,8 +237,6 @@ jobs:
 
       - name: Create checksums and release notes
         shell: bash
-        env:
-          RELEASE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
           if [[ -f release-assets/appcast-apple-silicon.xml && -f release-assets/appcast-intel.xml ]]; then
@@ -314,9 +277,8 @@ jobs:
 
           ## Build verification
 
-          - Signing: Developer ID Application
-          - Team ID: ${RELEASE_TEAM_ID}
-          - Notarization: accepted and stapled
+          - Signing: ad-hoc
+          - Notarization: not requested
           - Architectures: Apple Silicon, Intel, and Universal
           - Source commit: ${source_commit}
 
