@@ -16,16 +16,16 @@ public struct CodexBinaryLookupResult: Sendable {
 public struct CodexBinaryLocator: Sendable {
     public static let standardSearchPaths: [String] = [
         "~/.codex/bin/codex",
+        "~/.local/bin/codex",
+        "/opt/homebrew/bin/codex",
+        "/usr/local/bin/codex",
+        "~/.bun/bin/codex",
+        "~/.npm-global/bin/codex",
+        "~/.cargo/bin/codex",
         "/Applications/ChatGPT.app/Contents/Resources/codex",
         "~/Applications/ChatGPT.app/Contents/Resources/codex",
         "/Applications/Codex.app/Contents/Resources/codex",
         "~/Applications/Codex.app/Contents/Resources/codex",
-        "/opt/homebrew/bin/codex",
-        "/usr/local/bin/codex",
-        "~/.local/bin/codex",
-        "~/.bun/bin/codex",
-        "~/.npm-global/bin/codex",
-        "~/.cargo/bin/codex",
         "/usr/bin/codex",
         "/bin/codex"
     ]

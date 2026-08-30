@@ -733,6 +733,11 @@ public final class AppEnvironment: ObservableObject {
     public func connectCodex() async {
         cancelServerRecovery()
         state.connectionStatus = .launching
+        if await fetchServerSnapshotIfPossible(scheduleRetryOnFailure: false) {
+            await refreshData(fetchServer: false)
+            return
+        }
+
         let success = await processManager.start()
         let status = await processManager.getStatus()
 
@@ -769,27 +774,30 @@ public final class AppEnvironment: ObservableObject {
 
         do {
             if fetchServer {
-                let currentStatus = await processManager.getStatus()
-                if currentStatus.isConnected {
-                    _ = await fetchConnectedServerSnapshotIfPossible(
-                        scheduleRetryOnFailure: scheduleRetryOnFailure
-                    )
-                } else {
-                    if forceReconnect {
-                        cancelServerRecovery()
-                    }
-                    let started = await processManager.start(
-                        resetReconnectAttempts: forceReconnect
-                    )
-                    if started {
-                        state.connectionStatus = .handshaking
-                        _ = await fetchConnectedServerSnapshotIfPossible(
-                            scheduleRetryOnFailure: scheduleRetryOnFailure
+                var fetchedServerSnapshot = await fetchServerSnapshotIfPossible(
+                    scheduleRetryOnFailure: false
+                )
+                if !fetchedServerSnapshot, forceReconnect {
+                    cancelServerRecovery()
+                    let currentStatus = await processManager.getStatus()
+                    if currentStatus.isConnected {
+                        fetchedServerSnapshot = await fetchConnectedServerSnapshotIfPossible(
+                            scheduleRetryOnFailure: false
                         )
-                    } else if scheduleRetryOnFailure {
-                        state.connectionStatus = await processManager.getStatus()
-                        scheduleServerRecovery()
+                    } else {
+                        let started = await processManager.start()
+                        if started {
+                            state.connectionStatus = .handshaking
+                            fetchedServerSnapshot = await fetchConnectedServerSnapshotIfPossible(
+                                scheduleRetryOnFailure: false
+                            )
+                        } else {
+                            state.connectionStatus = await processManager.getStatus()
+                        }
                     }
+                }
+                if !fetchedServerSnapshot, scheduleRetryOnFailure {
+                    scheduleServerRecovery()
                 }
                 guard requestGeneration == refreshDataRequestGeneration else { return }
             }
@@ -1740,23 +1748,10 @@ public final class AppEnvironment: ObservableObject {
     }
 
     private func recoverServerSnapshotOnce() async -> Bool {
-        let currentStatus = await processManager.getStatus()
-        switch currentStatus {
-        case .connected:
-            break
-        case .launching, .handshaking, .reconnecting:
-            return false
-        case .disconnected, .failed:
-            let started = await processManager.start(
-                resetReconnectAttempts: true
-            )
-            if started {
-                state.connectionStatus = .handshaking
-            } else {
-                state.connectionStatus = await processManager.getStatus()
-            }
+        if await fetchServerSnapshotIfPossible(scheduleRetryOnFailure: false) {
+            await refreshData(fetchServer: false, scheduleRetryOnFailure: false)
+            return state.hasQuotaSnapshot
         }
-
         if await fetchConnectedServerSnapshotIfPossible(scheduleRetryOnFailure: false) {
             await refreshData(fetchServer: false, scheduleRetryOnFailure: false)
             return state.hasQuotaSnapshot
@@ -1901,7 +1896,16 @@ public final class AppEnvironment: ObservableObject {
 
         if let accountInfo = snapshot.account?.account {
             let identifier = accountInfo.stableIdentifier
-            accountKey = AccountIdentity.stableAccountKey(from: identifier)
+            let generatedAccountKey = AccountIdentity.stableAccountKey(from: identifier)
+            let emailHash = AccountIdentity.emailHash(from: accountInfo.email ?? identifier)
+            if accountInfo.accountId == nil, accountInfo.id == nil {
+                accountKey = ((try? repositories.getAllAccounts()) ?? [])
+                    .filter { $0.emailHash == emailHash }
+                    .min { $0.firstSeenAt < $1.firstSeenAt }?
+                    .accountKey ?? generatedAccountKey
+            } else {
+                accountKey = generatedAccountKey
+            }
             let legacyIdentifiers = [
                 accountInfo.email,
                 accountInfo.accountId.map { "account_\($0.prefix(8))" },
@@ -1924,7 +1928,7 @@ public final class AppEnvironment: ObservableObject {
             }
             let record = AccountRecord(
                 accountKey: accountKey,
-                emailHash: AccountIdentity.emailHash(from: identifier),
+                emailHash: emailHash,
                 planType: accountInfo.planType,
                 firstSeenAt: now,
                 lastSeenAt: now
@@ -2361,6 +2365,10 @@ public final class AppEnvironment: ObservableObject {
                     }
 
                     // UI 的 connected 还要求核心额度响应通过严格解码。
+                    if self.state.hasQuotaSnapshot,
+                       self.state.codexRefreshErrorText == nil {
+                        return
+                    }
                     self.state.connectionStatus = status
                     switch status {
                     case .failed, .reconnecting:

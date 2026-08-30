@@ -19,7 +19,7 @@ public struct SessionDetailView: View {
     let isLoadingMoreEvents: Bool
     @Environment(\.colorScheme) var colorScheme
     @State private var isCopiedId = false
-    @State private var selectedSection: SessionDetailSection = .conversation
+    @State private var selectedSection: SessionDetailSection = .usage
 
     public init(
         detail: CodexSessionDetailDTO,
@@ -106,7 +106,7 @@ public struct SessionDetailView: View {
             .padding(18)
         }
         .onChange(of: detail.session.sessionId) { _, _ in
-            selectedSection = detail.session.provider == .codex ? .conversation : .usage
+            selectedSection = .usage
         }
         .onAppear {
             if detail.session.provider == .claude {

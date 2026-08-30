@@ -53,6 +53,17 @@ public struct AboutView: View {
     private var defaultChangelogs: [ChangelogEntry] {
         [
             ChangelogEntry(
+                id: "v1.0.25",
+                version: "v1.0.25",
+                date: "2026-08-30",
+                changes: [
+                    L10n.text("优先采用系统 CLI 路径检索 Codex 核心二进制，提升对 Homebrew 与本地定制环境的兼容性", "Prioritized CLI search paths for Codex binary detection, improving compatibility with Homebrew and custom environments"),
+                    L10n.text("优化 Codex 服务器额度快照收集与连接恢复机制，保障弱网与高延迟环境下的数据完整性", "Refined Codex server quota snapshot collection and recovery mechanisms, ensuring data integrity in high-latency environments"),
+                    L10n.text("改进菜单栏实时预测数据流采样与会话详情默认视图排版，优化用量指标快速查阅体验", "Improved menu bar real-time forecast data stream sampling and streamlined session detail default tab layout"),
+                    L10n.text("全面完善 10 种语言的多语言本地化翻译字典与更新日志多语言映射", "Comprehensive localization dictionary refinements and changelog translation mapping across 10 supported languages")
+                ]
+            ),
+            ChangelogEntry(
                 id: "v1.0.24",
                 version: "v1.0.24",
                 date: "2026-08-30",

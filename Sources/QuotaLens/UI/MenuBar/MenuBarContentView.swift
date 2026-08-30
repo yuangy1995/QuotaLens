@@ -71,6 +71,28 @@ private final class MenuBarLocalUsageStore: ObservableObject {
             return
         }
 
+        if let currentSnapshot, let resetAt = currentSnapshot.resetsAt {
+            let currentPoint = QuotaForecastEngine.RateSnapshotPoint(
+                timestamp: Date(timeIntervalSince1970: Double(currentSnapshot.observedAt)),
+                usedPercent: Double(currentSnapshot.usedPercentMilli) / 1000.0,
+                cycleKey: QuotaForecastEngine.QuotaCycleKey(
+                    accountID: currentSnapshot.accountKey,
+                    limitID: currentSnapshot.limitId,
+                    slot: currentSnapshot.slot,
+                    resetAt: resetAt,
+                    windowDurationMins: currentSnapshot.windowDurationMins
+                )
+            )
+            forecastPoints.removeAll {
+                $0.timestamp == currentPoint.timestamp && $0.cycleKey == currentPoint.cycleKey
+            }
+            forecastPoints.append(currentPoint)
+            forecastPoints.sort { $0.timestamp < $1.timestamp }
+            if forecastPoints.count > 300 {
+                forecastPoints.removeFirst(forecastPoints.count - 300)
+            }
+        }
+
         let currentCycleKey = currentSnapshot.flatMap { snapshot -> QuotaForecastEngine.QuotaCycleKey? in
             guard let resetAt = snapshot.resetsAt else { return nil }
             return QuotaForecastEngine.QuotaCycleKey(

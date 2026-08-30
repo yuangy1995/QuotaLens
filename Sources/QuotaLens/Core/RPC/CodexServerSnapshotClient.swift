@@ -103,7 +103,7 @@ public struct CodexServerSnapshotClient: Sendable {
                 let completedAt = coreCompletedAt ?? Date()
                 coreCompletedAt = completedAt
                 if collector.hasCompleted(id: 4)
-                    || Date().timeIntervalSince(completedAt) >= 0.15 {
+                    || Date().timeIntervalSince(completedAt) >= 1.0 {
                     break
                 }
             }

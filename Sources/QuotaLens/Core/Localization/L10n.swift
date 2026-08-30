@@ -258,6 +258,9 @@ public enum L10n {
     }
 
     public static let changelogZhToEnMap: [String: String] = [
+        "优先采用系统 CLI 路径检索 Codex 核心二进制，提升对 Homebrew 与本地定制环境的兼容性": "Prioritized CLI search paths for Codex binary detection, improving compatibility with Homebrew and custom environments",
+        "优化 Codex 服务器额度快照收集与连接恢复机制，保障弱网与高延迟环境下的数据完整性": "Refined Codex server quota snapshot collection and recovery mechanisms, ensuring data integrity in high-latency environments",
+        "改进菜单栏实时预测数据流采样与会话详情默认视图排版，优化用量指标快速查阅体验": "Improved menu bar real-time forecast data stream sampling and streamlined session detail default tab layout",
         "全新引入全息科技感线性进度条与动态雷达扫描指示器，显著提升扫描与更新过程的视觉体验": "Introduced cyber linear progress bars and dynamic radar scanner indicators for a refined visual scanning and updating experience",
         "优化 Codex App Server 连接恢复与自动重连调度生命周期，防止无效重试并支持即时强制重连": "Optimized Codex App Server connection recovery and reconnection lifecycle to prevent redundant retries and enable instant manual reconnect",
         "升级主界面扫描横幅、更新检查对话框与菜单栏风险进度条的视觉呈现与暗色模式适配": "Upgraded visual styling and dark mode adaptation for main view scan banners, update check dialogs, and menu bar risk progress bars",
@@ -2125,6 +2128,36 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .french: "Impossible de vérifier le PATH du shell de connexion : %@",
         .portuguese: "Não foi possível verificar o PATH da shell de início de sessão: %@",
         .portugueseBrazil: "Não foi possível verificar o PATH do shell de login: %@"
+    ],
+    "Prioritized CLI search paths for Codex binary detection, improving compatibility with Homebrew and custom environments": [
+        .traditionalChinese: "優先採用系統 CLI 路徑檢索 Codex 核心二進位檔案，提升對 Homebrew 與本機自訂環境的相容性",
+        .japanese: "Codex バイナリ検索で CLI パスを優先し、Homebrew やカスタム環境との互換性を向上",
+        .korean: "Codex 바이너리 검색 시 CLI 경로를 우선 탐색하여 Homebrew 및 맞춤 환경과의 호환성 개선",
+        .spanish: "Búsqueda de rutas CLI priorizada para binarios de Codex, mejorando la compatibilidad con Homebrew y entornos personalizados",
+        .german: "Priorisierte CLI-Suchpfade für Codex-Binärdateien, verbessert die Kompatibilität mit Homebrew und individuellen Umgebungen",
+        .french: "Recherche prioritaire des chemins CLI pour le binaire Codex, améliorant la compatibilité avec Homebrew et les environnements personnalisés",
+        .portuguese: "Pesquisa prioritária de caminhos CLI para o binário do Codex, melhorando a compatibilidade com Homebrew e ambientes personalizados",
+        .portugueseBrazil: "Busca prioritária de caminhos CLI para o binário do Codex, aprimorando a compatibilidade com Homebrew e ambientes personalizados"
+    ],
+    "Refined Codex server quota snapshot collection and recovery mechanisms, ensuring data integrity in high-latency environments": [
+        .traditionalChinese: "優化 Codex 伺服器額度快照收集與連線恢復機制，保障弱網與高延遲環境下的資料完整性",
+        .japanese: "Codex サーバーのクォータスナップショット収集および接続復旧機構を改善し、高レイテンシ環境でのデータ整合性を確保",
+        .korean: "Codex 서버 할당량 스냅샷 수집 및 연결 복구 메커니즘을 개선하여 고지연 환경에서도 데이터 무결성 보장",
+        .spanish: "Mecanismos refinados de recolección y recuperación de instantáneas de cuota del servidor Codex, asegurando integridad en redes lentas",
+        .german: "Erfassung von Codex-Server-Kontingent-Snapshots und Wiederherstellungsmechanismen optimiert, um Datenintegrität bei hohen Latenzen zu gewährleisten",
+        .french: "Collecte d'instantanés de quota et mécanismes de récupération du serveur Codex affinés, garantissant l'intégrité des données à haute latence",
+        .portuguese: "Recolha de instantâneos de quota e mecanismos de recuperação do servidor Codex aperfeiçoados, garantindo a integridade dos dados em redes lentas",
+        .portugueseBrazil: "Coleta de snapshots de cota e mecanismos de recuperação do servidor Codex aprimorados, garantindo a integridade dos dados em conexões lentas"
+    ],
+    "Improved menu bar real-time forecast data stream sampling and streamlined session detail default tab layout": [
+        .traditionalChinese: "改進選單列即時預測資料流取樣與會話詳情預設視圖排版，優化用量指標快速查閱體驗",
+        .japanese: "メニューバーのリアルタイム予測データストリーム サンプリングを改善し、セッション詳細のデフォルト タブ配置を最適化",
+        .korean: "메뉴 바 실시간 예측 데이터 스트림 샘플링 개선 및 세션 상세 기본 탭 레이아웃 최적화",
+        .spanish: "Muestreo de flujo de pronóstico en tiempo real en la barra de menús mejorado y diseño predeterminado de detalles de sesión optimizado",
+        .german: "Echtzeit-Prognosedaten-Abtastung in der Menüleiste verbessert und Standard-Tab-Layout der Sitzungsdetails optimiert",
+        .french: "Échantillonnage du flux de prévisions en temps réel dans la barre de menus amélioré et disposition de l'onglet par défaut des sessions optimisée",
+        .portuguese: "Amostragem de dados de previsão em tempo real na barra de menus melhorada e disposição predefinida dos detalhes de sessão otimizada",
+        .portugueseBrazil: "Amostragem de fluxo de previsão em tempo real na barra de menus melhorada e layout padrão de detalhes de sessão otimizado"
     ],
     "Introduced cyber linear progress bars and dynamic radar scanner indicators for a refined visual scanning and updating experience": [
         .traditionalChinese: "全新引入全息科技感線性進度條與動態雷達掃描指示器，顯著提升掃描與更新過程的視覺體驗",
