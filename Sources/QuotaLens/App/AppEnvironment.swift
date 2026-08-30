@@ -300,6 +300,25 @@ public final class AppEnvironment: ObservableObject {
         scheduleResetCreditReminderTimer()
     }
 
+    public func setWeeklyQuotaRecoveryEnabled(_ enabled: Bool) {
+        state.setWeeklyQuotaRecoveryEnabled(enabled)
+        guard enabled else {
+            toolOverlayCoordinator.refreshRecoveryBubbles()
+            menuBarController?.refreshAppearance()
+            return
+        }
+
+        establishCurrentWeeklyQuotaRecoveryBaselines()
+        toolOverlayCoordinator.refreshRecoveryBubbles()
+        menuBarController?.refreshAppearance()
+    }
+
+    public func acknowledgeWeeklyQuotaRecovery() {
+        state.acknowledgeWeeklyQuotaRecovery()
+        toolOverlayCoordinator.refreshRecoveryBubbles()
+        menuBarController?.refreshAppearance()
+    }
+
     public func consumeResetCredit(_ credit: ResetCreditDisplay) async throws -> ConsumeRateLimitResetCreditOutcome {
         guard credit.isValidAvailable() else {
             throw NSError(
@@ -427,6 +446,9 @@ public final class AppEnvironment: ObservableObject {
                 },
                 onSnoozeResetCreditReminder: { [weak self] hours in
                     self?.snoozeResetCreditReminder(hours: hours)
+                },
+                onAcknowledgeWeeklyQuotaRecovery: { [weak self] in
+                    self?.acknowledgeWeeklyQuotaRecovery()
                 }
             )
         } else {
@@ -443,6 +465,9 @@ public final class AppEnvironment: ObservableObject {
                 },
                 onSnoozeResetCreditReminder: { [weak self] hours in
                     self?.snoozeResetCreditReminder(hours: hours)
+                },
+                onAcknowledgeWeeklyQuotaRecovery: { [weak self] in
+                    self?.acknowledgeWeeklyQuotaRecovery()
                 }
             )
         }
@@ -802,6 +827,7 @@ public final class AppEnvironment: ObservableObject {
         case .codex:
             if enabled {
                 importLocalAccount()
+                establishCurrentWeeklyQuotaRecoveryBaselines()
                 Task { @MainActor [weak self] in
                     guard let self else { return }
                     await self.connectCodex()
@@ -839,6 +865,11 @@ public final class AppEnvironment: ObservableObject {
             if let hydrated = try? ClaudeQuotaRepository.hydrate(database: database) {
                 state.latestClaudeUsage = hydrated
                 state.claudeUsageStatus = .available
+                state.establishWeeklyQuotaRecoveryBaseline(
+                    tool: .claude,
+                    samples: weeklyQuotaSamples(from: hydrated),
+                    accountKey: hydrated.accountKey
+                )
             } else {
                 state.claudeUsageStatus = .loading
             }
@@ -923,6 +954,12 @@ public final class AppEnvironment: ObservableObject {
         guard ClaudeUsageSettings.shared.isEnabled else { return }
         switch result {
         case .success(let snapshot):
+            state.processWeeklyQuotaRecovery(
+                tool: .claude,
+                samples: weeklyQuotaSamples(from: snapshot),
+                accountKey: snapshot.accountKey,
+                now: snapshot.capturedAt
+            )
             state.latestClaudeUsage = snapshot
             state.claudeUsageStatus = .available
             state.claudeUsageErrorText = nil
@@ -975,6 +1012,11 @@ public final class AppEnvironment: ObservableObject {
                ) {
                 state.latestAntigravityQuota = hydrated
                 state.antigravityQuotaStatus = .available
+                state.establishWeeklyQuotaRecoveryBaseline(
+                    tool: .antigravity,
+                    samples: weeklyQuotaSamples(from: hydrated),
+                    accountKey: hydrated.accountKey
+                )
             } else {
                 state.antigravityQuotaStatus = .loading
             }
@@ -1050,6 +1092,12 @@ public final class AppEnvironment: ObservableObject {
         guard enabledToolsStore.isEnabled(.antigravity) else { return }
         switch result {
         case .success(let snapshot):
+            state.processWeeklyQuotaRecovery(
+                tool: .antigravity,
+                samples: weeklyQuotaSamples(from: snapshot),
+                accountKey: snapshot.accountKey,
+                now: snapshot.capturedAt
+            )
             state.latestAntigravityQuota = snapshot
             state.antigravityQuotaStatus = .available
             state.antigravityQuotaErrorText = nil
@@ -1111,6 +1159,102 @@ public final class AppEnvironment: ObservableObject {
 
     private func currentStateAccountKey() -> String? {
         state.selectedAccountKey ?? state.account?.accountKey
+    }
+
+    private func establishCurrentWeeklyQuotaRecoveryBaselines() {
+        let codexSamples = weeklyQuotaSamples(from: state.currentQuotaSnapshots)
+        state.establishWeeklyQuotaRecoveryBaseline(
+            tool: .codex,
+            samples: codexSamples,
+            accountKey: codexSamples.first?.key.accountKey ?? currentStateAccountKey() ?? "acc_local"
+        )
+
+        if let claude = state.latestClaudeUsage {
+            state.establishWeeklyQuotaRecoveryBaseline(
+                tool: .claude,
+                samples: weeklyQuotaSamples(from: claude),
+                accountKey: claude.accountKey
+            )
+        }
+        if let antigravity = state.latestAntigravityQuota {
+            state.establishWeeklyQuotaRecoveryBaseline(
+                tool: .antigravity,
+                samples: weeklyQuotaSamples(from: antigravity),
+                accountKey: antigravity.accountKey
+            )
+        }
+    }
+
+    private func weeklyQuotaSamples(from snapshots: [RateLimitSnapshotRecord]) -> [WeeklyQuotaPoolSample] {
+        snapshots
+            .filter { QuotaWindowKind(windowDurationMins: $0.windowDurationMins) == .weekly }
+            .map { snapshot in
+                WeeklyQuotaPoolSample(
+                    key: WeeklyQuotaPoolKey(
+                        tool: .codex,
+                        accountKey: snapshot.accountKey,
+                        poolID: "\(snapshot.limitId)|\(snapshot.slot)"
+                    ),
+                    displayName: Self.codexWeeklyDisplayName(for: snapshot.limitId),
+                    remainingPercent: snapshot.remainingPercent,
+                    resetAt: snapshot.resetsAt.map { Date(timeIntervalSince1970: Double($0)) },
+                    capturedAt: Date(timeIntervalSince1970: Double(snapshot.observedAt))
+                )
+            }
+    }
+
+    private func weeklyQuotaSamples(from snapshot: ClaudeUsageSnapshot) -> [WeeklyQuotaPoolSample] {
+        let windows = [snapshot.sevenDay].compactMap { $0 } + snapshot.scopedWeekly
+        return windows.map { window in
+            WeeklyQuotaPoolSample(
+                key: WeeklyQuotaPoolKey(
+                    tool: .claude,
+                    accountKey: snapshot.accountKey,
+                    poolID: window.id
+                ),
+                displayName: window.id == "claude-weekly" ? nil : window.localizedTitle,
+                remainingPercent: window.remainingPercent,
+                resetAt: window.resetAt,
+                capturedAt: snapshot.capturedAt
+            )
+        }
+    }
+
+    private func weeklyQuotaSamples(from snapshot: AntigravityQuotaSnapshot) -> [WeeklyQuotaPoolSample] {
+        snapshot.groups.flatMap { group in
+            group.buckets
+                .filter { $0.window == .weekly }
+                .map { bucket in
+                    WeeklyQuotaPoolSample(
+                        key: WeeklyQuotaPoolKey(
+                            tool: .antigravity,
+                            accountKey: snapshot.accountKey,
+                            poolID: "\(group.id)|\(bucket.id)"
+                        ),
+                        displayName: Self.antigravityWeeklyDisplayName(for: group.title),
+                        remainingPercent: bucket.remainingPercent,
+                        resetAt: bucket.resetAt,
+                        capturedAt: snapshot.capturedAt
+                    )
+                }
+        }
+    }
+
+    private static func antigravityWeeklyDisplayName(for groupTitle: String) -> String {
+        let normalized = groupTitle.lowercased()
+        if normalized.contains("gemini") { return "Gemini" }
+        if normalized.contains("claude") || normalized.contains("gpt") { return "Claude/GPT" }
+        return groupTitle
+    }
+
+    private static func codexWeeklyDisplayName(for limitID: String) -> String? {
+        guard limitID != primaryQuotaLimitId else { return nil }
+        let trimmed = limitID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalized = trimmed.lowercased()
+        if normalized.hasPrefix("codex_") || normalized.hasPrefix("codex-") {
+            return L10n.text("其他模型", "Other model")
+        }
+        return trimmed.replacingOccurrences(of: "_", with: " ")
     }
 
     @discardableResult
@@ -1478,6 +1622,13 @@ public final class AppEnvironment: ObservableObject {
                 observedAt: now,
                 rawJson: snapshot.rateLimitsRawJson
             )
+            let currentLiveSnapshots = liveSnapshots.filter { $0.isCurrentQuotaWindow(at: now) }
+            state.processWeeklyQuotaRecovery(
+                tool: .codex,
+                samples: weeklyQuotaSamples(from: currentLiveSnapshots),
+                accountKey: accountKey,
+                now: Date(timeIntervalSince1970: Double(now))
+            )
             let insertedCount = (try? persistRateLimits(
                 rateLimits,
                 accountKey: accountKey,
@@ -1487,7 +1638,6 @@ public final class AppEnvironment: ObservableObject {
             if insertedCount > 0, applyCachedQuotaSnapshotIfAvailable(for: accountKey) {
                 return
             }
-            let currentLiveSnapshots = liveSnapshots.filter { $0.isCurrentQuotaWindow(at: now) }
             if let liveSnapshot = RateLimitSnapshotRecord.mostRestrictiveCurrentSnapshot(
                 from: currentLiveSnapshots,
                 at: now
@@ -1940,6 +2090,7 @@ public final class AppEnvironment: ObservableObject {
         state.themeMode = .system
         state.quotaDisplayMode = .used
         state.refreshIntervalSeconds = AppState.defaultRefreshIntervalSeconds
+        state.resetWeeklyQuotaRecoveryToFactoryDefaults()
         state.latestClaudeUsage = nil
         state.claudeUsageStatus = .disabled
         state.claudeUsageErrorText = nil

@@ -8,13 +8,14 @@ public final class AntigravityUsageOverlayController: NSObject, ObservableObject
     private static let expandedDefaultsKey = "QuotaLens.Overlay.Antigravity.IsExpanded"
     private static let positionXDefaultsKey = "QuotaLens.Overlay.Antigravity.RelativeX"
     private static let positionYDefaultsKey = "QuotaLens.Overlay.Antigravity.RelativeY"
-    private static let compactContentSize = NSSize(width: 180, height: 34)
-    private static let expandedContentSize = NSSize(width: 278, height: 218)
-    private static let detailsContentSize = NSSize(width: 290, height: 220)
+    private static let compactContentSize = NSSize(width: 240, height: 34)
+    private static let expandedContentSize = NSSize(width: 300, height: 278)
+    private static let detailsContentSize = NSSize(width: 310, height: 278)
 
     private weak var environment: AppEnvironment?
     private var panel: NSPanel?
     private var detailsPanel: NSPanel?
+    private var recoveryPresenter: WeeklyQuotaRecoveryOverlayPresenter?
     private var trackerTask: Task<Void, Never>?
     private var detailsCloseTask: Task<Void, Never>?
     private var trackedWindowID: CGWindowID?
@@ -85,6 +86,13 @@ public final class AntigravityUsageOverlayController: NSObject, ObservableObject
             )
         )
         self.panel = panel
+        self.recoveryPresenter = WeeklyQuotaRecoveryOverlayPresenter(
+            state: environment.state,
+            tool: .antigravity,
+            onAcknowledge: { [weak self] in
+                self?.acknowledgeWeeklyQuotaRecovery()
+            }
+        )
         updateVisibilityForFrontmostApp()
 
         trackerTask = Task { @MainActor [weak self] in
@@ -105,6 +113,8 @@ public final class AntigravityUsageOverlayController: NSObject, ObservableObject
         panel?.close()
         detailsPanel?.orderOut(nil)
         detailsPanel?.close()
+        recoveryPresenter?.close()
+        recoveryPresenter = nil
         panel = nil
         detailsPanel = nil
         trackedWindowID = nil
@@ -152,7 +162,11 @@ public final class AntigravityUsageOverlayController: NSObject, ObservableObject
     }
 
     public func updateVisibilityForFrontmostApp() {
-        guard let panel, !isDragging else { return }
+        guard let panel else { return }
+        if isDragging {
+            recoveryPresenter?.hide()
+            return
+        }
         guard environment?.frontmostToolTracker.foregroundTool == .antigravity,
               let processID = environment?.frontmostToolTracker.foregroundApplicationPID else {
             hide(panel)
@@ -179,6 +193,14 @@ public final class AntigravityUsageOverlayController: NSObject, ObservableObject
         if panel.frame != frame {
             panel.setFrame(frame, display: true, animate: false)
         }
+        let recoveryVisible = recoveryPresenter?.update(
+            anchorFrame: panel.frame,
+            targetFrame: appKitFrame,
+            isWidgetVisible: true
+        ) == true
+        if recoveryVisible {
+            closeDetails()
+        }
         if detailsPanel?.isVisible == true {
             updateDetailsPanelFrame(in: appKitFrame)
         }
@@ -194,6 +216,7 @@ public final class AntigravityUsageOverlayController: NSObject, ObservableObject
     }
 
     private func hide(_ panel: NSPanel) {
+        recoveryPresenter?.hide()
         isSummaryHovered = false
         closeDetails()
         panel.ignoresMouseEvents = true
@@ -202,6 +225,14 @@ public final class AntigravityUsageOverlayController: NSObject, ObservableObject
         }
         trackedWindowID = nil
         trackedFrame = nil
+    }
+
+    private func acknowledgeWeeklyQuotaRecovery() {
+        environment?.acknowledgeWeeklyQuotaRecovery()
+        recoveryPresenter?.hide()
+        if isSummaryHovered && !isExpanded {
+            showDetails()
+        }
     }
 
     private func positionedFrame(panelSize: CGSize, in target: CGRect) -> CGRect {
@@ -228,7 +259,11 @@ public final class AntigravityUsageOverlayController: NSObject, ObservableObject
         isSummaryHovered = hovering
         guard !isDragging else { return }
         if hovering, !isExpanded {
-            showDetails()
+            if recoveryPresenter?.hasVisibleItems == true {
+                closeDetails()
+            } else {
+                showDetails()
+            }
         } else if !hovering {
             scheduleDetailsClose()
         } else {
@@ -426,7 +461,7 @@ private struct AntigravityOverlaySummaryView: View {
     var body: some View {
         let cyan = AppTheme.accentCyan(for: colorScheme)
         let isDark = colorScheme == .dark
-        let statusColor = quotaStatusColor
+        let statusColor = compactQuotaStatusColor
 
         VStack(alignment: .leading, spacing: isExpanded ? 8 : 0) {
             HStack(spacing: 6) {
@@ -450,16 +485,15 @@ private struct AntigravityOverlaySummaryView: View {
 
                 Spacer(minLength: 4)
 
-                Text(state.quotaDisplayMode.shortTitle)
-                    .font(.system(size: 9.5, weight: .bold, design: .rounded))
-                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-                    .fixedSize()
-
-                Text(summaryPercentText)
-                    .font(.system(size: 11.5, weight: .heavy, design: .monospaced))
-                    .foregroundStyle(statusColor)
-                    .monospacedDigit()
-                    .fixedSize()
+                AntigravityCompactQuotaSummary(
+                    state: state,
+                    onToggleMode: {
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
+                            state.toggleQuotaDisplayMode()
+                        }
+                    }
+                )
+                .layoutPriority(1)
 
                 Button {
                     toggleExpanded()
@@ -522,34 +556,23 @@ private struct AntigravityOverlaySummaryView: View {
         .preferredColorScheme(state.colorScheme)
     }
 
-    private var summaryRemainingPercent: Double? {
-        guard let quota = state.latestAntigravityQuota else { return nil }
-        let fiveHour = quota.orderedDisplayBuckets
-            .filter { $0.bucket.window == .fiveHour }
-            .map(\.bucket.remainingPercent)
-        return fiveHour.min() ?? quota.lowestRemainingPercent
-    }
-
-    private var summaryPercentText: String {
-        guard let remaining = summaryRemainingPercent else { return "--" }
-        let shown = state.quotaDisplayMode == .used ? 100 - remaining : remaining
-        return UsageNumberFormatter.percent(shown, maximumFractionDigits: 0)
-    }
-
-    private var quotaStatusColor: Color {
-        guard let remaining = summaryRemainingPercent else {
-            return AppTheme.textSecondary(for: colorScheme)
-        }
-        if remaining <= 15 { return AppTheme.accentRose(for: colorScheme) }
-        if remaining <= 35 { return AppTheme.accentAmber(for: colorScheme) }
-        return AppTheme.accentEmerald(for: colorScheme)
-    }
-
     private func toggleExpanded() {
         withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
             isExpanded.toggle()
         }
         onToggleExpand(isExpanded, true)
+    }
+
+    private var compactQuotaStatusColor: Color {
+        guard let remaining = state.latestAntigravityQuota?
+            .orderedCompactFiveHourBuckets
+            .map(\.bucket.remainingPercent)
+            .min() else {
+            return AppTheme.textSecondary(for: colorScheme)
+        }
+        if remaining <= 15 { return AppTheme.accentRose(for: colorScheme) }
+        if remaining <= 35 { return AppTheme.accentAmber(for: colorScheme) }
+        return AppTheme.accentEmerald(for: colorScheme)
     }
 }
 
@@ -569,13 +592,7 @@ private struct AntigravityOverlayDetailsView: View {
                     .font(.system(size: 11, weight: .black, design: .rounded))
                     .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
                 Spacer()
-                Text(state.quotaDisplayMode.shortTitle)
-                    .font(.system(size: 9.5, weight: .bold, design: .rounded))
-                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-                Text(summaryPercentText)
-                    .font(.system(size: 11, weight: .heavy, design: .monospaced))
-                    .foregroundStyle(quotaStatusColor)
-                    .monospacedDigit()
+                AntigravityCompactQuotaSummary(state: state)
             }
 
             AntigravityQuotaRowsView(state: state)
@@ -610,28 +627,6 @@ private struct AntigravityOverlayDetailsView: View {
         .preferredColorScheme(state.colorScheme)
     }
 
-    private var summaryRemainingPercent: Double? {
-        guard let quota = state.latestAntigravityQuota else { return nil }
-        let fiveHour = quota.orderedDisplayBuckets
-            .filter { $0.bucket.window == .fiveHour }
-            .map(\.bucket.remainingPercent)
-        return fiveHour.min() ?? quota.lowestRemainingPercent
-    }
-
-    private var summaryPercentText: String {
-        guard let remaining = summaryRemainingPercent else { return "--" }
-        let shown = state.quotaDisplayMode == .used ? 100 - remaining : remaining
-        return UsageNumberFormatter.percent(shown, maximumFractionDigits: 0)
-    }
-
-    private var quotaStatusColor: Color {
-        guard let remaining = summaryRemainingPercent else {
-            return AppTheme.textSecondary(for: colorScheme)
-        }
-        if remaining <= 15 { return AppTheme.accentRose(for: colorScheme) }
-        if remaining <= 35 { return AppTheme.accentAmber(for: colorScheme) }
-        return AppTheme.accentEmerald(for: colorScheme)
-    }
 }
 
 private struct AntigravityQuotaRowsView: View {
@@ -691,7 +686,7 @@ private struct AntigravityQuotaRowsView: View {
 
         return VStack(spacing: 3) {
             HStack {
-                Text("\(groupTitle) · \(bucket.window.localizedTitle)")
+                Text("\(AntigravityQuotaSnapshot.groupDisplayTitle(for: groupTitle)) · \(bucket.window.localizedTitle)")
                     .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
                 Spacer()
                 Text(UsageNumberFormatter.percent(shown, maximumFractionDigits: 0))

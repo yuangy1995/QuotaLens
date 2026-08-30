@@ -34,6 +34,7 @@ public struct ClaudeUsageSnapshot: Equatable, Sendable {
     }
 
     public let capturedAt: Date
+    let accountKey: String
     public let tier: String?
     public let fiveHour: Window?
     public let staleFiveHour: Window?
@@ -49,6 +50,26 @@ public struct ClaudeUsageSnapshot: Equatable, Sendable {
         scopedWeekly: [Window] = []
     ) {
         self.capturedAt = capturedAt
+        self.accountKey = "claude-local"
+        self.tier = tier
+        self.fiveHour = fiveHour
+        self.staleFiveHour = staleFiveHour
+        self.sevenDay = sevenDay
+        var seen = Set<String>()
+        self.scopedWeekly = scopedWeekly.filter { seen.insert($0.id).inserted }
+    }
+
+    init(
+        capturedAt: Date,
+        accountKey: String,
+        tier: String?,
+        fiveHour: Window?,
+        staleFiveHour: Window? = nil,
+        sevenDay: Window?,
+        scopedWeekly: [Window] = []
+    ) {
+        self.capturedAt = capturedAt
+        self.accountKey = accountKey
         self.tier = tier
         self.fiveHour = fiveHour
         self.staleFiveHour = staleFiveHour
@@ -72,6 +93,7 @@ public struct ClaudeUsageSnapshot: Equatable, Sendable {
         }
         return ClaudeUsageSnapshot(
             capturedAt: capturedAt,
+            accountKey: accountKey,
             tier: tier,
             fiveHour: nil,
             staleFiveHour: old,

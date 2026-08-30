@@ -149,6 +149,8 @@ public final class AppState: ObservableObject {
     private static let resetCreditReminderSnoozedCreditIdDefaultsKey = "QuotaLens.resetCreditReminder.snoozedCreditId"
     private static let resetCreditReminderSnoozeUntilDefaultsKey = "QuotaLens.resetCreditReminder.snoozeUntil"
     private static let resetCreditReminderLastDeliveredKeyDefaultsKey = "QuotaLens.resetCreditReminder.lastDeliveredKey"
+    private static let weeklyQuotaRecoveryEnabledDefaultsKey = "QuotaLens.weeklyQuotaRecovery.enabled"
+    private static let weeklyQuotaRecoveryStateDefaultsKey = "QuotaLens.weeklyQuotaRecovery.state"
     private static let dismissedSuggestionCycleKeysDefaultsKey = "QuotaLens.dismissedSuggestionCycleKeys"
     private static let quotaExhaustionThreshold = 0.000_1
     nonisolated public static let defaultRefreshIntervalSeconds = 60
@@ -197,6 +199,14 @@ public final class AppState: ObservableObject {
             UserDefaults.standard.set(resetCreditReminderEnabled, forKey: Self.resetCreditReminderEnabledDefaultsKey)
         }
     }
+    @Published public var weeklyQuotaRecoveryEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(weeklyQuotaRecoveryEnabled, forKey: Self.weeklyQuotaRecoveryEnabledDefaultsKey)
+            if !weeklyQuotaRecoveryEnabled {
+                clearWeeklyQuotaRecoveryState()
+            }
+        }
+    }
     @Published public var launchAtLoginEnabled: Bool = false
     @Published public var launchAtLoginStatusText: String = L10n.text("未开启", "Off")
     @Published public private(set) var dismissedSuggestionCycleKeys: [String: String] = [:]
@@ -216,6 +226,7 @@ public final class AppState: ObservableObject {
     @Published public var subscriptionEntitlementErrorText: String?
     @Published public var appInitializationWarningText: String?
     @Published public var activeResetCreditReminder: ResetCreditReminderAlert?
+    @Published var weeklyQuotaRecoveryUnreadItems: [WeeklyQuotaRecoveryItem] = []
     @Published public var nextResetCreditReminderAt: Date?
     @Published public var latestClaudeUsage: ClaudeUsageSnapshot?
     @Published public var claudeUsageStatus: ClaudeUsageStatus = .disabled
@@ -234,6 +245,8 @@ public final class AppState: ObservableObject {
     private var snoozedResetCreditId: String?
     private var resetCreditReminderSnoozeUntil: Date?
     private var lastDeliveredResetCreditReminderKey: String?
+    private var weeklyQuotaRecoverySamples: [String: WeeklyQuotaPoolSample] = [:]
+    private var weeklyQuotaRecoveryComparedAccountKeys: Set<String> = []
 
     public init() {
         let storedTheme = UserDefaults.standard.string(forKey: Self.themeModeDefaultsKey)
@@ -253,6 +266,12 @@ public final class AppState: ObservableObject {
         } else {
             self.resetCreditReminderEnabled = UserDefaults.standard.bool(forKey: Self.resetCreditReminderEnabledDefaultsKey)
         }
+        if UserDefaults.standard.object(forKey: Self.weeklyQuotaRecoveryEnabledDefaultsKey) == nil {
+            self.weeklyQuotaRecoveryEnabled = true
+        } else {
+            self.weeklyQuotaRecoveryEnabled = UserDefaults.standard.bool(forKey: Self.weeklyQuotaRecoveryEnabledDefaultsKey)
+        }
+        self.loadWeeklyQuotaRecoveryState()
         if let storedSuggestions = UserDefaults.standard.dictionary(forKey: Self.dismissedSuggestionCycleKeysDefaultsKey) as? [String: String] {
             self.dismissedSuggestionCycleKeys = storedSuggestions
         }
@@ -539,19 +558,50 @@ public final class AppState: ObservableObject {
     }
 
     public var antigravityMenuBarQuotaString: String {
-        guard let remaining = latestAntigravityQuota?.lowestRemainingPercent else {
-            return "Antigravity --"
+        let prefix = "\(quotaDisplayMode.shortTitle) 5h"
+        let buckets = latestAntigravityQuota?.orderedCompactFiveHourBuckets ?? []
+        guard !buckets.isEmpty else { return "\(prefix) --" }
+        let values = buckets.map { item in
+            let percent = quotaDisplayMode == .used
+                ? max(0, 100 - item.bucket.remainingPercent)
+                : item.bucket.remainingPercent
+            return "\(item.shortTitle) \(UsageNumberFormatter.percent(percent, maximumFractionDigits: 0))"
         }
-        let percent = quotaDisplayMode == .used ? max(0, 100 - remaining) : remaining
-        return "Antigravity \(quotaDisplayMode.shortTitle) \(formatPercent(percent))"
+        return "\(prefix) \(values.joined(separator: " · "))"
     }
 
     public var antigravityMenuBarPercentString: String {
-        guard let remaining = latestAntigravityQuota?.lowestRemainingPercent else {
-            return "--"
+        let buckets = latestAntigravityQuota?.orderedCompactFiveHourBuckets ?? []
+        guard !buckets.isEmpty else { return "--" }
+        return buckets.map { item in
+            let percent = quotaDisplayMode == .used
+                ? max(0, 100 - item.bucket.remainingPercent)
+                : item.bucket.remainingPercent
+            return UsageNumberFormatter.percent(percent, maximumFractionDigits: 0)
+        }.joined(separator: " · ")
+    }
+
+    public var antigravityMenuBarTooltip: String {
+        guard let quota = latestAntigravityQuota else {
+            return L10n.text("Antigravity · 5 小时额度暂无数据", "Antigravity · 5-hour quota is not available")
         }
-        let percent = quotaDisplayMode == .used ? max(0, 100 - remaining) : remaining
-        return formatPercent(percent)
+        let buckets = quota.orderedCompactFiveHourBuckets
+        guard !buckets.isEmpty else {
+            return L10n.text("Antigravity · 5 小时额度暂无数据", "Antigravity · 5-hour quota is not available")
+        }
+        let values = buckets.map { item in
+            let shown = quotaDisplayMode == .used
+                ? max(0, 100 - item.bucket.remainingPercent)
+                : item.bucket.remainingPercent
+            return L10n.format(
+                "%@ · 5-hour %@: %@",
+                zhHans: "%@ · 5 小时%@：%@",
+                item.displayTitle,
+                quotaDisplayMode.shortTitle,
+                UsageNumberFormatter.percent(shown, maximumFractionDigits: 2)
+            )
+        }
+        return "Antigravity\n" + values.joined(separator: "\n")
     }
 
     public var antigravityQuotaRemainingPercent: Double? {
@@ -664,6 +714,81 @@ public final class AppState: ObservableObject {
             nextResetCreditReminderAt = nil
             clearResetCreditReminderSnooze()
         }
+    }
+
+    public func setWeeklyQuotaRecoveryEnabled(_ enabled: Bool) {
+        guard weeklyQuotaRecoveryEnabled != enabled else { return }
+        weeklyQuotaRecoveryEnabled = enabled
+        if enabled {
+            clearWeeklyQuotaRecoveryState()
+        }
+    }
+
+    public var hasUnreadWeeklyQuotaRecovery: Bool {
+        weeklyQuotaRecoveryEnabled && !weeklyQuotaRecoveryUnreadItems.isEmpty
+    }
+
+    func processWeeklyQuotaRecovery(
+        tool: MonitoringToolID,
+        samples: [WeeklyQuotaPoolSample],
+        accountKey: String,
+        now: Date
+    ) {
+        guard weeklyQuotaRecoveryEnabled else { return }
+
+        let accounts = Set(samples.map { $0.key.accountKey }).union([accountKey])
+        for account in accounts {
+            let previous = weeklyQuotaRecoverySamples.filter {
+                $0.value.key.tool == tool && $0.value.key.accountKey == account
+            }
+            let current = samples.filter { $0.key.accountKey == account }
+            let scopeKey = "\(tool.rawValue)|\(account)"
+            let recovered = WeeklyQuotaRecoveryDetector.detect(
+                previous: previous,
+                current: current,
+                isFirstComparisonForAccount: !weeklyQuotaRecoveryComparedAccountKeys.contains(scopeKey),
+                now: now
+            )
+            for item in recovered where !weeklyQuotaRecoveryUnreadItems.contains(where: { $0.id == item.id }) {
+                weeklyQuotaRecoveryUnreadItems.append(item)
+            }
+
+            weeklyQuotaRecoverySamples = weeklyQuotaRecoverySamples.filter {
+                !($0.value.key.tool == tool && $0.value.key.accountKey == account)
+            }
+            for sample in current {
+                weeklyQuotaRecoverySamples[sample.key.storageKey] = sample
+            }
+            weeklyQuotaRecoveryComparedAccountKeys.insert(scopeKey)
+        }
+        persistWeeklyQuotaRecoveryState()
+    }
+
+    func establishWeeklyQuotaRecoveryBaseline(
+        tool: MonitoringToolID,
+        samples: [WeeklyQuotaPoolSample],
+        accountKey: String
+    ) {
+        guard weeklyQuotaRecoveryEnabled else { return }
+        weeklyQuotaRecoverySamples = weeklyQuotaRecoverySamples.filter {
+            !($0.value.key.tool == tool && $0.value.key.accountKey == accountKey)
+        }
+        for sample in samples where sample.key.accountKey == accountKey {
+            weeklyQuotaRecoverySamples[sample.key.storageKey] = sample
+        }
+        weeklyQuotaRecoveryComparedAccountKeys.insert("\(tool.rawValue)|\(accountKey)")
+        persistWeeklyQuotaRecoveryState()
+    }
+
+    public func acknowledgeWeeklyQuotaRecovery() {
+        guard !weeklyQuotaRecoveryUnreadItems.isEmpty else { return }
+        weeklyQuotaRecoveryUnreadItems = []
+        persistWeeklyQuotaRecoveryState()
+    }
+
+    public func resetWeeklyQuotaRecoveryToFactoryDefaults() {
+        weeklyQuotaRecoveryEnabled = true
+        clearWeeklyQuotaRecoveryState()
     }
 
     public var refreshIntervalDescription: String {
@@ -1398,6 +1523,34 @@ public final class AppState: ObservableObject {
         let snoozeUntil = UserDefaults.standard.double(forKey: resetCreditReminderScopedDefaultsKey(Self.resetCreditReminderSnoozeUntilDefaultsKey, accountKey: accountKey))
         resetCreditReminderSnoozeUntil = snoozeUntil > 0 ? Date(timeIntervalSince1970: snoozeUntil) : nil
         lastDeliveredResetCreditReminderKey = UserDefaults.standard.string(forKey: resetCreditReminderScopedDefaultsKey(Self.resetCreditReminderLastDeliveredKeyDefaultsKey, accountKey: accountKey))
+    }
+
+    private func loadWeeklyQuotaRecoveryState() {
+        guard let data = UserDefaults.standard.data(forKey: Self.weeklyQuotaRecoveryStateDefaultsKey),
+              let stored = try? JSONDecoder().decode(WeeklyQuotaRecoveryPersistence.self, from: data) else {
+            return
+        }
+        weeklyQuotaRecoverySamples = stored.samples
+        weeklyQuotaRecoveryUnreadItems = stored.unreadItems
+        if !weeklyQuotaRecoveryEnabled {
+            clearWeeklyQuotaRecoveryState()
+        }
+    }
+
+    private func clearWeeklyQuotaRecoveryState() {
+        weeklyQuotaRecoverySamples.removeAll()
+        weeklyQuotaRecoveryComparedAccountKeys.removeAll()
+        weeklyQuotaRecoveryUnreadItems = []
+        persistWeeklyQuotaRecoveryState()
+    }
+
+    private func persistWeeklyQuotaRecoveryState() {
+        let stored = WeeklyQuotaRecoveryPersistence(
+            samples: weeklyQuotaRecoverySamples,
+            unreadItems: weeklyQuotaRecoveryUnreadItems
+        )
+        guard let data = try? JSONEncoder().encode(stored) else { return }
+        UserDefaults.standard.set(data, forKey: Self.weeklyQuotaRecoveryStateDefaultsKey)
     }
 
     private func resetCreditReminderScopedDefaultsKey(_ baseKey: String, accountKey: String? = nil) -> String {

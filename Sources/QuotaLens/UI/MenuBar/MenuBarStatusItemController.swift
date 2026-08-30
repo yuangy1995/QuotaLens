@@ -14,6 +14,7 @@ public final class MenuBarStatusItemController: NSObject {
     private let toolTracker: FrontmostToolTracker
     private let statusItem: NSStatusItem
     private let popover: NSPopover
+    private let recoveryPopover: NSPopover
     private var cancellable: AnyCancellable?
     private var settingsCancellable: AnyCancellable?
     private var antigravityCancellable: AnyCancellable?
@@ -24,6 +25,7 @@ public final class MenuBarStatusItemController: NSObject {
     private var onRefresh: (MonitoringToolID?) -> Void
     private var onAcknowledgeResetCreditReminder: () -> Void
     private var onSnoozeResetCreditReminder: (Int) -> Void
+    private var onAcknowledgeWeeklyQuotaRecovery: () -> Void
     private var suppressPopoverUntil = Date.distantPast
     private var restoreMainWindowFocusAfterPopover = false
     private var globalMouseMonitor: Any?
@@ -40,7 +42,8 @@ public final class MenuBarStatusItemController: NSObject {
         onOpenMainWindow: @escaping () -> Void,
         onRefresh: @escaping (MonitoringToolID?) -> Void,
         onAcknowledgeResetCreditReminder: @escaping () -> Void,
-        onSnoozeResetCreditReminder: @escaping (Int) -> Void
+        onSnoozeResetCreditReminder: @escaping (Int) -> Void,
+        onAcknowledgeWeeklyQuotaRecovery: @escaping () -> Void
     ) {
         self.state = state
         self.usageFacade = usageFacade
@@ -49,28 +52,34 @@ public final class MenuBarStatusItemController: NSObject {
         self.toolTracker = toolTracker
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         self.popover = NSPopover()
+        self.recoveryPopover = NSPopover()
         self.onOpenMainWindow = onOpenMainWindow
         self.onRefresh = onRefresh
         self.onAcknowledgeResetCreditReminder = onAcknowledgeResetCreditReminder
         self.onSnoozeResetCreditReminder = onSnoozeResetCreditReminder
+        self.onAcknowledgeWeeklyQuotaRecovery = onAcknowledgeWeeklyQuotaRecovery
         super.init()
 
         configureStatusButton()
         configurePopover()
+        configureRecoveryPopover()
         observeState()
         updateStatusTitle()
+        updateRecoveryPopover()
     }
 
     public func updateActions(
         onOpenMainWindow: @escaping () -> Void,
         onRefresh: @escaping (MonitoringToolID?) -> Void,
         onAcknowledgeResetCreditReminder: @escaping () -> Void,
-        onSnoozeResetCreditReminder: @escaping (Int) -> Void
+        onSnoozeResetCreditReminder: @escaping (Int) -> Void,
+        onAcknowledgeWeeklyQuotaRecovery: @escaping () -> Void
     ) {
         self.onOpenMainWindow = onOpenMainWindow
         self.onRefresh = onRefresh
         self.onAcknowledgeResetCreditReminder = onAcknowledgeResetCreditReminder
         self.onSnoozeResetCreditReminder = onSnoozeResetCreditReminder
+        self.onAcknowledgeWeeklyQuotaRecovery = onAcknowledgeWeeklyQuotaRecovery
     }
 
     public func closePopoverAndSuppressOpening(for interval: TimeInterval = 0.55) {
@@ -82,8 +91,10 @@ public final class MenuBarStatusItemController: NSObject {
 
     public func refreshAppearance() {
         updatePopoverAppearance()
+        updateRecoveryPopoverAppearance()
         updateStatusIcon()
         updateStatusTitle()
+        updateRecoveryPopover()
     }
 
     private func configureStatusButton() {
@@ -159,6 +170,13 @@ public final class MenuBarStatusItemController: NSObject {
         )
     }
 
+    private func configureRecoveryPopover() {
+        recoveryPopover.behavior = .applicationDefined
+        recoveryPopover.delegate = self
+        recoveryPopover.animates = true
+        updateRecoveryPopoverAppearance()
+    }
+
     private func updatePopoverAppearance() {
         switch state.themeMode {
         case .light:
@@ -167,6 +185,17 @@ public final class MenuBarStatusItemController: NSObject {
             popover.appearance = NSAppearance(named: .darkAqua)
         case .system:
             popover.appearance = nil
+        }
+    }
+
+    private func updateRecoveryPopoverAppearance() {
+        switch state.themeMode {
+        case .light:
+            recoveryPopover.appearance = NSAppearance(named: .aqua)
+        case .dark:
+            recoveryPopover.appearance = NSAppearance(named: .darkAqua)
+        case .system:
+            recoveryPopover.appearance = nil
         }
     }
 
@@ -191,10 +220,11 @@ public final class MenuBarStatusItemController: NSObject {
                     self?.updateStatusTitle()
                 }
             }
-        toolCancellable = Publishers.CombineLatest(
+        toolCancellable = Publishers.CombineLatest3(
             toolTracker.$foregroundTool,
-            toolTracker.$lastActiveTool
-        ).sink { [weak self] _, _ in
+            toolTracker.$lastActiveTool,
+            toolTracker.$foregroundBundleIdentifier
+        ).sink { [weak self] _, _, _ in
             DispatchQueue.main.async { [weak self] in
                 self?.updatePopoverTool()
             }
@@ -256,26 +286,7 @@ public final class MenuBarStatusItemController: NSObject {
         }
 
         if displayTool == .antigravity {
-            let label = " \(state.quotaDisplayMode.shortTitle) "
-            let percent = "\(state.antigravityMenuBarPercentString) "
-            let title = NSMutableAttributedString()
-            let font = NSFont.systemFont(ofSize: 13, weight: .semibold)
-            title.append(NSAttributedString(
-                string: label,
-                attributes: [
-                    .font: font,
-                    .foregroundColor: labelColor
-                ]
-            ))
-            title.append(NSAttributedString(
-                string: percent,
-                attributes: [
-                    .font: font,
-                    .foregroundColor: antigravitySeverityColor()
-                ]
-            ))
-            button.attributedTitle = title
-            button.toolTip = "QuotaLens \(label)\(percent)"
+            updateAntigravityStatusTitle(button: button, labelColor: labelColor)
             statusItem.length = NSStatusItem.variableLength
             updateCapsuleAppearance(isReminderActive: state.hasActiveResetCreditReminder)
             return
@@ -308,7 +319,68 @@ public final class MenuBarStatusItemController: NSObject {
         updateCapsuleAppearance(isReminderActive: state.hasActiveResetCreditReminder)
     }
 
+    private func updateAntigravityStatusTitle(button: NSStatusBarButton, labelColor: NSColor) {
+        let font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+        let title = NSMutableAttributedString()
+        let prefix = " \(state.quotaDisplayMode.shortTitle) 5h "
+        title.append(NSAttributedString(
+            string: prefix,
+            attributes: [
+                .font: font,
+                .foregroundColor: labelColor
+            ]
+        ))
+
+        let buckets = state.latestAntigravityQuota?.orderedCompactFiveHourBuckets ?? []
+        if buckets.isEmpty {
+            title.append(NSAttributedString(
+                string: "-- ",
+                attributes: [
+                    .font: font,
+                    .foregroundColor: NSColor.secondaryLabelColor
+                ]
+            ))
+        } else {
+            for (index, item) in buckets.enumerated() {
+                if index > 0 {
+                    title.append(NSAttributedString(
+                        string: " · ",
+                        attributes: [
+                            .font: font,
+                            .foregroundColor: NSColor.secondaryLabelColor
+                        ]
+                    ))
+                }
+                let shown = state.quotaDisplayMode == .used
+                    ? max(0, 100 - item.bucket.remainingPercent)
+                    : item.bucket.remainingPercent
+                title.append(NSAttributedString(
+                    string: "\(item.shortTitle) ",
+                    attributes: [
+                        .font: font,
+                        .foregroundColor: labelColor
+                    ]
+                ))
+                title.append(NSAttributedString(
+                    string: "\(UsageNumberFormatter.percent(shown, maximumFractionDigits: 0)) ",
+                    attributes: [
+                        .font: font,
+                        .foregroundColor: antigravitySeverityColor(for: item.bucket.remainingPercent)
+                    ]
+                ))
+            }
+        }
+        button.attributedTitle = title
+        button.toolTip = state.antigravityMenuBarTooltip
+        button.setAccessibilityLabel(state.antigravityMenuBarTooltip)
+    }
+
     private var currentDisplayTool: MonitoringToolID? {
+        if let detected = ToolRegistry.shared.tool(
+            forBundleIdentifier: toolTracker.foregroundBundleIdentifier
+        ), enabledTools.isEnabled(detected) {
+            return detected
+        }
         if let foreground = toolTracker.foregroundTool, enabledTools.isEnabled(foreground) {
             return foreground
         }
@@ -343,6 +415,57 @@ public final class MenuBarStatusItemController: NSObject {
         updateStatusTitle()
     }
 
+    private func updateRecoveryPopover() {
+        let items = state.weeklyQuotaRecoveryUnreadItems
+        guard state.weeklyQuotaRecoveryEnabled, !items.isEmpty, !popover.isShown,
+              let button = statusItem.button else {
+            if recoveryPopover.isShown {
+                recoveryPopover.performClose(nil)
+            }
+            return
+        }
+
+        button.superview?.layoutSubtreeIfNeeded()
+        let view = WeeklyQuotaRecoveryBubbleView(
+            items: items,
+            onAcknowledge: { [weak self] in
+                self?.acknowledgeWeeklyQuotaRecovery()
+            },
+            theme: state.colorScheme
+        )
+        if let hostingController = recoveryPopover.contentViewController as? NSHostingController<WeeklyQuotaRecoveryBubbleView> {
+            hostingController.rootView = view
+        } else {
+            recoveryPopover.contentViewController = NSHostingController(rootView: view)
+        }
+
+        if let hostingController = recoveryPopover.contentViewController as? NSHostingController<WeeklyQuotaRecoveryBubbleView> {
+            let fittingSize = hostingController.sizeThatFits(in: CGSize(width: 280, height: 500))
+            recoveryPopover.contentSize = NSSize(width: 280, height: max(112, ceil(fittingSize.height)))
+        }
+
+        if !recoveryPopover.isShown {
+            recoveryPopover.show(
+                relativeTo: button.bounds,
+                of: button,
+                preferredEdge: .minY
+            )
+        }
+    }
+
+    private func acknowledgeWeeklyQuotaRecovery() {
+        onAcknowledgeWeeklyQuotaRecovery()
+        if recoveryPopover.isShown {
+            recoveryPopover.performClose(nil)
+        }
+    }
+
+    private func closeRecoveryPopover() {
+        if recoveryPopover.isShown {
+            recoveryPopover.performClose(nil)
+        }
+    }
+
     private func severityColor() -> NSColor {
         let isLight = isLightAppearance
         if state.preferredDisplayRemainingPercent <= 15.0 {
@@ -368,10 +491,7 @@ public final class MenuBarStatusItemController: NSObject {
         return .systemGreen
     }
 
-    private func antigravitySeverityColor() -> NSColor {
-        guard let remaining = state.antigravityQuotaRemainingPercent else {
-            return isLightAppearance ? NSColor.secondaryLabelColor : NSColor.secondaryLabelColor
-        }
+    private func antigravitySeverityColor(for remaining: Double) -> NSColor {
         if remaining <= 15 { return .systemRed }
         if remaining <= 35 { return .systemOrange }
         return .systemGreen
@@ -380,11 +500,13 @@ public final class MenuBarStatusItemController: NSObject {
     @objc private func togglePopover(_ sender: NSStatusBarButton) {
         guard Date() >= suppressPopoverUntil else {
             popover.performClose(sender)
+            closeRecoveryPopover()
             return
         }
 
         if state.hasActiveResetCreditReminder {
             popover.performClose(sender)
+            closeRecoveryPopover()
             showResetCreditReminderAlert()
             return
         }
@@ -392,12 +514,14 @@ public final class MenuBarStatusItemController: NSObject {
         if popover.isShown {
             popover.performClose(sender)
         } else {
+            closeRecoveryPopover()
             restoreMainWindowFocusAfterPopover = AppEnvironment.shared.mainWindowCoordinator.window?.isKeyWindow == true
             showPopover(relativeTo: sender)
         }
     }
 
     private func showPopover(relativeTo sender: NSStatusBarButton) {
+        closeRecoveryPopover()
         // The status item's frame can still be stale immediately after its
         // variable-length title changes. Layout first so the popover is
         // anchored to the actual menu bar button, not its previous frame.
@@ -564,12 +688,16 @@ public final class MenuBarStatusItemController: NSObject {
 
 extension MenuBarStatusItemController: NSPopoverDelegate {
     public func popoverDidClose(_ notification: Notification) {
+        if notification.object as? NSPopover === recoveryPopover { return }
         stopOutsideClickMonitoring()
-        guard restoreMainWindowFocusAfterPopover else { return }
-        restoreMainWindowFocusAfterPopover = false
-        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == ProcessInfo.processInfo.processIdentifier,
-              let window = AppEnvironment.shared.mainWindowCoordinator.window,
-              window.isVisible else { return }
-        window.makeKeyAndOrderFront(nil)
+        if restoreMainWindowFocusAfterPopover {
+            restoreMainWindowFocusAfterPopover = false
+            if NSWorkspace.shared.frontmostApplication?.processIdentifier == ProcessInfo.processInfo.processIdentifier,
+               let window = AppEnvironment.shared.mainWindowCoordinator.window,
+               window.isVisible {
+                window.makeKeyAndOrderFront(nil)
+            }
+        }
+        updateRecoveryPopover()
     }
 }

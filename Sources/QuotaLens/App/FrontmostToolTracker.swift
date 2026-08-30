@@ -96,8 +96,15 @@ public final class FrontmostToolTracker: ObservableObject {
         }
 
         var detected = ToolRegistry.shared.tool(forBundleIdentifier: bundleIdentifier)
+        let localizedName = application.localizedName?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
         if detected == nil,
-           application.localizedName?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "claude" {
+           localizedName == "antigravity" || localizedName == "antigravity ide" {
+            detected = .antigravity
+        }
+        if detected == nil,
+           localizedName == "claude" {
             detected = .claude
         }
         if detected == nil,

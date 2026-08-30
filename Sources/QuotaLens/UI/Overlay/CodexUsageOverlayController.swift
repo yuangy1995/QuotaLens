@@ -17,6 +17,7 @@ public final class CodexUsageOverlayController: NSObject, ObservableObject, @unc
 
     private var panel: NSPanel?
     private var detailsPanel: NSPanel?
+    private var recoveryPresenter: WeeklyQuotaRecoveryOverlayPresenter?
     private var trackerTask: Task<Void, Never>?
     private var helpAnchorTask: Task<Void, Never>?
     private var detailsCloseTask: Task<Void, Never>?
@@ -119,6 +120,13 @@ public final class CodexUsageOverlayController: NSObject, ObservableObject, @unc
         p.contentView = NSHostingView(rootView: overlayView)
 
         self.panel = p
+        self.recoveryPresenter = WeeklyQuotaRecoveryOverlayPresenter(
+            state: environment.state,
+            tool: .codex,
+            onAcknowledge: { [weak self] in
+                self?.acknowledgeWeeklyQuotaRecovery()
+            }
+        )
 
         setupWorkspaceObservers()
         updateVisibilityForFrontmostApp()
@@ -173,6 +181,8 @@ public final class CodexUsageOverlayController: NSObject, ObservableObject, @unc
         isSummaryHovered = false
         panel?.close()
         panel = nil
+        recoveryPresenter?.close()
+        recoveryPresenter = nil
         closeDetails()
         detailsPanel?.close()
         detailsPanel = nil
@@ -223,7 +233,10 @@ public final class CodexUsageOverlayController: NSObject, ObservableObject, @unc
     @MainActor
     public func updateVisibilityForFrontmostApp() {
         guard let p = panel else { return }
-        if isDragging { return }
+        if isDragging {
+            recoveryPresenter?.hide()
+            return
+        }
         _ = refreshTrackedWindow(panel: p)
     }
 
@@ -278,7 +291,11 @@ public final class CodexUsageOverlayController: NSObject, ObservableObject, @unc
         isSummaryHovered = hovering
         guard !isDragging else { return }
         if hovering, !isExpanded {
-            showDetails()
+            if recoveryPresenter?.hasVisibleItems == true {
+                closeDetails()
+            } else {
+                showDetails()
+            }
         } else if !hovering {
             scheduleDetailsClose()
         }
@@ -486,6 +503,21 @@ public final class CodexUsageOverlayController: NSObject, ObservableObject, @unc
         } else if detailsPanel?.isVisible == true {
             updateDetailsPanelFrame(in: appKitFrame)
         }
+        let isWidgetVisible: Bool
+        switch focus {
+        case .codex:
+            isWidgetVisible = true
+        case .hidden:
+            isWidgetVisible = false
+        }
+        let recoveryVisible = recoveryPresenter?.update(
+            anchorFrame: panel.frame,
+            targetFrame: appKitFrame,
+            isWidgetVisible: isWidgetVisible
+        ) == true
+        if recoveryVisible {
+            closeDetails()
+        }
         let panelIsAboveTarget = CodexOverlayWindowLocator.isWindow(
             CGWindowID(panel.windowNumber),
             above: target.windowID,
@@ -507,6 +539,7 @@ public final class CodexUsageOverlayController: NSObject, ObservableObject, @unc
 
     @MainActor
     private func hidePanel(_ panel: NSPanel, clearTarget: Bool) {
+        recoveryPresenter?.hide()
         isSummaryHovered = false
         closeDetails()
         if panel.isVisible {
@@ -517,6 +550,15 @@ public final class CodexUsageOverlayController: NSObject, ObservableObject, @unc
             trackedProcessID = nil
             trackedAppKitFrame = nil
             resetHelpAnchor(clearAnchor: true)
+        }
+    }
+
+    @MainActor
+    private func acknowledgeWeeklyQuotaRecovery() {
+        environment?.acknowledgeWeeklyQuotaRecovery()
+        recoveryPresenter?.hide()
+        if isSummaryHovered && !isExpanded {
+            showDetails()
         }
     }
 

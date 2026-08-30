@@ -93,6 +93,30 @@ public struct AntigravityQuotaSnapshot: Equatable, Sendable, Codable {
         }
     }
 
+    struct CompactFiveHourBucket: Identifiable, Equatable, Sendable {
+        let groupTitle: String
+        let displayTitle: String
+        let shortTitle: String
+        let bucket: Bucket
+        let groupOrder: Int
+
+        var id: String { "\(groupTitle):\(bucket.id)" }
+
+        init(
+            groupTitle: String,
+            displayTitle: String,
+            shortTitle: String,
+            bucket: Bucket,
+            groupOrder: Int
+        ) {
+            self.groupTitle = groupTitle
+            self.displayTitle = displayTitle
+            self.shortTitle = shortTitle
+            self.bucket = bucket
+            self.groupOrder = groupOrder
+        }
+    }
+
     public struct Model: Identifiable, Equatable, Sendable, Codable {
         public let id: String
         public let displayName: String?
@@ -153,6 +177,46 @@ public struct AntigravityQuotaSnapshot: Equatable, Sendable, Codable {
                 }
                 return $0.bucket.id < $1.bucket.id
             }
+    }
+
+    var orderedCompactFiveHourBuckets: [CompactFiveHourBucket] {
+        groups.enumerated().flatMap { groupOrder, group in
+            group.buckets
+                .filter { $0.window == .fiveHour }
+                .map {
+                    CompactFiveHourBucket(
+                        groupTitle: group.title,
+                        displayTitle: Self.groupDisplayTitle(for: group.title),
+                        shortTitle: Self.compactGroupTitle(for: group.title),
+                        bucket: $0,
+                        groupOrder: Self.compactGroupOrder(for: group.title, fallback: groupOrder)
+                    )
+                }
+        }.sorted {
+            if $0.groupOrder != $1.groupOrder { return $0.groupOrder < $1.groupOrder }
+            return $0.bucket.id < $1.bucket.id
+        }
+    }
+
+    static func compactGroupTitle(for groupTitle: String) -> String {
+        let normalized = groupTitle.lowercased()
+        if normalized.contains("gemini") { return "G" }
+        if normalized.contains("claude") || normalized.contains("gpt") { return "C/GPT" }
+        return groupTitle
+    }
+
+    static func groupDisplayTitle(for groupTitle: String) -> String {
+        let normalized = groupTitle.lowercased()
+        if normalized.contains("gemini") { return "Gemini" }
+        if normalized.contains("claude") || normalized.contains("gpt") { return "Claude/GPT" }
+        return groupTitle
+    }
+
+    private static func compactGroupOrder(for groupTitle: String, fallback: Int) -> Int {
+        let normalized = groupTitle.lowercased()
+        if normalized.contains("gemini") { return 0 }
+        if normalized.contains("claude") || normalized.contains("gpt") { return 1 }
+        return fallback + 2
     }
 
     public var lowestRemainingPercent: Double? {

@@ -119,9 +119,17 @@ public struct MainView: View {
 
                     currentContent
                 }
-                .frame(minWidth: 780, minHeight: 560)
+                .frame(
+                    minWidth: 780,
+                    maxWidth: .infinity,
+                    minHeight: 560,
+                    maxHeight: .infinity,
+                    alignment: .topLeading
+                )
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
         .tint(cyan)
         .preferredColorScheme(state.colorScheme)

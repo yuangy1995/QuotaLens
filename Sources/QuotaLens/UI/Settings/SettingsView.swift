@@ -1517,6 +1517,47 @@ public struct SettingsView: View {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .strokeBorder((state.hasActiveResetCreditReminder ? amber : (isDark ? Color.white : Color.black)).opacity(state.hasActiveResetCreditReminder ? 0.34 : 0.10), lineWidth: 0.8)
             )
+
+            // 周额度恢复提醒
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(L10n.text("周额度恢复提醒", "Weekly Quota Recovery Reminder"))
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+                    Text(L10n.text(
+                        "额度恢复到 100% 时显示提示，不会发送系统通知。",
+                        "Show a reminder when a weekly quota returns to 100%. No system notifications are sent."
+                    ))
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                        .lineLimit(2)
+                }
+
+                Spacer()
+
+                Text(state.hasUnreadWeeklyQuotaRecovery
+                    ? L10n.text("有未读", "Unread")
+                    : (state.weeklyQuotaRecoveryEnabled ? L10n.text("已开启", "On") : L10n.text("已关闭", "Off")))
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundStyle(state.hasUnreadWeeklyQuotaRecovery ? AppTheme.accentEmerald(for: colorScheme) : AppTheme.textSecondary(for: colorScheme))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background((state.hasUnreadWeeklyQuotaRecovery ? AppTheme.accentEmerald(for: colorScheme) : AppTheme.textSecondary(for: colorScheme)).opacity(colorScheme == .dark ? 0.14 : 0.10), in: Capsule())
+
+                Toggle("", isOn: Binding(
+                    get: { state.weeklyQuotaRecoveryEnabled },
+                    set: { env.setWeeklyQuotaRecoveryEnabled($0) }
+                ))
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .accessibilityLabel(L10n.text("周额度恢复提醒", "Weekly quota recovery reminder"))
+            }
+            .padding(12)
+            .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder((state.hasUnreadWeeklyQuotaRecovery ? AppTheme.accentEmerald(for: colorScheme) : (isDark ? Color.white : Color.black)).opacity(state.hasUnreadWeeklyQuotaRecovery ? 0.34 : 0.10), lineWidth: 0.8)
+            )
         }
         .cyberCard(cornerRadius: 16, padding: 18)
     }

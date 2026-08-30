@@ -78,6 +78,12 @@ public final class ToolOverlayCoordinator {
         }
     }
 
+    public func refreshRecoveryBubbles() {
+        CodexUsageOverlayController.shared.updateVisibilityForFrontmostApp()
+        ClaudeUsageOverlayController.shared.updateVisibilityForFrontmostApp()
+        AntigravityUsageOverlayController.shared.updateVisibilityForFrontmostApp()
+    }
+
     private func refreshVisibility() {
         CodexUsageOverlayController.shared.updateVisibilityForFrontmostApp()
         ClaudeUsageOverlayController.shared.updateVisibilityForFrontmostApp()
@@ -94,6 +100,7 @@ public final class ClaudeUsageOverlayController: NSObject, ObservableObject {
 
     private weak var environment: AppEnvironment?
     private var panel: NSPanel?
+    private var recoveryPresenter: WeeklyQuotaRecoveryOverlayPresenter?
     private var trackerTask: Task<Void, Never>?
     private var trackedWindowID: CGWindowID?
     private var trackedFrame: CGRect?
@@ -149,6 +156,13 @@ public final class ClaudeUsageOverlayController: NSObject, ObservableObject {
             )
         )
         self.panel = panel
+        self.recoveryPresenter = WeeklyQuotaRecoveryOverlayPresenter(
+            state: environment.state,
+            tool: .claude,
+            onAcknowledge: { [weak self] in
+                self?.acknowledgeWeeklyQuotaRecovery()
+            }
+        )
         updateVisibilityForFrontmostApp()
         trackerTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
@@ -165,14 +179,19 @@ public final class ClaudeUsageOverlayController: NSObject, ObservableObject {
         panel?.orderOut(nil)
         panel?.close()
         panel = nil
+        recoveryPresenter?.close()
+        recoveryPresenter = nil
         trackedWindowID = nil
         trackedFrame = nil
     }
 
     public func updateVisibilityForFrontmostApp() {
-        guard !isDragging,
-              let environment,
+        guard let environment,
               let panel else { return }
+        if isDragging {
+            recoveryPresenter?.hide()
+            return
+        }
         guard environment.frontmostToolTracker.foregroundTool == .claude,
               let processID = environment.frontmostToolTracker.foregroundApplicationPID else {
             hide(panel)
@@ -199,6 +218,11 @@ public final class ClaudeUsageOverlayController: NSObject, ObservableObject {
         if panel.frame != frame {
             panel.setFrame(frame, display: true, animate: false)
         }
+        recoveryPresenter?.update(
+            anchorFrame: panel.frame,
+            targetFrame: appKitFrame,
+            isWidgetVisible: true
+        )
         panel.ignoresMouseEvents = false
         if !panel.isVisible || !CodexOverlayWindowLocator.isWindow(
             CGWindowID(panel.windowNumber),
@@ -210,12 +234,18 @@ public final class ClaudeUsageOverlayController: NSObject, ObservableObject {
     }
 
     private func hide(_ panel: NSPanel) {
+        recoveryPresenter?.hide()
         panel.ignoresMouseEvents = true
         if panel.isVisible {
             panel.orderOut(nil)
         }
         trackedWindowID = nil
         trackedFrame = nil
+    }
+
+    private func acknowledgeWeeklyQuotaRecovery() {
+        environment?.acknowledgeWeeklyQuotaRecovery()
+        recoveryPresenter?.hide()
     }
 
     private func positionedFrame(panelSize: CGSize, in target: CGRect) -> CGRect {

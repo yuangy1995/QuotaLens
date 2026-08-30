@@ -6,6 +6,7 @@ struct ClaudeStoredCredentials: Sendable, Equatable {
     let refreshToken: String?
     let expiresAtMs: Double?
     let scopes: [String]?
+    let accountKey: String?
 }
 
 struct ClaudeRefreshedCredentials: Sendable, Equatable {
@@ -29,15 +30,16 @@ enum ClaudeOAuthCache {
     static func save(
         _ credentials: ClaudeRefreshedCredentials,
         scopes: [String]?,
+        accountKey: String,
+        fallbackRefreshToken: String,
         to url: URL = defaultURL()
     ) throws {
         var inner: [String: Any] = [
             "accessToken": credentials.accessToken,
-            "expiresAt": credentials.expiresAtMs
+            "expiresAt": credentials.expiresAtMs,
+            "accountKey": accountKey,
+            "refreshToken": credentials.refreshToken ?? fallbackRefreshToken
         ]
-        if let refreshToken = credentials.refreshToken {
-            inner["refreshToken"] = refreshToken
-        }
         if let scopes { inner["scopes"] = scopes }
         let data = try JSONSerialization.data(
             withJSONObject: ["claudeAiOauth": inner],
@@ -163,6 +165,7 @@ actor ClaudeUsageClient {
     private let cacheURL: URL
     private let tokenRefresher: ClaudeTokenRefresher
     private var memoryToken: String?
+    private var memoryAccountKey: String?
     private var rejectedTokens: Set<String> = []
     private var keychainUnavailable = false
     private var refreshTask: Task<ClaudeStoredCredentials?, Never>?
@@ -185,12 +188,14 @@ actor ClaudeUsageClient {
 
     func clearMemoryToken() {
         memoryToken = nil
+        memoryAccountKey = nil
     }
 
     private func fetch(retriedAfterUnauthorized: Bool) async throws -> ClaudeUsageSnapshot {
-        guard let token = await loadAccessToken() else {
+        guard let credentials = await loadAccessToken() else {
             throw FetchError.noCredentials
         }
+        let token = credentials.accessToken
         var request = URLRequest(url: endpoint)
         request.httpMethod = "GET"
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -211,10 +216,11 @@ actor ClaudeUsageClient {
         switch http.statusCode {
         case 200:
             rejectedTokens.removeAll()
-            return try Self.decode(data, capturedAt: Date())
+            return try Self.decode(data, capturedAt: Date(), accountKey: credentials.accountKey)
         case 401:
             rejectedTokens.insert(token)
             memoryToken = nil
+            memoryAccountKey = nil
             if !retriedAfterUnauthorized {
                 return try await fetch(retriedAfterUnauthorized: true)
             }
@@ -229,24 +235,28 @@ actor ClaudeUsageClient {
         }
     }
 
-    private func loadAccessToken() async -> String? {
+    private func loadAccessToken() async -> (accessToken: String, accountKey: String)? {
         if let memoryToken, !rejectedTokens.contains(memoryToken) {
-            return memoryToken
+            return (memoryToken, memoryAccountKey ?? accountKey(for: memoryToken))
         }
 
         var candidates: [ClaudeStoredCredentials] = []
         if let cached = ClaudeOAuthCache.load(from: cacheURL) {
             candidates.append(cached)
             if Self.isUsable(cached, rejected: rejectedTokens) {
+                let accountKey = accountKey(for: cached)
                 memoryToken = cached.accessToken
-                return cached.accessToken
+                memoryAccountKey = accountKey
+                return (cached.accessToken, accountKey)
             }
         }
         if let file = Self.readClaudeCredentialsFile() {
             candidates.append(file)
             if Self.isUsable(file, rejected: rejectedTokens) {
+                let accountKey = accountKey(for: file)
                 memoryToken = file.accessToken
-                return file.accessToken
+                memoryAccountKey = accountKey
+                return (file.accessToken, accountKey)
             }
         }
         if !keychainUnavailable {
@@ -254,8 +264,10 @@ actor ClaudeUsageClient {
             case .credentials(let credentials):
                 candidates.append(credentials)
                 if Self.isUsable(credentials, rejected: rejectedTokens) {
+                    let accountKey = accountKey(for: credentials)
                     memoryToken = credentials.accessToken
-                    return credentials.accessToken
+                    memoryAccountKey = accountKey
+                    return (credentials.accessToken, accountKey)
                 }
             case .permanentlyUnavailable:
                 keychainUnavailable = true
@@ -267,10 +279,24 @@ actor ClaudeUsageClient {
         let refreshTokens = candidates.compactMap(\.refreshToken).filter { !$0.isEmpty }
         if let refreshToken = refreshTokens.first,
            let refreshed = await refreshSingleFlight(refreshToken, candidates: candidates) {
+            let accountKey = accountKey(for: refreshed)
             memoryToken = refreshed.accessToken
-            return refreshed.accessToken
+            memoryAccountKey = accountKey
+            return (refreshed.accessToken, accountKey)
         }
-        return candidates.first?.accessToken
+        guard let first = candidates.first else { return nil }
+        let accountKey = accountKey(for: first)
+        memoryAccountKey = accountKey
+        return (first.accessToken, accountKey)
+    }
+
+    private func accountKey(for credentials: ClaudeStoredCredentials) -> String {
+        credentials.accountKey
+            ?? AccountIdentity.stableAccountKey(from: credentials.refreshToken ?? credentials.accessToken)
+    }
+
+    private func accountKey(for accessToken: String) -> String {
+        AccountIdentity.stableAccountKey(from: accessToken)
     }
 
     private func refreshSingleFlight(
@@ -285,13 +311,24 @@ actor ClaudeUsageClient {
             for token in ordered {
                 do {
                     let refreshed = try await self.tokenRefresher.refresh(token)
-                    let scopes = candidates.first(where: { $0.refreshToken == token })?.scopes
-                    try? ClaudeOAuthCache.save(refreshed, scopes: scopes, to: self.cacheURL)
+                    let source = candidates.first(where: { $0.refreshToken == token })
+                    let scopes = source?.scopes
+                    let stableAccountKey = source.map { self.accountKey(for: $0) }
+                        ?? AccountIdentity.stableAccountKey(from: token)
+                    let effectiveRefreshToken = refreshed.refreshToken ?? token
+                    try? ClaudeOAuthCache.save(
+                        refreshed,
+                        scopes: scopes,
+                        accountKey: stableAccountKey,
+                        fallbackRefreshToken: token,
+                        to: self.cacheURL
+                    )
                     return ClaudeStoredCredentials(
                         accessToken: refreshed.accessToken,
-                        refreshToken: refreshed.refreshToken,
+                        refreshToken: effectiveRefreshToken,
                         expiresAtMs: refreshed.expiresAtMs,
-                        scopes: scopes
+                        scopes: scopes,
+                        accountKey: stableAccountKey
                     )
                 } catch ClaudeTokenRefresher.RefreshError.http(let code) where (400..<500).contains(code) {
                     if ClaudeOAuthCache.load(from: self.cacheURL)?.refreshToken == token {
@@ -310,7 +347,7 @@ actor ClaudeUsageClient {
         return result
     }
 
-    static func decode(_ data: Data, capturedAt: Date) throws -> ClaudeUsageSnapshot {
+    static func decode(_ data: Data, capturedAt: Date, accountKey: String = "claude-local") throws -> ClaudeUsageSnapshot {
         struct Wire: Decodable {
             let rate_limit_tier: String?
             let five_hour: WindowWire?
@@ -421,6 +458,7 @@ actor ClaudeUsageClient {
 
         return ClaudeUsageSnapshot(
             capturedAt: capturedAt,
+            accountKey: accountKey,
             tier: wire.rate_limit_tier,
             fiveHour: fiveStructured ?? window(
                 id: "claude", title: L10n.text("5 小时", "5 Hours"),
@@ -450,6 +488,7 @@ actor ClaudeUsageClient {
                 let refreshToken: String?
                 let expiresAt: Double?
                 let scopes: [String]?
+                let accountKey: String?
             }
             let claudeAiOauth: Inner?
         }
@@ -461,7 +500,8 @@ actor ClaudeUsageClient {
             accessToken: token,
             refreshToken: inner.refreshToken,
             expiresAtMs: inner.expiresAt,
-            scopes: inner.scopes
+            scopes: inner.scopes,
+            accountKey: inner.accountKey
         )
     }
 
@@ -529,7 +569,8 @@ actor ClaudeUsageClient {
             accessToken: trimmed,
             refreshToken: nil,
             expiresAtMs: nil,
-            scopes: nil
+            scopes: nil,
+            accountKey: nil
         ))
     }
 

@@ -53,7 +53,15 @@ public final class MainWindowCoordinator: NSObject, NSWindowDelegate {
             navigation: environment.navigationStore
         )
         .environmentObject(environment)
-        .frame(minWidth: 960, minHeight: 650)
+        .frame(
+            minWidth: 960,
+            idealWidth: 1180,
+            maxWidth: .infinity,
+            minHeight: 650,
+            idealHeight: 760,
+            maxHeight: .infinity,
+            alignment: .topLeading
+        )
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1180, height: 760),
@@ -69,7 +77,10 @@ public final class MainWindowCoordinator: NSObject, NSWindowDelegate {
         window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
         window.minSize = NSSize(width: 960, height: 650)
-        window.contentViewController = NSHostingController(rootView: content)
+        let hostingController = NSHostingController(rootView: content)
+        hostingController.view.frame = window.contentView?.bounds ?? .zero
+        hostingController.view.autoresizingMask = NSView.AutoresizingMask([.width, .height])
+        window.contentViewController = hostingController
         window.delegate = self
         window.setFrameAutosaveName("QuotaLens.MainWindow")
         if !window.setFrameUsingName("QuotaLens.MainWindow") {
