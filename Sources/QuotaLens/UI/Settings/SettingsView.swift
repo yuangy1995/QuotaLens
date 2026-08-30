@@ -1111,8 +1111,8 @@ public struct SettingsView: View {
                         "No local records need cleanup."
                     )
                     : L10n.format(
-                        "%d 个记录暂时无法读取；QuotaLens 会保留现有用量。只有确认记录已不存在并通过预览后，才允许显式清理。",
-                        zhHans: "%d 个记录暂时无法读取；QuotaLens 会保留现有用量。只有确认记录已不存在并通过预览后，才允许显式清理。",
+                "%d records cannot be read right now. QuotaLens will keep the existing usage. Cleanup is available only after records are confirmed missing and reviewed in the preview.",
+                zhHans: "%d 个记录暂时无法读取；QuotaLens 会保留现有用量。只有确认记录已不存在并通过预览后，才允许显式清理。",
                         diagnostics.missingSourceCount
                     ))
                     .font(.system(size: 10.5, weight: .medium, design: .rounded))
@@ -2246,7 +2246,7 @@ public struct SettingsView: View {
             )
         }
         return L10n.format(
-            "将清理 %d 个已确认不存在的本地记录，影响 %d 个会话、%@ Token 和 %@ 费用估算。执行前会重新校验；如果记录恢复或影响范围变化，本次清理会被拒绝。",
+            "This will clean %d confirmed-missing local records, affecting %d sessions, %@ tokens, and %@ in estimated cost. The preview will be checked again first; cleanup will stop if records return or the impact changes.",
             zhHans: "将清理 %d 个已确认不存在的本地记录，影响 %d 个会话、%@ Token 和 %@ 费用估算。执行前会重新校验；如果记录恢复或影响范围变化，本次清理会被拒绝。",
             preview.items.count,
             preview.totalSessions,

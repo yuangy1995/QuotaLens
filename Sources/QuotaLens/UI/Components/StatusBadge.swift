@@ -98,7 +98,7 @@ public struct StatusBadge: View {
         switch status {
         case .connected(_, _):
             return StatusBadge(kind: .connected)
-        case .connecting:
+        case .launching, .handshaking, .reconnecting:
             return StatusBadge(kind: .connecting)
         case .disconnected:
             return StatusBadge(kind: .disconnected)

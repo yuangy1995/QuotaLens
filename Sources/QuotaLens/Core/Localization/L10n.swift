@@ -195,6 +195,7 @@ public enum L10n {
             return zhHans ?? translations[.simplifiedChinese]?[english] ?? english
         default:
             return multiToolTranslations[language]?[english]
+                ?? extendedTranslations[english]?[language]
                 ?? keyedTranslations[english]?[language]
                 ?? translations[language]?[english]
                 ?? english
@@ -257,6 +258,10 @@ public enum L10n {
     }
 
     public static let changelogZhToEnMap: [String: String] = [
+        "重构 Codex 连接、重连与额度刷新状态，连接失败和缓存数据现在会准确显示": "Reworked Codex connection, reconnection, and quota refresh states so failures and cached data are shown accurately",
+        "严格校验额度与重置卡响应，并将 Claude 登录凭据安全迁移至 macOS 钥匙串": "Added strict validation for quota and reset card responses, and moved Claude sign-in credentials to macOS Keychain",
+        "优化大型历史记录导入、汇总查询和后台监听，显著降低启动、CPU 与内存占用": "Optimized large history imports, summary queries, and background monitoring to significantly reduce startup time, CPU use, and memory use",
+        "改进本地多账号识别与跨架构安装包验证，提升 Apple Silicon、Intel 和 Universal 版本的发布可靠性": "Improved local multi-account identification and cross-architecture package checks for more reliable Apple Silicon, Intel, and Universal releases",
         "新增周度配额完全恢复（100%）智能气泡提醒，支持多工具额度满血通知与一键快捷交互": "Introduced weekly quota full recovery (100%) notification bubbles with cross-tool status alerts and quick interactions",
         "优化菜单栏状态图标与指示环排版，支持在状态栏直观切换已用与可用额度视角": "Optimized menu bar status item indicators and ring layout with intuitive toggling between used and available quota perspectives",
         "深度优化 Antigravity 与 Codex 全息悬浮挂件的吸附平滑度与窗口前台感知链路": "Deeply refined floating overlay snapping smoothness and foreground window awareness across Antigravity and Codex",

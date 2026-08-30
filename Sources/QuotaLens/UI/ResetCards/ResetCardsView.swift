@@ -73,7 +73,7 @@ public struct ResetCardsView: View {
                     Image(systemName: "clock.arrow.2.circlepath")
                         .font(.system(size: 10))
                         .foregroundStyle(AppTheme.accentCyan(for: colorScheme))
-                    Text(L10n.format("Sync: %@", zhHans: "同步: %@", state.formatTime(state.lastRefreshTime)))
+                    Text(state.codexSyncStatusText)
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
                         .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
                 }

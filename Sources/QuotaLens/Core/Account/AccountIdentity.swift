@@ -4,12 +4,18 @@ import CryptoKit
 import Foundation
 
 public struct AccountIdentity: Sendable {
+    private static let unknownSessionIdentifier = UUID().uuidString
+
     public static func stableAccountKey(from identifier: String) -> String {
         "acc_\(shortHash(identifier, length: 16))"
     }
 
     public static func emailHash(from identifier: String) -> String {
         sha256Hex(normalized(identifier))
+    }
+
+    public static func temporaryUnknownIdentifier() -> String {
+        "unknown_\(unknownSessionIdentifier)"
     }
 
     private static func shortHash(_ value: String, length: Int) -> String {

@@ -155,6 +155,7 @@ public final class AppState: ObservableObject {
     private static let weeklyQuotaRecoveryStateDefaultsKey = "QuotaLens.weeklyQuotaRecovery.state"
     private static let dismissedSuggestionCycleKeysDefaultsKey = "QuotaLens.dismissedSuggestionCycleKeys"
     private static let quotaExhaustionThreshold = 0.000_1
+    private static var cachedDateFormatters: [String: DateFormatter] = [:]
     nonisolated public static let defaultRefreshIntervalSeconds = 60
     nonisolated public static let defaultClaudeRefreshIntervalSeconds = 600
     nonisolated public static let defaultAntigravityRefreshIntervalSeconds = 300
@@ -182,7 +183,10 @@ public final class AppState: ObservableObject {
     @Published public var connectionStatus: ProcessStatus = .disconnected
     @Published public var isRefreshing: Bool = false
     @Published public var isRetryingServerConnection: Bool = false
-    @Published public var lastRefreshTime: Date = Date()
+    @Published public var lastRefreshAttemptAt: Date?
+    @Published public var lastSuccessfulRefreshAt: Date?
+    @Published public var codexRefreshErrorText: String?
+    @Published public var codexStorageErrorText: String?
     @Published public var quotaDisplayMode: QuotaDisplayMode {
         didSet {
             UserDefaults.standard.set(quotaDisplayMode.rawValue, forKey: Self.quotaDisplayModeDefaultsKey)
@@ -694,14 +698,51 @@ public final class AppState: ObservableObject {
     }
 
     public var hasQuotaSnapshot: Bool {
-        effectiveQuotaSnapshot != nil && hasCurrentServerQuota && connectionStatus.isConnected
+        effectiveQuotaSnapshot != nil && hasCurrentServerQuota
+    }
+
+    public var isShowingCachedQuota: Bool {
+        hasQuotaSnapshot && codexRefreshErrorText != nil
+    }
+
+    public var codexDataFreshness: ProviderDataFreshness {
+        ProviderDataFreshness.evaluate(
+            capturedAt: lastSuccessfulRefreshAt,
+            refreshInterval: TimeInterval(refreshIntervalSeconds)
+        )
+    }
+
+    public var codexSyncStatusText: String {
+        if let lastSuccessfulRefreshAt {
+            if isShowingCachedQuota {
+                return L10n.format(
+                    "Cached: %@",
+                    zhHans: "缓存：%@",
+                    formatTime(lastSuccessfulRefreshAt)
+                )
+            }
+            return L10n.format(
+                "Updated: %@",
+                zhHans: "更新：%@",
+                formatTime(lastSuccessfulRefreshAt)
+            )
+        }
+        if isRefreshing {
+            return L10n.text("正在更新", "Updating")
+        }
+        if lastRefreshAttemptAt != nil {
+            return L10n.text("更新未完成", "Update incomplete")
+        }
+        return L10n.text("等待同步", "Waiting to sync")
     }
 
     public var menuBarStatusString: String {
         guard hasQuotaSnapshot else {
             switch connectionStatus {
-            case .connecting:
+            case .launching, .handshaking:
                 return L10n.text("连接中", "Connecting")
+            case .reconnecting:
+                return L10n.text("重试中", "Retrying")
             case .connected:
                 if isRetryingServerConnection {
                     return L10n.text("重试中", "Retrying")
@@ -728,8 +769,10 @@ public final class AppState: ObservableObject {
         }
 
         switch connectionStatus {
-        case .connecting:
+        case .launching, .handshaking:
             return L10n.text("正在连接", "Connecting")
+        case .reconnecting:
+            return L10n.text("正在重新连接", "Reconnecting")
         case .connected:
             return L10n.text("还没读到额度", "No quota yet")
         case .failed(let message):
@@ -748,8 +791,14 @@ public final class AppState: ObservableObject {
         }
 
         switch connectionStatus {
-        case .connecting:
+        case .launching, .handshaking:
             return L10n.text("连接成功后会显示当前账号额度。", "Quota for the current account appears after connection succeeds.")
+        case .reconnecting(let attempt):
+            return L10n.format(
+                "Reconnection attempt %d is in progress.",
+                zhHans: "正在进行第 %d 次重新连接。",
+                attempt
+            )
         case .connected:
             return L10n.text("请确认已登录账号，稍后刷新。", "Confirm you are signed in, then refresh again shortly.")
         case .failed(let message):
@@ -1476,39 +1525,39 @@ public final class AppState: ObservableObject {
     }
 
     public func formatFullDate(_ timestamp: Int64) -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = L10n.locale
-        formatter.timeZone = .current
-        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        let formatter = cachedDateFormatter(format: "yyyy-MM-dd HH:mm:ss")
         return formatter.string(from: Date(timeIntervalSince1970: Double(timestamp)))
     }
 
     private func formatShortDate(_ timestamp: Int64) -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = L10n.locale
-        formatter.timeZone = .current
-        formatter.dateFormat = "MM-dd HH:mm"
+        let formatter = cachedDateFormatter(format: "MM-dd HH:mm")
         return formatter.string(from: Date(timeIntervalSince1970: Double(timestamp)))
     }
 
     public func formatTime(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = L10n.locale
-        formatter.timeZone = .current
-        formatter.dateFormat = "HH:mm:ss"
+        let formatter = cachedDateFormatter(format: "HH:mm:ss")
         return formatter.string(from: date)
     }
 
     public func formatMonthDayTime(_ date: Date) -> String {
+        let formatter = cachedDateFormatter(format: "MM-dd HH:mm")
+        return formatter.string(from: date)
+    }
+
+    private func cachedDateFormatter(format: String) -> DateFormatter {
+        let locale = L10n.locale
+        let timeZone = TimeZone.current
+        let key = "\(locale.identifier)|\(timeZone.identifier)|\(format)"
+        if let formatter = Self.cachedDateFormatters[key] {
+            return formatter
+        }
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = L10n.locale
-        formatter.timeZone = .current
-        formatter.dateFormat = "MM-dd HH:mm"
-        return formatter.string(from: date)
+        formatter.locale = locale
+        formatter.timeZone = timeZone
+        formatter.dateFormat = format
+        Self.cachedDateFormatters[key] = formatter
+        return formatter
     }
 
     public func displayName(for accountKey: String?) -> String {

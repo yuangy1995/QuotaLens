@@ -5,6 +5,7 @@ import Foundation
 import Darwin
 
 public struct CodexServerSnapshot: Sendable {
+    public let capturedAt: Date
     public let version: String
     public let binaryPath: String
     public let account: AccountReadResult?
@@ -61,41 +62,98 @@ public struct CodexServerSnapshotClient: Sendable {
             "clientInfo": ["name": "QuotaLens", "version": AppVersion.marketingVersion],
             "capabilities": [:]
         ], to: writer)
+
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        while Date() < deadline, !collector.hasCompleted(id: 1) {
+            if let protocolFailure = collector.protocolFailure() {
+                throw NSError(
+                    domain: "CodexServerSnapshotClient",
+                    code: -4,
+                    userInfo: [NSLocalizedDescriptionKey: protocolFailure]
+                )
+            }
+            Thread.sleep(forTimeInterval: 0.02)
+        }
+        guard let initializeResult = collector.result(for: 1),
+              !(initializeResult is NSNull) else {
+            let error = collector.error(for: 1)
+                ?? L10n.text("Codex 初始化超时", "Timed out while initializing Codex")
+            throw NSError(
+                domain: "CodexServerSnapshotClient",
+                code: -2,
+                userInfo: [NSLocalizedDescriptionKey: error]
+            )
+        }
+        try writeNotification(method: "initialized", params: [:], to: writer)
+
         try writeRequest(id: 2, method: "account/read", params: [:], to: writer)
         try writeRequest(id: 3, method: "account/rateLimits/read", params: [:], to: writer)
         try writeRequest(id: 4, method: "account/usage/read", params: [:], to: writer)
 
-        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        var coreCompletedAt: Date?
         while Date() < deadline {
-            if collector.hasCompleted(id: 2),
-               collector.hasCompleted(id: 3),
-               collector.hasCompleted(id: 4) {
-                break
+            if let protocolFailure = collector.protocolFailure() {
+                throw NSError(
+                    domain: "CodexServerSnapshotClient",
+                    code: -4,
+                    userInfo: [NSLocalizedDescriptionKey: protocolFailure]
+                )
             }
-            Thread.sleep(forTimeInterval: 0.05)
+            if collector.hasCompleted(id: 2), collector.hasCompleted(id: 3) {
+                let completedAt = coreCompletedAt ?? Date()
+                coreCompletedAt = completedAt
+                if collector.hasCompleted(id: 4)
+                    || Date().timeIntervalSince(completedAt) >= 0.15 {
+                    break
+                }
+            }
+            Thread.sleep(forTimeInterval: 0.02)
         }
 
         let accountResult = collector.result(for: 2)
         let rateResult = collector.result(for: 3) ?? collector.salvagedResult(for: 3)
         let accountUsageResult = collector.result(for: 4)
 
-        if accountResult == nil && rateResult == nil {
-            let error = collector.error(for: 2) ?? collector.error(for: 3) ?? L10n.text("读取额度超时", "Timed out while reading quota data")
+        guard let accountResult else {
+            let error = collector.error(for: 2)
+                ?? L10n.text("账号状态读取未完成", "Account status could not be read")
             throw NSError(domain: "CodexServerSnapshotClient", code: -3, userInfo: [NSLocalizedDescriptionKey: error])
+        }
+        guard let rateResult else {
+            let error = collector.error(for: 3)
+                ?? L10n.text("额度读取未完成", "Quota data could not be read")
+            throw NSError(domain: "CodexServerSnapshotClient", code: -3, userInfo: [NSLocalizedDescriptionKey: error])
+        }
+
+        let account = try decode(
+            AccountReadResult.self,
+            method: "account/read",
+            fromJSONObject: accountResult
+        )
+        let rateLimits = try decode(
+            RateLimitsReadResult.self,
+            method: "account/rateLimits/read",
+            fromJSONObject: rateResult
+        )
+        let accountUsage = accountUsageResult.flatMap {
+            try? decode(
+                CodexAccountUsagePayload.self,
+                method: "account/usage/read",
+                fromJSONObject: $0
+            )
         }
 
         let version = queryVersion(at: binaryPath) ?? "codex (unknown)"
 
         return CodexServerSnapshot(
+            capturedAt: Date(),
             version: version,
             binaryPath: binaryPath,
-            account: accountResult.flatMap { decode(AccountReadResult.self, fromJSONObject: $0) },
-            accountRawJson: accountResult.map(jsonString) ?? "{}",
-            rateLimits: rateResult.flatMap { decode(RateLimitsReadResult.self, fromJSONObject: $0) },
-            rateLimitsRawJson: rateResult.map(jsonString) ?? "{}",
-            accountUsage: accountUsageResult.flatMap {
-                decode(CodexAccountUsagePayload.self, fromJSONObject: $0)
-            }
+            account: account,
+            accountRawJson: jsonString(account),
+            rateLimits: rateLimits,
+            rateLimitsRawJson: jsonString(rateLimits),
+            accountUsage: accountUsage
         )
     }
 
@@ -111,17 +169,50 @@ public struct CodexServerSnapshotClient: Sendable {
         try handle.write(contentsOf: data)
     }
 
-    private static func decode<T: Decodable>(_ type: T.Type, fromJSONObject object: Any) -> T? {
-        guard JSONSerialization.isValidJSONObject(object),
-              let data = try? JSONSerialization.data(withJSONObject: object) else {
-            return nil
-        }
-        return try? JSONDecoder().decode(type, from: data)
+    private static func writeNotification(
+        method: String,
+        params: [String: Any],
+        to handle: FileHandle
+    ) throws {
+        let notification: [String: Any] = [
+            "jsonrpc": "2.0",
+            "method": method,
+            "params": params
+        ]
+        var data = try JSONSerialization.data(
+            withJSONObject: notification,
+            options: [.sortedKeys]
+        )
+        data.append(0x0A)
+        try handle.write(contentsOf: data)
     }
 
-    private static func jsonString(_ object: Any) -> String {
+    private static func decode<T: Decodable>(
+        _ type: T.Type,
+        method: String,
+        fromJSONObject object: Any
+    ) throws -> T {
         guard JSONSerialization.isValidJSONObject(object),
-              let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]),
+              let data = try? JSONSerialization.data(withJSONObject: object) else {
+            throw RPCPayloadError.decodeFailed(method: method)
+        }
+        let value: T
+        do {
+            value = try JSONDecoder().decode(type, from: data)
+        } catch {
+            throw RPCPayloadError.decodeFailed(method: method)
+        }
+        if let validating = value as? any RPCPayloadValidating,
+           !validating.hasRecognizedPayload {
+            throw RPCPayloadError.invalidPayload(method: method)
+        }
+        return value
+    }
+
+    private static func jsonString<T: Encodable>(_ value: T) -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        guard let data = try? encoder.encode(value),
               let string = String(data: data, encoding: .utf8) else {
             return "{}"
         }
@@ -212,6 +303,8 @@ private final class JSONLineCollector: @unchecked Sendable {
     private var buffer = Data()
     private var results: [Int: Any] = [:]
     private var errors: [Int: String] = [:]
+    private var protocolError: String?
+    private let maximumFrameBytes = 4 * 1_024 * 1_024
 
     func append(_ data: Data) {
         lock.lock()
@@ -219,9 +312,25 @@ private final class JSONLineCollector: @unchecked Sendable {
 
         buffer.append(data)
         while let newline = buffer.firstIndex(of: 0x0A) {
+            let frameLength = buffer.distance(from: buffer.startIndex, to: newline)
+            guard frameLength <= maximumFrameBytes else {
+                protocolError = L10n.text(
+                    "Codex 返回的数据过大。",
+                    "The Codex response was too large."
+                )
+                buffer.removeAll()
+                return
+            }
             let line = buffer.subdata(in: buffer.startIndex..<newline)
             buffer.removeSubrange(buffer.startIndex...newline)
             parseLine(line)
+        }
+        if buffer.count > maximumFrameBytes {
+            protocolError = L10n.text(
+                "Codex 返回的数据过大。",
+                "The Codex response was too large."
+            )
+            buffer.removeAll()
         }
     }
 
@@ -243,15 +352,28 @@ private final class JSONLineCollector: @unchecked Sendable {
         return results[id] != nil || errors[id] != nil
     }
 
+    func protocolFailure() -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return protocolError
+    }
+
     func salvagedResult(for id: Int) -> Any? {
         guard let message = error(for: id) else { return nil }
         return CodexRPCErrorBodySalvage.jsonObject(from: message)
     }
 
     private func parseLine(_ data: Data) {
-        guard !data.isEmpty,
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let id = object["id"] as? Int else {
+        guard !data.isEmpty else { return }
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            protocolError = L10n.text(
+                "Codex 返回了无法识别的数据。",
+                "Codex returned data that could not be read."
+            )
+            return
+        }
+        guard let id = object["id"] as? Int else {
+            // 通知没有请求 ID，短生命周期读取器无需处理。
             return
         }
 

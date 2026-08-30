@@ -98,7 +98,10 @@ public final class AntigravityUsageOverlayController: NSObject, ObservableObject
 
         trackerTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(150))
+                let delay: UInt64 = self?.environment?.frontmostToolTracker.foregroundTool == .antigravity
+                    ? 150_000_000
+                    : 1_000_000_000
+                try? await Task.sleep(nanoseconds: delay)
                 guard !Task.isCancelled else { return }
                 self?.updateVisibilityForFrontmostApp()
             }
@@ -444,7 +447,6 @@ private struct AntigravityOverlaySummaryView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isExpanded: Bool
-    @State private var isPulsing = false
     let onToggleExpand: (Bool, Bool) -> Void
     let onHoverChanged: (Bool) -> Void
     let onDragChanged: () -> Void
@@ -479,15 +481,8 @@ private struct AntigravityOverlaySummaryView: View {
                     ToolAppIcon(tool: .antigravity, size: 16)
                     ZStack {
                         Circle()
-                            .fill(statusColor.opacity(isPulsing ? 0.34 : 0.16))
+                            .fill(statusColor.opacity(0.24))
                             .frame(width: 12, height: 12)
-                            .scaleEffect(isPulsing ? 1.15 : 0.9)
-                            .animation(
-                                reduceMotion
-                                    ? nil
-                                    : .easeInOut(duration: 1.8).repeatForever(autoreverses: true),
-                                value: isPulsing
-                            )
                         Circle()
                             .fill(statusColor)
                             .frame(width: 6, height: 6)
@@ -567,12 +562,6 @@ private struct AntigravityOverlaySummaryView: View {
         )
         .onHover(perform: onHoverChanged)
         .onDisappear { onHoverChanged(false) }
-        .onAppear {
-            isPulsing = !reduceMotion
-        }
-        .onChange(of: reduceMotion) { _, shouldReduce in
-            isPulsing = !shouldReduce
-        }
         .animation(
             reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.82),
             value: isExpanded

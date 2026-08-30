@@ -40,6 +40,31 @@ public struct JSONRPCError: Codable, Sendable {
     public let data: AnyCodable?
 }
 
+public protocol RPCPayloadValidating {
+    var hasRecognizedPayload: Bool { get }
+}
+
+public enum RPCPayloadError: LocalizedError, Sendable, Equatable {
+    case missingResult(method: String)
+    case decodeFailed(method: String)
+    case invalidPayload(method: String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .missingResult:
+            return L10n.text(
+                "Codex 没有返回所需数据。",
+                "Codex did not return the required data."
+            )
+        case .decodeFailed, .invalidPayload:
+            return L10n.text(
+                "Codex 返回的数据格式暂不兼容，请更新 QuotaLens 或 Codex 后重试。",
+                "The Codex response format is not currently compatible. Update QuotaLens or Codex and try again."
+            )
+        }
+    }
+}
+
 // MARK: - 真实业务 DTO
 
 public struct AccountReadResult: Codable, Sendable {
@@ -53,11 +78,20 @@ public struct AccountReadResult: Codable, Sendable {
         public let subscriptionEndsAt: Int64?
 
         public var stableIdentifier: String {
-            email ?? accountId ?? id ?? type ?? "chatgpt_user"
+            accountId ?? id ?? email ?? AccountIdentity.temporaryUnknownIdentifier()
         }
 
         public var displayIdentifier: String {
-            email ?? stableIdentifier
+            if let email { return email }
+            if let accountId { return "account_\(accountId.prefix(8))" }
+            if let id { return "account_\(id.prefix(8))" }
+            return L10n.text("Codex 账号", "Codex Account")
+        }
+
+        fileprivate var hasRecognizedPayload: Bool {
+            id != nil || accountId != nil || type != nil || email != nil
+                || planType != nil || subscriptionStartsAt != nil
+                || subscriptionEndsAt != nil
         }
 
         public init(from decoder: Decoder) throws {
@@ -283,8 +317,41 @@ public struct ConsumeRateLimitResetCreditResponse: Codable, Sendable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: FlexibleCodingKey.self)
-        self.outcome = try container.decodeIfPresent(ConsumeRateLimitResetCreditOutcome.self, forKeys: ["outcome"])
-            ?? .nothingToReset
+        guard let outcome = try container.decodeIfPresent(
+            ConsumeRateLimitResetCreditOutcome.self,
+            forKeys: ["outcome"]
+        ) else {
+            throw DecodingError.keyNotFound(
+                FlexibleCodingKey(stringValue: "outcome")!,
+                DecodingError.Context(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "Missing reset credit outcome"
+                )
+            )
+        }
+        self.outcome = outcome
+    }
+}
+
+extension AccountReadResult: RPCPayloadValidating {
+    public var hasRecognizedPayload: Bool {
+        requiresOpenaiAuth != nil || account?.hasRecognizedPayload == true
+    }
+}
+
+extension RateLimitsReadResult: RPCPayloadValidating {
+    public var hasRecognizedPayload: Bool {
+        let directQuota = rateLimits?.hasUsableQuota == true
+        let groupedQuota = rateLimitsByLimitId?.values.contains {
+            $0.hasUsableQuota
+        } == true
+        return directQuota || groupedQuota
+    }
+}
+
+private extension RateLimitsObject {
+    var hasUsableQuota: Bool {
+        primary?.usedPercent != nil || secondary?.usedPercent != nil
     }
 }
 

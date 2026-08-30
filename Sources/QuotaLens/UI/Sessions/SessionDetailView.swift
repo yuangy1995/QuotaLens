@@ -451,7 +451,7 @@ public struct SessionDetailView: View {
                 Image(systemName: "person.2.fill")
                     .font(.system(size: 11))
                     .foregroundStyle(purple)
-                Text(L10n.format("子代理会话 (%d)", zhHans: "子代理会话 (%d)", detail.subagents.count))
+                Text(L10n.format("Subagent Sessions (%d)", zhHans: "子代理会话 (%d)", detail.subagents.count))
                     .font(.system(size: 12, weight: .bold, design: .rounded))
                     .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
             }

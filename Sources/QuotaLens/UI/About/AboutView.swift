@@ -53,6 +53,17 @@ public struct AboutView: View {
     private var defaultChangelogs: [ChangelogEntry] {
         [
             ChangelogEntry(
+                id: "v1.0.23",
+                version: "v1.0.23",
+                date: "2026-08-30",
+                changes: [
+                    L10n.text("重构 Codex 连接、重连与额度刷新状态，连接失败和缓存数据现在会准确显示", "Reworked Codex connection, reconnection, and quota refresh states so failures and cached data are shown accurately"),
+                    L10n.text("严格校验额度与重置卡响应，并将 Claude 登录凭据安全迁移至 macOS 钥匙串", "Added strict validation for quota and reset card responses, and moved Claude sign-in credentials to macOS Keychain"),
+                    L10n.text("优化大型历史记录导入、汇总查询和后台监听，显著降低启动、CPU 与内存占用", "Optimized large history imports, summary queries, and background monitoring to significantly reduce startup time, CPU use, and memory use"),
+                    L10n.text("改进本地多账号识别与跨架构安装包验证，提升 Apple Silicon、Intel 和 Universal 版本的发布可靠性", "Improved local multi-account identification and cross-architecture package checks for more reliable Apple Silicon, Intel, and Universal releases")
+                ]
+            ),
+            ChangelogEntry(
                 id: "v1.0.22",
                 version: "v1.0.22",
                 date: "2026-08-30",

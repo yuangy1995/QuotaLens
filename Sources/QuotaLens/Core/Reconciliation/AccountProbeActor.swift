@@ -44,24 +44,25 @@ public actor AccountProbeActor {
     public func probeAccount() async {
         do {
             let response = try await transport.sendRequest(method: "account/read", params: [:])
-            if let result = response.result {
-                let encoder = JSONEncoder()
-                if let data = try? encoder.encode(result),
-                   let dto = try? JSONDecoder().decode(AccountReadResult.self, from: data),
-                   let acc = dto.account {
-                    let now = Int64(Date().timeIntervalSince1970)
-                    let identifier = acc.stableIdentifier
-                    let accountKey = AccountIdentity.stableAccountKey(from: identifier)
-                    let record = AccountRecord(
-                        accountKey: accountKey,
-                        emailHash: AccountIdentity.emailHash(from: identifier),
-                        planType: acc.planType ?? "pro",
-                        firstSeenAt: now,
-                        lastSeenAt: now
-                    )
-                    try? repositories.upsertAccount(record)
-                }
+            guard let result = response.result else {
+                throw RPCPayloadError.missingResult(method: "account/read")
             }
+            let data = try JSONEncoder().encode(result)
+            let dto = try JSONDecoder().decode(AccountReadResult.self, from: data)
+            guard dto.hasRecognizedPayload, let acc = dto.account else {
+                throw RPCPayloadError.invalidPayload(method: "account/read")
+            }
+            let now = Int64(Date().timeIntervalSince1970)
+            let identifier = acc.stableIdentifier
+            let accountKey = AccountIdentity.stableAccountKey(from: identifier)
+            let record = AccountRecord(
+                accountKey: accountKey,
+                emailHash: AccountIdentity.emailHash(from: identifier),
+                planType: acc.planType ?? "pro",
+                firstSeenAt: now,
+                lastSeenAt: now
+            )
+            try? repositories.upsertAccount(record)
         } catch {
             // RPC 探针容错
         }
@@ -70,36 +71,38 @@ public actor AccountProbeActor {
     public func probeRateLimits() async {
         do {
             let response = try await transport.sendRequest(method: "account/rateLimits/read", params: [:])
-            if let result = response.result {
-                let encoder = JSONEncoder()
-                if let data = try? encoder.encode(result),
-                   let dto = try? JSONDecoder().decode(RateLimitsReadResult.self, from: data) {
-                    let now = Int64(Date().timeIntervalSince1970)
-                    let accountKey = (try? repositories.getLatestAccount()?.accountKey) ?? "acc_local"
+            guard let result = response.result else {
+                throw RPCPayloadError.missingResult(method: "account/rateLimits/read")
+            }
+            let data = try JSONEncoder().encode(result)
+            let dto = try JSONDecoder().decode(RateLimitsReadResult.self, from: data)
+            guard dto.hasRecognizedPayload else {
+                throw RPCPayloadError.invalidPayload(method: "account/rateLimits/read")
+            }
+            let now = Int64(Date().timeIntervalSince1970)
+            let accountKey = (try? repositories.getLatestAccount()?.accountKey) ?? "acc_local"
+            let rawJson = (try? JSONEncoder().encode(dto))
+                .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
 
-                    let rawJson = String(data: data, encoding: .utf8) ?? "{}"
+            if let defaultLimits = dto.rateLimits {
+                try? insertSnapshots(
+                    limits: defaultLimits,
+                    fallbackLimitId: defaultLimits.limitId ?? "codex",
+                    accountKey: accountKey,
+                    observedAt: now,
+                    rawJson: rawJson
+                )
+            }
 
-                    if let defaultLimits = dto.rateLimits {
-                        try? insertSnapshots(
-                            limits: defaultLimits,
-                            fallbackLimitId: defaultLimits.limitId ?? "codex",
-                            accountKey: accountKey,
-                            observedAt: now,
-                            rawJson: rawJson
-                        )
-                    }
-
-                    if let byLimit = dto.rateLimitsByLimitId {
-                        for (limitId, limits) in byLimit {
-                            try? insertSnapshots(
-                                limits: limits,
-                                fallbackLimitId: limitId,
-                                accountKey: accountKey,
-                                observedAt: now,
-                                rawJson: rawJson
-                            )
-                        }
-                    }
+            if let byLimit = dto.rateLimitsByLimitId {
+                for (limitId, limits) in byLimit {
+                    try? insertSnapshots(
+                        limits: limits,
+                        fallbackLimitId: limitId,
+                        accountKey: accountKey,
+                        observedAt: now,
+                        rawJson: rawJson
+                    )
                 }
             }
         } catch {

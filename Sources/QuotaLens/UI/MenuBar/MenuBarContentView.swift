@@ -862,7 +862,7 @@ public struct MenuBarContentView: View {
                         iconColor: emerald,
                         title: L10n.text("刷新频率", "Refresh Rate"),
                         value: L10n.format("Every %@", zhHans: "每 %@", state.refreshIntervalDescription),
-                        caption: L10n.format("Sync: %@", zhHans: "同步: %@", state.formatTime(state.lastRefreshTime))
+                        caption: state.codexSyncStatusText
                     )
                 }
             }

@@ -383,14 +383,15 @@ if [[ -n "${SPARKLE_PUBLIC_ED_KEY}" ]]; then
     plutil -replace SUPublicEDKey -string "${SPARKLE_PUBLIC_ED_KEY}" "${APP_BUNDLE}/Contents/Info.plist"
 fi
 
-SPARKLE_FRAMEWORK="$(find "${BUILD_ROOT}" "${PROJECT_DIR}/.build" -path "*/Sparkle.framework" -type d -print -quit 2>/dev/null || true)"
-if [[ -n "${SPARKLE_FRAMEWORK}" && -d "${SPARKLE_FRAMEWORK}" ]]; then
-    ditto --norsrc --noextattr "${SPARKLE_FRAMEWORK}" "${APP_BUNDLE}/Contents/Frameworks/Sparkle.framework"
-    if ! otool -l "${APP_BUNDLE}/Contents/MacOS/${APP_NAME}" | grep -q "@executable_path/../Frameworks"; then
-        install_name_tool -add_rpath "@executable_path/../Frameworks" "${APP_BUNDLE}/Contents/MacOS/${APP_NAME}"
-    fi
-else
-    echo -e "${YELLOW}Sparkle.framework not found in build output; continuing without embedded Sparkle framework.${NC}"
+SPARKLE_SEARCH_ROOT="${BUILD_ROOT}/${SWIFT_ARCHES[0]}"
+SPARKLE_FRAMEWORK="$(find "${SPARKLE_SEARCH_ROOT}" -path "*/Sparkle.framework" -type d -print -quit 2>/dev/null || true)"
+if [[ -z "${SPARKLE_FRAMEWORK}" || ! -d "${SPARKLE_FRAMEWORK}" ]]; then
+    echo -e "${RED}Sparkle.framework is missing from the selected build output.${NC}"
+    exit 1
+fi
+ditto --norsrc --noextattr "${SPARKLE_FRAMEWORK}" "${APP_BUNDLE}/Contents/Frameworks/Sparkle.framework"
+if ! otool -l "${APP_BUNDLE}/Contents/MacOS/${APP_NAME}" | grep -q "@executable_path/../Frameworks"; then
+    install_name_tool -add_rpath "@executable_path/../Frameworks" "${APP_BUNDLE}/Contents/MacOS/${APP_NAME}"
 fi
 
 if [[ -f "${PROJECT_DIR}/Resources/AppIcon.icns" ]]; then
@@ -414,13 +415,56 @@ fi
 find "${APP_BUNDLE}" \( -name ".DS_Store" -o -name "._*" \) -delete
 xattr -cr "${APP_BUNDLE}" 2>/dev/null || true
 
+SOURCE_COMMIT="$(git -C "${PROJECT_DIR}" rev-parse HEAD 2>/dev/null || echo unknown)"
 cat > "${APP_BUNDLE}/Contents/Resources/RELEASE.txt" <<EOF
 ${APP_NAME} v${APP_VERSION}
 Build: ${BUILD_NUMBER}
 Architecture: ${ARCH_LABEL}
+Signing: ${SIGNING_MODE}
+Team ID: ${APPLE_TEAM_ID:-not-applicable}
+Notarization requested: ${NOTARIZE}
+Source commit: ${SOURCE_COMMIT}
 EOF
 
 echo -e "${GREEN}.app bundle assembled${NC}"
+
+echo -e "\n${YELLOW}[3b/6] Verifying packaged Mach-O architectures...${NC}"
+SPARKLE_BUNDLE="${APP_BUNDLE}/Contents/Frameworks/Sparkle.framework"
+SPARKLE_REQUIRED_COMPONENTS=(
+    "Versions/Current/Sparkle"
+    "Versions/Current/Autoupdate"
+    "Versions/Current/Updater.app/Contents/MacOS/Updater"
+    "Versions/Current/XPCServices/Downloader.xpc/Contents/MacOS/Downloader"
+    "Versions/Current/XPCServices/Installer.xpc/Contents/MacOS/Installer"
+)
+for component in "${SPARKLE_REQUIRED_COMPONENTS[@]}"; do
+    if [[ ! -f "${SPARKLE_BUNDLE}/${component}" ]]; then
+        echo -e "${RED}Missing Sparkle component: ${component}${NC}"
+        exit 1
+    fi
+done
+
+MACHO_COUNT=0
+while IFS= read -r -d '' macho_file; do
+    if ! file -b "${macho_file}" | grep -q "Mach-O"; then
+        continue
+    fi
+    MACHO_COUNT=$((MACHO_COUNT + 1))
+    macho_arches="$(lipo -archs "${macho_file}")"
+    echo "${macho_file#${APP_BUNDLE}/}: ${macho_arches}"
+    for required_arch in "${SWIFT_ARCHES[@]}"; do
+        if [[ " ${macho_arches} " != *" ${required_arch} "* ]]; then
+            echo -e "${RED}${macho_file} is missing required architecture ${required_arch}.${NC}"
+            exit 1
+        fi
+    done
+done < <(find "${APP_BUNDLE}/Contents" -type f -print0)
+
+if [[ "${MACHO_COUNT}" -eq 0 ]]; then
+    echo -e "${RED}No Mach-O files were found in the app bundle.${NC}"
+    exit 1
+fi
+echo -e "${GREEN}All ${MACHO_COUNT} packaged Mach-O files contain the required architectures${NC}"
 
 echo -e "\n${YELLOW}[4/6] Signing app bundle...${NC}"
 if [[ -d "${APP_BUNDLE}/Contents/Frameworks/Sparkle.framework" ]]; then

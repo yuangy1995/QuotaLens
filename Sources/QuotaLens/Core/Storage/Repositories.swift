@@ -56,6 +56,49 @@ public final class Repositories: @unchecked Sendable {
         try db.executeUpdate(sql: sql, bindings: [accountKey])
     }
 
+    public func migrateAccountKey(from oldKey: String, to newKey: String) throws {
+        guard oldKey != newKey else { return }
+        let oldAccountExists = try db.intScalar(
+            sql: "SELECT EXISTS(SELECT 1 FROM accounts WHERE account_key = ?);",
+            bindings: [oldKey]
+        ) > 0
+        guard oldAccountExists else { return }
+        try db.transaction {
+            try db.executeUpdate(sql: """
+            INSERT INTO accounts (account_key, email_hash, plan_type, first_seen_at, last_seen_at)
+            SELECT ?, email_hash, plan_type, first_seen_at, last_seen_at
+            FROM accounts
+            WHERE account_key = ?
+            ON CONFLICT(account_key) DO UPDATE SET
+                email_hash = COALESCE(excluded.email_hash, accounts.email_hash),
+                plan_type = COALESCE(excluded.plan_type, accounts.plan_type),
+                first_seen_at = MIN(accounts.first_seen_at, excluded.first_seen_at),
+                last_seen_at = MAX(accounts.last_seen_at, excluded.last_seen_at);
+            """, bindings: [newKey, oldKey])
+
+            try db.executeUpdate(
+                sql: "UPDATE OR IGNORE account_daily_snapshots SET account_key = ? WHERE account_key = ?;",
+                bindings: [newKey, oldKey]
+            )
+            try db.executeUpdate(
+                sql: "DELETE FROM account_daily_snapshots WHERE account_key = ?;",
+                bindings: [oldKey]
+            )
+            try db.executeUpdate(
+                sql: "UPDATE rate_limit_snapshots SET account_key = ? WHERE account_key = ?;",
+                bindings: [newKey, oldKey]
+            )
+            try db.executeUpdate(
+                sql: "UPDATE quota_cycles SET account_key = ? WHERE account_key = ?;",
+                bindings: [newKey, oldKey]
+            )
+            try db.executeUpdate(
+                sql: "DELETE FROM accounts WHERE account_key = ?;",
+                bindings: [oldKey]
+            )
+        }
+    }
+
     // MARK: - 账户每日总账快照 (account/usage/read)
     public func insertDailySnapshot(_ snap: AccountDailySnapshotRecord) throws {
         let effectiveState: DailyDataState
@@ -177,28 +220,27 @@ public final class Repositories: @unchecked Sendable {
         var bindings: [Any?] = [accountKey]
         let limitClause: String
         if let limitId {
-            limitClause = "AND s.limit_id = ?"
+            limitClause = "AND limit_id = ?"
             bindings.append(limitId)
         } else {
             limitClause = ""
         }
 
         let sql = """
+        WITH ranked AS (
+            SELECT id,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY limit_id, slot
+                       ORDER BY observed_at DESC, id DESC
+                   ) AS row_number
+            FROM rate_limit_snapshots
+            WHERE account_key = ? \(limitClause)
+        )
         SELECT s.id, s.account_key, s.observed_at, s.limit_id, s.slot, s.used_percent_milli,
                s.window_duration_mins, s.resets_at, s.plan_type, s.raw_json
         FROM rate_limit_snapshots AS s
-        WHERE s.account_key = ? \(limitClause)
-          AND NOT EXISTS (
-              SELECT 1
-              FROM rate_limit_snapshots AS newer
-              WHERE newer.account_key = s.account_key
-                AND newer.limit_id = s.limit_id
-                AND newer.slot = s.slot
-                AND (
-                    newer.observed_at > s.observed_at
-                    OR (newer.observed_at = s.observed_at AND newer.id > s.id)
-                )
-          )
+        INNER JOIN ranked ON ranked.id = s.id
+        WHERE ranked.row_number = 1
         ORDER BY s.observed_at DESC,
                  CASE WHEN s.limit_id = 'codex' THEN 0 ELSE 1 END,
                  CASE s.slot WHEN 'primary' THEN 0 ELSE 1 END,

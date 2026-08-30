@@ -91,7 +91,6 @@ public final class AppEnvironment: ObservableObject {
         var initializationWarning: String?
         let initializedDatabase: SQLiteDatabase
         do {
-            DevelopmentDatabaseReset.resetIfLegacySyntheticDataExists(databasePath: dbPath)
             let primaryDatabase = try SQLiteDatabase(path: dbPath)
             try SchemaMigrations.migrate(database: primaryDatabase)
             initializedDatabase = primaryDatabase
@@ -167,6 +166,7 @@ public final class AppEnvironment: ObservableObject {
         self.installThemeAppearanceObservers()
         self.applyThemeAppearance()
         self.registerRPCNotifications()
+        self.registerProcessStatusUpdates()
         self.refreshLoginItemState()
 
         if enabledToolsStore.isEnabled(.claude) {
@@ -252,7 +252,7 @@ public final class AppEnvironment: ObservableObject {
         // 5. 立即触发首帧数据刷新
         if enabledToolsStore.isEnabled(.codex) {
             Task { @MainActor [weak self] in
-                await self?.refreshData()
+                await self?.refreshData(fetchServer: false)
             }
         }
 
@@ -393,7 +393,7 @@ public final class AppEnvironment: ObservableObject {
             params: request.params,
             timeoutSeconds: 10.0
         )
-        let outcome = payload.value?.outcome ?? .nothingToReset
+        let outcome = payload.outcome
         removeResetCreditIdempotencyKey(for: requestScopeKey)
         await refreshData()
         return outcome
@@ -657,11 +657,8 @@ public final class AppEnvironment: ObservableObject {
 
     /// 后台异步启动逻辑
     private func backgroundBootstrap() async {
-        // 1. 连接真实 Codex App Server 并执行在线探针
+        // 连接真实 Codex App Server；连接流程会完成首次额度读取。
         await connectCodex()
-
-        // 2. 刷新 UI 状态
-        await refreshData()
     }
 
     /// 兼容旧入口：当前版本不在 UI 中提供手动切换。
@@ -733,22 +730,21 @@ public final class AppEnvironment: ObservableObject {
 
     /// 连接真实 Codex App Server
     public func connectCodex() async {
-        await fetchServerSnapshotIfPossible()
-
+        state.connectionStatus = .launching
         let success = await processManager.start()
         let status = await processManager.getStatus()
-        if !state.connectionStatus.isConnected {
-            self.state.connectionStatus = status
-        }
 
         if success {
-            if !state.hasCurrentServerQuota {
-                _ = await fetchConnectedServerSnapshotIfPossible(scheduleRetryOnFailure: false)
-            }
+            state.connectionStatus = .handshaking
+            _ = await fetchConnectedServerSnapshotIfPossible(scheduleRetryOnFailure: false)
             await refreshData(fetchServer: false)
             if !state.hasQuotaSnapshot {
                 scheduleServerRecovery()
             }
+        } else {
+            state.connectionStatus = status
+            await refreshData(fetchServer: false)
+            scheduleServerRecovery()
         }
     }
 
@@ -757,17 +753,35 @@ public final class AppEnvironment: ObservableObject {
         guard enabledToolsStore.isEnabled(.codex) else { return }
         refreshDataRequestGeneration += 1
         let requestGeneration = refreshDataRequestGeneration
+        state.lastRefreshAttemptAt = Date()
         state.isRefreshing = true
         defer {
             if requestGeneration == refreshDataRequestGeneration {
                 state.isRefreshing = false
-                state.lastRefreshTime = Date()
             }
         }
 
         do {
             if fetchServer {
-                await fetchServerSnapshotIfPossible(scheduleRetryOnFailure: scheduleRetryOnFailure)
+                let currentStatus = await processManager.getStatus()
+                if currentStatus.isConnected {
+                    _ = await fetchConnectedServerSnapshotIfPossible(
+                        scheduleRetryOnFailure: scheduleRetryOnFailure
+                    )
+                } else {
+                    let started = await processManager.start(
+                        resetReconnectAttempts: false
+                    )
+                    if started {
+                        state.connectionStatus = .handshaking
+                        _ = await fetchConnectedServerSnapshotIfPossible(
+                            scheduleRetryOnFailure: scheduleRetryOnFailure
+                        )
+                    } else if scheduleRetryOnFailure {
+                        state.connectionStatus = await processManager.getStatus()
+                        scheduleServerRecovery()
+                    }
+                }
                 guard requestGeneration == refreshDataRequestGeneration else { return }
             }
 
@@ -803,7 +817,10 @@ public final class AppEnvironment: ObservableObject {
             restoreResetCreditState(for: accKey, snapshot: state.latestRateLimit)
             await refreshSubscriptionEntitlementIfPossible(scheduleRetryOnFailure: scheduleRetryOnFailure)
         } catch {
-            // 刷新容错
+            state.codexStorageErrorText = L10n.text(
+                "在线额度仍可使用，但本地记录暂时无法读取或保存。",
+                "Online quota remains available, but local records cannot currently be read or saved."
+            )
         }
         await refreshProviderQuotaInsights()
     }
@@ -1454,36 +1471,38 @@ public final class AppEnvironment: ObservableObject {
         defer { finishServerSnapshotRequest(requestGeneration) }
 
         do {
-            async let accountPayload = try? rpcPayload(AccountReadResult.self, method: "account/read")
-            async let rateLimitsPayload = try? rpcPayload(RateLimitsReadResult.self, method: "account/rateLimits/read")
+            async let accountPayload = rpcPayload(AccountReadResult.self, method: "account/read")
+            async let rateLimitsPayload = rpcPayload(RateLimitsReadResult.self, method: "account/rateLimits/read")
             async let accountUsagePayload = try? rpcPayload(CodexAccountUsagePayload.self, method: "account/usage/read")
-            let account = await accountPayload
-            let rateLimits = await rateLimitsPayload
+            let account = try await accountPayload
+            let rateLimits = try await rateLimitsPayload
             let accountUsage = await accountUsagePayload
 
             guard isServerSnapshotRequestCurrent(requestGeneration) else {
                 return false
             }
 
-            guard account != nil || rateLimits != nil else {
-                throw NSError(domain: "QuotaLens.RPC", code: -1, userInfo: [NSLocalizedDescriptionKey: L10n.text("暂时没有获取到额度数据", "Quota data was not available yet")])
-            }
-
             let snapshot = CodexServerSnapshot(
+                capturedAt: Date(),
                 version: version,
                 binaryPath: binaryPath,
-                account: account?.value,
-                accountRawJson: account?.rawJson ?? "{}",
-                rateLimits: rateLimits?.value,
-                rateLimitsRawJson: rateLimits?.rawJson ?? "{}",
-                accountUsage: accountUsage?.value
+                account: account,
+                accountRawJson: encodedRPCPayloadJSON(account),
+                rateLimits: rateLimits,
+                rateLimitsRawJson: encodedRPCPayloadJSON(rateLimits),
+                accountUsage: accountUsage
             )
 
             try persistServerSnapshot(snapshot)
             guard isServerSnapshotRequestCurrent(requestGeneration) else {
                 return false
             }
+            guard state.hasCurrentServerQuota else {
+                throw RPCPayloadError.invalidPayload(method: "account/rateLimits/read")
+            }
             state.connectionStatus = .connected(version: version, binaryPath: binaryPath)
+            recordCodexRefreshSuccess(at: snapshot.capturedAt)
+            await processManager.markConnectionHealthy()
             if state.hasCurrentServerQuota {
                 cancelServerRecovery()
                 return true
@@ -1494,6 +1513,12 @@ public final class AppEnvironment: ObservableObject {
             }
             return false
         } catch {
+            if let transportError = error as? JSONRPCTransportError {
+                await processManager.reportTransportFailure(
+                    transportError.localizedDescription
+                )
+            }
+            recordCodexRefreshFailure(error)
             if scheduleRetryOnFailure {
                 scheduleServerRecovery()
             }
@@ -1506,7 +1531,7 @@ public final class AppEnvironment: ObservableObject {
         method: String,
         params: [String: AnyCodable] = [:],
         timeoutSeconds: Double = 5.0
-    ) async throws -> (value: T?, rawJson: String) {
+    ) async throws -> T {
         let response: JSONRPCResponse
         do {
             response = try await transport.sendRequest(
@@ -1516,8 +1541,8 @@ public final class AppEnvironment: ObservableObject {
             )
         } catch {
             if let data = CodexRPCErrorBodySalvage.data(from: error.localizedDescription),
-               let value = try? JSONDecoder().decode(T.self, from: data) {
-                return (value, String(data: data, encoding: .utf8) ?? "{}")
+               let value = try? decodeRPCPayload(T.self, method: method, data: data) {
+                return value
             }
             throw error
         }
@@ -1525,10 +1550,38 @@ public final class AppEnvironment: ObservableObject {
             throw NSError(domain: "QuotaLens.RPC", code: error.code, userInfo: [NSLocalizedDescriptionKey: error.message])
         }
         guard let result = response.result else {
-            return (nil, "{}")
+            throw RPCPayloadError.missingResult(method: method)
         }
         let data = try JSONEncoder().encode(result)
-        return (try? JSONDecoder().decode(T.self, from: data), String(data: data, encoding: .utf8) ?? "{}")
+        return try decodeRPCPayload(T.self, method: method, data: data)
+    }
+
+    private func decodeRPCPayload<T: Decodable>(
+        _ type: T.Type,
+        method: String,
+        data: Data
+    ) throws -> T {
+        let value: T
+        do {
+            value = try JSONDecoder().decode(type, from: data)
+        } catch {
+            throw RPCPayloadError.decodeFailed(method: method)
+        }
+        if let validating = value as? any RPCPayloadValidating,
+           !validating.hasRecognizedPayload {
+            throw RPCPayloadError.invalidPayload(method: method)
+        }
+        return value
+    }
+
+    private func encodedRPCPayloadJSON<T: Encodable>(_ value: T) -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        guard let data = try? encoder.encode(value),
+              let json = String(data: data, encoding: .utf8) else {
+            return "{}"
+        }
+        return json
     }
 
     @discardableResult
@@ -1555,6 +1608,7 @@ public final class AppEnvironment: ObservableObject {
                 return false
             }
             state.connectionStatus = .connected(version: snapshot.version, binaryPath: snapshot.binaryPath)
+            recordCodexRefreshSuccess(at: snapshot.capturedAt)
             if state.hasCurrentServerQuota {
                 cancelServerRecovery()
                 return true
@@ -1575,12 +1629,7 @@ public final class AppEnvironment: ObservableObject {
                 clearQuotaSnapshotState()
                 restoreResetCreditState(for: accountKey, snapshot: nil)
             }
-            if !state.connectionStatus.isConnected {
-                state.connectionStatus = .failed(L10n.text(
-                    "额度刷新未完成，请稍后重试。",
-                    "Quota refresh did not finish. Try again later."
-                ))
-            }
+            recordCodexRefreshFailure(error)
             if scheduleRetryOnFailure {
                 scheduleServerRecovery()
             }
@@ -1626,6 +1675,35 @@ public final class AppEnvironment: ObservableObject {
         }
     }
 
+    private func recordCodexRefreshSuccess(at capturedAt: Date) {
+        state.lastSuccessfulRefreshAt = capturedAt
+        state.codexRefreshErrorText = nil
+    }
+
+    private func recordCodexRefreshFailure(_ error: Error) {
+        let message: String
+        if let payloadError = error as? RPCPayloadError {
+            message = payloadError.localizedDescription
+        } else if let transportError = error as? JSONRPCTransportError {
+            switch transportError {
+            case .frameTooLarge, .invalidFrame:
+                message = transportError.localizedDescription
+            default:
+                message = L10n.text(
+                    "额度刷新未完成，正在保留上次成功的数据。",
+                    "Quota refresh did not finish. The last successful data is being kept."
+                )
+            }
+        } else {
+            message = L10n.text(
+                "额度刷新未完成，正在保留上次成功的数据。",
+                "Quota refresh did not finish. The last successful data is being kept."
+            )
+        }
+        state.codexRefreshErrorText = message
+        state.connectionStatus = .failed(message)
+    }
+
     private func cancelServerRecovery() {
         serverRecoveryTask?.cancel()
         serverRecoveryTask = nil
@@ -1635,8 +1713,14 @@ public final class AppEnvironment: ObservableObject {
     private func recoverServerSnapshotOnce() async -> Bool {
         let currentStatus = await processManager.getStatus()
         if !currentStatus.isConnected {
-            _ = await processManager.start()
-            state.connectionStatus = await processManager.getStatus()
+            let started = await processManager.start(
+                resetReconnectAttempts: false
+            )
+            if started {
+                state.connectionStatus = .handshaking
+            } else {
+                state.connectionStatus = await processManager.getStatus()
+            }
         }
 
         if await fetchConnectedServerSnapshotIfPossible(scheduleRetryOnFailure: false) {
@@ -1644,8 +1728,8 @@ public final class AppEnvironment: ObservableObject {
             return state.hasQuotaSnapshot
         }
 
-        await refreshData(fetchServer: true, scheduleRetryOnFailure: false)
-        return state.hasQuotaSnapshot
+        await refreshData(fetchServer: false, scheduleRetryOnFailure: false)
+        return false
     }
 
     private func latestQuotaSnapshots(accountKey: String) throws -> [RateLimitSnapshotRecord] {
@@ -1670,6 +1754,10 @@ public final class AppEnvironment: ObservableObject {
         state.currentQuotaSnapshots = snapshots
         state.latestRateLimit = snapshot
         state.hasCurrentServerQuota = true
+        let capturedAt = Date(timeIntervalSince1970: Double(snapshot.observedAt))
+        if state.lastSuccessfulRefreshAt.map({ capturedAt > $0 }) ?? true {
+            state.lastSuccessfulRefreshAt = capturedAt
+        }
         return true
     }
 
@@ -1704,6 +1792,8 @@ public final class AppEnvironment: ObservableObject {
         resetCreditReminderTask?.cancel()
         resetCreditReminderTask = nil
         state.codexAccountUsage = nil
+        state.lastSuccessfulRefreshAt = nil
+        state.codexRefreshErrorText = nil
         return accountDataGeneration
     }
 
@@ -1763,12 +1853,38 @@ public final class AppEnvironment: ObservableObject {
     }
 
     private func persistServerSnapshot(_ snapshot: CodexServerSnapshot) throws {
-        let now = Int64(Date().timeIntervalSince1970)
+        let now = Int64(snapshot.capturedAt.timeIntervalSince1970)
+        var storageFailed = false
+        defer {
+            state.codexStorageErrorText = storageFailed
+                ? L10n.text(
+                    "在线额度已更新，但本地历史暂时未保存。",
+                    "Online quota was updated, but local history was not saved."
+                )
+                : nil
+        }
         var accountKey = state.selectedAccountKey ?? state.account?.accountKey ?? "acc_local"
 
         if let accountInfo = snapshot.account?.account {
             let identifier = accountInfo.stableIdentifier
             accountKey = AccountIdentity.stableAccountKey(from: identifier)
+            let legacyIdentifiers = [
+                accountInfo.email,
+                accountInfo.accountId.map { "account_\($0.prefix(8))" },
+                accountInfo.id,
+                accountInfo.type,
+                "chatgpt_user"
+            ].compactMap { $0 }
+            for legacyIdentifier in Set(legacyIdentifiers) {
+                do {
+                    try repositories.migrateAccountKey(
+                        from: AccountIdentity.stableAccountKey(from: legacyIdentifier),
+                        to: accountKey
+                    )
+                } catch {
+                    storageFailed = true
+                }
+            }
             if state.selectedAccountKey != accountKey {
                 beginAccountScopeChange(invalidateServerSnapshot: false, invalidateRefreshRequests: false)
             }
@@ -1791,7 +1907,11 @@ public final class AppEnvironment: ObservableObject {
             // The online quota UI must not depend on local persistence. A
             // disconnected fallback keeps the live state and simply skips this
             // best-effort write.
-            try? repositories.upsertAccount(record)
+            do {
+                try repositories.upsertAccount(record)
+            } catch {
+                storageFailed = true
+            }
         }
 
         if let accountUsage = snapshot.accountUsage {
@@ -1813,12 +1933,18 @@ public final class AppEnvironment: ObservableObject {
                 accountKey: accountKey,
                 now: Date(timeIntervalSince1970: Double(now))
             )
-            let insertedCount = (try? persistRateLimits(
-                rateLimits,
-                accountKey: accountKey,
-                observedAt: now,
-                rawJson: snapshot.rateLimitsRawJson
-            )) ?? 0
+            let insertedCount: Int
+            do {
+                insertedCount = try persistRateLimits(
+                    rateLimits,
+                    accountKey: accountKey,
+                    observedAt: now,
+                    rawJson: snapshot.rateLimitsRawJson
+                )
+            } catch {
+                storageFailed = true
+                insertedCount = 0
+            }
             if insertedCount > 0, applyCachedQuotaSnapshotIfAvailable(for: accountKey) {
                 return
             }
@@ -2180,6 +2306,21 @@ public final class AppEnvironment: ObservableObject {
         }
     }
 
+    private func registerProcessStatusUpdates() {
+        Task { [weak self] in
+            guard let self else { return }
+            await processManager.onStatusChange { [weak self] status in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    // UI 的 connected 还要求核心额度响应通过严格解码。
+                    if !status.isConnected {
+                        self.state.connectionStatus = status
+                    }
+                }
+            }
+        }
+    }
+
     private func handleRPCNotification(_ notification: JSONRPCNotification) async {
         switch notification.method {
         case "account/rateLimits/updated":
@@ -2258,6 +2399,10 @@ public final class AppEnvironment: ObservableObject {
         state.allAccounts = []
         state.selectedAccountKey = nil
         state.connectionStatus = .disconnected
+        state.lastRefreshAttemptAt = nil
+        state.lastSuccessfulRefreshAt = nil
+        state.codexRefreshErrorText = nil
+        state.codexStorageErrorText = nil
         state.currentQuotaSnapshots = []
         state.latestRateLimit = nil
         state.hasCurrentServerQuota = false

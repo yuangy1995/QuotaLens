@@ -2,6 +2,7 @@
 // 安全读取 session_index.jsonl 与 state_5.sqlite（只读快照），计算项目名、父子关系与根节点
 
 import Foundation
+import Darwin
 import SQLite3
 
 public struct CodexRawSessionMetadata: Sendable {
@@ -109,12 +110,17 @@ public enum CodexSessionMetadataStore {
         maxLinesPerFile: Int = 200
     ) -> [String: CodexRolloutHeaderMetadata] {
         var result: [String: CodexRolloutHeaderMetadata] = [:]
-        for source in sources {
-            result[source.fileURL.path] = readRolloutHeader(
-                source: source,
-                maxBytes: maxBytesPerFile,
-                maxLines: maxLinesPerFile
-            )
+        for (index, source) in sources.enumerated() {
+            autoreleasepool {
+                result[source.fileURL.path] = readRolloutHeader(
+                    source: source,
+                    maxBytes: maxBytesPerFile,
+                    maxLines: maxLinesPerFile
+                )
+            }
+            if index.isMultiple(of: 8) {
+                _ = malloc_zone_pressure_relief(nil, 0)
+            }
         }
         return result
     }
@@ -124,36 +130,43 @@ public enum CodexSessionMetadataStore {
         sources: [RolloutDiscoveredSource]
     ) -> [String: CodexRawSessionMetadata] {
         var result: [String: CodexRawSessionMetadata] = [:]
-        for source in sources {
+        for (index, source) in sources.enumerated() {
             var selectedMetadata: CodexRawSessionMetadata?
+            func capture(_ event: RolloutSessionMetadataEvent) {
+                let sessionId = event.sessionId ?? source.sessionId
+                guard sessionId == source.sessionId else { return }
+                let timestamp = event.timestampMs > 0
+                    ? Date(timeIntervalSince1970: Double(event.timestampMs) / 1_000.0)
+                    : nil
+                let incoming = CodexRawSessionMetadata(
+                    sessionId: sessionId,
+                    parentSessionId: event.parentSessionId,
+                    agentType: event.agentType ?? (event.isChildSession ? "subagent" : nil),
+                    createdAt: timestamp,
+                    updatedAt: timestamp
+                )
+                selectedMetadata = mergeRolloutHeaderMetadata(
+                    existing: selectedMetadata,
+                    incoming: incoming
+                )
+            }
             do {
                 _ = try StreamingJSONLReader.readLines(
                     fileURL: source.fileURL,
-                    discardIrrelevantAfterPrefixBytes: 4_096,
-                    shouldIncludeLineData: RolloutLineDecoder.mayContainUsageRelevantEvent
+                    discardIrrelevantAfterPrefixBytes: 256 * 1_024,
+                    shouldIncludeLineData: { lineData in
+                        guard RolloutLineDecoder.mayContainSessionMetadata(lineData) else {
+                            return false
+                        }
+                        if let event = RolloutLineDecoder.decodeSessionMetadataPrefix(lineData) {
+                            capture(event)
+                            return false
+                        }
+                        return true
+                    }
                 ) { lineRecord in
-                    guard let event = RolloutLineDecoder.decodeLine(lineRecord.lineString),
-                          event.eventType == "session_meta" else {
-                        return
-                    }
-                    let sessionId = event.sessionId ?? source.sessionId
-                    guard sessionId == source.sessionId else {
-                        return
-                    }
-                    let timestamp = event.timestampMs > 0
-                        ? Date(timeIntervalSince1970: Double(event.timestampMs) / 1_000.0)
-                        : nil
-                    let incoming = CodexRawSessionMetadata(
-                        sessionId: sessionId,
-                        parentSessionId: event.parentSessionId,
-                        agentType: event.isChildSessionMeta ? "subagent" : nil,
-                        createdAt: timestamp,
-                        updatedAt: timestamp
-                    )
-                    selectedMetadata = mergeRolloutHeaderMetadata(
-                        existing: selectedMetadata,
-                        incoming: incoming
-                    )
+                    guard let event = RolloutLineDecoder.decodeSessionMetadataLine(lineRecord.lineString) else { return }
+                    capture(event)
                 }
             } catch {
                 continue
@@ -163,6 +176,9 @@ public enum CodexSessionMetadataStore {
                     existing: result[selectedMetadata.sessionId],
                     incoming: selectedMetadata
                 )
+            }
+            if index.isMultiple(of: 8) {
+                _ = malloc_zone_pressure_relief(nil, 0)
             }
         }
         return result
@@ -281,25 +297,17 @@ public enum CodexSessionMetadataStore {
 
             let trimmed = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty,
-                  let lineData = trimmed.data(using: .utf8),
-                  let json = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
-                  let payload = json["payload"] as? [String: Any] else {
+                  let event = RolloutLineDecoder.decodeSessionMetadataLine(trimmed) else {
                 continue
             }
-            let outerType = (json["type"] as? String ?? json["event"] as? String ?? "").lowercased()
-            let payloadType = (payload["type"] as? String ?? "").lowercased()
-            let type = outerType == "event_msg" ? payloadType : outerType
-            guard type == "session_meta" else { continue }
-
-            let sessionId = nonEmptyString(payload["id"])
-                ?? nonEmptyString(payload["session_id"])
-                ?? source.sessionId
+            let sessionId = event.sessionId ?? source.sessionId
             guard !sessionId.isEmpty else { continue }
-            let cwd = nonEmptyString(payload["cwd"])
-            let parentId = resolvedParentSessionId(from: payload)
-            let agentType = resolvedAgentType(from: payload)
-            let timestamp = payload["timestamp"] ?? json["timestamp"]
-            let createdAt = dateValue(from: timestamp)
+            let cwd = event.cwd
+            let parentId = event.parentSessionId
+            let agentType = event.agentType
+            let createdAt = event.timestampMs > 0
+                ? Date(timeIntervalSince1970: Double(event.timestampMs) / 1_000.0)
+                : nil
             let projectName = cwd.map { extractProjectName(from: $0) }
             let incoming = CodexRawSessionMetadata(
                 sessionId: sessionId,
@@ -559,14 +567,14 @@ public enum CodexSessionMetadataStore {
     }
 
     private static func dateFromISO8601(_ value: String) -> Date? {
-        let fractional = ISO8601DateFormatter()
-        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = fractional.date(from: value) {
+        if let date = try? Date(
+            value,
+            strategy: Date.ISO8601FormatStyle(includingFractionalSeconds: true)
+        ) {
             return normalizedDate(date)
         }
-        let plain = ISO8601DateFormatter()
-        plain.formatOptions = [.withInternetDateTime]
-        return plain.date(from: value).flatMap(normalizedDate)
+        return (try? Date(value, strategy: Date.ISO8601FormatStyle()))
+            .flatMap(normalizedDate)
     }
 
     private static func columnString(_ statement: OpaquePointer, _ index: Int32) -> String? {

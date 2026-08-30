@@ -77,18 +77,22 @@ public final class FrontmostToolTracker: ObservableObject {
         refresh()
         pollTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(1))
+                guard let self else { return }
+                let interval: Duration = Self.claudeHostBundleIdentifiers.contains(
+                    self.foregroundBundleIdentifier ?? ""
+                ) ? .seconds(2) : .seconds(5)
+                try? await Task.sleep(for: interval)
                 guard !Task.isCancelled else { return }
-                self?.refresh()
+                self.refresh()
             }
         }
     }
 
     public func refresh() {
         guard let application = NSWorkspace.shared.frontmostApplication else {
-            foregroundTool = nil
-            foregroundApplicationPID = nil
-            foregroundBundleIdentifier = nil
+            if foregroundTool != nil { foregroundTool = nil }
+            if foregroundApplicationPID != nil { foregroundApplicationPID = nil }
+            if foregroundBundleIdentifier != nil { foregroundBundleIdentifier = nil }
             return
         }
         let bundleIdentifier = application.bundleIdentifier
@@ -96,10 +100,14 @@ public final class FrontmostToolTracker: ObservableObject {
             return
         }
 
-        foregroundApplicationPID = application.processIdentifier
-        foregroundBundleIdentifier = bundleIdentifier
+        if foregroundApplicationPID != application.processIdentifier {
+            foregroundApplicationPID = application.processIdentifier
+        }
+        if foregroundBundleIdentifier != bundleIdentifier {
+            foregroundBundleIdentifier = bundleIdentifier
+        }
         if application.processIdentifier == ProcessInfo.processInfo.processIdentifier {
-            foregroundTool = nil
+            if foregroundTool != nil { foregroundTool = nil }
             return
         }
 
@@ -122,10 +130,12 @@ public final class FrontmostToolTracker: ObservableObject {
         }
 
         guard let detected, enabledTools.isEnabled(detected) else {
-            foregroundTool = nil
+            if foregroundTool != nil { foregroundTool = nil }
             return
         }
-        foregroundTool = detected
+        if foregroundTool != detected {
+            foregroundTool = detected
+        }
         if lastActiveTool != detected {
             lastActiveTool = detected
             UserDefaults.standard.set(detected.rawValue, forKey: Self.lastActiveDefaultsKey)

@@ -1093,9 +1093,11 @@ public struct OverviewDashboardView: View {
         case .codex:
             interval = TimeInterval(state.refreshIntervalSeconds)
             last = state.primaryQuotaInsight(for: .codex)?.input.capturedAt
-                ?? (state.hasQuotaSnapshot ? state.lastRefreshTime : nil)
+                ?? state.lastSuccessfulRefreshAt
             next = last?.addingTimeInterval(interval)
-            error = state.connectionStatus.isConnected ? nil : state.quotaUnavailableDescription
+            error = state.codexRefreshErrorText
+                ?? state.codexStorageErrorText
+                ?? (state.connectionStatus.isConnected ? nil : state.quotaUnavailableDescription)
             isCoolingDown = false
         case .claude:
             interval = TimeInterval(state.claudeRefreshIntervalSeconds)

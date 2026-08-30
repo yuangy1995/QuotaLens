@@ -101,6 +101,7 @@ public actor CodexUsageImportActor {
         .joined(separator: "; ")
         let scannedSources = scanOutcome.sources
         let rolloutHeaders = CodexSessionMetadataStore.loadFromRolloutHeaders(sources: scannedSources)
+        ImportMemoryBudget.relieveAllocatorPressure()
         let discoveredSources = scannedSources.map { source in
             canonicalizedSource(source, header: rolloutHeaders[source.fileURL.path])
         }
@@ -125,10 +126,13 @@ public actor CodexUsageImportActor {
         let lineageScanSources = try sourcesNeedingRolloutLineageScan(
             sources: discoveredSources,
             forceRebuild: forceRebuild
-        )
+        ).filter { source in
+            rolloutHeaders[source.fileURL.path]?.metadata == nil
+        }
         for metadata in CodexSessionMetadataStore.loadFromRolloutLineage(sources: lineageScanSources).values {
             mergeMetadata(metadata, into: &rawMeta)
         }
+        ImportMemoryBudget.relieveAllocatorPressure()
         let discoveredIds = Set(discoveredSources.map(\.sessionId))
         let resolvedSessions = CodexSessionMetadataStore.reconcileSessionTree(
             discoveredIds: discoveredIds,

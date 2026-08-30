@@ -1,5 +1,5 @@
 import Foundation
-import Darwin
+import Security
 
 struct ClaudeStoredCredentials: Sendable, Equatable {
     let accessToken: String
@@ -16,15 +16,77 @@ struct ClaudeRefreshedCredentials: Sendable, Equatable {
 }
 
 enum ClaudeOAuthCache {
+    private struct Secret: Codable {
+        let accessToken: String
+        let refreshToken: String?
+    }
+
+    private struct Metadata: Codable {
+        let version: Int
+        let expiresAtMs: Double?
+        let scopes: [String]?
+        let accountKey: String?
+        let keychainAccount: String
+    }
+
+    private enum KeychainError: LocalizedError {
+        case status(OSStatus)
+
+        var errorDescription: String? {
+            switch self {
+            case .status(let status):
+                return SecCopyErrorMessageString(status, nil) as String?
+            }
+        }
+    }
+
+    private static let keychainService = "com.quotalens.macos.claude-oauth"
+
     static func defaultURL() -> URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("QuotaLens", isDirectory: true)
+            .appendingPathComponent("claude-oauth-metadata.json")
+    }
+
+    private static func legacyURL() -> URL {
+        defaultURL().deletingLastPathComponent()
             .appendingPathComponent("claude-oauth.json")
     }
 
     static func load(from url: URL = defaultURL()) -> ClaudeStoredCredentials? {
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        return ClaudeUsageClient.parseCredentials(data)
+        if isDefaultURL(url),
+           let legacyData = try? Data(contentsOf: legacyURL()),
+           let legacy = ClaudeUsageClient.parseCredentials(legacyData) {
+            do {
+                try saveStored(legacy, to: url)
+                return legacy
+            } catch {
+                return legacy
+            }
+        }
+
+        var metadata: Metadata?
+        if let data = try? Data(contentsOf: url) {
+            if let legacy = ClaudeUsageClient.parseCredentials(data) {
+                do {
+                    try saveStored(legacy, to: url)
+                    return legacy
+                } catch {
+                    return legacy
+                }
+            }
+            metadata = try? JSONDecoder().decode(Metadata.self, from: data)
+        }
+
+        let keychainAccount = metadata?.keychainAccount ?? account(for: url)
+        guard let secret = readSecret(account: keychainAccount) else { return nil }
+        return ClaudeStoredCredentials(
+            accessToken: secret.accessToken,
+            refreshToken: secret.refreshToken,
+            expiresAtMs: metadata?.expiresAtMs,
+            scopes: metadata?.scopes,
+            accountKey: metadata?.accountKey
+        )
     }
 
     static func save(
@@ -34,17 +96,50 @@ enum ClaudeOAuthCache {
         fallbackRefreshToken: String,
         to url: URL = defaultURL()
     ) throws {
-        var inner: [String: Any] = [
-            "accessToken": credentials.accessToken,
-            "expiresAt": credentials.expiresAtMs,
-            "accountKey": accountKey,
-            "refreshToken": credentials.refreshToken ?? fallbackRefreshToken
-        ]
-        if let scopes { inner["scopes"] = scopes }
-        let data = try JSONSerialization.data(
-            withJSONObject: ["claudeAiOauth": inner],
-            options: [.sortedKeys]
+        try saveStored(
+            ClaudeStoredCredentials(
+                accessToken: credentials.accessToken,
+                refreshToken: credentials.refreshToken ?? fallbackRefreshToken,
+                expiresAtMs: credentials.expiresAtMs,
+                scopes: scopes,
+                accountKey: accountKey
+            ),
+            to: url
         )
+    }
+
+    static func clear(at url: URL = defaultURL()) {
+        let metadata = (try? Data(contentsOf: url))
+            .flatMap { try? JSONDecoder().decode(Metadata.self, from: $0) }
+        deleteSecret(account: metadata?.keychainAccount ?? account(for: url))
+        try? FileManager.default.removeItem(at: url)
+        if isDefaultURL(url) {
+            try? FileManager.default.removeItem(at: legacyURL())
+        }
+    }
+
+    private static func saveStored(
+        _ credentials: ClaudeStoredCredentials,
+        to url: URL
+    ) throws {
+        let keychainAccount = account(for: url)
+        try writeSecret(
+            Secret(
+                accessToken: credentials.accessToken,
+                refreshToken: credentials.refreshToken
+            ),
+            account: keychainAccount
+        )
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(Metadata(
+            version: 1,
+            expiresAtMs: credentials.expiresAtMs,
+            scopes: credentials.scopes,
+            accountKey: credentials.accountKey,
+            keychainAccount: keychainAccount
+        ))
         let directory = url.deletingLastPathComponent()
         try FileManager.default.createDirectory(
             at: directory,
@@ -60,10 +155,70 @@ enum ClaudeOAuthCache {
             [.posixPermissions: 0o600],
             ofItemAtPath: url.path
         )
+        if isDefaultURL(url) {
+            try? FileManager.default.removeItem(at: legacyURL())
+        }
     }
 
-    static func clear(at url: URL = defaultURL()) {
-        try? FileManager.default.removeItem(at: url)
+    private static func writeSecret(_ secret: Secret, account: String) throws {
+        let data = try JSONEncoder().encode(secret)
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: keychainService,
+            kSecAttrAccount: account
+        ]
+        let updateStatus = SecItemUpdate(
+            query as CFDictionary,
+            [kSecValueData: data] as CFDictionary
+        )
+        if updateStatus == errSecSuccess { return }
+        guard updateStatus == errSecItemNotFound else {
+            throw KeychainError.status(updateStatus)
+        }
+
+        var addQuery = query
+        addQuery[kSecValueData] = data
+        addQuery[kSecAttrAccessible] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
+        guard addStatus == errSecSuccess else {
+            throw KeychainError.status(addStatus)
+        }
+    }
+
+    private static func readSecret(account: String) -> Secret? {
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: keychainService,
+            kSecAttrAccount: account,
+            kSecMatchLimit: kSecMatchLimitOne,
+            kSecReturnData: true
+        ]
+        var item: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+              let data = item as? Data else {
+            return nil
+        }
+        return try? JSONDecoder().decode(Secret.self, from: data)
+    }
+
+    private static func deleteSecret(account: String) {
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: keychainService,
+            kSecAttrAccount: account
+        ]
+        SecItemDelete(query as CFDictionary)
+    }
+
+    private static func account(for url: URL) -> String {
+        if isDefaultURL(url) { return "current" }
+        return AccountIdentity.stableAccountKey(
+            from: url.standardizedFileURL.path
+        )
+    }
+
+    private static func isDefaultURL(_ url: URL) -> Bool {
+        url.standardizedFileURL == defaultURL().standardizedFileURL
     }
 }
 
@@ -519,43 +674,24 @@ actor ClaudeUsageClient {
         case temporarilyUnavailable
     }
 
-    private static func readKeychainCredentials(timeout: TimeInterval) -> KeychainReadResult {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
-        process.arguments = ["find-generic-password", "-s", "Claude Code-credentials", "-w"]
-        let stdout = Pipe()
-        let stderr = Pipe()
-        process.standardOutput = stdout
-        process.standardError = stderr
-        do {
-            try process.run()
-        } catch {
-            return .temporarilyUnavailable
-        }
-        let deadline = Date().addingTimeInterval(timeout)
-        while process.isRunning && Date() < deadline {
-            Thread.sleep(forTimeInterval: 0.05)
-        }
-        if process.isRunning {
-            process.terminate()
-            let stopDeadline = Date().addingTimeInterval(0.2)
-            while process.isRunning && Date() < stopDeadline {
-                Thread.sleep(forTimeInterval: 0.01)
+    private static func readKeychainCredentials(timeout _: TimeInterval) -> KeychainReadResult {
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: "Claude Code-credentials",
+            kSecMatchLimit: kSecMatchLimitOne,
+            kSecReturnData: true
+        ]
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess else {
+            switch status {
+            case errSecItemNotFound, errSecAuthFailed, errSecUserCanceled:
+                return .permanentlyUnavailable
+            default:
+                return .temporarilyUnavailable
             }
-            if process.isRunning {
-                kill(process.processIdentifier, SIGKILL)
-            }
-            return .permanentlyUnavailable
         }
-        guard process.terminationStatus == 0 else {
-            let text = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
-                .lowercased() ?? ""
-            return text.contains("not found") || text.contains("could not be found")
-                || text.contains("interaction") || text.contains("denied")
-                ? .permanentlyUnavailable
-                : .temporarilyUnavailable
-        }
-        let data = stdout.fileHandleForReading.readDataToEndOfFile()
+        guard let data = item as? Data else { return .temporarilyUnavailable }
         let trimmed = String(data: data, encoding: .utf8)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !trimmed.isEmpty else { return .temporarilyUnavailable }

@@ -166,7 +166,10 @@ public final class ClaudeUsageOverlayController: NSObject, ObservableObject {
         updateVisibilityForFrontmostApp()
         trackerTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(150))
+                let delay: UInt64 = self?.environment?.frontmostToolTracker.foregroundTool == .claude
+                    ? 150_000_000
+                    : 1_000_000_000
+                try? await Task.sleep(nanoseconds: delay)
                 guard !Task.isCancelled else { return }
                 self?.updateVisibilityForFrontmostApp()
             }

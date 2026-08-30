@@ -45,6 +45,7 @@ public final class CodexUsageOverlayController: NSObject, ObservableObject, @unc
     private let shadowMargin: CGFloat = 10
     @MainActor private weak var environment: AppEnvironment?
     @Published public private(set) var isAccessibilityTrusted: Bool = AXIsProcessTrusted()
+    @Published public private(set) var isOverlayVisible = false
 
     private enum FocusState: Equatable {
         case codex(pid_t)
@@ -179,6 +180,7 @@ public final class CodexUsageOverlayController: NSObject, ObservableObject, @unc
         }
 
         isSummaryHovered = false
+        isOverlayVisible = false
         panel?.close()
         panel = nil
         recoveryPresenter?.close()
@@ -526,6 +528,7 @@ public final class CodexUsageOverlayController: NSObject, ObservableObject, @unc
 
         switch focus {
         case .codex:
+            if !isOverlayVisible { isOverlayVisible = true }
             panel.ignoresMouseEvents = false
             if focusChanged || targetChanged || !panel.isVisible || !panelIsAboveTarget {
                 panel.orderFrontRegardless()
@@ -541,6 +544,7 @@ public final class CodexUsageOverlayController: NSObject, ObservableObject, @unc
     private func hidePanel(_ panel: NSPanel, clearTarget: Bool) {
         recoveryPresenter?.hide()
         isSummaryHovered = false
+        if isOverlayVisible { isOverlayVisible = false }
         closeDetails()
         if panel.isVisible {
             panel.orderOut(nil)
@@ -846,7 +850,6 @@ public struct CodexOverlayView: View {
     @ObservedObject var state: AppState
     @Environment(\.colorScheme) var colorScheme
     @State private var isExpanded: Bool
-    @State private var isPulsing = false
     @State private var isDraggingWidget = false
     @ObservedObject private var flags = UsageFeatureFlags.shared
     @ObservedObject private var overlayController = CodexUsageOverlayController.shared
@@ -874,7 +877,8 @@ public struct CodexOverlayView: View {
         let isDark = colorScheme == .dark
         let statusColor = state.preferredDisplayQuotaSeverityColor
 
-        TimelineView(.periodic(from: .now, by: 1)) { _ in
+        if overlayController.isOverlayVisible {
+            TimelineView(.periodic(from: .now, by: 1)) { _ in
             VStack(alignment: .leading, spacing: isExpanded ? 9 : 0) {
                 // MARK: 顶部 / 收起状态栏 (纯净无内嵌胶囊排版，绝不截断)
                 HStack(spacing: 6) {
@@ -883,9 +887,8 @@ public struct CodexOverlayView: View {
                         ToolAppIcon(tool: .codex, size: 16)
                         ZStack {
                             Circle()
-                                .fill(statusColor.opacity(isPulsing ? 0.35 : 0.18))
+                                .fill(statusColor.opacity(0.24))
                                 .frame(width: 12, height: 12)
-                                .scaleEffect(isPulsing ? 1.15 : 0.9)
                             Circle()
                                 .fill(statusColor)
                                 .frame(width: 6, height: 6)
@@ -1051,11 +1054,9 @@ public struct CodexOverlayView: View {
             .gesture(moveGesture)
             .onHover(perform: onHoverChanged)
             .onDisappear { onHoverChanged(false) }
-            .onAppear {
-                withAnimation(.easeInOut(duration: 1.8).repeatForever(autoreverses: true)) {
-                    isPulsing = true
-                }
             }
+        } else {
+            Color.clear.frame(width: 1, height: 1)
         }
     }
 

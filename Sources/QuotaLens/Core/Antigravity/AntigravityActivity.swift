@@ -607,6 +607,8 @@ final class AntigravityStateFileWatcher: @unchecked Sendable {
     private let directories: [URL]
     private let queue = DispatchQueue(label: "QuotaLens.AntigravityFileWatcher", qos: .utility)
     private let onChange: @Sendable () -> Void
+    private var lastChangeDelivery = Date.distantPast
+    private let minimumChangeInterval: TimeInterval = 5
     private var stream: FSEventStreamRef?
 
     init(onChange: @escaping @Sendable () -> Void) {
@@ -635,7 +637,10 @@ final class AntigravityStateFileWatcher: @unchecked Sendable {
             kCFAllocatorDefault,
             { _, info, _, _, _, _ in
                 guard let info else { return }
-                Unmanaged<AntigravityStateFileWatcher>.fromOpaque(info).takeUnretainedValue().onChange()
+                Unmanaged<AntigravityStateFileWatcher>
+                    .fromOpaque(info)
+                    .takeUnretainedValue()
+                    .deliverChangeIfNeeded()
             },
             &context,
             directories.map(\.path) as CFArray,
@@ -651,6 +656,13 @@ final class AntigravityStateFileWatcher: @unchecked Sendable {
         }
         stream = created
         return true
+    }
+
+    private func deliverChangeIfNeeded() {
+        let now = Date()
+        guard now.timeIntervalSince(lastChangeDelivery) >= minimumChangeInterval else { return }
+        lastChangeDelivery = now
+        onChange()
     }
 
     func stop() {

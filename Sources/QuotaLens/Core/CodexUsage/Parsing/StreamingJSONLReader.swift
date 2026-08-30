@@ -113,6 +113,9 @@ public final class StreamingJSONLReader: Sendable {
                 try onLine(record)
             }
             totalLinesRead += 1
+            if totalLinesRead.isMultiple(of: 4_096) {
+                relieveAllocatorPressure()
+            }
         }
 
         while currentOffset < targetEndOffset {
@@ -120,44 +123,50 @@ public final class StreamingJSONLReader: Sendable {
             let bytesToRead = min(Int64(chunkSize), targetEndOffset - currentOffset)
             guard bytesToRead > 0 else { break }
 
-            let chunkStartOffset = currentOffset
-            let chunk = fileHandle.readData(ofLength: Int(bytesToRead))
-            guard !chunk.isEmpty else { break }
+            var didReadChunk = false
+            try autoreleasepool {
+                let chunkStartOffset = currentOffset
+                let chunk = fileHandle.readData(ofLength: Int(bytesToRead))
+                guard !chunk.isEmpty else { return }
+                didReadChunk = true
 
-            currentOffset += Int64(chunk.count)
+                currentOffset += Int64(chunk.count)
 
-            // 按换行符切分完整行。默认必须扫描到行尾后再判定事件类型，
-            // 因为合法 JSON 可以把 `type` 放在 4 KB 甚至 1 MB 之后。
-            var chunkCursor = chunk.startIndex
-            while let newlineIndex = chunk[chunkCursor..<chunk.endIndex].firstIndex(of: 0x0A) { // '\n'
-                let segment = chunk[chunkCursor..<newlineIndex]
-                let newlineDistance = chunk.distance(from: chunk.startIndex, to: newlineIndex)
-                let newlineOffset = chunkStartOffset + Int64(newlineDistance)
-                let fullLineBytes = Int(newlineOffset - lineStartOffset) + 1
+                // 按换行符切分完整行。默认必须扫描到行尾后再判定事件类型，
+                // 因为合法 JSON 可以把 `type` 放在 4 KB 甚至 1 MB 之后。
+                var chunkCursor = chunk.startIndex
+                while let newlineIndex = chunk[chunkCursor..<chunk.endIndex].firstIndex(of: 0x0A) { // '\n'
+                    let segment = chunk[chunkCursor..<newlineIndex]
+                    let newlineDistance = chunk.distance(from: chunk.startIndex, to: newlineIndex)
+                    let newlineOffset = chunkStartOffset + Int64(newlineDistance)
+                    let fullLineBytes = Int(newlineOffset - lineStartOffset) + 1
 
-                if !isDiscardingIrrelevantLine {
-                    pendingLine.append(contentsOf: segment)
-                    try processCompleteLine(pendingLine, startOffset: lineStartOffset, lineBytes: fullLineBytes)
+                    if !isDiscardingIrrelevantLine {
+                        pendingLine.append(contentsOf: segment)
+                        maybeStartDiscardingIrrelevantLine()
+                        if !isDiscardingIrrelevantLine {
+                            try processCompleteLine(pendingLine, startOffset: lineStartOffset, lineBytes: fullLineBytes)
+                        }
+                    }
+
+                    pendingLine.removeAll(keepingCapacity: false)
+                    if fullLineBytes >= discardIrrelevantAfterPrefixBytes {
+                        relieveAllocatorPressure()
+                    }
+                    isDiscardingIrrelevantLine = false
+                    lineIndex += 1
+                    chunkCursor = chunk.index(after: newlineIndex)
+
+                    let nextDistance = chunk.distance(from: chunk.startIndex, to: chunkCursor)
+                    lineStartOffset = chunkStartOffset + Int64(nextDistance)
                 }
 
-                pendingLine.removeAll(keepingCapacity: false)
-                if fullLineBytes >= discardIrrelevantAfterPrefixBytes {
-                    relieveAllocatorPressure()
-                }
-                isDiscardingIrrelevantLine = false
-                lineIndex += 1
-                chunkCursor = chunk.index(after: newlineIndex)
-
-                let nextDistance = chunk.distance(from: chunk.startIndex, to: chunkCursor)
-                lineStartOffset = chunkStartOffset + Int64(nextDistance)
-            }
-
-            if chunkCursor < chunk.endIndex {
-                if !isDiscardingIrrelevantLine {
+                if chunkCursor < chunk.endIndex, !isDiscardingIrrelevantLine {
                     pendingLine.append(contentsOf: chunk[chunkCursor..<chunk.endIndex])
                     maybeStartDiscardingIrrelevantLine()
                 }
             }
+            guard didReadChunk else { break }
         }
 
         // EOF 处可能有一条完整 JSON 但没有换行。只有能被 JSON 解析时才提交；

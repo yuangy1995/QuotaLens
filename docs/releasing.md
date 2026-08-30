@@ -40,6 +40,18 @@ Before publishing an update-capable build, configure the Sparkle update-signing 
 - `SPARKLE_PUBLIC_ED_KEY`: public EdDSA key embedded into the app bundle.
 - `SPARKLE_PRIVATE_ED_KEY`: private EdDSA key used only by GitHub Actions to sign update archives and appcasts.
 
+Official tag releases also require all Developer ID and notarization secrets:
+
+- `DEVELOPER_ID_APPLICATION`
+- `DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64`
+- `DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD`
+- `APPLE_BUILD_KEYCHAIN_PASSWORD`
+- `APPLE_ID`
+- `APPLE_TEAM_ID`
+- `APPLE_APP_SPECIFIC_PASSWORD`
+
+The release workflow fails if any required signing, notarization, or Sparkle secret is missing. Ad-hoc signing is only supported by the local packaging command.
+
 Generate the key pair once with Sparkle's tools, then keep the private key out of git:
 
 ```bash
@@ -79,7 +91,7 @@ The `Release macOS` workflow builds and uploads:
 - Legacy in-app update feed: `appcast.xml` with both architecture items for older clients
 - `SHA256SUMS.txt`
 
-The workflow validates that the pushed tag matches `VERSION`, runs the quality gate (`swift test`, focused migration/parser/pricing tests, `swift build -c release`, and `git diff --check`), builds the architecture-specific app and DMG packages, and then publishes them.
+The workflow validates that the pushed tag resolves to the checked-out commit and matches `VERSION`, runs the quality gate (`swift test`, focused migration/parser/pricing tests, `swift build -c release`, and `git diff --check`), verifies every packaged Mach-O architecture and required Sparkle helper, launches the app on the matching runner, and then publishes the notarized packages. Pull requests and pushes to `main` also run the test suite and a release build through the separate CI workflow.
 
 ## In-App Updates
 
