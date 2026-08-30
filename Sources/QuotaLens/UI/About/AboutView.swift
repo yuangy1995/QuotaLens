@@ -53,6 +53,17 @@ public struct AboutView: View {
     private var defaultChangelogs: [ChangelogEntry] {
         [
             ChangelogEntry(
+                id: "v1.0.22",
+                version: "v1.0.22",
+                date: "2026-08-30",
+                changes: [
+                    L10n.text("新增周度配额完全恢复（100%）智能气泡提醒，支持多工具额度满血通知与一键快捷交互", "Introduced weekly quota full recovery (100%) notification bubbles with cross-tool status alerts and quick interactions"),
+                    L10n.text("优化菜单栏状态图标与指示环排版，支持在状态栏直观切换已用与可用额度视角", "Optimized menu bar status item indicators and ring layout with intuitive toggling between used and available quota perspectives"),
+                    L10n.text("深度优化 Antigravity 与 Codex 全息悬浮挂件的吸附平滑度与窗口前台感知链路", "Deeply refined floating overlay snapping smoothness and foreground window awareness across Antigravity and Codex"),
+                    L10n.text("全面完善 10 种语言的多语言本地化翻译字典与更新日志多语言映射", "Comprehensive localization dictionary refinements and changelog translation mapping across 10 supported languages")
+                ]
+            ),
+            ChangelogEntry(
                 id: "v1.0.21",
                 version: "v1.0.21",
                 date: "2026-08-30",

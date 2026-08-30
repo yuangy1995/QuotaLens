@@ -257,6 +257,9 @@ public enum L10n {
     }
 
     public static let changelogZhToEnMap: [String: String] = [
+        "新增周度配额完全恢复（100%）智能气泡提醒，支持多工具额度满血通知与一键快捷交互": "Introduced weekly quota full recovery (100%) notification bubbles with cross-tool status alerts and quick interactions",
+        "优化菜单栏状态图标与指示环排版，支持在状态栏直观切换已用与可用额度视角": "Optimized menu bar status item indicators and ring layout with intuitive toggling between used and available quota perspectives",
+        "深度优化 Antigravity 与 Codex 全息悬浮挂件的吸附平滑度与窗口前台感知链路": "Deeply refined floating overlay snapping smoothness and foreground window awareness across Antigravity and Codex",
         "全面接入 Google Antigravity (AGY) 智能体编程工具生态，支持多周期模型配额与本机活跃度监控": "Full integration with Google Antigravity (AGY) agentic ecosystem with multi-window quota and local activity monitoring",
         "新增 Antigravity 专属全息悬浮挂件与自动吸附定位，支持随前台应用智能唤醒与模型余量一览": "Dedicated Antigravity floating overlay with smart window snapping, foreground auto-wake, and real-time model quota breakdown",
         "在菜单栏、总览看板与设置中深度集成 Antigravity 指标卡片、任务趋势与多空间无缝切换": "Deeply integrated Antigravity metric cards, task trends, and multi-workspace switching across menu bar, overview, and settings",
@@ -1379,6 +1382,146 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .french: "Impossible de vérifier le PATH du shell de connexion : %@",
         .portuguese: "Não foi possível verificar o PATH da shell de início de sessão: %@",
         .portugueseBrazil: "Não foi possível verificar o PATH do shell de login: %@"
+    ],
+    "Introduced weekly quota full recovery (100%) notification bubbles with cross-tool status alerts and quick interactions": [
+        .traditionalChinese: "新增週度配額完全恢復（100%）智慧氣泡提醒，支援多工具額度滿血通知與一鍵快捷互動",
+        .japanese: "週間クォータ完全回復（100%）のインテリジェントな通知バブルを追加し、マルチツールのクォータ満杯通知とワンクリック操作に対応",
+        .korean: "주간 할당량 100% 완전 복구 스마트 알림 버블 추가: 멀티 툴 할당량 회복 알림 및 원클릭 간편 상호작용 지원",
+        .spanish: "Burbujas de notificación inteligentes de recuperación total (100%) de cuota semanal con avisos multiherramienta e interacción rápida",
+        .german: "Intelligente Benachrichtigungsblasen für vollständige Wiederherstellung (100%) des wöchentlichen Kontingents mit Schnellaktionen eingeführt",
+        .french: "Bulles de notification intelligentes de rétablissement complet (100%) du quota hebdomadaire avec alertes multi-outils et interactions rapides",
+        .portuguese: "Balões de notificação inteligentes de reposição total (100%) da quota semanal com alertas multiferramenta e interações rápidas",
+        .portugueseBrazil: "Balões de notificação inteligentes de restauração total (100%) da cota semanal com alertas multiferramenta e interações rápidas"
+    ],
+    "Optimized menu bar status item indicators and ring layout with intuitive toggling between used and available quota perspectives": [
+        .traditionalChinese: "優化選單列狀態圖示與指示環排版，支援在狀態列直觀切換已用與可用額度視角",
+        .japanese: "メニューバーステータスアイコンとインジケーター配置を改善し、使用済み／利用可能クォータの視点を直感的に切り替え可能に",
+        .korean: "메뉴 바 상태 아이콘 및 인디케이터 링 레이아웃을 개선하여 사용량 및 잔여량 보기를 직관적으로 전환 지원",
+        .spanish: "Optimizados los indicadores de la barra de menús y el diseño de anillos con cambio intuitivo entre cuota usada y disponible",
+        .german: "Menüleisten-Statusanzeigen und Ring-Layout optimiert mit intuitivem Umschalten zwischen verbrauchtem und verfügbarem Kontingent",
+        .french: "Optimisation des indicateurs et de la disposition en anneau de la barre de menus avec basculement intuitif entre quota utilisé et disponible",
+        .portuguese: "Otimizados os indicadores e disposição em anel da barra de menus com alternância intuitiva entre quota utilizada e disponível",
+        .portugueseBrazil: "Otimizados os indicadores e disposição em anel da barra de menus com alternância intuitiva entre cota usada e disponível"
+    ],
+    "Deeply refined floating overlay snapping smoothness and foreground window awareness across Antigravity and Codex": [
+        .traditionalChinese: "深度優化 Antigravity 與 Codex 全息懸浮掛件的吸附平滑度與視窗前台感知鏈路",
+        .japanese: "Antigravity および Codex のフローティングウィジェットにおける吸着のスムーズさと前面ウインドウ認識パイプラインを大幅に向上",
+        .korean: "Antigravity 및 Codex 플로팅 위젯의 부착 부드러움과 전면 창 감지 파이프라인 심층 개선",
+        .spanish: "Suavidad de anclaje de la superposición flotante y detección de ventana en primer plano profundamente refinadas para Antigravity y Codex",
+        .german: "Andock-Reibungslosigkeit und Vordergrund-Fenstererkennung der schwebenden Overlays für Antigravity und Codex tiefgreifend verbessert",
+        .french: "Fluidité d'aimantation de la superposition flottante et détection de fenêtre au premier plan profondément améliorées pour Antigravity et Codex",
+        .portuguese: "Suavidade de fixação da sobreposição flutuante e deteção de janela em primeiro plano profundamente aperfeiçoadas para Antigravity e Codex",
+        .portugueseBrazil: "Suavidade de fixação da sobreposição flutuante e detecção de janela em primeiro plano profundamente aprimoradas para Antigravity e Codex"
+    ],
+    "Antigravity · 5-hour quota is not available": [
+        .traditionalChinese: "Antigravity · 5 小時額度暫無資料",
+        .japanese: "Antigravity · 5 時間クォータのデータがありません",
+        .korean: "Antigravity · 5시간 할당량 데이터 없음",
+        .spanish: "Antigravity · Cuota de 5 horas no disponible",
+        .german: "Antigravity · 5-Stunden-Kontingent nicht verfügbar",
+        .french: "Antigravity · Quota de 5 heures non disponible",
+        .portuguese: "Antigravity · Quota de 5 horas indisponível",
+        .portugueseBrazil: "Antigravity · Cota de 5 horas indisponível"
+    ],
+    "Antigravity 5-hour quota is not available": [
+        .traditionalChinese: "Antigravity 5 小時額度暫無資料",
+        .japanese: "Antigravity 5 時間クォータのデータがありません",
+        .korean: "Antigravity 5시간 할당량 데이터 없음",
+        .spanish: "Cuota de 5 horas de Antigravity no disponible",
+        .german: "Antigravity 5-Stunden-Kontingent nicht verfügbar",
+        .french: "Quota de 5 heures Antigravity non disponible",
+        .portuguese: "Quota de 5 horas do Antigravity indisponível",
+        .portugueseBrazil: "Cota de 5 horas do Antigravity indisponível"
+    ],
+    "Click to switch between used and available": [
+        .traditionalChinese: "點擊切換已用與可用視角",
+        .japanese: "クリックして使用済み／利用可能の表示を切り替え",
+        .korean: "클릭하여 사용량/잔여량 보기 전환",
+        .spanish: "Haz clic para alternar entre usado y disponible",
+        .german: "Klicken zum Umschalten zwischen verbraucht und verfügbar",
+        .french: "Cliquer pour basculer entre utilisé et disponible",
+        .portuguese: "Clique para alternar entre utilizado e disponível",
+        .portugueseBrazil: "Clique para alternar entre usado e disponível"
+    ],
+    "Click to close": [
+        .traditionalChinese: "點擊關閉",
+        .japanese: "クリックして閉じる",
+        .korean: "클릭하여 닫기",
+        .spanish: "Clic para cerrar",
+        .german: "Klicken zum Schließen",
+        .french: "Cliquer pour fermer",
+        .portuguese: "Clique para fechar",
+        .portugueseBrazil: "Clique para fechar"
+    ],
+    "Click to close all reminders": [
+        .traditionalChinese: "點擊關閉全部提醒",
+        .japanese: "クリックしてすべてのリマインダーを閉じる",
+        .korean: "클릭하여 모든 알림 닫기",
+        .spanish: "Clic para cerrar todos los recordatorios",
+        .german: "Klicken, um alle Erinnerungen zu schließen",
+        .french: "Cliquer pour fermer tous les rappels",
+        .portuguese: "Clique para fechar todos os lembretes",
+        .portugueseBrazil: "Clique para fechar todos os lembretes"
+    ],
+    "Click to close all weekly quota recovery reminders": [
+        .traditionalChinese: "點擊關閉全部週額度恢復提醒",
+        .japanese: "クリックして週間クォータ回復リマインダーをすべて閉じる",
+        .korean: "클릭하여 모든 주간 할당량 복구 알림 닫기",
+        .spanish: "Clic para cerrar todos los recordatorios de recuperación de cuota semanal",
+        .german: "Klicken, um alle wöchentlichen Kontingent-Wiederherstellungserinnerungen zu schließen",
+        .french: "Cliquer pour fermer tous les rappels de récupération de quota hebdomadaire",
+        .portuguese: "Clique para fechar todos os lembretes de recuperação de quota semanal",
+        .portugueseBrazil: "Clique para fechar todos os lembretes de recuperação de cota semanal"
+    ],
+    "Weekly quota restored to 100%": [
+        .traditionalChinese: "週額度已恢復 100%",
+        .japanese: "週間クォータが 100% 回復しました",
+        .korean: "주간 할당량이 100% 복구되었습니다",
+        .spanish: "Cuota semanal restaurada al 100%",
+        .german: "Wöchentliches Kontingent wieder auf 100% hergestellt",
+        .french: "Quota hebdomadaire rétabli à 100%",
+        .portuguese: "Quota semanal reposta a 100%",
+        .portugueseBrazil: "Cota semanal restaurada para 100%"
+    ],
+    "Weekly Quota Recovery Reminder": [
+        .traditionalChinese: "週額度恢復提醒",
+        .japanese: "週間クォータ回復リマインダー",
+        .korean: "주간 할당량 복구 알림",
+        .spanish: "Recordatorio de recuperación de cuota semanal",
+        .german: "Erinnerung an wöchentliche Kontingent-Wiederherstellung",
+        .french: "Rappel de récupération de quota hebdomadaire",
+        .portuguese: "Lembrete de recuperação de quota semanal",
+        .portugueseBrazil: "Lembrete de recuperação de cota semanal"
+    ],
+    "Weekly quota recovery reminder": [
+        .traditionalChinese: "週額度恢復提醒",
+        .japanese: "週間クォータ回復リマインダー",
+        .korean: "주간 할당량 복구 알림",
+        .spanish: "Recordatorio de recuperación de cuota semanal",
+        .german: "Erinnerung an wöchentliche Kontingent-Wiederherstellung",
+        .french: "Rappel de récupération de quota hebdomadaire",
+        .portuguese: "Lembrete de recuperação de quota semanal",
+        .portugueseBrazil: "Lembrete de recuperação de cota semanal"
+    ],
+    "Pop up a subtle recovery bubble when a tool reaches 100% weekly quota": [
+        .traditionalChinese: "當工具週額度恢復至 100% 時快顯輕量提醒氣泡",
+        .japanese: "ツールの週間クォータが 100% に回復した際に通知バブルを表示",
+        .korean: "도구 주간 할당량이 100%로 복구될 때 가벼운 알림 버블 표시",
+        .spanish: "Muestra una sutil burbuja de aviso cuando una herramienta recupera el 100% de la cuota semanal",
+        .german: "Zeigt eine dezente Benachrichtigungsblase an, wenn ein Tool 100% des wöchentlichen Kontingents wiederherstellt",
+        .french: "Affiche une bulle de notification subtile lorsqu'un outil récupère 100% de son quota hebdomadaire",
+        .portuguese: "Mostra um balão discreto quando uma ferramenta recupera 100% da quota semanal",
+        .portugueseBrazil: "Mostra um balão discreto quando uma ferramenta recupera 100% da cota semanal"
+    ],
+    "%d more": [
+        .traditionalChinese: "還有 %d 項",
+        .japanese: "他 %d 件",
+        .korean: "%d개 더 보기",
+        .spanish: "%d más",
+        .german: "%d weitere",
+        .french: "%d de plus",
+        .portuguese: "Mais %d",
+        .portugueseBrazil: "Mais %d"
     ],
     "Full integration with Google Antigravity (AGY) agentic ecosystem with multi-window quota and local activity monitoring": [
         .traditionalChinese: "全面接入 Google Antigravity (AGY) 智慧體編程工具生態，支援多週期模型配額與本機活躍度監控",
