@@ -266,8 +266,18 @@ public final class AppState: ObservableObject {
     @Published public var antigravityActivityWarningText: String?
     @Published public var antigravityActivitySnapshotsByProfile: [AntigravityStateProfile: AntigravityActivitySnapshot] = [:]
     @Published public var providerQuotaInsights: [UsageProvider: [ProviderQuotaInsight]] = [:]
+    @Published public var providerHistoryWarnings: Set<UsageProvider> = []
     @Published public var quotaRecommendations: [QuotaRecommendation] = []
     @Published public var antigravitySyncState = ProviderSyncState(provider: .antigravity)
+
+    public func historyWarningText(for provider: UsageProvider) -> String? {
+        guard providerHistoryWarnings.contains(provider) else { return nil }
+        return L10n.format(
+            "%@ history cannot be read right now. Quota is still available.",
+            zhHans: "%@ 历史记录暂时无法读取，仍可查看在线额度。",
+            provider.localizedName
+        )
+    }
 
     private var acknowledgedResetCreditId: String?
     private var acknowledgedResetCreditExpiresAt: Int64?

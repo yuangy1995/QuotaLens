@@ -45,6 +45,26 @@ public enum ProviderDataFreshness: Int, Comparable, Sendable {
 public struct ProviderQuotaRefreshResult<Snapshot: Sendable>: Sendable {
     public let snapshot: Snapshot
     public let historySaved: Bool
+    public let migrationWarning: Bool
+
+    public init(snapshot: Snapshot, historySaved: Bool, migrationWarning: Bool = false) {
+        self.snapshot = snapshot
+        self.historySaved = historySaved
+        self.migrationWarning = migrationWarning
+    }
+
+    public var storageWarningText: String? {
+        if !historySaved {
+            return L10n.text("在线额度已更新，但本地历史记录暂时未保存。", "Online quota was updated, but local history was not saved.")
+        }
+        if migrationWarning {
+            return L10n.text(
+                "额度和新记录已保存，但部分旧记录未能恢复。",
+                "Quota and new records were saved, but some older records could not be recovered."
+            )
+        }
+        return nil
+    }
 }
 
 public struct ProviderSyncState: Equatable, Sendable {
@@ -271,6 +291,11 @@ enum ProviderQuotaHistoryRepository {
     }
 }
 
+public struct ProviderQuotaInsightsBuildResult: Sendable {
+    public let insights: [UsageProvider: [ProviderQuotaInsight]]
+    public let storageWarnings: Set<UsageProvider>
+}
+
 public actor ProviderQuotaInsightsService {
     private let database: SQLiteDatabase
 
@@ -282,19 +307,25 @@ public actor ProviderQuotaInsightsService {
         inputs: [ProviderQuotaPoolInput],
         refreshIntervals: [UsageProvider: TimeInterval],
         now: Date = Date()
-    ) -> [UsageProvider: [ProviderQuotaInsight]] {
+    ) -> ProviderQuotaInsightsBuildResult {
         let since = now.addingTimeInterval(-TimeInterval(RateLimitSnapshotRetention.retentionSeconds))
         let scopes = Set(inputs.map { "\($0.provider.rawValue)|\($0.accountKey)" })
         var historyByScope: [String: [ProviderQuotaHistoryRecord]] = [:]
+        var storageWarnings = Set<UsageProvider>()
         for input in inputs {
             let scope = "\(input.provider.rawValue)|\(input.accountKey)"
             guard scopes.contains(scope), historyByScope[scope] == nil else { continue }
-            historyByScope[scope] = (try? ProviderQuotaHistoryRepository.fetch(
-                database: database,
-                provider: input.provider,
-                accountKey: input.accountKey,
-                since: since
-            )) ?? []
+            do {
+                historyByScope[scope] = try ProviderQuotaHistoryRepository.fetch(
+                    database: database,
+                    provider: input.provider,
+                    accountKey: input.accountKey,
+                    since: since
+                )
+            } catch {
+                historyByScope[scope] = []
+                storageWarnings.insert(input.provider)
+            }
         }
 
         var result: [UsageProvider: [ProviderQuotaInsight]] = [:]
@@ -383,7 +414,7 @@ public actor ProviderQuotaInsightsService {
         for provider in Array(result.keys) {
             result[provider]?.sort(by: Self.isHigherPriority)
         }
-        return result
+        return ProviderQuotaInsightsBuildResult(insights: result, storageWarnings: storageWarnings)
     }
 
     private static func isHigherPriority(_ lhs: ProviderQuotaInsight, _ rhs: ProviderQuotaInsight) -> Bool {

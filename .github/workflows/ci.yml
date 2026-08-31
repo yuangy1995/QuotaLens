@@ -26,11 +26,16 @@ jobs:
           set -euo pipefail
           swift test
 
-      - name: Release build
+      - name: Ad-hoc Universal package and signature verification
         shell: bash
         run: |
           set -euo pipefail
-          swift build -c release
+          ./scripts/build_and_package.sh \
+            --arch universal \
+            --signing-mode adhoc \
+            --dist-dir "${RUNNER_TEMP}/quotalens-ci-package"
+          package_version="$(tr -d '[:space:]' < VERSION)"
+          hdiutil verify "${RUNNER_TEMP}/quotalens-ci-package/QuotaLens-v${package_version}-macOS-universal.dmg"
 
       - name: Whitespace check
         shell: bash

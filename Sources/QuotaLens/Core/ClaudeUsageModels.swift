@@ -35,6 +35,8 @@ public struct ClaudeUsageSnapshot: Equatable, Sendable, Codable {
 
     public let capturedAt: Date
     public let accountKey: String
+    public let accountIdentityConfidence: AccountIdentityConfidence?
+    public let accountAliases: Set<String>?
     public let tier: String?
     public let fiveHour: Window?
     public let staleFiveHour: Window?
@@ -48,10 +50,14 @@ public struct ClaudeUsageSnapshot: Equatable, Sendable, Codable {
         fiveHour: Window?,
         staleFiveHour: Window? = nil,
         sevenDay: Window?,
-        scopedWeekly: [Window] = []
+        scopedWeekly: [Window] = [],
+        accountIdentityConfidence: AccountIdentityConfidence? = nil,
+        accountAliases: Set<String>? = nil
     ) {
         self.capturedAt = capturedAt
         self.accountKey = accountKey
+        self.accountIdentityConfidence = accountIdentityConfidence
+        self.accountAliases = accountAliases
         self.tier = tier
         self.fiveHour = fiveHour
         self.staleFiveHour = staleFiveHour
@@ -81,7 +87,9 @@ public struct ClaudeUsageSnapshot: Equatable, Sendable, Codable {
             fiveHour: nil,
             staleFiveHour: old,
             sevenDay: sevenDay,
-            scopedWeekly: scopedWeekly
+            scopedWeekly: scopedWeekly,
+            accountIdentityConfidence: accountIdentityConfidence,
+            accountAliases: accountAliases
         )
     }
 }

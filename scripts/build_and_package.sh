@@ -490,7 +490,7 @@ codesign "${SIGN_ARGS[@]}" "${SPARKLE_CURRENT}/Autoupdate"
 codesign "${SIGN_ARGS[@]}" "${SPARKLE_CURRENT}/Updater.app"
 codesign "${SIGN_ARGS[@]}" "${SPARKLE_BUNDLE}"
 codesign "${SIGN_ARGS[@]}" "${APP_BUNDLE}"
-codesign --verify --deep --strict --verbose=2 "${APP_BUNDLE}"
+codesign --verify --deep --strict --all-architectures --verbose=2 "${APP_BUNDLE}"
 
 for ((index = 0; index < ${#SWIFT_ARCHES[@]}; index++)); do
     required_arch="${SWIFT_ARCHES[index]}"

@@ -6,6 +6,7 @@ import Foundation
 // MARK: - 会话条目 DTO
 public struct CodexSessionDTO: Identifiable, Hashable, Sendable {
     public var id: String { sessionId }
+    public var rawSessionId: String { UsageSessionIdentity.rawID(provider: provider, sessionKey: sessionId) }
 
     public let sessionId: String
     public let provider: UsageProvider
@@ -80,9 +81,9 @@ public struct CodexSessionDTO: Identifiable, Hashable, Sendable {
             return title
         }
         if let project = projectName, !project.isEmpty {
-            return "\(project) · \(String(sessionId.prefix(8)))"
+            return "\(project) · \(String(rawSessionId.prefix(8)))"
         }
-        return String(sessionId.prefix(12))
+        return String(rawSessionId.prefix(12))
     }
 
     public var isSubagent: Bool {

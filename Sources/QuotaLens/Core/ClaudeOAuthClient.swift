@@ -7,6 +7,51 @@ struct ClaudeStoredCredentials: Sendable, Equatable {
     let expiresAtMs: Double?
     let scopes: [String]?
     let accountKey: String?
+    var identityConfidence: AccountIdentityConfidence? = nil
+    var accountAliases: Set<String> = []
+    var legacyAccountKey: String? = nil
+
+    var identity: ClaudeAccountIdentity {
+        let tokenKey = AccountIdentity.stableAccountKey(from: refreshToken ?? accessToken)
+        let declaredKey = accountKey.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+        let key = declaredKey ?? tokenKey
+        let confidence = declaredKey == nil ? .provisionalTokenDerived : (identityConfidence ?? .stableProviderID)
+        let aliases = accountAliases.union([tokenKey, AccountIdentity.stableAccountKey(from: accessToken)]).subtracting([key])
+        return ClaudeAccountIdentity(accountKey: key, confidence: confidence, aliases: aliases)
+    }
+}
+
+struct ClaudeAccountIdentity: Sendable, Equatable {
+    let accountKey: String
+    let confidence: AccountIdentityConfidence
+    var aliases: Set<String>
+
+    static func resolve(_ credentials: ClaudeStoredCredentials, cached: ClaudeStoredCredentials?) -> Self {
+        var identity = credentials.identity
+        guard let cached else { return identity }
+        let cachedIdentity = cached.identity
+        let tokenKeys = Set([
+            AccountIdentity.stableAccountKey(from: credentials.refreshToken ?? credentials.accessToken),
+            AccountIdentity.stableAccountKey(from: credentials.accessToken)
+        ])
+        let knownKeys = cachedIdentity.aliases.union([cachedIdentity.accountKey])
+        guard identity.accountKey == cachedIdentity.accountKey || !tokenKeys.isDisjoint(with: knownKeys) else { return identity }
+        if identity.confidence == .provisionalTokenDerived
+            || (identity.confidence == .verifiedEmail && cachedIdentity.confidence == .stableProviderID) {
+            identity = cachedIdentity
+            identity.aliases.formUnion(credentials.identity.aliases)
+            identity.aliases.insert(credentials.identity.accountKey)
+        } else if cachedIdentity.confidence == .provisionalTokenDerived
+                    || (identity.confidence == .stableProviderID && cachedIdentity.confidence == .verifiedEmail) {
+            identity.aliases.formUnion(cachedIdentity.aliases)
+            identity.aliases.insert(cachedIdentity.accountKey)
+        }
+        if identity.accountKey == cachedIdentity.accountKey {
+            identity.aliases.formUnion(cachedIdentity.aliases)
+        }
+        identity.aliases.remove(identity.accountKey)
+        return identity
+    }
 }
 
 struct ClaudeRefreshedCredentials: Sendable, Equatable {
@@ -27,6 +72,9 @@ enum ClaudeOAuthCache {
         let scopes: [String]?
         let accountKey: String?
         let keychainAccount: String
+        let identityConfidence: AccountIdentityConfidence?
+        let accountAliases: Set<String>?
+        let legacyAccountKey: String?
     }
 
     private enum KeychainError: LocalizedError {
@@ -56,7 +104,8 @@ enum ClaudeOAuthCache {
     static func load(from url: URL = defaultURL()) -> ClaudeStoredCredentials? {
         if isDefaultURL(url),
            let legacyData = try? Data(contentsOf: legacyURL()),
-           let legacy = ClaudeUsageClient.parseCredentials(legacyData) {
+           var legacy = ClaudeUsageClient.parseCredentials(legacyData, defaultIdentityConfidence: .provisionalTokenDerived) {
+            legacy.legacyAccountKey = legacy.accountKey
             do {
                 try saveStored(legacy, to: url)
                 return legacy
@@ -67,7 +116,8 @@ enum ClaudeOAuthCache {
 
         var metadata: Metadata?
         if let data = try? Data(contentsOf: url) {
-            if let legacy = ClaudeUsageClient.parseCredentials(data) {
+            if var legacy = ClaudeUsageClient.parseCredentials(data, defaultIdentityConfidence: .provisionalTokenDerived) {
+                legacy.legacyAccountKey = legacy.accountKey
                 do {
                     try saveStored(legacy, to: url)
                     return legacy
@@ -85,14 +135,25 @@ enum ClaudeOAuthCache {
             refreshToken: secret.refreshToken,
             expiresAtMs: metadata?.expiresAtMs,
             scopes: metadata?.scopes,
-            accountKey: metadata?.accountKey
+            accountKey: metadata?.accountKey,
+            identityConfidence: metadata?.identityConfidence ?? .provisionalTokenDerived,
+            accountAliases: metadata?.accountAliases ?? [],
+            legacyAccountKey: metadata.flatMap { $0.version < 2 ? $0.accountKey : $0.legacyAccountKey }
         )
+    }
+
+    static func legacyAccountKey(at url: URL) -> String? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        if let metadata = try? JSONDecoder().decode(Metadata.self, from: data) {
+            return metadata.version < 2 ? metadata.accountKey : metadata.legacyAccountKey
+        }
+        return ClaudeUsageClient.parseCredentials(data, defaultIdentityConfidence: .provisionalTokenDerived)?.accountKey
     }
 
     static func save(
         _ credentials: ClaudeRefreshedCredentials,
         scopes: [String]?,
-        accountKey: String,
+        identity: ClaudeAccountIdentity,
         fallbackRefreshToken: String,
         to url: URL = defaultURL()
     ) throws {
@@ -102,7 +163,10 @@ enum ClaudeOAuthCache {
                 refreshToken: credentials.refreshToken ?? fallbackRefreshToken,
                 expiresAtMs: credentials.expiresAtMs,
                 scopes: scopes,
-                accountKey: accountKey
+                accountKey: identity.accountKey,
+                identityConfidence: identity.confidence,
+                accountAliases: identity.aliases,
+                legacyAccountKey: legacyAccountKey(at: url)
             ),
             to: url
         )
@@ -134,11 +198,14 @@ enum ClaudeOAuthCache {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         let data = try encoder.encode(Metadata(
-            version: 1,
+            version: 2,
             expiresAtMs: credentials.expiresAtMs,
             scopes: credentials.scopes,
             accountKey: credentials.accountKey,
-            keychainAccount: keychainAccount
+            keychainAccount: keychainAccount,
+            identityConfidence: credentials.identityConfidence ?? .provisionalTokenDerived,
+            accountAliases: credentials.accountAliases,
+            legacyAccountKey: credentials.legacyAccountKey
         ))
         let directory = url.deletingLastPathComponent()
         try FileManager.default.createDirectory(
@@ -349,8 +416,8 @@ actor ClaudeUsageClient {
         memoryAccountKey = nil
     }
 
-    func activeAccountKey() async -> String? {
-        await loadAccessToken()?.accountKey
+    func activeAccountIdentity() async -> ClaudeAccountIdentity? {
+        await loadAccessToken()?.identity
     }
 
     func legacyAccountKeyForMigration() -> String? {
@@ -382,7 +449,13 @@ actor ClaudeUsageClient {
         switch http.statusCode {
         case 200:
             rejectedTokens.removeAll()
-            return try Self.decode(data, capturedAt: Date(), accountKey: credentials.accountKey)
+            return try Self.decode(
+                data,
+                capturedAt: Date(),
+                accountKey: credentials.identity.accountKey,
+                identityConfidence: credentials.identity.confidence,
+                accountAliases: credentials.identity.aliases
+            )
         case 401:
             rejectedTokens.insert(token)
             memoryToken = nil
@@ -401,7 +474,7 @@ actor ClaudeUsageClient {
         }
     }
 
-    private func loadAccessToken() async -> (accessToken: String, accountKey: String)? {
+    private func loadAccessToken() async -> (accessToken: String, identity: ClaudeAccountIdentity)? {
         let cached = ClaudeOAuthCache.load(from: cacheURL)
         var localCredentials: [ClaudeStoredCredentials] = []
         if let file = Self.readClaudeCredentialsFile() {
@@ -418,58 +491,53 @@ actor ClaudeUsageClient {
             }
         }
 
-        func resolvedKey(_ credentials: ClaudeStoredCredentials) -> String {
-            if let cached, let key = cached.accountKey,
-               credentials.accessToken == cached.accessToken
-                || (credentials.refreshToken != nil && credentials.refreshToken == cached.refreshToken) {
-                return key
-            }
-            return accountKey(for: credentials)
+        func resolvedIdentity(_ credentials: ClaudeStoredCredentials) -> ClaudeAccountIdentity {
+            ClaudeAccountIdentity.resolve(credentials, cached: cached)
         }
         guard let active = localCredentials.first ?? cached else {
             clearMemoryToken()
             confirmedLegacyAccountKey = nil
             return nil
         }
-        let activeKey = resolvedKey(active)
-        let knownKeys = Set(localCredentials.map(resolvedKey))
-        confirmedLegacyAccountKey = cached?.accountKey == activeKey
-            && knownKeys.isSubset(of: [activeKey]) ? activeKey : nil
+        let identity = resolvedIdentity(active)
+        let activeKey = identity.accountKey
+        let knownKeys = Set(localCredentials.map { resolvedIdentity($0).accountKey })
+        let legacyOwner = cached?.legacyAccountKey ?? ClaudeOAuthCache.legacyAccountKey(at: cacheURL)
+        let hasLegacyEvidence = legacyOwner.map { $0 == activeKey || identity.aliases.contains($0) } ?? false
+        confirmedLegacyAccountKey = hasLegacyEvidence && knownKeys.isSubset(of: [activeKey]) ? activeKey : nil
 
-        var candidates = localCredentials.filter { resolvedKey($0) == activeKey }
-        if let cached, resolvedKey(cached) == activeKey {
+        var candidates = localCredentials.filter { resolvedIdentity($0).accountKey == activeKey }
+        if let cached, cached.identity.accountKey == activeKey
+            || cached.accessToken == active.accessToken
+            || (cached.refreshToken != nil && cached.refreshToken == active.refreshToken) {
             candidates.insert(cached, at: 0)
         }
         if let memoryToken, memoryAccountKey == activeKey, !rejectedTokens.contains(memoryToken) {
-            return (memoryToken, activeKey)
+            return (memoryToken, identity)
         }
         clearMemoryToken()
         for candidate in candidates where Self.isUsable(candidate, rejected: rejectedTokens) {
             memoryToken = candidate.accessToken
             memoryAccountKey = activeKey
-            return (candidate.accessToken, activeKey)
+            return (candidate.accessToken, identity)
         }
 
         let refreshTokens = candidates.compactMap(\.refreshToken).filter { !$0.isEmpty }
         if let refreshToken = refreshTokens.first,
-           let refreshed = await refreshSingleFlight(refreshToken, candidates: candidates) {
+           let refreshed = await refreshSingleFlight(refreshToken, candidates: candidates, identity: identity) {
             memoryToken = refreshed.accessToken
             memoryAccountKey = activeKey
-            return (refreshed.accessToken, activeKey)
+            return (refreshed.accessToken, refreshed.identity)
         }
         guard let first = candidates.first else { return nil }
         memoryAccountKey = activeKey
-        return (first.accessToken, activeKey)
-    }
-
-    private func accountKey(for credentials: ClaudeStoredCredentials) -> String {
-        credentials.accountKey
-            ?? AccountIdentity.stableAccountKey(from: credentials.refreshToken ?? credentials.accessToken)
+        return (first.accessToken, identity)
     }
 
     private func refreshSingleFlight(
         _ refreshToken: String,
-        candidates: [ClaudeStoredCredentials]
+        candidates: [ClaudeStoredCredentials],
+        identity: ClaudeAccountIdentity
     ) async -> ClaudeStoredCredentials? {
         if let refreshTask { return await refreshTask.value }
         let task = Task<ClaudeStoredCredentials?, Never> {
@@ -481,23 +549,24 @@ actor ClaudeUsageClient {
                     let refreshed = try await self.tokenRefresher.refresh(token)
                     let source = candidates.first(where: { $0.refreshToken == token })
                     let scopes = source?.scopes
-                    let stableAccountKey = source.map { self.accountKey(for: $0) }
-                        ?? AccountIdentity.stableAccountKey(from: token)
                     let effectiveRefreshToken = refreshed.refreshToken ?? token
-                    try? ClaudeOAuthCache.save(
-                        refreshed,
-                        scopes: scopes,
-                        accountKey: stableAccountKey,
-                        fallbackRefreshToken: token,
-                        to: self.cacheURL
-                    )
-                    return ClaudeStoredCredentials(
+                    let credentials = ClaudeStoredCredentials(
                         accessToken: refreshed.accessToken,
                         refreshToken: effectiveRefreshToken,
                         expiresAtMs: refreshed.expiresAtMs,
                         scopes: scopes,
-                        accountKey: stableAccountKey
+                        accountKey: identity.accountKey,
+                        identityConfidence: identity.confidence,
+                        accountAliases: identity.aliases
                     )
+                    try? ClaudeOAuthCache.save(
+                        refreshed,
+                        scopes: scopes,
+                        identity: credentials.identity,
+                        fallbackRefreshToken: token,
+                        to: self.cacheURL
+                    )
+                    return credentials
                 } catch ClaudeTokenRefresher.RefreshError.http(let code) where (400..<500).contains(code) {
                     if ClaudeOAuthCache.load(from: self.cacheURL)?.refreshToken == token {
                         ClaudeOAuthCache.clear(at: self.cacheURL)
@@ -515,7 +584,13 @@ actor ClaudeUsageClient {
         return result
     }
 
-    static func decode(_ data: Data, capturedAt: Date, accountKey: String) throws -> ClaudeUsageSnapshot {
+    static func decode(
+        _ data: Data,
+        capturedAt: Date,
+        accountKey: String,
+        identityConfidence: AccountIdentityConfidence? = nil,
+        accountAliases: Set<String>? = nil
+    ) throws -> ClaudeUsageSnapshot {
         struct Wire: Decodable {
             let rate_limit_tier: String?
             let five_hour: WindowWire?
@@ -636,7 +711,9 @@ actor ClaudeUsageClient {
                 id: "claude-weekly", title: L10n.text("7 天", "7 Days"),
                 wire: wire.seven_day, duration: 604_800
             ),
-            scopedWeekly: scoped
+            scopedWeekly: scoped,
+            accountIdentityConfidence: identityConfidence,
+            accountAliases: accountAliases
         )
         guard snapshot.hasQuota else { throw FetchError.incompatibleResponse }
         return snapshot
@@ -651,7 +728,10 @@ actor ClaudeUsageClient {
         return raw.isEmpty ? nil : raw
     }
 
-    static func parseCredentials(_ data: Data) -> ClaudeStoredCredentials? {
+    static func parseCredentials(
+        _ data: Data,
+        defaultIdentityConfidence: AccountIdentityConfidence = .stableProviderID
+    ) -> ClaudeStoredCredentials? {
         struct Wrapper: Decodable {
             struct Inner: Decodable {
                 let accessToken: String?
@@ -671,7 +751,8 @@ actor ClaudeUsageClient {
             refreshToken: inner.refreshToken,
             expiresAtMs: inner.expiresAt,
             scopes: inner.scopes,
-            accountKey: inner.accountKey
+            accountKey: inner.accountKey,
+            identityConfidence: inner.accountKey == nil ? .provisionalTokenDerived : defaultIdentityConfidence
         )
     }
 

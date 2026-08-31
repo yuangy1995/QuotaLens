@@ -11,9 +11,13 @@ enum RateLimitSnapshotRetention {
             DELETE FROM rate_limit_snapshots
             WHERE observed_at < ?
               AND id NOT IN (
-                SELECT MAX(id)
-                FROM rate_limit_snapshots
-                GROUP BY provider, account_key, limit_id, slot
+                SELECT id FROM (
+                    SELECT id, ROW_NUMBER() OVER (
+                        PARTITION BY provider, account_key, limit_id, slot
+                        ORDER BY observed_at DESC, id DESC
+                    ) AS recency
+                    FROM rate_limit_snapshots
+                ) WHERE recency = 1
               );
             """,
             bindings: [cutoff]
@@ -24,7 +28,8 @@ enum RateLimitSnapshotRetention {
 enum ClaudeQuotaRepository {
     static let legacyAccountKey = "claude-local"
 
-    static func persist(_ snapshot: ClaudeUsageSnapshot, database: SQLiteDatabase) throws {
+    @discardableResult
+    static func persist(_ snapshot: ClaudeUsageSnapshot, database: SQLiteDatabase) throws -> Bool {
         let accountKey = snapshot.accountKey
         let json = String(decoding: try JSONEncoder().encode(snapshot), as: UTF8.self)
         let observedAt = Int64(snapshot.capturedAt.timeIntervalSince1970)
@@ -60,6 +65,41 @@ enum ClaudeQuotaRepository {
             }
             try RateLimitSnapshotRetention.prune(database: database, now: snapshot.capturedAt)
         }
+        do {
+            try migrateIdentity(ClaudeAccountIdentity(
+                accountKey: accountKey,
+                confidence: snapshot.accountIdentityConfidence ?? .provisionalTokenDerived,
+                aliases: snapshot.accountAliases ?? []
+            ), database: database)
+            return false
+        } catch {
+            return true
+        }
+    }
+
+    static func migrateIdentity(_ identity: ClaudeAccountIdentity, database: SQLiteDatabase) throws {
+        guard identity.confidence != .provisionalTokenDerived else { return }
+        let aliases = identity.aliases.subtracting([legacyAccountKey, identity.accountKey])
+        guard !aliases.isEmpty else { return }
+        try database.transaction {
+            let resolved = try aliases.map { key in
+                (key, try ProviderAccountAliases.resolve(key, provider: .claude, database: database))
+            }
+            guard resolved.allSatisfy({ $0.1 == identity.accountKey || aliases.contains($0.1) }) else {
+                throw ProviderAccountAliases.MigrationError.conflictingIdentity
+            }
+            // Move the old root identity first so its aliases stay canonical.
+            for (key, target) in resolved where key == target {
+                try ProviderAccountAliases.migrate(from: key, to: identity.accountKey, provider: .claude, database: database)
+            }
+            for key in aliases {
+                try ProviderAccountAliases.migrate(from: key, to: identity.accountKey, provider: .claude, database: database)
+                try database.executeUpdate(
+                    sql: "UPDATE app_metadata SET value = ?, updated_at = unixepoch() WHERE key = 'claude_legacy_account_migration_state' AND value = ?;",
+                    bindings: ["migrated:\(identity.accountKey)", "migrated:\(key)"]
+                )
+            }
+        }
     }
 
     static func migrateLegacyAccount(
@@ -69,23 +109,33 @@ enum ClaudeQuotaRepository {
     ) throws {
         guard accountKey != legacyAccountKey else { return }
         try database.transaction {
-            guard try database.stringScalar(sql: "SELECT value FROM app_metadata WHERE key = 'claude_legacy_account_checked';") == nil else { return }
+            let state = try database.stringScalar(sql: "SELECT value FROM app_metadata WHERE key = 'claude_legacy_account_migration_state';")
+            guard state != "conflict", state != "noLegacyRows", state?.hasPrefix("migrated:") != true else { return }
             let resolved = try ProviderAccountAliases.resolve(legacyAccountKey, provider: .claude, database: database)
-            if confirmedAccountKey == accountKey,
-                  resolved == legacyAccountKey || resolved == accountKey,
-                  try database.intScalar(
-                      sql: "SELECT COUNT(*) FROM rate_limit_snapshots WHERE provider = 'claude' AND account_key NOT IN (?, ?);",
-                      bindings: [legacyAccountKey, accountKey]
-                  ) == 0,
-                  try database.intScalar(
-                      sql: "SELECT COUNT(*) FROM rate_limit_snapshots WHERE provider = 'claude' AND account_key = ?;",
-                      bindings: [legacyAccountKey]
-                  ) > 0 {
+            let legacyCount = try database.intScalar(
+                sql: "SELECT COUNT(*) FROM rate_limit_snapshots WHERE provider = 'claude' AND account_key = ?;",
+                bindings: [legacyAccountKey]
+            )
+            let otherAccountCount = try database.intScalar(
+                sql: "SELECT COUNT(*) FROM rate_limit_snapshots WHERE provider = 'claude' AND account_key NOT IN (?, ?);",
+                bindings: [legacyAccountKey, accountKey]
+            )
+            let nextState: String
+            if legacyCount == 0 {
+                nextState = resolved == legacyAccountKey ? "noLegacyRows" : "migrated:\(resolved)"
+            } else if (resolved != legacyAccountKey && resolved != accountKey) || otherAccountCount > 0 {
+                nextState = "conflict"
+            } else if confirmedAccountKey == accountKey {
                 try ProviderAccountAliases.migrate(from: legacyAccountKey, to: accountKey, provider: .claude, database: database)
+                nextState = "migrated:\(accountKey)"
+            } else {
+                nextState = "pending"
             }
-            // Evaluate legacy ownership once, before any newly refreshed
-            // credentials can be mistaken for evidence about old history.
-            try database.execute(sql: "INSERT INTO app_metadata (key, value, updated_at) VALUES ('claude_legacy_account_checked', '1', unixepoch());")
+            try database.executeUpdate(
+                sql: "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES ('claude_legacy_account_migration_state', ?, unixepoch());",
+                bindings: [nextState]
+            )
+            try database.execute(sql: "DELETE FROM app_metadata WHERE key = 'claude_legacy_account_checked';")
         }
     }
 
@@ -212,6 +262,7 @@ actor ClaudeUsagePoller {
     private var isStopped = false
     private var isPolling = false
     private var pendingSnapshots: [String: ClaudeUsageSnapshot] = [:]
+    private var migrationWarnings = Set<String>()
 
     init(
         client: ClaudeUsageClient = ClaudeUsageClient(),
@@ -262,23 +313,27 @@ actor ClaudeUsagePoller {
         defer { isPolling = false }
         for (key, pending) in pendingSnapshots {
             do {
-                try ClaudeQuotaRepository.persist(pending, database: database)
+                if try ClaudeQuotaRepository.persist(pending, database: database) {
+                    migrationWarnings.insert(key)
+                }
                 pendingSnapshots[key] = nil
             } catch { /* Retain the snapshot for the next scheduled attempt. */ }
         }
         do {
-            guard let accountKey = await client.activeAccountKey() else {
+            guard let identity = await client.activeAccountIdentity() else {
                 latestSnapshot = nil
                 await onCachedSnapshot(nil)
                 throw ClaudeUsageClient.FetchError.noCredentials
             }
             guard !isStopped else { return }
+            let accountKey = identity.accountKey
             let confirmedKey = await client.legacyAccountKeyForMigration()
             var historySaved = true
             do {
+                try ClaudeQuotaRepository.migrateIdentity(identity, database: database)
                 try ClaudeQuotaRepository.migrateLegacyAccount(to: accountKey, confirmedAccountKey: confirmedKey, database: database)
             } catch {
-                historySaved = false
+                migrationWarnings.insert(accountKey)
             }
             if latestSnapshot?.accountKey != accountKey {
                 latestSnapshot = try? ClaudeQuotaRepository.hydrate(accountKey: accountKey, database: database)
@@ -291,14 +346,20 @@ actor ClaudeUsagePoller {
             cooldownUntil = nil
             rateLimitCount = 0
             do {
-                try ClaudeQuotaRepository.persist(fresh, database: database)
+                if try ClaudeQuotaRepository.persist(fresh, database: database) {
+                    migrationWarnings.insert(fresh.accountKey)
+                }
                 pendingSnapshots[fresh.accountKey] = nil
             } catch {
                 historySaved = false
                 pendingSnapshots[fresh.accountKey] = fresh
             }
             await onCooldown(nil)
-            await onResult(.success(ProviderQuotaRefreshResult(snapshot: fresh, historySaved: historySaved)))
+            await onResult(.success(ProviderQuotaRefreshResult(
+                snapshot: fresh,
+                historySaved: historySaved,
+                migrationWarning: migrationWarnings.remove(fresh.accountKey) != nil
+            )))
         } catch let error as ClaudeUsageClient.FetchError {
             guard !isStopped else { return }
             if case .rateLimited(let retryAfter) = error {

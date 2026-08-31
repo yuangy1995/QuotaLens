@@ -661,6 +661,7 @@ public actor AntigravityQuotaPoller {
     private var isStopped = false
     private var isPolling = false
     private var pendingSnapshots: [String: AntigravityQuotaSnapshot] = [:]
+    private var migrationWarnings = Set<String>()
 
     public init(
         client: AntigravityQuotaClient = AntigravityQuotaClient(),
@@ -719,7 +720,9 @@ public actor AntigravityQuotaPoller {
         await onSyncState(syncState())
         for (key, pending) in pendingSnapshots {
             do {
-                try AntigravityQuotaRepository.persist(pending, database: database)
+                if try AntigravityQuotaRepository.persist(pending, database: database) {
+                    migrationWarnings.insert(key)
+                }
                 pendingSnapshots[key] = nil
             } catch { /* Retain the snapshot for the next scheduled attempt. */ }
         }
@@ -743,14 +746,20 @@ public actor AntigravityQuotaPoller {
             nextAttemptAt = Date().addingTimeInterval(interval)
             var historySaved = true
             do {
-                try AntigravityQuotaRepository.persist(snapshot, database: database)
+                if try AntigravityQuotaRepository.persist(snapshot, database: database) {
+                    migrationWarnings.insert(snapshot.accountKey)
+                }
                 pendingSnapshots[snapshot.accountKey] = nil
             } catch {
                 historySaved = false
                 pendingSnapshots[snapshot.accountKey] = snapshot
             }
             await onSyncState(syncState())
-            await onResult(.success(ProviderQuotaRefreshResult(snapshot: snapshot, historySaved: historySaved)))
+            await onResult(.success(ProviderQuotaRefreshResult(
+                snapshot: snapshot,
+                historySaved: historySaved,
+                migrationWarning: migrationWarnings.remove(snapshot.accountKey) != nil
+            )))
         } catch let error as AntigravityCredentialError {
             guard !isStopped else { return }
             if error == .credentialsMissing || error == .applicationNotFound || error == .profileNotFound {

@@ -3,6 +3,12 @@
 import CryptoKit
 import Foundation
 
+public enum AccountIdentityConfidence: String, Codable, Sendable {
+    case stableProviderID
+    case verifiedEmail
+    case provisionalTokenDerived
+}
+
 public struct AccountIdentity: Sendable {
     private static let unknownSessionIdentifier = UUID().uuidString
 
@@ -50,6 +56,10 @@ enum ProviderAccountAliases {
         }
         try database.executeUpdate(
             sql: "UPDATE rate_limit_snapshots SET account_key = ? WHERE provider = ? AND account_key = ?;",
+            bindings: [accountKey, provider.rawValue, legacyKey]
+        )
+        try database.executeUpdate(
+            sql: "UPDATE account_aliases SET canonical_account_key = ? WHERE provider = ? AND canonical_account_key = ?;",
             bindings: [accountKey, provider.rawValue, legacyKey]
         )
         try database.executeUpdate(

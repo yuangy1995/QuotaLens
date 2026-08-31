@@ -44,6 +44,15 @@ public struct AntigravityUsageRecord: Sendable, Equatable {
     }
 }
 
+public struct AntigravityUsageParseReport: Sendable, Equatable {
+    public var metadataRowCount = 0
+    public var recognizedUsageCount = 0
+    public var knownEmptyCount = 0
+    public var incompatibleCount = 0
+
+    public var isComplete: Bool { incompatibleCount == 0 }
+}
+
 public struct AntigravityConversationData: Sendable, Equatable {
     public let sessionID: String
     public let sourcePath: String
@@ -56,6 +65,7 @@ public struct AntigravityConversationData: Sendable, Equatable {
     public let projectName: String?
     public let cwd: String?
     public let usageRecords: [AntigravityUsageRecord]
+    public let usageParseReport: AntigravityUsageParseReport
 
     public var activityRecord: AntigravityActivityRecord {
         AntigravityActivityRecord(
@@ -77,6 +87,7 @@ public struct AntigravityActivityScanSummary: Sendable, Equatable {
     public let snapshot: AntigravityActivitySnapshot
     public let snapshotsByProfile: [AntigravityStateProfile: AntigravityActivitySnapshot]
     public let isComplete: Bool
+    public let hasIncompatibleUsage: Bool
 }
 
 public struct AntigravityConversationScanResult: Sendable {
@@ -138,6 +149,10 @@ public struct AntigravityConversationReader: Sendable {
             do {
                 if let conversation = try readConversationData(from: url) {
                     conversations.append(conversation)
+                    if !conversation.usageParseReport.isComplete {
+                        failures[url] = "Antigravity usage metadata is not fully compatible"
+                        continue
+                    }
                 }
                 successfulSources.insert(url)
             } catch {
@@ -203,7 +218,7 @@ public struct AntigravityConversationReader: Sendable {
         let createdAt = parsedMetadata?.createdAt ?? fileValues?.creationDate
         let lastModifiedAt = stepInfo.latestStepAt ?? fileValues?.contentModificationDate ?? createdAt
         let fallbackDate = createdAt ?? lastModifiedAt ?? fileValues?.contentModificationDate ?? Date()
-        let usageRecords = try readUsageRecords(
+        let usage = try readUsageRecords(
             database: database,
             modelStepTimestamps: stepInfo.modelStepTimestamps,
             createdAt: createdAt,
@@ -221,7 +236,8 @@ public struct AntigravityConversationReader: Sendable {
             stepCount: max(0, stepCount),
             projectName: parsedMetadata?.projectName,
             cwd: parsedMetadata?.cwd,
-            usageRecords: usageRecords
+            usageRecords: usage.records,
+            usageParseReport: usage.report
         )
     }
 
@@ -337,12 +353,13 @@ public struct AntigravityConversationReader: Sendable {
         modelStepTimestamps: [Date],
         createdAt: Date?,
         fallbackDate: Date
-    ) throws -> [AntigravityUsageRecord] {
+    ) throws -> (records: [AntigravityUsageRecord], report: AntigravityUsageParseReport) {
+        var report = AntigravityUsageParseReport()
         // Earlier activity-only databases legitimately have no usage table.
         guard try int64Value(
             database: database,
             sql: "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'gen_metadata';"
-        ) != 0 else { return [] }
+        ) != 0 else { return ([], report) }
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(
             database,
@@ -357,19 +374,39 @@ public struct AntigravityConversationReader: Sendable {
         var seenResponseIDs = Set<String>()
         var rowIndex = 0
         while try nextRow(statement, database: database) {
+            report.metadataRowCount += 1
+            defer { rowIndex += 1 }
             guard sqlite3_column_type(statement, 1) != SQLITE_NULL,
                   let bytes = sqlite3_column_blob(statement, 1) else {
-                rowIndex += 1
+                if sqlite3_column_type(statement, 1) == SQLITE_BLOB && sqlite3_column_bytes(statement, 1) == 0 {
+                    report.knownEmptyCount += 1
+                } else {
+                    report.incompatibleCount += 1
+                }
                 continue
             }
             let data = Data(bytes: bytes, count: Int(sqlite3_column_bytes(statement, 1)))
             let generationIndex = sqlite3_column_int64(statement, 0)
-            guard let parsed = try Self.parseUsage(data) else {
-                rowIndex += 1
+            let outcome: UsageParseOutcome
+            do {
+                outcome = try Self.parseUsage(data)
+            } catch {
+                report.incompatibleCount += 1
                 continue
             }
+            let parsed: ParsedUsage
+            switch outcome {
+            case .knownEmpty:
+                report.knownEmptyCount += 1
+                continue
+            case .incompatible:
+                report.incompatibleCount += 1
+                continue
+            case .usage(let usage):
+                report.recognizedUsageCount += 1
+                parsed = usage
+            }
             if let responseID = parsed.responseID, !seenResponseIDs.insert(responseID).inserted {
-                rowIndex += 1
                 continue
             }
 
@@ -392,23 +429,44 @@ public struct AntigravityConversationReader: Sendable {
                 tokens: parsed.tokens,
                 responseID: parsed.responseID
             ))
-            rowIndex += 1
         }
-        return records
+        return (records, report)
     }
 
-    private static func parseUsage(_ data: Data) throws -> (
-        modelRaw: String,
-        modelDisplayName: String?,
-        timestamp: Date?,
-        tokens: TokenBreakdown,
-        responseID: String?
-    )? {
+    private struct ParsedUsage {
+        let modelRaw: String
+        let modelDisplayName: String?
+        let timestamp: Date?
+        let tokens: TokenBreakdown
+        let responseID: String?
+    }
+
+    private enum UsageParseOutcome {
+        case usage(ParsedUsage)
+        case knownEmpty
+        case incompatible
+    }
+
+    private static func parseUsage(_ data: Data) throws -> UsageParseOutcome {
+        if data.isEmpty { return .knownEmpty }
         try validateProto(data)
-        guard let chatModel = messageField(data, number: 1) else { return nil }
+        guard let chatModel = messageField(data, number: 1) else { return .incompatible }
+        if chatModel.isEmpty { return .knownEmpty }
         try validateProto(chatModel)
-        guard let usage = messageField(chatModel, number: 4) else { return nil }
-        try validateProto(usage)
+        guard let usage = messageField(chatModel, number: 4) else { return .incompatible }
+        if usage.isEmpty { return .knownEmpty }
+        var usageReader = AntigravityProtoReader(data: usage)
+        var tokenFieldCount = 0
+        var unknownFieldCount = 0
+        while let field = try usageReader.nextField() {
+            if [1, 2, 5, 9, 10].contains(field.number) {
+                guard field.wireType == 0 else { return .incompatible }
+                tokenFieldCount += 1
+            } else if field.number != 11 || field.wireType != 2 {
+                unknownFieldCount += 1
+            }
+        }
+        if tokenFieldCount == 0 && unknownFieldCount > 0 { return .incompatible }
 
         let fixedInput = clampedInt64(varintField(usage, number: 1))
         let newInput = clampedInt64(varintField(usage, number: 2))
@@ -419,7 +477,7 @@ public struct AntigravityConversationReader: Sendable {
         let input = adding(inputWithoutCache, cacheRead)
         let output = adding(textOutput, reasoning)
         let total = adding(input, output)
-        guard total > 0 else { return nil }
+        guard total > 0 else { return unknownFieldCount == 0 ? .knownEmpty : .incompatible }
 
         let responseModel = nonEmpty(stringField(chatModel, number: 19))
         let displayName = nonEmpty(stringField(chatModel, number: 21))
@@ -430,7 +488,7 @@ public struct AntigravityConversationReader: Sendable {
             modelRaw = displayName ?? responseModel ?? "unknown"
         }
 
-        return (
+        return .usage(ParsedUsage(
             modelRaw: modelRaw,
             modelDisplayName: displayName,
             timestamp: generationTimestamp(from: chatModel),
@@ -442,7 +500,7 @@ public struct AntigravityConversationReader: Sendable {
                 sourceTotalTokens: total
             ),
             responseID: nonEmpty(stringField(usage, number: 11))
-        )
+        ))
     }
 
     private static func generationTimestamp(from chatModel: Data) -> Date? {
@@ -563,7 +621,8 @@ public struct AntigravityConversationReader: Sendable {
     }
 
     public func readConversation(sessionID: String) throws -> CodexSessionConversationDTO {
-        guard let url = transcriptURL(for: sessionID) else {
+        let rawID = UsageSessionIdentity.rawID(provider: .antigravity, sessionKey: sessionID)
+        guard let url = transcriptURL(for: rawID) else {
             return CodexSessionConversationDTO(sessionId: sessionID, messages: [])
         }
         let data = try Data(contentsOf: url, options: [.mappedIfSafe])
@@ -716,7 +775,8 @@ public actor AntigravityActivityStore {
             sourceProfiles: sourceProfiles,
             snapshot: snapshot,
             snapshotsByProfile: snapshotsByProfile,
-            isComplete: isComplete
+            isComplete: isComplete,
+            hasIncompatibleUsage: conversationScan.conversations.contains { !$0.usageParseReport.isComplete }
         )
     }
 
@@ -1043,6 +1103,11 @@ public final class AntigravityActivityScanCoordinator: ObservableObject {
                     result.sourceProfiles.count,
                     result.recordsRead
                 )
+            } else if result.hasIncompatibleUsage {
+                statusText = L10n.text(
+                    "部分 Antigravity 用量暂时无法识别，已保留上次的用量统计。",
+                    "Some Antigravity usage could not be recognized. Previously saved usage statistics have been kept."
+                )
             } else {
                 statusText = L10n.text(
                     "部分 Antigravity 记录暂时无法读取，统计中保留了上次的数据。",
@@ -1133,12 +1198,12 @@ final class AntigravityStateFileWatcher: @unchecked Sendable {
 }
 
 enum AntigravityQuotaRepository {
-    static func persist(_ snapshot: AntigravityQuotaSnapshot, database: SQLiteDatabase) throws {
+    /// Returns whether legacy data could not be fully recovered. Only failure
+    /// to save the current snapshot throws; migration cannot roll it back.
+    @discardableResult
+    static func persist(_ snapshot: AntigravityQuotaSnapshot, database: SQLiteDatabase) throws -> Bool {
         let observedAt = Int64(snapshot.capturedAt.timeIntervalSince1970)
         try database.transaction {
-            if let legacyKey = snapshot.legacyAccountKey, legacyKey != snapshot.accountKey {
-                try migrateLegacyAccount(from: legacyKey, to: snapshot.accountKey, database: database)
-            }
             try storeCache(snapshot, database: database)
             try database.executeUpdate(
                 sql: """
@@ -1176,14 +1241,15 @@ enum AntigravityQuotaRepository {
                     )
                 }
             }
-            try database.executeUpdate(
-                sql: """
-                DELETE FROM rate_limit_snapshots
-                WHERE provider = 'antigravity' AND observed_at < ?;
-                """,
-                bindings: [observedAt - RateLimitSnapshotRetention.retentionSeconds]
-            )
             try RateLimitSnapshotRetention.prune(database: database, now: snapshot.capturedAt)
+        }
+        guard let legacyKey = snapshot.legacyAccountKey, legacyKey != snapshot.accountKey else { return false }
+        do {
+            return try database.transaction {
+                try migrateLegacyAccount(from: legacyKey, to: snapshot.accountKey, database: database)
+            }
+        } catch {
+            return true
         }
     }
 
@@ -1206,7 +1272,7 @@ enum AntigravityQuotaRepository {
         return snapshot.accountKey == accountKey ? snapshot : nil
     }
 
-    private static func storeCache(_ snapshot: AntigravityQuotaSnapshot, database: SQLiteDatabase) throws {
+    private static func storeCache(_ snapshot: AntigravityQuotaSnapshot, database: SQLiteDatabase, replaceExisting: Bool = true) throws {
         let json = String(decoding: try JSONEncoder().encode(snapshot), as: UTF8.self)
         try database.executeUpdate(
             sql: """
@@ -1215,20 +1281,34 @@ enum AntigravityQuotaRepository {
             ON CONFLICT(source_profile, account_key) DO UPDATE SET
                 captured_at = excluded.captured_at,
                 payload_json = excluded.payload_json
-            WHERE excluded.captured_at >= antigravity_quota_cache.captured_at;
+            WHERE ? AND excluded.captured_at >= antigravity_quota_cache.captured_at;
             """,
-            bindings: [snapshot.sourceProfile, snapshot.accountKey, Int64(snapshot.capturedAt.timeIntervalSince1970), json]
+            bindings: [snapshot.sourceProfile, snapshot.accountKey, Int64(snapshot.capturedAt.timeIntervalSince1970), json, replaceExisting]
         )
     }
 
-    private static func migrateLegacyAccount(from legacyKey: String, to accountKey: String, database: SQLiteDatabase) throws {
+    private static func migrateLegacyAccount(from legacyKey: String, to accountKey: String, database: SQLiteDatabase) throws -> Bool {
         try ProviderAccountAliases.migrate(from: legacyKey, to: accountKey, provider: .antigravity, database: database)
         let payloads = try database.executeQuery(
-            sql: "SELECT payload_json FROM antigravity_quota_cache WHERE account_key = ?;",
+            sql: "SELECT source_profile, payload_json FROM antigravity_quota_cache WHERE account_key = ?;",
             bindings: [legacyKey]
-        ) { String(cString: sqlite3_column_text($0, 0)) }
-        for payload in payloads {
-            let old = try JSONDecoder().decode(AntigravityQuotaSnapshot.self, from: Data(payload.utf8))
+        ) { (String(cString: sqlite3_column_text($0, 0)), String(cString: sqlite3_column_text($0, 1))) }
+        var discardedCache = false
+        for (profile, payload) in payloads {
+            let old: AntigravityQuotaSnapshot
+            do {
+                old = try JSONDecoder().decode(AntigravityQuotaSnapshot.self, from: Data(payload.utf8))
+            } catch {
+                discardedCache = true
+                continue
+            }
+            guard old.accountKey == legacyKey, old.sourceProfile == profile,
+                  validCacheDate(old.capturedAt),
+                  old.buckets.allSatisfy({ (0...100).contains($0.remainingPercent) && validCacheDate($0.resetAt) }),
+                  old.models.allSatisfy({ (0...100).contains($0.remainingPercent) && validCacheDate($0.resetAt) }) else {
+                discardedCache = true
+                continue
+            }
             let migrated = AntigravityQuotaSnapshot(
                 sourceProfile: old.sourceProfile,
                 accountKey: accountKey,
@@ -1239,11 +1319,18 @@ enum AntigravityQuotaRepository {
                 models: old.models,
                 legacyAccountKey: legacyKey
             )
-            try storeCache(migrated, database: database)
+            try storeCache(migrated, database: database, replaceExisting: false)
         }
         try database.executeUpdate(
             sql: "DELETE FROM antigravity_quota_cache WHERE account_key = ?;",
             bindings: [legacyKey]
         )
+        return discardedCache
+    }
+
+    private static func validCacheDate(_ date: Date?) -> Bool {
+        guard let date else { return true }
+        let seconds = date.timeIntervalSince1970
+        return seconds.isFinite && seconds > Double(Int64.min) && seconds < Double(Int64.max)
     }
 }

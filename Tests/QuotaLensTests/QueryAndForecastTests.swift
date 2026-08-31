@@ -612,8 +612,8 @@ final class QueryAndForecastTests: XCTestCase {
             provider: .antigravity,
             accountKey: "antigravity-test",
             observedAt: Int64(now.timeIntervalSince1970) - RateLimitSnapshotRetention.retentionSeconds - 1,
-            limitID: "old-group",
-            slot: "old-window",
+            limitID: "gemini-group",
+            slot: "five-hour",
             usedPercent: 10,
             durationMinutes: 300,
             resetAt: Int64(reset.timeIntervalSince1970)
@@ -733,7 +733,7 @@ final class QueryAndForecastTests: XCTestCase {
             refreshIntervals: [.antigravity: 300],
             now: now
         )
-        let insight = try XCTUnwrap(result[.antigravity]?.first)
+        let insight = try XCTUnwrap(result.insights[.antigravity]?.first)
         XCTAssertEqual(insight.trendPoints.map(\.usedPercent), [20, 35, 50])
         XCTAssertEqual(insight.forecast.burnRatePercentPerHour, 180, accuracy: 0.5)
         XCTAssertEqual(insight.risk, .critical)
@@ -758,7 +758,7 @@ final class QueryAndForecastTests: XCTestCase {
             refreshIntervals: [.antigravity: 300],
             now: now
         )
-        let freshInsight = try XCTUnwrap(fresh[.antigravity]?.first)
+        let freshInsight = try XCTUnwrap(fresh.insights[.antigravity]?.first)
         XCTAssertEqual(freshInsight.freshness, .fresh)
         XCTAssertEqual(freshInsight.forecast.confidence, .insufficientData)
         XCTAssertFalse(freshInsight.hasUsableForecast)
@@ -774,7 +774,7 @@ final class QueryAndForecastTests: XCTestCase {
             refreshIntervals: [.antigravity: 300],
             now: now
         )
-        XCTAssertEqual(delayed[.antigravity]?.first?.freshness, .delayed)
+        XCTAssertEqual(delayed.insights[.antigravity]?.first?.freshness, .delayed)
 
         let stale = await service.build(
             inputs: [makeQuotaInput(
@@ -787,7 +787,7 @@ final class QueryAndForecastTests: XCTestCase {
             refreshIntervals: [.antigravity: 300],
             now: now
         )
-        let staleInsight = try XCTUnwrap(stale[.antigravity]?.first)
+        let staleInsight = try XCTUnwrap(stale.insights[.antigravity]?.first)
         XCTAssertEqual(staleInsight.freshness, .stale)
         XCTAssertEqual(staleInsight.risk, .insufficientData)
         XCTAssertFalse(staleInsight.hasUsableForecast)

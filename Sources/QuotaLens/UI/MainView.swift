@@ -117,6 +117,13 @@ public struct MainView: View {
                     storageInitializationWarningStrip(warning)
                 }
 
+                ForEach(state.providerHistoryWarnings.sorted { $0.rawValue < $1.rawValue }) { provider in
+                    if let warning = state.historyWarningText(for: provider),
+                       navigation.selectedContext == .overview || navigation.selectedContext == .tool(MonitoringToolID(rawValue: provider.rawValue)) {
+                        storageInitializationWarningStrip(warning)
+                    }
+                }
+
                 ZStack {
                     // 环境自适应背景画布
                     AppTheme.canvasGradient(for: colorScheme)

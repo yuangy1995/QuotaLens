@@ -57,14 +57,15 @@ private struct ParsedClaudeSlice: Sendable {
 
 actor ClaudeUsageImportActor {
     private let database: SQLiteDatabase
+    private let roots: [URL]
 
-    init(database: SQLiteDatabase) {
+    init(database: SQLiteDatabase, roots: [URL]? = nil) {
         self.database = database
+        self.roots = roots ?? Self.defaultRoots()
     }
 
     func scan(forceRebuild: Bool = false) async throws -> ClaudeUsageImportSummary {
         try ClaudePricingCatalogService.ensureInstalled(database: database)
-        let roots = Self.defaultRoots()
         let files = Self.scanFiles(roots: roots)
         let states = try loadSourceStates()
         let knownGroups = Set(states.values.compactMap(\.sessionID))
@@ -145,25 +146,27 @@ actor ClaudeUsageImportActor {
         }
         guard !slices.isEmpty else { return (false, 0) }
 
+        let groupKey = UsageSessionIdentity.key(provider: .claude, rawSessionID: groupID)
         var changedEvents = 0
         try database.transaction {
             if reset {
                 try database.executeUpdate(
                     sql: "DELETE FROM codex_usage_events WHERE provider = 'claude' AND session_id = ?;",
-                    bindings: [groupID]
+                    bindings: [groupKey]
                 )
                 try database.executeUpdate(
                     sql: "DELETE FROM codex_session_summaries WHERE provider = 'claude' AND session_id = ?;",
-                    bindings: [groupID]
+                    bindings: [groupKey]
                 )
                 try database.executeUpdate(
                     sql: "DELETE FROM codex_daily_usage_summaries WHERE provider = 'claude' AND session_id = ?;",
-                    bindings: [groupID]
+                    bindings: [groupKey]
                 )
             }
 
             for (file, slice) in slices {
-                let sessionID = slice.sessionID.isEmpty ? groupID : slice.sessionID
+                let rawSessionID = slice.sessionID.isEmpty ? groupID : slice.sessionID
+                let sessionID = UsageSessionIdentity.key(provider: .claude, rawSessionID: rawSessionID)
                 for event in slice.events {
                     changedEvents += try upsert(
                         event: event,
@@ -188,10 +191,10 @@ actor ClaudeUsageImportActor {
                         last_imported_at = unixepoch(),
                         error_message = NULL;
                     """,
-                    bindings: [file.path, file.relativePath, sessionID, file.size, file.mtimeMs, slice.endOffset]
+                    bindings: [file.path, file.relativePath, rawSessionID, file.size, file.mtimeMs, slice.endOffset]
                 )
             }
-            try rebuildSummaries(sessionID: groupID)
+            try rebuildSummaries(sessionID: groupKey)
         }
         return (true, changedEvents)
     }
@@ -247,7 +250,7 @@ actor ClaudeUsageImportActor {
         )
         let grossInput = uncached + cached + write5m + write1h
         let total = grossInput + output
-        let eventID = "claude:\(sessionID):\(providerMessageID)"
+        let eventID = "\(sessionID):\(providerMessageID)"
         let timestampMs = Int64(event.timestamp.timeIntervalSince1970 * 1_000)
         let before = try database.intScalar(
             sql: "SELECT COUNT(*) FROM codex_usage_events WHERE event_id = ?;",

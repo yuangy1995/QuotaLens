@@ -45,7 +45,7 @@ private func addUnpricedReasonColumns(database: SQLiteDatabase, table: String) t
 }
 
 public struct SchemaMigrations {
-    public static let targetSchemaVersion = 16
+    public static let targetSchemaVersion = 17
 
     public static func migrate(database: SQLiteDatabase) throws {
         let currentVersion = try database.intScalar(sql: "PRAGMA user_version;")
@@ -80,7 +80,8 @@ public struct SchemaMigrations {
             V13Round2ReliabilityMigration(),
             V14MultiProviderAndClaudeMigration(),
             V15AntigravityMigration(),
-            V16ProviderAccountAliasesMigration()
+            V16ProviderAccountAliasesMigration(),
+            V17ProviderSessionNamespaceMigration()
         ]
 
         for migration in migrations where migration.version > currentVersion {
@@ -91,6 +92,25 @@ public struct SchemaMigrations {
         }
 
         try V5AggregateOnlyUsageMigration.compactIfNeeded(database: database)
+    }
+}
+
+// MARK: - V17: isolate non-Codex sessions without changing Codex RPC identifiers
+private struct V17ProviderSessionNamespaceMigration: DatabaseMigration {
+    let version = 17
+    let name = "V17ProviderSessionNamespace"
+
+    func apply(database: SQLiteDatabase) throws {
+        for table in ["codex_sessions", "codex_usage_events", "codex_session_summaries", "codex_daily_usage_summaries"] {
+            var assignments = ["session_id = provider || ':' || session_id"]
+            if table == "codex_sessions" || table == "codex_usage_events" {
+                assignments.append("root_session_id = provider || ':' || root_session_id")
+            }
+            if table == "codex_sessions" {
+                assignments.append("parent_session_id = provider || ':' || parent_session_id")
+            }
+            try database.execute(sql: "UPDATE \(table) SET \(assignments.joined(separator: ", ")) WHERE provider IN ('claude', 'antigravity');")
+        }
     }
 }
 

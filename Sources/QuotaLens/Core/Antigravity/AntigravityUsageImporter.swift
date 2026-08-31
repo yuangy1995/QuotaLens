@@ -39,8 +39,10 @@ struct AntigravityUsageImporter {
         database: SQLiteDatabase
     ) throws {
         let calendar = UsageDayBucketer.calendar()
-        let sessions = scan.conversations.sorted { $0.sessionID < $1.sessionID }
         let successfulPaths = Set(scan.successfulSources.map(\.path))
+        let sessions = scan.conversations
+            .filter { successfulPaths.contains($0.sourcePath) && $0.usageParseReport.isComplete }
+            .sorted { $0.sessionID < $1.sessionID }
         let discoveredPaths = Set(scan.discoveredSources.map(\.path))
 
         try database.transaction {
@@ -63,6 +65,7 @@ struct AntigravityUsageImporter {
             var dailyAggregates: [DailyKey: Aggregate] = [:]
 
             for conversation in sessions {
+                let sessionID = UsageSessionIdentity.key(provider: .antigravity, rawSessionID: conversation.sessionID)
                 let events = conversation.usageRecords
                 var sessionAggregate = Aggregate()
                 var byModel: [String: Aggregate] = [:]
@@ -77,7 +80,7 @@ struct AntigravityUsageImporter {
                         tokens: event.tokens
                     )
                     let providerMessageID = event.responseID ?? "generation-\(event.generationIndex)"
-                    let eventID = "antigravity:\(conversation.sessionID):\(providerMessageID)"
+                    let eventID = "\(sessionID):\(providerMessageID)"
 
                     try database.executeUpdate(
                         sql: """
@@ -123,8 +126,8 @@ struct AntigravityUsageImporter {
                         """,
                         bindings: [
                             eventID,
-                            conversation.sessionID,
-                            conversation.sessionID,
+                            sessionID,
+                            sessionID,
                             Int(clamping: event.generationIndex),
                             milliseconds(event.timestamp),
                             event.modelRaw,
@@ -153,7 +156,7 @@ struct AntigravityUsageImporter {
                     let day = LocalDayKey(date: event.timestamp, calendar: calendar)
                     let dayStart = milliseconds(day.date(calendar: calendar))
                     dailyAggregates[DailyKey(
-                        sessionID: conversation.sessionID,
+                        sessionID: sessionID,
                         dayKey: day.yyyyMMdd,
                         dayStartMs: dayStart,
                         model: model
@@ -191,8 +194,8 @@ struct AntigravityUsageImporter {
                     );
                     """,
                     bindings: [
-                        conversation.sessionID,
-                        conversation.sessionID,
+                        sessionID,
+                        sessionID,
                         conversation.sourcePath,
                         conversation.sourcePath,
                         conversation.projectName,
@@ -217,7 +220,7 @@ struct AntigravityUsageImporter {
                 for (model, aggregate) in byModel {
                     try insertSessionSummary(
                         database: database,
-                        sessionID: conversation.sessionID,
+                        sessionID: sessionID,
                         model: model,
                         aggregate: aggregate
                     )

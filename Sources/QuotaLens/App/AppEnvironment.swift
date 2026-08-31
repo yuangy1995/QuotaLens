@@ -912,9 +912,13 @@ public final class AppEnvironment: ObservableObject {
             refreshIntervals: refreshIntervals
         )
         guard generation == quotaInsightsGeneration else { return }
-        state.providerQuotaInsights = result
+        state.providerQuotaInsights = result.insights
+        state.providerHistoryWarnings = result.storageWarnings
+        for provider in result.storageWarnings where errors[provider] == nil {
+            errors[provider] = state.historyWarningText(for: provider)
+        }
         state.quotaRecommendations = QuotaRecommendationEngine.make(
-            insights: result,
+            insights: result.insights,
             enabledProviders: enabledProviders,
             errors: errors,
             antigravityActivity: activity
@@ -1172,10 +1176,7 @@ public final class AppEnvironment: ObservableObject {
             )
             state.latestClaudeUsage = snapshot
             state.claudeUsageStatus = .available
-            state.claudeUsageErrorText = refresh.historySaved ? nil : L10n.text(
-                "在线额度已更新，但本地历史记录暂时未保存。",
-                "Online quota was updated, but local history was not saved."
-            )
+            state.claudeUsageErrorText = refresh.storageWarningText
             state.claudeUsageCooldownUntil = nil
         case .failure(let error as ClaudeUsageClient.FetchError):
             switch error {
@@ -1362,10 +1363,7 @@ public final class AppEnvironment: ObservableObject {
             )
             state.latestAntigravityQuota = snapshot
             state.antigravityQuotaStatus = .available
-            state.antigravityQuotaErrorText = refresh.historySaved ? nil : L10n.text(
-                "在线额度已更新，但本地历史记录暂时未保存。",
-                "Online quota was updated, but local history was not saved."
-            )
+            state.antigravityQuotaErrorText = refresh.storageWarningText
         case .failure(let error as AntigravityCredentialError):
             state.antigravityQuotaStatus = error == .credentialsMissing ? .missingCredentials : .unavailable
             state.antigravityQuotaErrorText = error.errorDescription
@@ -2547,6 +2545,7 @@ public final class AppEnvironment: ObservableObject {
         state.antigravityActivityWarningText = nil
         state.antigravityActivitySnapshotsByProfile = [:]
         state.providerQuotaInsights = [:]
+        state.providerHistoryWarnings = []
         state.quotaRecommendations = []
         state.antigravitySyncState = ProviderSyncState(provider: .antigravity)
         enabledToolsStore.resetToDefaults()

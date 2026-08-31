@@ -19,6 +19,20 @@ public enum UsageProvider: String, CaseIterable, Identifiable, Sendable, Codable
 }
 }
 
+enum UsageSessionIdentity {
+    // Codex UUIDs remain unchanged for RPC, checkpoints and deletion journals.
+    // Other providers use a separate internal namespace in the shared tables.
+    static func key(provider: UsageProvider, rawSessionID: String) -> String {
+        provider == .codex ? rawSessionID : "\(provider.rawValue):\(rawSessionID)"
+    }
+
+    static func rawID(provider: UsageProvider, sessionKey: String) -> String {
+        let prefix = "\(provider.rawValue):"
+        guard provider != .codex, sessionKey.hasPrefix(prefix) else { return sessionKey }
+        return String(sessionKey.dropFirst(prefix.count))
+    }
+}
+
 public enum UsageProviderFilter: String, CaseIterable, Identifiable, Sendable, Codable, Hashable {
     case all
     case codex

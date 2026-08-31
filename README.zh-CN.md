@@ -42,6 +42,8 @@ Antigravity 额度监控依赖其内部登录与额度接口，可能随上游�
 
 ## 构建和运行
 
+PR 和 main 分支的 CI 会运行测试并生成 ad-hoc 签名的 Universal 安装包，检查双架构、Sparkle 辅助组件签名、Downloader 权限声明和 DMG 完整性。此流程不会发布新版本，也不要求公证。
+
 在项目根目录运行：
 
 ```bash

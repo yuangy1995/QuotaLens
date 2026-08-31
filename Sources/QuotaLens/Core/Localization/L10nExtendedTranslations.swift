@@ -1,4 +1,34 @@
 let extendedTranslations: [String: [AppLanguage: String]] = [
+    "Some Antigravity usage could not be recognized. Previously saved usage statistics have been kept.": [
+        .traditionalChinese: "部分 Antigravity 用量暫時無法識別，已保留上次的用量統計。",
+        .japanese: "一部の Antigravity 使用量を認識できなかったため、以前保存した使用量の統計を保持しています。",
+        .korean: "일부 Antigravity 사용량을 확인하지 못해 이전에 저장된 사용량 통계를 유지합니다.",
+        .spanish: "No se pudo reconocer parte del uso de Antigravity. Se conservan las estadísticas guardadas anteriormente.",
+        .german: "Ein Teil der Antigravity-Nutzung konnte nicht erkannt werden. Zuvor gespeicherte Nutzungsstatistiken bleiben erhalten.",
+        .french: "Une partie de l’utilisation d’Antigravity n’a pas pu être reconnue. Les statistiques précédemment enregistrées sont conservées.",
+        .portuguese: "Não foi possível reconhecer parte da utilização do Antigravity. As estatísticas guardadas anteriormente foram mantidas.",
+        .portugueseBrazil: "Não foi possível reconhecer parte do uso do Antigravity. As estatísticas salvas anteriormente foram mantidas."
+    ],
+    "Quota and new records were saved, but some older records could not be recovered.": [
+        .traditionalChinese: "額度和新記錄已儲存，但部分舊記錄未能恢復。",
+        .japanese: "クォータと新しい履歴は保存されましたが、一部の古い履歴を復元できませんでした。",
+        .korean: "할당량과 새 기록은 저장되었지만 일부 이전 기록은 복구하지 못했습니다.",
+        .spanish: "Se guardaron la cuota y los nuevos registros, pero no se pudieron recuperar algunos registros anteriores.",
+        .german: "Das Kontingent und neue Aufzeichnungen wurden gespeichert, aber einige ältere Aufzeichnungen konnten nicht wiederhergestellt werden.",
+        .french: "Le quota et les nouvelles données ont été enregistrés, mais certains anciens historiques n’ont pas pu être récupérés.",
+        .portuguese: "A quota e os novos registos foram guardados, mas não foi possível recuperar alguns registos antigos.",
+        .portugueseBrazil: "A cota e os novos registros foram salvos, mas não foi possível recuperar alguns registros antigos."
+    ],
+    "%@ history cannot be read right now. Quota is still available.": [
+        .traditionalChinese: "%@ 歷史記錄暫時無法讀取，仍可查看線上額度。",
+        .japanese: "現在 %@ の履歴を読み取れません。オンラインのクォータは引き続き確認できます。",
+        .korean: "현재 %@ 기록을 읽을 수 없습니다. 온라인 할당량은 계속 확인할 수 있습니다.",
+        .spanish: "No se puede leer el historial de %@ ahora. La cuota sigue disponible.",
+        .german: "Der Verlauf von %@ kann derzeit nicht gelesen werden. Das Kontingent ist weiterhin verfügbar.",
+        .french: "L’historique %@ ne peut pas être lu pour le moment. Le quota reste disponible.",
+        .portuguese: "Não é possível ler o histórico de %@ neste momento. A quota continua disponível.",
+        .portugueseBrazil: "Não é possível ler o histórico de %@ no momento. A cota continua disponível."
+    ],
     "Some Antigravity records could not be read. Statistics include previously saved data.": [
         .traditionalChinese: "部分 Antigravity 記錄暫時無法讀取，統計中保留了上次的資料。",
         .japanese: "一部の Antigravity 履歴を読み取れませんでした。統計には以前保存したデータが含まれています。",

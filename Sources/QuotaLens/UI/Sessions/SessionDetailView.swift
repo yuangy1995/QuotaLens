@@ -225,13 +225,13 @@ public struct SessionDetailView: View {
                     }
 
                     HStack(spacing: 6) {
-                        Text("ID: \(detail.session.sessionId)")
+                        Text("ID: \(detail.session.rawSessionId)")
                             .font(.system(size: 10.5, weight: .medium, design: .monospaced))
                             .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
 
                         Button(action: {
                             NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(detail.session.sessionId, forType: .string)
+                            NSPasteboard.general.setString(detail.session.rawSessionId, forType: .string)
                             isCopiedId = true
                             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { isCopiedId = false }
                         }) {

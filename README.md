@@ -42,6 +42,8 @@ Antigravity quota monitoring depends on its internal sign-in and quota interface
 
 ## Build And Run
 
+Pull request and main-branch CI runs the test suite and builds an ad-hoc-signed Universal package, checking both architectures, Sparkle helper signatures, Downloader permissions, and the DMG. It does not publish a release or require notarization.
+
 Run from the project root:
 
 ```bash
