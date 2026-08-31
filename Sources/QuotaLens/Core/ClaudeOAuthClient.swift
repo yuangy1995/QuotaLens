@@ -304,12 +304,14 @@ actor ClaudeUsageClient {
         case insufficientScope
         case unauthorized
         case rateLimited(retryAfter: TimeInterval?)
+        case incompatibleResponse
+        case partialResponse
         case unavailable
 
         var isAuthenticationFailure: Bool {
             switch self {
             case .noCredentials, .insufficientScope, .unauthorized: return true
-            case .rateLimited, .unavailable: return false
+            case .rateLimited, .incompatibleResponse, .partialResponse, .unavailable: return false
             }
         }
     }
@@ -324,6 +326,7 @@ actor ClaudeUsageClient {
     private var rejectedTokens: Set<String> = []
     private var keychainUnavailable = false
     private var refreshTask: Task<ClaudeStoredCredentials?, Never>?
+    private var confirmedLegacyAccountKey: String?
 
     init(
         session: URLSession = .shared,
@@ -344,6 +347,14 @@ actor ClaudeUsageClient {
     func clearMemoryToken() {
         memoryToken = nil
         memoryAccountKey = nil
+    }
+
+    func activeAccountKey() async -> String? {
+        await loadAccessToken()?.accountKey
+    }
+
+    func legacyAccountKeyForMigration() -> String? {
+        confirmedLegacyAccountKey
     }
 
     private func fetch(retriedAfterUnauthorized: Bool) async throws -> ClaudeUsageSnapshot {
@@ -391,39 +402,15 @@ actor ClaudeUsageClient {
     }
 
     private func loadAccessToken() async -> (accessToken: String, accountKey: String)? {
-        if let memoryToken, !rejectedTokens.contains(memoryToken) {
-            return (memoryToken, memoryAccountKey ?? accountKey(for: memoryToken))
-        }
-
-        var candidates: [ClaudeStoredCredentials] = []
-        if let cached = ClaudeOAuthCache.load(from: cacheURL) {
-            candidates.append(cached)
-            if Self.isUsable(cached, rejected: rejectedTokens) {
-                let accountKey = accountKey(for: cached)
-                memoryToken = cached.accessToken
-                memoryAccountKey = accountKey
-                return (cached.accessToken, accountKey)
-            }
-        }
+        let cached = ClaudeOAuthCache.load(from: cacheURL)
+        var localCredentials: [ClaudeStoredCredentials] = []
         if let file = Self.readClaudeCredentialsFile() {
-            candidates.append(file)
-            if Self.isUsable(file, rejected: rejectedTokens) {
-                let accountKey = accountKey(for: file)
-                memoryToken = file.accessToken
-                memoryAccountKey = accountKey
-                return (file.accessToken, accountKey)
-            }
+            localCredentials.append(file)
         }
         if !keychainUnavailable {
             switch Self.readKeychainCredentials(timeout: 2) {
             case .credentials(let credentials):
-                candidates.append(credentials)
-                if Self.isUsable(credentials, rejected: rejectedTokens) {
-                    let accountKey = accountKey(for: credentials)
-                    memoryToken = credentials.accessToken
-                    memoryAccountKey = accountKey
-                    return (credentials.accessToken, accountKey)
-                }
+                localCredentials.append(credentials)
             case .permanentlyUnavailable:
                 keychainUnavailable = true
             case .temporarilyUnavailable:
@@ -431,27 +418,53 @@ actor ClaudeUsageClient {
             }
         }
 
+        func resolvedKey(_ credentials: ClaudeStoredCredentials) -> String {
+            if let cached, let key = cached.accountKey,
+               credentials.accessToken == cached.accessToken
+                || (credentials.refreshToken != nil && credentials.refreshToken == cached.refreshToken) {
+                return key
+            }
+            return accountKey(for: credentials)
+        }
+        guard let active = localCredentials.first ?? cached else {
+            clearMemoryToken()
+            confirmedLegacyAccountKey = nil
+            return nil
+        }
+        let activeKey = resolvedKey(active)
+        let knownKeys = Set(localCredentials.map(resolvedKey))
+        confirmedLegacyAccountKey = cached?.accountKey == activeKey
+            && knownKeys.isSubset(of: [activeKey]) ? activeKey : nil
+
+        var candidates = localCredentials.filter { resolvedKey($0) == activeKey }
+        if let cached, resolvedKey(cached) == activeKey {
+            candidates.insert(cached, at: 0)
+        }
+        if let memoryToken, memoryAccountKey == activeKey, !rejectedTokens.contains(memoryToken) {
+            return (memoryToken, activeKey)
+        }
+        clearMemoryToken()
+        for candidate in candidates where Self.isUsable(candidate, rejected: rejectedTokens) {
+            memoryToken = candidate.accessToken
+            memoryAccountKey = activeKey
+            return (candidate.accessToken, activeKey)
+        }
+
         let refreshTokens = candidates.compactMap(\.refreshToken).filter { !$0.isEmpty }
         if let refreshToken = refreshTokens.first,
            let refreshed = await refreshSingleFlight(refreshToken, candidates: candidates) {
-            let accountKey = accountKey(for: refreshed)
             memoryToken = refreshed.accessToken
-            memoryAccountKey = accountKey
-            return (refreshed.accessToken, accountKey)
+            memoryAccountKey = activeKey
+            return (refreshed.accessToken, activeKey)
         }
         guard let first = candidates.first else { return nil }
-        let accountKey = accountKey(for: first)
-        memoryAccountKey = accountKey
-        return (first.accessToken, accountKey)
+        memoryAccountKey = activeKey
+        return (first.accessToken, activeKey)
     }
 
     private func accountKey(for credentials: ClaudeStoredCredentials) -> String {
         credentials.accountKey
             ?? AccountIdentity.stableAccountKey(from: credentials.refreshToken ?? credentials.accessToken)
-    }
-
-    private func accountKey(for accessToken: String) -> String {
-        AccountIdentity.stableAccountKey(from: accessToken)
     }
 
     private func refreshSingleFlight(
@@ -502,7 +515,7 @@ actor ClaudeUsageClient {
         return result
     }
 
-    static func decode(_ data: Data, capturedAt: Date, accountKey: String = "claude-local") throws -> ClaudeUsageSnapshot {
+    static func decode(_ data: Data, capturedAt: Date, accountKey: String) throws -> ClaudeUsageSnapshot {
         struct Wire: Decodable {
             let rate_limit_tier: String?
             let five_hour: WindowWire?
@@ -529,7 +542,7 @@ actor ClaudeUsageClient {
             let scope: Scope?
         }
         guard let wire = try? JSONDecoder().decode(Wire.self, from: data) else {
-            throw FetchError.unavailable
+            throw FetchError.incompatibleResponse
         }
 
         func date(_ raw: String?) -> Date? {
@@ -543,11 +556,11 @@ actor ClaudeUsageClient {
             title: String,
             wire: WindowWire?,
             duration: TimeInterval
-        ) -> ClaudeUsageSnapshot.Window? {
-            guard let wire,
-                  let used = wire.utilization ?? wire.used_percent,
+        ) throws -> ClaudeUsageSnapshot.Window? {
+            guard let wire else { return nil }
+            guard let used = wire.utilization ?? wire.used_percent,
                   used.isFinite,
-                  let reset = date(wire.resets_at ?? wire.reset_at) else { return nil }
+                  let reset = date(wire.resets_at ?? wire.reset_at) else { throw FetchError.partialResponse }
             return .init(id: id, title: title, usedPercent: used, resetAt: reset, windowDuration: duration)
         }
         func structuredWindow(
@@ -555,29 +568,29 @@ actor ClaudeUsageClient {
             title: String,
             wire: LimitWire?,
             duration: TimeInterval
-        ) -> ClaudeUsageSnapshot.Window? {
-            guard let wire,
-                  let used = wire.percent,
+        ) throws -> ClaudeUsageSnapshot.Window? {
+            guard let wire else { return nil }
+            guard let used = wire.percent,
                   used.isFinite,
-                  let reset = date(wire.resets_at) else { return nil }
+                  let reset = date(wire.resets_at) else { throw FetchError.partialResponse }
             return .init(id: id, title: title, usedPercent: used, resetAt: reset, windowDuration: duration)
         }
 
         let limits = wire.limits ?? []
-        let fiveStructured = structuredWindow(
+        let fiveStructured = try structuredWindow(
             id: "claude",
             title: L10n.text("5 小时", "5 Hours"),
             wire: limits.first(where: { $0.kind == "session" }),
             duration: 18_000
         )
-        let weeklyStructured = structuredWindow(
+        let weeklyStructured = try structuredWindow(
             id: "claude-weekly",
             title: L10n.text("7 天", "7 Days"),
             wire: limits.first(where: { $0.kind == "weekly_all" }),
             duration: 604_800
         )
         var scoped: [ClaudeUsageSnapshot.Window] = []
-        if let fable = window(
+        if let fable = try window(
             id: "fable",
             title: "Fable 5 · 7d",
             wire: wire.seven_day_fable,
@@ -588,30 +601,30 @@ actor ClaudeUsageClient {
         for item in limits where item.kind == "weekly_scoped" {
             guard let displayName = item.scope?.model?.display_name,
                   let id = canonicalLimitID(displayName),
-                  let decoded = structuredWindow(
+                  let decoded = try structuredWindow(
                     id: id,
                     title: "\(displayName) · 7d",
                     wire: item,
                     duration: 604_800
-                  ) else { continue }
+                  ) else { throw FetchError.partialResponse }
             if let index = scoped.firstIndex(where: { $0.id == id }) {
                 scoped[index] = decoded
             } else {
                 scoped.append(decoded)
             }
         }
-        if let opus = window(
+        if let opus = try window(
             id: "opus", title: "Opus · 7d", wire: wire.seven_day_opus, duration: 604_800
         ), !scoped.contains(where: { $0.id == "opus" }), opus.usedPercent > 0.5 {
             scoped.append(opus)
         }
-        if let sonnet = window(
+        if let sonnet = try window(
             id: "sonnet", title: "Sonnet · 7d", wire: wire.seven_day_sonnet, duration: 604_800
         ), !scoped.contains(where: { $0.id == "sonnet" }), sonnet.usedPercent > 0.5 {
             scoped.append(sonnet)
         }
 
-        return ClaudeUsageSnapshot(
+        let snapshot = try ClaudeUsageSnapshot(
             capturedAt: capturedAt,
             accountKey: accountKey,
             tier: wire.rate_limit_tier,
@@ -625,6 +638,8 @@ actor ClaudeUsageClient {
             ),
             scopedWeekly: scoped
         )
+        guard snapshot.hasQuota else { throw FetchError.incompatibleResponse }
+        return snapshot
     }
 
     private static func canonicalLimitID(_ value: String) -> String? {
@@ -685,7 +700,7 @@ actor ClaudeUsageClient {
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         guard status == errSecSuccess else {
             switch status {
-            case errSecItemNotFound, errSecAuthFailed, errSecUserCanceled:
+            case errSecAuthFailed, errSecUserCanceled:
                 return .permanentlyUnavailable
             default:
                 return .temporarilyUnavailable

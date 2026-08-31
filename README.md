@@ -38,6 +38,8 @@ QuotaLens is a native macOS menu bar dashboard for Codex, Claude, and Antigravit
 
 Codex, Claude, and Antigravity can be enabled or disabled independently.
 
+Antigravity quota monitoring depends on its internal sign-in and quota interfaces, which may change without notice. If compatibility changes, QuotaLens keeps the last successful quota data and reports that an update is needed. If some local records cannot be read, their saved history is kept until a complete scan succeeds.
+
 ## Build And Run
 
 Run from the project root:

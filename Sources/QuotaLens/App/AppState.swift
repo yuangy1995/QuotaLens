@@ -263,6 +263,7 @@ public final class AppState: ObservableObject {
     @Published public var antigravityQuotaErrorText: String?
     @Published public var isRefreshingAntigravityQuota: Bool = false
     @Published public var latestAntigravityActivity: AntigravityActivitySnapshot?
+    @Published public var antigravityActivityWarningText: String?
     @Published public var antigravityActivitySnapshotsByProfile: [AntigravityStateProfile: AntigravityActivitySnapshot] = [:]
     @Published public var providerQuotaInsights: [UsageProvider: [ProviderQuotaInsight]] = [:]
     @Published public var quotaRecommendations: [QuotaRecommendation] = []

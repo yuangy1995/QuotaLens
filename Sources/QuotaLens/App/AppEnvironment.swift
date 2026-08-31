@@ -171,10 +171,7 @@ public final class AppEnvironment: ObservableObject {
         self.refreshLoginItemState()
 
         if enabledToolsStore.isEnabled(.claude) {
-            if let hydrated = try? ClaudeQuotaRepository.hydrate(database: database) {
-                self.state.latestClaudeUsage = hydrated
-                self.state.claudeUsageStatus = .available
-            }
+            self.state.claudeUsageStatus = .loading
             self.startClaudeServices()
         } else {
             self.state.claudeUsageStatus = .disabled
@@ -184,7 +181,7 @@ public final class AppEnvironment: ObservableObject {
             if let credentials = try? AntigravityLocalStateReader().read(),
                let hydrated = try? AntigravityQuotaRepository.hydrate(
                    database: database,
-                   accountKey: credentials.accountKey,
+                   accountKey: credentials.legacyAccountKey,
                    sourceProfile: credentials.source.profile.rawValue
                ) {
                 self.state.latestAntigravityQuota = hydrated
@@ -1067,17 +1064,7 @@ public final class AppEnvironment: ObservableObject {
         }
         ClaudeUsageSettings.shared.isEnabled = enabled
         if enabled {
-            if let hydrated = try? ClaudeQuotaRepository.hydrate(database: database) {
-                state.latestClaudeUsage = hydrated
-                state.claudeUsageStatus = .available
-                state.establishWeeklyQuotaRecoveryBaseline(
-                    tool: .claude,
-                    samples: weeklyQuotaSamples(from: hydrated),
-                    accountKey: hydrated.accountKey
-                )
-            } else {
-                state.claudeUsageStatus = .loading
-            }
+            state.claudeUsageStatus = .loading
             startClaudeServices()
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -1086,6 +1073,7 @@ public final class AppEnvironment: ObservableObject {
             }
         } else {
             stopClaudeServices()
+            state.latestClaudeUsage = nil
             state.claudeUsageStatus = .disabled
             state.claudeUsageErrorText = nil
             state.claudeUsageCooldownUntil = nil
@@ -1119,6 +1107,21 @@ public final class AppEnvironment: ObservableObject {
                         self?.state.claudeUsageCooldownUntil = until
                         if let until {
                             self?.state.claudeUsageStatus = .limited(until: until)
+                        }
+                    }
+                },
+                onCachedSnapshot: { [weak self] snapshot in
+                    await MainActor.run {
+                        guard let self, ClaudeUsageSettings.shared.isEnabled else { return }
+                        self.state.latestClaudeUsage = snapshot
+                        self.state.claudeUsageStatus = snapshot == nil ? .loading : .available
+                        self.state.claudeUsageErrorText = nil
+                        if let snapshot {
+                            self.state.establishWeeklyQuotaRecoveryBaseline(
+                                tool: .claude,
+                                samples: self.weeklyQuotaSamples(from: snapshot),
+                                accountKey: snapshot.accountKey
+                            )
                         }
                     }
                 }
@@ -1156,10 +1159,11 @@ public final class AppEnvironment: ObservableObject {
         claudeFileWatcher = nil
     }
 
-    private func applyClaudeUsageResult(_ result: Result<ClaudeUsageSnapshot, Error>) {
+    private func applyClaudeUsageResult(_ result: Result<ProviderQuotaRefreshResult<ClaudeUsageSnapshot>, Error>) {
         guard ClaudeUsageSettings.shared.isEnabled else { return }
         switch result {
-        case .success(let snapshot):
+        case .success(let refresh):
+            let snapshot = refresh.snapshot
             state.processWeeklyQuotaRecovery(
                 tool: .claude,
                 samples: weeklyQuotaSamples(from: snapshot),
@@ -1168,7 +1172,10 @@ public final class AppEnvironment: ObservableObject {
             )
             state.latestClaudeUsage = snapshot
             state.claudeUsageStatus = .available
-            state.claudeUsageErrorText = nil
+            state.claudeUsageErrorText = refresh.historySaved ? nil : L10n.text(
+                "在线额度已更新，但本地历史记录暂时未保存。",
+                "Online quota was updated, but local history was not saved."
+            )
             state.claudeUsageCooldownUntil = nil
         case .failure(let error as ClaudeUsageClient.FetchError):
             switch error {
@@ -1191,6 +1198,13 @@ public final class AppEnvironment: ObservableObject {
                 state.claudeUsageErrorText = L10n.text(
                     "Claude 暂时延迟刷新，将自动重试。",
                     "Claude refresh is temporarily delayed and will retry automatically."
+                )
+            case .incompatibleResponse, .partialResponse:
+                state.claudeUsageStatus = .unavailable
+                state.claudeUsageErrorText = L10n.format(
+                    "%@ quota could not be read completely. Check for a QuotaLens update.",
+                    zhHans: "暂时无法完整读取 %@ 额度，请检查 QuotaLens 更新。",
+                    "Claude"
                 )
             case .unavailable:
                 state.claudeUsageStatus = .unavailable
@@ -1216,7 +1230,7 @@ public final class AppEnvironment: ObservableObject {
             if let credentials = try? AntigravityLocalStateReader().read(preferredProfile: preferredAntigravityProfile),
                let hydrated = try? AntigravityQuotaRepository.hydrate(
                    database: database,
-                   accountKey: credentials.accountKey,
+                   accountKey: credentials.legacyAccountKey,
                    sourceProfile: credentials.source.profile.rawValue
                ) {
                 state.latestAntigravityQuota = hydrated
@@ -1243,6 +1257,7 @@ public final class AppEnvironment: ObservableObject {
             stopAntigravityServices()
             state.latestAntigravityQuota = nil
             state.latestAntigravityActivity = nil
+            state.antigravityActivityWarningText = nil
             state.antigravityActivitySnapshotsByProfile = [:]
             state.antigravityQuotaStatus = .disabled
             state.antigravityQuotaErrorText = nil
@@ -1265,10 +1280,14 @@ public final class AppEnvironment: ObservableObject {
         await poller.pollOnce(force: force, preferredProfile: preferredAntigravityProfile)
     }
 
-    private func scanAntigravityActivity() async {
+    public func scanAntigravityActivity() async {
+        guard enabledToolsStore.isEnabled(.antigravity) else { return }
         await antigravityActivityCoordinator.scanNow(preferredProfile: preferredAntigravityProfile)
+        guard enabledToolsStore.isEnabled(.antigravity) else { return }
         state.latestAntigravityActivity = antigravityActivityCoordinator.latestSnapshot
         state.antigravityActivitySnapshotsByProfile = antigravityActivityCoordinator.snapshotsByProfile
+        state.antigravityActivityWarningText = antigravityActivityCoordinator.isPartial
+            ? antigravityActivityCoordinator.statusText : nil
         await refreshProviderQuotaInsights()
     }
 
@@ -1287,6 +1306,21 @@ public final class AppEnvironment: ObservableObject {
                 onSyncState: { [weak self] syncState in
                     await MainActor.run {
                         self?.state.antigravitySyncState = syncState
+                    }
+                },
+                onCachedSnapshot: { [weak self] snapshot in
+                    await MainActor.run {
+                        guard let self, self.enabledToolsStore.isEnabled(.antigravity) else { return }
+                        self.state.latestAntigravityQuota = snapshot
+                        self.state.antigravityQuotaStatus = snapshot == nil ? .loading : .available
+                        self.state.antigravityQuotaErrorText = nil
+                        if let snapshot {
+                            self.state.establishWeeklyQuotaRecoveryBaseline(
+                                tool: .antigravity,
+                                samples: self.weeklyQuotaSamples(from: snapshot),
+                                accountKey: snapshot.accountKey
+                            )
+                        }
                     }
                 }
             )
@@ -1315,10 +1349,11 @@ public final class AppEnvironment: ObservableObject {
         antigravityFileWatcher = nil
     }
 
-    private func applyAntigravityQuotaResult(_ result: Result<AntigravityQuotaSnapshot, Error>) {
+    private func applyAntigravityQuotaResult(_ result: Result<ProviderQuotaRefreshResult<AntigravityQuotaSnapshot>, Error>) {
         guard enabledToolsStore.isEnabled(.antigravity) else { return }
         switch result {
-        case .success(let snapshot):
+        case .success(let refresh):
+            let snapshot = refresh.snapshot
             state.processWeeklyQuotaRecovery(
                 tool: .antigravity,
                 samples: weeklyQuotaSamples(from: snapshot),
@@ -1327,10 +1362,16 @@ public final class AppEnvironment: ObservableObject {
             )
             state.latestAntigravityQuota = snapshot
             state.antigravityQuotaStatus = .available
-            state.antigravityQuotaErrorText = nil
+            state.antigravityQuotaErrorText = refresh.historySaved ? nil : L10n.text(
+                "在线额度已更新，但本地历史记录暂时未保存。",
+                "Online quota was updated, but local history was not saved."
+            )
+        case .failure(let error as AntigravityCredentialError):
+            state.antigravityQuotaStatus = error == .credentialsMissing ? .missingCredentials : .unavailable
+            state.antigravityQuotaErrorText = error.errorDescription
         case .failure(let error as AntigravityFetchError):
             switch error {
-            case .missingCredentials, .malformedCredentials:
+            case .missingCredentials:
                 state.antigravityQuotaStatus = .missingCredentials
                 state.antigravityQuotaErrorText = L10n.text(
                     "请先在 Antigravity 中登录。",
@@ -1365,6 +1406,19 @@ public final class AppEnvironment: ObservableObject {
                 state.antigravityQuotaErrorText = L10n.text(
                     "暂时无法更新 Antigravity 额度。",
                     "Antigravity quota could not be updated right now."
+                )
+            case .malformedCredentials, .incompatibleResponse, .partialResponse:
+                state.antigravityQuotaStatus = .unavailable
+                state.antigravityQuotaErrorText = L10n.format(
+                    "%@ quota could not be read completely. Check for a QuotaLens update.",
+                    zhHans: "暂时无法完整读取 %@ 额度，请检查 QuotaLens 更新。",
+                    "Antigravity"
+                )
+            case .endpointUnavailable:
+                state.antigravityQuotaStatus = .unavailable
+                state.antigravityQuotaErrorText = L10n.text(
+                    "Antigravity 的额度服务暂时不可用，请检查 QuotaLens 更新。",
+                    "Antigravity quota service is unavailable. Check for a QuotaLens update."
                 )
             }
         case .failure:
@@ -2490,6 +2544,7 @@ public final class AppEnvironment: ObservableObject {
         state.antigravityQuotaStatus = .disabled
         state.antigravityQuotaErrorText = nil
         state.latestAntigravityActivity = nil
+        state.antigravityActivityWarningText = nil
         state.antigravityActivitySnapshotsByProfile = [:]
         state.providerQuotaInsights = [:]
         state.quotaRecommendations = []

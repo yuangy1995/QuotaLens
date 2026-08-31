@@ -38,6 +38,8 @@ QuotaLens 是一个面向 Codex、Claude 与 Antigravity 的原生 macOS 菜单�
 
 Codex、Claude 与 Antigravity 均可独立启用或关闭。
 
+Antigravity 额度监控依赖其内部登录与额度接口，可能随上游调整而变化。遇到兼容性变化时，QuotaLens 会保留上次成功读取的额度并提示检查更新；部分本地记录暂时无法读取时，也会保留对应历史，直到完整扫描成功。
+
 ## 构建和运行
 
 在项目根目录运行：

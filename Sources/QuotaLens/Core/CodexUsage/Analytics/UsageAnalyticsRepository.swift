@@ -1534,15 +1534,18 @@ public final class UsageAnalyticsRepository: Sendable {
     }
 
     // MARK: - 5. 额度预测快照
-    public func fetchRecentRateLimitSnapshots(accountKey: String? = nil, limit: Int = 50) throws -> [RateLimitSnapshotRecord] {
+    public func fetchRecentRateLimitSnapshots(accountKey: String? = nil, provider: UsageProvider? = nil, limit: Int = 50) throws -> [RateLimitSnapshotRecord] {
         var bindings: [Any?] = []
-        let whereClause: String
+        var clauses: [String] = []
         if let accountKey {
-            whereClause = "WHERE account_key = ?"
+            clauses.append("account_key = ?")
             bindings.append(accountKey)
-        } else {
-            whereClause = ""
         }
+        if let provider {
+            clauses.append("provider = ?")
+            bindings.append(provider.rawValue)
+        }
+        let whereClause = clauses.isEmpty ? "" : "WHERE " + clauses.joined(separator: " AND ")
         bindings.append(limit)
 
         let sql = """

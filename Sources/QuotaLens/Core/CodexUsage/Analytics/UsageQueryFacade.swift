@@ -115,8 +115,8 @@ public actor UsageQueryFacade {
         try repository.fetchActivityHeatmap(year: year, calendar: calendar, providerFilter: providerFilter)
     }
 
-    public func getRecentRateLimitSnapshots(accountKey: String? = nil, limit: Int = 50) throws -> [RateLimitSnapshotRecord] {
-        try repository.fetchRecentRateLimitSnapshots(accountKey: accountKey, limit: limit)
+    public func getRecentRateLimitSnapshots(accountKey: String? = nil, provider: UsageProvider? = nil, limit: Int = 50) throws -> [RateLimitSnapshotRecord] {
+        try repository.fetchRecentRateLimitSnapshots(accountKey: accountKey, provider: provider, limit: limit)
     }
 
     public func getDiagnostics() throws -> UsageDiagnosticsDTO {

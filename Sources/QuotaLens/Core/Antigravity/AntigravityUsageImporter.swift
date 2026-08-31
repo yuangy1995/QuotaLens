@@ -34,18 +34,31 @@ struct AntigravityUsageImporter {
         let model: String
     }
 
-    static func replace(
-        conversations: [AntigravityConversationData],
+    static func importScan(
+        _ scan: AntigravityConversationScanResult,
         database: SQLiteDatabase
     ) throws {
         let calendar = UsageDayBucketer.calendar()
-        let sessions = conversations.sorted { $0.sessionID < $1.sessionID }
+        let sessions = scan.conversations.sorted { $0.sessionID < $1.sessionID }
+        let successfulPaths = Set(scan.successfulSources.map(\.path))
+        let discoveredPaths = Set(scan.discoveredSources.map(\.path))
 
         try database.transaction {
-            try database.execute(sql: "DELETE FROM codex_daily_usage_summaries WHERE provider = 'antigravity';")
-            try database.execute(sql: "DELETE FROM codex_session_summaries WHERE provider = 'antigravity';")
-            try database.execute(sql: "DELETE FROM codex_usage_events WHERE provider = 'antigravity';")
-            try database.execute(sql: "DELETE FROM codex_sessions WHERE provider = 'antigravity';")
+            let existing = try database.executeQuery(
+                sql: "SELECT session_id, source_path FROM codex_sessions WHERE provider = 'antigravity';"
+            ) { statement in
+                (String(cString: sqlite3_column_text(statement, 0)), String(cString: sqlite3_column_text(statement, 1)))
+            }
+            for (sessionID, sourcePath) in existing {
+                guard successfulPaths.contains(sourcePath)
+                    || (scan.isComplete && !discoveredPaths.contains(sourcePath)) else { continue }
+                for table in ["codex_daily_usage_summaries", "codex_session_summaries", "codex_usage_events", "codex_sessions"] {
+                    try database.executeUpdate(
+                        sql: "DELETE FROM \(table) WHERE provider = 'antigravity' AND session_id = ?;",
+                        bindings: [sessionID]
+                    )
+                }
+            }
 
             var dailyAggregates: [DailyKey: Aggregate] = [:]
 

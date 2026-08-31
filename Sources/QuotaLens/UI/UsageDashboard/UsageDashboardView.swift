@@ -353,11 +353,14 @@ struct ProviderUsageDashboardView: View {
         }
 
         var points: [QuotaForecastEngine.RateSnapshotPoint] = []
+        let forecastAccountKey = store.providerFilter == .claude
+            ? env.state.latestClaudeUsage?.accountKey
+            : (env.state.selectedAccountKey ?? env.state.account?.accountKey)
         if store.providerFilter != .antigravity,
+           let forecastAccountKey,
            let storedSnaps = try? await env.usageQueryFacade.getRecentRateLimitSnapshots(
-               accountKey: store.providerFilter == .claude
-                   ? ClaudeQuotaRepository.accountKey
-                   : (env.state.selectedAccountKey ?? env.state.account?.accountKey),
+               accountKey: forecastAccountKey,
+               provider: store.providerFilter == .claude ? .claude : .codex,
                limit: 300
            ) {
             points = storedSnaps.compactMap { s in
@@ -413,7 +416,7 @@ struct ProviderUsageDashboardView: View {
             guard let usage = env.state.latestClaudeUsage,
                   let window = usage.fiveHour ?? usage.sevenDay else { return nil }
             return RateLimitSnapshotRecord(
-                accountKey: ClaudeQuotaRepository.accountKey,
+                accountKey: usage.accountKey,
                 observedAt: Int64(usage.capturedAt.timeIntervalSince1970),
                 limitId: window.id,
                 slot: window.windowDuration <= 18_000 ? "primary" : "secondary",

@@ -160,6 +160,7 @@ public struct AntigravityQuotaSnapshot: Equatable, Sendable, Codable {
     public let capturedAt: Date
     public let groups: [Group]
     public let models: [Model]
+    public let legacyAccountKey: String?
 
     public init(
         sourceProfile: String,
@@ -168,7 +169,8 @@ public struct AntigravityQuotaSnapshot: Equatable, Sendable, Codable {
         planName: String?,
         capturedAt: Date,
         groups: [Group],
-        models: [Model]
+        models: [Model],
+        legacyAccountKey: String? = nil
     ) {
         self.sourceProfile = sourceProfile
         self.accountKey = accountKey
@@ -177,6 +179,7 @@ public struct AntigravityQuotaSnapshot: Equatable, Sendable, Codable {
         self.capturedAt = capturedAt
         self.groups = groups
         self.models = models
+        self.legacyAccountKey = legacyAccountKey
     }
 
     public var buckets: [Bucket] {

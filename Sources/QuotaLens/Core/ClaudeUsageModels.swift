@@ -1,7 +1,7 @@
 import Foundation
 
-public struct ClaudeUsageSnapshot: Equatable, Sendable {
-    public struct Window: Equatable, Sendable, Identifiable {
+public struct ClaudeUsageSnapshot: Equatable, Sendable, Codable {
+    public struct Window: Equatable, Sendable, Identifiable, Codable {
         public let id: String
         public let title: String
         public let usedPercent: Double
@@ -34,7 +34,7 @@ public struct ClaudeUsageSnapshot: Equatable, Sendable {
     }
 
     public let capturedAt: Date
-    let accountKey: String
+    public let accountKey: String
     public let tier: String?
     public let fiveHour: Window?
     public let staleFiveHour: Window?
@@ -42,24 +42,6 @@ public struct ClaudeUsageSnapshot: Equatable, Sendable {
     public let scopedWeekly: [Window]
 
     public init(
-        capturedAt: Date,
-        tier: String?,
-        fiveHour: Window?,
-        staleFiveHour: Window? = nil,
-        sevenDay: Window?,
-        scopedWeekly: [Window] = []
-    ) {
-        self.capturedAt = capturedAt
-        self.accountKey = "claude-local"
-        self.tier = tier
-        self.fiveHour = fiveHour
-        self.staleFiveHour = staleFiveHour
-        self.sevenDay = sevenDay
-        var seen = Set<String>()
-        self.scopedWeekly = scopedWeekly.filter { seen.insert($0.id).inserted }
-    }
-
-    init(
         capturedAt: Date,
         accountKey: String,
         tier: String?,
@@ -86,6 +68,7 @@ public struct ClaudeUsageSnapshot: Equatable, Sendable {
     public func preservingStaleFiveHour(from previous: ClaudeUsageSnapshot?) -> ClaudeUsageSnapshot {
         guard fiveHour == nil,
               staleFiveHour == nil,
+              previous?.accountKey == accountKey,
               sevenDay != nil || !scopedWeekly.isEmpty,
               let old = previous?.fiveHour ?? previous?.staleFiveHour,
               old.resetAt <= capturedAt else {

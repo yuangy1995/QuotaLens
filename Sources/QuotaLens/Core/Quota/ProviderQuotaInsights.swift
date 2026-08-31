@@ -42,6 +42,11 @@ public enum ProviderDataFreshness: Int, Comparable, Sendable {
     }
 }
 
+public struct ProviderQuotaRefreshResult<Snapshot: Sendable>: Sendable {
+    public let snapshot: Snapshot
+    public let historySaved: Bool
+}
+
 public struct ProviderSyncState: Equatable, Sendable {
     public let provider: UsageProvider
     public let lastAttemptAt: Date?

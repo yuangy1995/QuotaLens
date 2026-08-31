@@ -1,4 +1,104 @@
 let extendedTranslations: [String: [AppLanguage: String]] = [
+    "Some Antigravity records could not be read. Statistics include previously saved data.": [
+        .traditionalChinese: "部分 Antigravity 記錄暫時無法讀取，統計中保留了上次的資料。",
+        .japanese: "一部の Antigravity 履歴を読み取れませんでした。統計には以前保存したデータが含まれています。",
+        .korean: "일부 Antigravity 기록을 읽지 못했습니다. 통계에는 이전에 저장된 데이터가 포함됩니다.",
+        .spanish: "No se pudieron leer algunos registros de Antigravity. Las estadísticas incluyen datos guardados anteriormente.",
+        .german: "Einige Antigravity-Aufzeichnungen konnten nicht gelesen werden. Die Statistiken enthalten zuvor gespeicherte Daten.",
+        .french: "Certains historiques Antigravity n’ont pas pu être lus. Les statistiques incluent des données précédemment enregistrées.",
+        .portuguese: "Não foi possível ler alguns registos do Antigravity. As estatísticas incluem dados guardados anteriormente.",
+        .portugueseBrazil: "Não foi possível ler alguns registros do Antigravity. As estatísticas incluem dados salvos anteriormente."
+    ],
+    "Antigravity was not found. Install it and sign in first.": [
+        .traditionalChinese: "未找到 Antigravity，請先安裝並登入。",
+        .japanese: "Antigravity が見つかりません。先にインストールしてログインしてください。",
+        .korean: "Antigravity를 찾을 수 없습니다. 먼저 설치하고 로그인하세요.",
+        .spanish: "No se encontró Antigravity. Instálalo e inicia sesión primero.",
+        .german: "Antigravity wurde nicht gefunden. Installieren Sie es und melden Sie sich an.",
+        .french: "Antigravity est introuvable. Installez-le et connectez-vous d’abord.",
+        .portuguese: "O Antigravity não foi encontrado. Instale-o e inicie sessão primeiro.",
+        .portugueseBrazil: "O Antigravity não foi encontrado. Instale-o e faça login primeiro."
+    ],
+    "No Antigravity local records were found. Open it and finish setup first.": [
+        .traditionalChinese: "尚未找到 Antigravity 本機記錄，請先開啟並完成設定。",
+        .japanese: "Antigravity のローカル履歴が見つかりません。アプリを開いて初期設定を完了してください。",
+        .korean: "Antigravity 로컬 기록을 찾을 수 없습니다. 앱을 열고 초기 설정을 완료하세요.",
+        .spanish: "No se encontraron registros locales de Antigravity. Ábrelo y completa la configuración.",
+        .german: "Keine lokalen Antigravity-Aufzeichnungen gefunden. Öffnen Sie die App und schließen Sie die Einrichtung ab.",
+        .french: "Aucun historique local Antigravity n’a été trouvé. Ouvrez l’application et terminez la configuration.",
+        .portuguese: "Não foram encontrados registos locais do Antigravity. Abra-o e conclua a configuração.",
+        .portugueseBrazil: "Nenhum registro local do Antigravity foi encontrado. Abra-o e conclua a configuração."
+    ],
+    "Antigravity local records are busy. An automatic retry will follow.": [
+        .traditionalChinese: "Antigravity 正在使用本機記錄，稍後將自動重試。",
+        .japanese: "Antigravity のローカル履歴は使用中です。後ほど自動的に再試行します。",
+        .korean: "Antigravity 로컬 기록이 사용 중입니다. 잠시 후 자동으로 다시 시도합니다.",
+        .spanish: "Los registros locales de Antigravity están en uso. Se volverá a intentar automáticamente.",
+        .german: "Die lokalen Antigravity-Aufzeichnungen werden gerade verwendet. Ein neuer Versuch erfolgt automatisch.",
+        .french: "Les historiques locaux Antigravity sont en cours d’utilisation. Une nouvelle tentative sera effectuée automatiquement.",
+        .portuguese: "Os registos locais do Antigravity estão em utilização. Será efetuada uma nova tentativa automaticamente.",
+        .portugueseBrazil: "Os registros locais do Antigravity estão em uso. Uma nova tentativa será feita automaticamente."
+    ],
+    "Antigravity local records cannot be accessed. Check access permissions.": [
+        .traditionalChinese: "沒有權限讀取 Antigravity 本機記錄，請檢查存取權限。",
+        .japanese: "Antigravity のローカル履歴にアクセスできません。アクセス権限を確認してください。",
+        .korean: "Antigravity 로컬 기록에 접근할 수 없습니다. 접근 권한을 확인하세요.",
+        .spanish: "No se puede acceder a los registros locales de Antigravity. Comprueba los permisos de acceso.",
+        .german: "Auf lokale Antigravity-Aufzeichnungen kann nicht zugegriffen werden. Prüfen Sie die Zugriffsrechte.",
+        .french: "L’accès aux historiques locaux Antigravity est impossible. Vérifiez les autorisations d’accès.",
+        .portuguese: "Não é possível aceder aos registos locais do Antigravity. Verifique as permissões de acesso.",
+        .portugueseBrazil: "Não é possível acessar os registros locais do Antigravity. Verifique as permissões de acesso."
+    ],
+    "Antigravity's data format has changed. Check for a QuotaLens update.": [
+        .traditionalChinese: "Antigravity 的資料格式已變更，請檢查 QuotaLens 更新。",
+        .japanese: "Antigravity のデータ形式が変更されました。QuotaLens の更新を確認してください。",
+        .korean: "Antigravity 데이터 형식이 변경되었습니다. QuotaLens 업데이트를 확인하세요.",
+        .spanish: "El formato de datos de Antigravity ha cambiado. Busca una actualización de QuotaLens.",
+        .german: "Das Datenformat von Antigravity hat sich geändert. Suchen Sie nach einem QuotaLens-Update.",
+        .french: "Le format des données Antigravity a changé. Recherchez une mise à jour de QuotaLens.",
+        .portuguese: "O formato dos dados do Antigravity mudou. Procure uma atualização do QuotaLens.",
+        .portugueseBrazil: "O formato dos dados do Antigravity mudou. Verifique se há uma atualização do QuotaLens."
+    ],
+    "Antigravity local records are damaged. Try reopening Antigravity.": [
+        .traditionalChinese: "Antigravity 本機記錄已損壞，請嘗試重新開啟 Antigravity。",
+        .japanese: "Antigravity のローカル履歴が破損しています。Antigravity を開き直してください。",
+        .korean: "Antigravity 로컬 기록이 손상되었습니다. Antigravity를 다시 열어 보세요.",
+        .spanish: "Los registros locales de Antigravity están dañados. Intenta volver a abrir Antigravity.",
+        .german: "Die lokalen Antigravity-Aufzeichnungen sind beschädigt. Öffnen Sie Antigravity erneut.",
+        .french: "Les historiques locaux Antigravity sont endommagés. Essayez de rouvrir Antigravity.",
+        .portuguese: "Os registos locais do Antigravity estão danificados. Tente reabrir o Antigravity.",
+        .portugueseBrazil: "Os registros locais do Antigravity estão danificados. Tente reabrir o Antigravity."
+    ],
+    "Antigravity local records cannot be read right now. An automatic retry will follow.": [
+        .traditionalChinese: "暫時無法讀取 Antigravity 本機記錄，稍後將自動重試。",
+        .japanese: "現在 Antigravity のローカル履歴を読み取れません。後ほど自動的に再試行します。",
+        .korean: "지금은 Antigravity 로컬 기록을 읽을 수 없습니다. 잠시 후 자동으로 다시 시도합니다.",
+        .spanish: "No se pueden leer los registros locales de Antigravity ahora. Se volverá a intentar automáticamente.",
+        .german: "Lokale Antigravity-Aufzeichnungen können derzeit nicht gelesen werden. Ein neuer Versuch erfolgt automatisch.",
+        .french: "Les historiques locaux Antigravity ne peuvent pas être lus pour le moment. Une nouvelle tentative sera effectuée automatiquement.",
+        .portuguese: "Não é possível ler os registos locais do Antigravity neste momento. Será efetuada uma nova tentativa automaticamente.",
+        .portugueseBrazil: "Não é possível ler os registros locais do Antigravity no momento. Uma nova tentativa será feita automaticamente."
+    ],
+    "%@ quota could not be read completely. Check for a QuotaLens update.": [
+        .traditionalChinese: "暫時無法完整讀取 %@ 額度，請檢查 QuotaLens 更新。",
+        .japanese: "%@ のクォータを完全に読み取れませんでした。QuotaLens の更新を確認してください。",
+        .korean: "%@ 할당량을 완전히 읽지 못했습니다. QuotaLens 업데이트를 확인하세요.",
+        .spanish: "No se pudo leer toda la cuota de %@. Busca una actualización de QuotaLens.",
+        .german: "Das Kontingent von %@ konnte nicht vollständig gelesen werden. Suchen Sie nach einem QuotaLens-Update.",
+        .french: "Le quota %@ n’a pas pu être lu entièrement. Recherchez une mise à jour de QuotaLens.",
+        .portuguese: "Não foi possível ler toda a quota de %@. Procure uma atualização do QuotaLens.",
+        .portugueseBrazil: "Não foi possível ler toda a cota de %@. Verifique se há uma atualização do QuotaLens."
+    ],
+    "Antigravity quota service is unavailable. Check for a QuotaLens update.": [
+        .traditionalChinese: "Antigravity 的額度服務暫時無法使用，請檢查 QuotaLens 更新。",
+        .japanese: "Antigravity のクォータサービスを利用できません。QuotaLens の更新を確認してください。",
+        .korean: "Antigravity 할당량 서비스를 사용할 수 없습니다. QuotaLens 업데이트를 확인하세요.",
+        .spanish: "El servicio de cuotas de Antigravity no está disponible. Busca una actualización de QuotaLens.",
+        .german: "Der Kontingentdienst von Antigravity ist nicht verfügbar. Suchen Sie nach einem QuotaLens-Update.",
+        .french: "Le service de quota Antigravity est indisponible. Recherchez une mise à jour de QuotaLens.",
+        .portuguese: "O serviço de quotas do Antigravity está indisponível. Procure uma atualização do QuotaLens.",
+        .portugueseBrazil: "O serviço de cotas do Antigravity está indisponível. Verifique se há uma atualização do QuotaLens."
+    ],
     "Online quota remains available, but local records cannot currently be read or saved.": [
         .traditionalChinese: "線上額度仍可使用，但目前無法讀取或儲存本機記錄。",
         .japanese: "オンラインのクォータは利用できますが、現在ローカル履歴を読み書きできません。",

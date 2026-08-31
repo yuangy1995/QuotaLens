@@ -572,7 +572,7 @@ public struct SettingsView: View {
                     .disabled(state.isRefreshingAntigravityQuota)
 
                     Button {
-                        Task { await env.antigravityActivityCoordinator.scanNow() }
+                        Task { await env.scanAntigravityActivity() }
                     } label: {
                         Label(L10n.text("读取本机活动", "Read Local Activity"), systemImage: "waveform.path.ecg")
                     }

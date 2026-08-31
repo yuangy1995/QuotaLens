@@ -45,7 +45,7 @@ private func addUnpricedReasonColumns(database: SQLiteDatabase, table: String) t
 }
 
 public struct SchemaMigrations {
-    public static let targetSchemaVersion = 15
+    public static let targetSchemaVersion = 16
 
     public static func migrate(database: SQLiteDatabase) throws {
         let currentVersion = try database.intScalar(sql: "PRAGMA user_version;")
@@ -79,7 +79,8 @@ public struct SchemaMigrations {
             V12AggregateReasonsAndRebuildStateMigration(),
             V13Round2ReliabilityMigration(),
             V14MultiProviderAndClaudeMigration(),
-            V15AntigravityMigration()
+            V15AntigravityMigration(),
+            V16ProviderAccountAliasesMigration()
         ]
 
         for migration in migrations where migration.version > currentVersion {
@@ -90,6 +91,24 @@ public struct SchemaMigrations {
         }
 
         try V5AggregateOnlyUsageMigration.compactIfNeeded(database: database)
+    }
+}
+
+// MARK: - V16: verified provider account aliases
+private struct V16ProviderAccountAliasesMigration: DatabaseMigration {
+    let version = 16
+    let name = "V16ProviderAccountAliases"
+
+    func apply(database: SQLiteDatabase) throws {
+        try database.execute(sql: """
+        CREATE TABLE IF NOT EXISTS account_aliases (
+            provider TEXT NOT NULL,
+            legacy_account_key TEXT NOT NULL,
+            canonical_account_key TEXT NOT NULL,
+            migrated_at INTEGER NOT NULL,
+            PRIMARY KEY (provider, legacy_account_key)
+        );
+        """)
     }
 }
 

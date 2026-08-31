@@ -4,11 +4,54 @@ import SQLite3
 
 public struct AntigravityLocalCredentials: Sendable, Equatable {
     public let source: AntigravityStateSource
-    public let accountKey: String
+    public let legacyAccountKey: String
     public let accessToken: String?
     public let refreshToken: String
     public let expiresAt: Date?
     public let isGCPToS: Bool
+}
+
+public enum AntigravityCredentialError: Error, Equatable, LocalizedError, Sendable {
+    case applicationNotFound
+    case profileNotFound
+    case credentialsMissing
+    case databaseBusy
+    case databaseOpenFailed
+    case unsupportedSchema
+    case malformedPayload
+    case permissionDenied
+    case databaseCorrupt
+
+    public var errorDescription: String? {
+        switch self {
+        case .applicationNotFound:
+            return L10n.text("未找到 Antigravity，请先安装并登录。", "Antigravity was not found. Install it and sign in first.")
+        case .profileNotFound:
+            return L10n.text("尚未找到 Antigravity 本地记录，请先打开并完成设置。", "No Antigravity local records were found. Open it and finish setup first.")
+        case .credentialsMissing:
+            return L10n.text("请先在 Antigravity 中登录。", "Sign in to Antigravity first.")
+        case .databaseBusy:
+            return L10n.text("Antigravity 正在使用本地记录，将稍后自动重试。", "Antigravity local records are busy. An automatic retry will follow.")
+        case .permissionDenied:
+            return L10n.text("没有权限读取 Antigravity 本地记录，请检查访问权限。", "Antigravity local records cannot be accessed. Check access permissions.")
+        case .unsupportedSchema, .malformedPayload:
+            return L10n.text("Antigravity 的数据格式已变化，请检查 QuotaLens 更新。", "Antigravity's data format has changed. Check for a QuotaLens update.")
+        case .databaseCorrupt:
+            return L10n.text("Antigravity 本地记录已损坏，请尝试重新打开 Antigravity。", "Antigravity local records are damaged. Try reopening Antigravity.")
+        case .databaseOpenFailed:
+            return L10n.text("暂时无法读取 Antigravity 本地记录，将稍后自动重试。", "Antigravity local records cannot be read right now. An automatic retry will follow.")
+        }
+    }
+
+    static func databaseError(_ status: Int32) -> Self {
+        switch status & 0xff {
+        case SQLITE_BUSY, SQLITE_LOCKED: return .databaseBusy
+        case SQLITE_PERM, SQLITE_AUTH: return .permissionDenied
+        case SQLITE_CORRUPT, SQLITE_NOTADB: return .databaseCorrupt
+        case SQLITE_SCHEMA, SQLITE_ERROR: return .unsupportedSchema
+        default: return .databaseOpenFailed
+        }
+    }
 }
 
 public enum AntigravityFetchError: Error, Equatable, LocalizedError, Sendable {
@@ -19,6 +62,9 @@ public enum AntigravityFetchError: Error, Equatable, LocalizedError, Sendable {
     case rateLimited(retryAfter: TimeInterval?)
     case needsInitialization
     case noQuotaData
+    case incompatibleResponse
+    case partialResponse
+    case endpointUnavailable
     case unavailable
 
     public var errorDescription: String? {
@@ -29,6 +75,8 @@ public enum AntigravityFetchError: Error, Equatable, LocalizedError, Sendable {
         case .rateLimited: return "Antigravity 额度刷新暂时受限"
         case .needsInitialization: return "请先在 Antigravity 中完成首次设置"
         case .noQuotaData: return "暂时没有 Antigravity 额度数据"
+        case .incompatibleResponse, .partialResponse, .endpointUnavailable:
+            return L10n.text("Antigravity 的数据格式已变化，请检查 QuotaLens 更新。", "Antigravity's data format has changed. Check for a QuotaLens update.")
         case .unavailable: return "暂时无法更新 Antigravity 额度"
         }
     }
@@ -56,9 +104,21 @@ public struct AntigravityLocalStateReader: Sendable {
     }
 
     public func read(preferredProfile: AntigravityStateProfile? = nil) throws -> AntigravityLocalCredentials {
-        let candidates = (configuredSources ?? Self.candidateSources())
-            .filter { FileManager.default.fileExists(atPath: $0.databaseURL.path) }
-        guard !candidates.isEmpty else { throw AntigravityFetchError.missingCredentials }
+        let discovery = discoverSources()
+        let candidates = discovery.sources
+        guard !candidates.isEmpty else {
+            if let error = discovery.failures.values.first { throw error }
+            let applicationDirectories = [URL(fileURLWithPath: "/Applications"),
+                                          FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications")]
+            let isInstalled = applicationDirectories.contains { directory in
+                ["Antigravity IDE.app", "Antigravity.app"].contains {
+                    FileManager.default.fileExists(atPath: directory.appendingPathComponent($0).path)
+                }
+            }
+            throw configuredSources != nil || isInstalled
+                ? AntigravityCredentialError.profileNotFound
+                : AntigravityCredentialError.applicationNotFound
+        }
 
         let ordered: [AntigravityStateSource]
         if let preferredProfile,
@@ -68,12 +128,17 @@ public struct AntigravityLocalStateReader: Sendable {
             ordered = candidates.sorted { modificationDate(of: $0.databaseURL) > modificationDate(of: $1.databaseURL) }
         }
 
+        var readError: Error = discovery.failures.values.first ?? AntigravityCredentialError.credentialsMissing
         for source in ordered {
-            if let credentials = try? readCredentials(from: source) {
-                return credentials
+            do {
+                return try readCredentials(from: source)
+            } catch {
+                if (readError as? AntigravityCredentialError) == .credentialsMissing {
+                    readError = error
+                }
             }
         }
-        throw AntigravityFetchError.missingCredentials
+        throw readError
     }
 
     public func readRawValue(
@@ -87,16 +152,53 @@ public struct AntigravityLocalStateReader: Sendable {
         key: String,
         preferredProfile: AntigravityStateProfile? = nil
     ) throws -> [(source: AntigravityStateSource, value: String)] {
-        let candidates = (configuredSources ?? Self.candidateSources())
-            .filter { FileManager.default.fileExists(atPath: $0.databaseURL.path) }
-        let ordered = orderedSources(candidates, preferredProfile: preferredProfile)
+        let result = scanRawValues(key: key, preferredProfile: preferredProfile)
+        if let error = result.failedSources.values.first { throw error }
+        return result.values
+    }
+
+    func scanRawValues(
+        key: String,
+        preferredProfile: AntigravityStateProfile?
+    ) -> (
+        values: [(source: AntigravityStateSource, value: String)],
+        successfulProfiles: Set<AntigravityStateProfile>,
+        failedSources: [URL: AntigravityCredentialError]
+    ) {
+        let discovery = discoverSources()
+        let ordered = orderedSources(discovery.sources, preferredProfile: preferredProfile)
         var values: [(source: AntigravityStateSource, value: String)] = []
+        var successfulProfiles = Set<AntigravityStateProfile>()
+        var failedSources = discovery.failures
         for source in ordered {
-            if let value = try readItemValue(from: source.databaseURL, key: key) {
-                values.append((source, value))
+            do {
+                if let value = try readItemValue(from: source.databaseURL, key: key) {
+                    values.append((source, value))
+                }
+                successfulProfiles.insert(source.profile)
+            } catch {
+                failedSources[source.databaseURL] = (error as? AntigravityCredentialError) ?? .databaseOpenFailed
             }
         }
-        return values
+        return (values, successfulProfiles, failedSources)
+    }
+
+    private func discoverSources() -> (sources: [AntigravityStateSource], failures: [URL: AntigravityCredentialError]) {
+        var sources: [AntigravityStateSource] = []
+        var failures: [URL: AntigravityCredentialError] = [:]
+        for source in configuredSources ?? Self.candidateSources() {
+            do {
+                _ = try FileManager.default.attributesOfItem(atPath: source.databaseURL.path)
+                sources.append(source)
+            } catch CocoaError.fileReadNoSuchFile, CocoaError.fileNoSuchFile {
+                continue
+            } catch CocoaError.fileReadNoPermission {
+                failures[source.databaseURL] = .permissionDenied
+            } catch {
+                failures[source.databaseURL] = .databaseOpenFailed
+            }
+        }
+        return (sources, failures)
     }
 
     private func orderedSources(
@@ -111,10 +213,12 @@ public struct AntigravityLocalStateReader: Sendable {
     }
 
     private func readCredentials(from source: AntigravityStateSource) throws -> AntigravityLocalCredentials {
-        guard let raw = try readItemValue(from: source.databaseURL, key: "antigravityUnifiedStateSync.oauthToken"),
-              let data = Data(base64Encoded: raw, options: [.ignoreUnknownCharacters]),
-              let oauthData = extractPayload(data: data, sentinel: "oauthTokenInfoSentinelKey") else {
-            throw AntigravityFetchError.malformedCredentials
+        guard let raw = try readItemValue(from: source.databaseURL, key: "antigravityUnifiedStateSync.oauthToken") else {
+            throw AntigravityCredentialError.credentialsMissing
+        }
+        guard let data = Data(base64Encoded: raw),
+              let oauthData = try extractPayload(data: data, sentinel: "oauthTokenInfoSentinelKey") else {
+            throw AntigravityCredentialError.malformedPayload
         }
 
         var reader = AntigravityProtoReader(data: oauthData)
@@ -130,7 +234,7 @@ public struct AntigravityLocalStateReader: Sendable {
             case 3 where field.wireType == 2:
                 refreshToken = String(data: field.bytes, encoding: .utf8)
             case 4 where field.wireType == 2:
-                expiresAt = parseTimestamp(field.bytes)
+                expiresAt = try parseTimestamp(field.bytes)
             case 6 where field.wireType == 0:
                 isGCPToS = field.varint != 0
             default:
@@ -139,12 +243,12 @@ public struct AntigravityLocalStateReader: Sendable {
         }
 
         guard let refreshToken, !refreshToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw AntigravityFetchError.malformedCredentials
+            throw AntigravityCredentialError.malformedPayload
         }
 
         return AntigravityLocalCredentials(
             source: source,
-            accountKey: "antigravity_\(Self.shortHash(refreshToken))",
+            legacyAccountKey: "antigravity_\(Self.shortHash(refreshToken))",
             accessToken: accessToken?.nilIfEmpty,
             refreshToken: refreshToken,
             expiresAt: expiresAt,
@@ -153,34 +257,41 @@ public struct AntigravityLocalStateReader: Sendable {
     }
 
     private func readItemValue(from url: URL, key: String) throws -> String? {
+        guard FileManager.default.isReadableFile(atPath: url.path) else {
+            throw AntigravityCredentialError.permissionDenied
+        }
         var database: OpaquePointer?
         let status = sqlite3_open_v2(url.path, &database, SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX, nil)
         guard status == SQLITE_OK, let database else {
             if let database { sqlite3_close(database) }
-            return nil
+            throw AntigravityCredentialError.databaseError(status)
         }
         defer { sqlite3_close(database) }
         sqlite3_busy_timeout(database, 750)
 
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(database, "SELECT value FROM ItemTable WHERE key = ? LIMIT 1;", -1, &statement, nil) == SQLITE_OK,
-              let statement else { return nil }
+              let statement else { throw AntigravityCredentialError.databaseError(sqlite3_errcode(database)) }
         defer { sqlite3_finalize(statement) }
         let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
         sqlite3_bind_text(statement, 1, (key as NSString).utf8String, -1, transient)
-        guard sqlite3_step(statement) == SQLITE_ROW,
-              let pointer = sqlite3_column_text(statement, 0) else { return nil }
+        let step = sqlite3_step(statement)
+        if step == SQLITE_DONE { return nil }
+        guard step == SQLITE_ROW else { throw AntigravityCredentialError.databaseError(step) }
+        guard let pointer = sqlite3_column_text(statement, 0) else {
+            throw AntigravityCredentialError.malformedPayload
+        }
         return String(cString: pointer)
     }
 
-    private func extractPayload(data: Data, sentinel: String) -> Data? {
+    private func extractPayload(data: Data, sentinel: String) throws -> Data? {
         var outer = AntigravityProtoReader(data: data)
-        while let field = try? outer.nextField() {
+        while let field = try outer.nextField() {
             guard field.number == 1, field.wireType == 2 else { continue }
             var entry = AntigravityProtoReader(data: field.bytes)
             var key: String?
             var row: Data?
-            while let nested = try? entry.nextField() {
+            while let nested = try entry.nextField() {
                 if nested.number == 1, nested.wireType == 2 {
                     key = String(data: nested.bytes, encoding: .utf8)
                 } else if nested.number == 2, nested.wireType == 2 {
@@ -189,22 +300,22 @@ public struct AntigravityLocalStateReader: Sendable {
             }
             guard key == sentinel, let row else { continue }
             var rowReader = AntigravityProtoReader(data: row)
-            while let rowField = try? rowReader.nextField() {
+            while let rowField = try rowReader.nextField() {
                 guard rowField.number == 1, rowField.wireType == 2,
                       let encoded = String(data: rowField.bytes, encoding: .utf8) else { continue }
-                return Data(base64Encoded: encoded, options: [.ignoreUnknownCharacters])
+                return Data(base64Encoded: encoded)
             }
         }
         return nil
     }
 
-    private func parseTimestamp(_ data: Data) -> Date? {
+    private func parseTimestamp(_ data: Data) throws -> Date? {
         var reader = AntigravityProtoReader(data: data)
         var seconds: Int64?
         var nanos: Int64 = 0
-        while let field = try? reader.nextField() {
+        while let field = try reader.nextField() {
             if field.number == 1, field.wireType == 0 { seconds = Int64(bitPattern: field.varint) }
-            if field.number == 2, field.wireType == 0 { nanos = Int64(field.varint) }
+            if field.number == 2, field.wireType == 0 { nanos = Int64(clamping: field.varint) }
         }
         guard let seconds else { return nil }
         return Date(timeIntervalSince1970: Double(seconds) + Double(nanos) / 1_000_000_000)
@@ -216,6 +327,28 @@ public struct AntigravityLocalStateReader: Sendable {
 
     private static func shortHash(_ value: String) -> String {
         SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined().prefix(16).description
+    }
+}
+
+struct AntigravityAccountIdentity: Sendable {
+    let accountKey: String
+    let email: String?
+
+    init(userInfo: [String: Any]) throws {
+        email = (userInfo["email"] as? String)?.nilIfEmpty
+        let identifier: String
+        if let subject = (userInfo["sub"] as? String)?.nilIfEmpty
+            ?? (userInfo["id"] as? String)?.nilIfEmpty {
+            identifier = "user:\(subject)"
+        } else if let email {
+            identifier = "email:\(email.lowercased())"
+        } else {
+            // Without a verified identity, keep the last account's cache
+            // isolated instead of assigning quota to a token-derived account.
+            throw AntigravityFetchError.incompatibleResponse
+        }
+        let hash = SHA256.hash(data: Data(identifier.utf8)).map { String(format: "%02x", $0) }.joined()
+        accountKey = "antigravity_\(hash)"
     }
 }
 
@@ -248,8 +381,16 @@ public struct AntigravityQuotaClient: Sendable {
     }
 
     public func fetch(preferredProfile: AntigravityStateProfile? = nil) async throws -> AntigravityQuotaSnapshot {
-        let credentials = try reader.read(preferredProfile: preferredProfile)
+        try await fetch(credentials: localCredentials(preferredProfile: preferredProfile))
+    }
+
+    func localCredentials(preferredProfile: AntigravityStateProfile?) throws -> AntigravityLocalCredentials {
+        try reader.read(preferredProfile: preferredProfile)
+    }
+
+    func fetch(credentials: AntigravityLocalCredentials) async throws -> AntigravityQuotaSnapshot {
         let token = try await freshAccessToken(for: credentials)
+        let identity = try await fetchIdentity(token: token.accessToken)
         let baseURL = credentials.isGCPToS
             ? "https://cloudcode-pa.googleapis.com"
             : "https://daily-cloudcode-pa.googleapis.com"
@@ -287,23 +428,26 @@ public struct AntigravityQuotaClient: Sendable {
             includeLoadHeaders: false
         )
         let (modelsJSON, summaryJSON) = try await (modelsResponse, summaryResponse)
-        let models = parseModels(modelsJSON)
-        let groups = parseGroups(summaryJSON)
+        guard modelsJSON["models"] != nil || summaryJSON["groups"] != nil else {
+            throw AntigravityFetchError.incompatibleResponse
+        }
+        let models = try parseModels(modelsJSON)
+        let groups = try parseGroups(summaryJSON)
         guard !groups.isEmpty || !models.isEmpty else { throw AntigravityFetchError.noQuotaData }
 
         let plan = humanizedPlanName(
             stringValue(load["paidTier"] as? [String: Any], key: "id")
                 ?? stringValue(load["currentTier"] as? [String: Any], key: "id")
         )
-        let displayName = try? await fetchDisplayName(token: token.accessToken)
         return AntigravityQuotaSnapshot(
             sourceProfile: credentials.source.profile.rawValue,
-            accountKey: credentials.accountKey,
-            accountDisplayName: displayName,
+            accountKey: identity.accountKey,
+            accountDisplayName: identity.email,
             planName: plan,
             capturedAt: Date(),
             groups: groups,
-            models: models
+            models: models,
+            legacyAccountKey: credentials.legacyAccountKey
         )
     }
 
@@ -349,19 +493,21 @@ public struct AntigravityQuotaClient: Sendable {
         request.httpBody = body
         let (data, response) = try await session.data(for: request)
         try validate(response)
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw AntigravityQuotaError.invalidResponse
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw AntigravityFetchError.incompatibleResponse
         }
         return json
     }
 
-    private func fetchDisplayName(token: String) async throws -> String? {
+    private func fetchIdentity(token: String) async throws -> AntigravityAccountIdentity {
         var request = URLRequest(url: Self.userInfoEndpoint)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
-              let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-        return (json["email"] as? String)?.nilIfEmpty
+        try validate(response)
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw AntigravityFetchError.incompatibleResponse
+        }
+        return try AntigravityAccountIdentity(userInfo: json)
     }
 
     private func validate(_ response: URLResponse) throws {
@@ -370,6 +516,7 @@ public struct AntigravityQuotaClient: Sendable {
         case 200..<300: return
         case 401: throw AntigravityFetchError.unauthorized
         case 403: throw AntigravityFetchError.forbidden
+        case 404: throw AntigravityFetchError.endpointUnavailable
         case 429:
             let retryAfter = http.value(forHTTPHeaderField: "Retry-After").flatMap { Double($0) }
             throw AntigravityFetchError.rateLimited(retryAfter: retryAfter)
@@ -377,21 +524,29 @@ public struct AntigravityQuotaClient: Sendable {
         }
     }
 
-    private func parseGroups(_ root: [String: Any]) -> [AntigravityQuotaSnapshot.Group] {
-        guard let groups = root["groups"] as? [[String: Any]] else { return [] }
-        return groups.enumerated().compactMap { index, group in
-            let buckets = (group["buckets"] as? [[String: Any]] ?? []).compactMap { bucket -> AntigravityQuotaSnapshot.Bucket? in
+    func parseGroups(_ root: [String: Any]) throws -> [AntigravityQuotaSnapshot.Group] {
+        guard let rawGroups = root["groups"] else { return [] }
+        guard let groups = rawGroups as? [[String: Any]] else {
+            throw AntigravityFetchError.incompatibleResponse
+        }
+        return try groups.enumerated().map { index, group in
+            guard let rawBuckets = group["buckets"] as? [[String: Any]], !rawBuckets.isEmpty else {
+                throw AntigravityFetchError.partialResponse
+            }
+            let buckets = try rawBuckets.map { bucket -> AntigravityQuotaSnapshot.Bucket in
                 guard let id = (bucket["bucketId"] as? String)?.nilIfEmpty,
-                      let fraction = number(bucket["remainingFraction"]) else { return nil }
+                      let fraction = number(bucket["remainingFraction"]),
+                      fraction.isFinite, (0...1).contains(fraction) else {
+                    throw AntigravityFetchError.partialResponse
+                }
                 return AntigravityQuotaSnapshot.Bucket(
                     id: id,
                     title: (bucket["displayName"] as? String)?.nilIfEmpty ?? id,
                     window: AntigravityQuotaWindow(bucketID: id, window: bucket["window"] as? String),
                     remainingPercent: fraction * 100,
-                    resetAt: parseDate(bucket["resetTime"])
+                    resetAt: try parseDate(bucket["resetTime"])
                 )
             }
-            guard !buckets.isEmpty else { return nil }
             return AntigravityQuotaSnapshot.Group(
                 id: (group["groupId"] as? String)?.nilIfEmpty ?? "group-\(index)",
                 title: (group["displayName"] as? String)?.nilIfEmpty ?? L10n.text("模型额度", "Model Quota"),
@@ -400,17 +555,23 @@ public struct AntigravityQuotaClient: Sendable {
         }
     }
 
-    private func parseModels(_ root: [String: Any]) -> [AntigravityQuotaSnapshot.Model] {
-        guard let models = root["models"] as? [String: Any] else { return [] }
-        return models.keys.sorted().compactMap { id in
+    func parseModels(_ root: [String: Any]) throws -> [AntigravityQuotaSnapshot.Model] {
+        guard let rawModels = root["models"] else { return [] }
+        guard let models = rawModels as? [String: Any] else {
+            throw AntigravityFetchError.incompatibleResponse
+        }
+        return try models.keys.sorted().map { id in
             guard let info = models[id] as? [String: Any],
                   let quota = info["quotaInfo"] as? [String: Any],
-                  let fraction = number(quota["remainingFraction"]) else { return nil }
+                  let fraction = number(quota["remainingFraction"]),
+                  fraction.isFinite, (0...1).contains(fraction) else {
+                throw AntigravityFetchError.partialResponse
+            }
             return AntigravityQuotaSnapshot.Model(
                 id: id,
                 displayName: (info["displayName"] as? String)?.nilIfEmpty,
                 remainingPercent: fraction * 100,
-                resetAt: parseDate(quota["resetTime"])
+                resetAt: try parseDate(quota["resetTime"])
             )
         }
     }
@@ -423,7 +584,7 @@ public struct AntigravityQuotaClient: Sendable {
     }
 
     private func number(_ value: Any?) -> Double? {
-        if let number = value as? NSNumber { return number.doubleValue }
+        if let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() { return number.doubleValue }
         if let string = value as? String { return Double(string) }
         return nil
     }
@@ -432,9 +593,15 @@ public struct AntigravityQuotaClient: Sendable {
         try JSONSerialization.data(withJSONObject: value)
     }
 
-    private func parseDate(_ value: Any?) -> Date? {
-        guard let value = value as? String else { return nil }
-        return ISO8601DateFormatter().date(from: value)
+    private func parseDate(_ value: Any?) throws -> Date? {
+        guard let value, !(value is NSNull) else { return nil }
+        guard let raw = value as? String else { throw AntigravityFetchError.partialResponse }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        guard let date = formatter.date(from: raw) ?? ISO8601DateFormatter().date(from: raw) else {
+            throw AntigravityFetchError.partialResponse
+        }
+        return date
     }
 
     private func stringValue(_ object: [String: Any]?, key: String) -> String? {
@@ -482,8 +649,9 @@ public actor AntigravityQuotaPoller {
     private let client: AntigravityQuotaClient
     private let database: SQLiteDatabase
     private let interval: TimeInterval
-    private let onResult: @Sendable (Result<AntigravityQuotaSnapshot, Error>) async -> Void
+    private let onResult: @Sendable (Result<ProviderQuotaRefreshResult<AntigravityQuotaSnapshot>, Error>) async -> Void
     private let onSyncState: @Sendable (ProviderSyncState) async -> Void
+    private let onCachedSnapshot: @Sendable (AntigravityQuotaSnapshot?) async -> Void
     private var loopTask: Task<Void, Never>?
     private var lastAttemptAt: Date?
     private var lastSuccessAt: Date?
@@ -491,14 +659,17 @@ public actor AntigravityQuotaPoller {
     private var cooldownUntil: Date?
     private var latestSnapshot: AntigravityQuotaSnapshot?
     private var isStopped = false
+    private var isPolling = false
+    private var pendingSnapshots: [String: AntigravityQuotaSnapshot] = [:]
 
     public init(
         client: AntigravityQuotaClient = AntigravityQuotaClient(),
         database: SQLiteDatabase,
         interval: TimeInterval = AntigravityQuotaPoller.defaultInterval,
         initialSnapshot: AntigravityQuotaSnapshot? = nil,
-        onResult: @escaping @Sendable (Result<AntigravityQuotaSnapshot, Error>) async -> Void,
-        onSyncState: @escaping @Sendable (ProviderSyncState) async -> Void = { _ in }
+        onResult: @escaping @Sendable (Result<ProviderQuotaRefreshResult<AntigravityQuotaSnapshot>, Error>) async -> Void,
+        onSyncState: @escaping @Sendable (ProviderSyncState) async -> Void = { _ in },
+        onCachedSnapshot: @escaping @Sendable (AntigravityQuotaSnapshot?) async -> Void = { _ in }
     ) {
         self.client = client
         self.database = database
@@ -507,6 +678,7 @@ public actor AntigravityQuotaPoller {
         self.lastSuccessAt = initialSnapshot?.capturedAt
         self.onResult = onResult
         self.onSyncState = onSyncState
+        self.onCachedSnapshot = onCachedSnapshot
     }
 
     public func start() {
@@ -537,22 +709,58 @@ public actor AntigravityQuotaPoller {
     }
 
     public func pollOnce(force: Bool, preferredProfile: AntigravityStateProfile?) async {
-        guard !isStopped else { return }
+        guard !isStopped, !isPolling else { return }
         let now = Date()
         if let cooldownUntil, cooldownUntil > now { return }
         if !force, let lastAttemptAt, now.timeIntervalSince(lastAttemptAt) < Self.minimumGap { return }
         lastAttemptAt = now
+        isPolling = true
+        defer { isPolling = false }
         await onSyncState(syncState())
+        for (key, pending) in pendingSnapshots {
+            do {
+                try AntigravityQuotaRepository.persist(pending, database: database)
+                pendingSnapshots[key] = nil
+            } catch { /* Retain the snapshot for the next scheduled attempt. */ }
+        }
         do {
-            let snapshot = try await client.fetch(preferredProfile: preferredProfile)
+            let credentials = try client.localCredentials(preferredProfile: preferredProfile)
+            if latestSnapshot?.legacyAccountKey != credentials.legacyAccountKey,
+               latestSnapshot?.accountKey != credentials.legacyAccountKey {
+                latestSnapshot = try? AntigravityQuotaRepository.hydrate(
+                    database: database,
+                    accountKey: credentials.legacyAccountKey,
+                    sourceProfile: credentials.source.profile.rawValue
+                )
+                lastSuccessAt = latestSnapshot?.capturedAt
+                await onCachedSnapshot(latestSnapshot)
+            }
+            let snapshot = try await client.fetch(credentials: credentials)
             guard !isStopped else { return }
             latestSnapshot = snapshot
             lastSuccessAt = snapshot.capturedAt
             cooldownUntil = nil
             nextAttemptAt = Date().addingTimeInterval(interval)
-            try? AntigravityQuotaRepository.persist(snapshot, database: database)
+            var historySaved = true
+            do {
+                try AntigravityQuotaRepository.persist(snapshot, database: database)
+                pendingSnapshots[snapshot.accountKey] = nil
+            } catch {
+                historySaved = false
+                pendingSnapshots[snapshot.accountKey] = snapshot
+            }
             await onSyncState(syncState())
-            await onResult(.success(snapshot))
+            await onResult(.success(ProviderQuotaRefreshResult(snapshot: snapshot, historySaved: historySaved)))
+        } catch let error as AntigravityCredentialError {
+            guard !isStopped else { return }
+            if error == .credentialsMissing || error == .applicationNotFound || error == .profileNotFound {
+                latestSnapshot = nil
+                lastSuccessAt = nil
+                await onCachedSnapshot(nil)
+            }
+            nextAttemptAt = Date().addingTimeInterval(interval)
+            await onSyncState(syncState())
+            await onResult(.failure(error))
         } catch let error as AntigravityFetchError {
             guard !isStopped else { return }
             if case .rateLimited(let retryAfter) = error {
@@ -598,10 +806,6 @@ public actor AntigravityQuotaPoller {
     }
 }
 
-private enum AntigravityQuotaError: Error {
-    case invalidResponse
-}
-
 struct AntigravityProtoReader {
     struct Field {
         let number: Int
@@ -617,26 +821,28 @@ struct AntigravityProtoReader {
         guard offset < data.count else { return nil }
         let tag = try readVarint()
         let number = Int(tag >> 3)
+        guard number > 0 else { throw AntigravityCredentialError.malformedPayload }
         let wireType = Int(tag & 7)
         switch wireType {
         case 0:
             return Field(number: number, wireType: wireType, varint: try readVarint(), bytes: Data())
         case 2:
-            let length = Int(try readVarint())
-            guard length >= 0, offset + length <= data.count else { throw AntigravityFetchError.malformedCredentials }
+            let rawLength = try readVarint()
+            guard rawLength <= UInt64(data.count - offset) else { throw AntigravityCredentialError.malformedPayload }
+            let length = Int(rawLength)
             let bytes = data[offset..<(offset + length)]
             offset += length
             return Field(number: number, wireType: wireType, varint: 0, bytes: Data(bytes))
         case 1:
-            guard offset + 8 <= data.count else { throw AntigravityFetchError.malformedCredentials }
+            guard data.count - offset >= 8 else { throw AntigravityCredentialError.malformedPayload }
             offset += 8
             return Field(number: number, wireType: wireType, varint: 0, bytes: Data())
         case 5:
-            guard offset + 4 <= data.count else { throw AntigravityFetchError.malformedCredentials }
+            guard data.count - offset >= 4 else { throw AntigravityCredentialError.malformedPayload }
             offset += 4
             return Field(number: number, wireType: wireType, varint: 0, bytes: Data())
         default:
-            throw AntigravityFetchError.malformedCredentials
+            throw AntigravityCredentialError.malformedPayload
         }
     }
 
@@ -646,11 +852,12 @@ struct AntigravityProtoReader {
         while offset < data.count, shift <= 63 {
             let byte = data[offset]
             offset += 1
+            guard shift < 63 || byte <= 1 else { throw AntigravityCredentialError.malformedPayload }
             value |= UInt64(byte & 0x7f) << shift
             if byte & 0x80 == 0 { return value }
             shift += 7
         }
-        throw AntigravityFetchError.malformedCredentials
+        throw AntigravityCredentialError.malformedPayload
     }
 }
 

@@ -467,22 +467,39 @@ fi
 echo -e "${GREEN}All ${MACHO_COUNT} packaged Mach-O files contain the required architectures${NC}"
 
 echo -e "\n${YELLOW}[4/6] Signing app bundle...${NC}"
-if [[ -d "${APP_BUNDLE}/Contents/Frameworks/Sparkle.framework" ]]; then
-    if [[ "${SIGNING_MODE}" == "adhoc" ]]; then
-        codesign --force --deep --sign - "${APP_BUNDLE}/Contents/Frameworks/Sparkle.framework"
-    else
-        codesign --force --deep --options runtime --sign "${SIGN_IDENTITY}" "${APP_BUNDLE}/Contents/Frameworks/Sparkle.framework"
-    fi
-fi
-
 if [[ "${SIGNING_MODE}" == "adhoc" ]]; then
     echo -e "Using ${CYAN}ad-hoc local signing${NC}"
-    codesign --force --deep --sign - "${APP_BUNDLE}"
+    SIGN_ARGS=(--force --sign -)
 else
     echo -e "Using Developer ID signing identity: ${CYAN}${SIGN_IDENTITY}${NC}"
-    codesign --force --deep --options runtime --sign "${SIGN_IDENTITY}" "${APP_BUNDLE}"
+    SIGN_ARGS=(--force --options runtime --sign "${SIGN_IDENTITY}")
 fi
+
+SPARKLE_CURRENT="${SPARKLE_BUNDLE}/Versions/Current"
+DOWNLOADER_XPC="${SPARKLE_CURRENT}/XPCServices/Downloader.xpc"
+DOWNLOADER_ENTITLEMENTS=()
+for required_arch in "${SWIFT_ARCHES[@]}"; do
+    DOWNLOADER_ENTITLEMENTS+=("$(codesign --display --arch "${required_arch}" --entitlements - --xml "${DOWNLOADER_XPC}" 2>/dev/null)")
+done
+
+# Sparkle helpers have distinct signing requirements. Sign inside-out and keep
+# Downloader's original entitlements; --deep is only appropriate for verification.
+codesign "${SIGN_ARGS[@]}" "${SPARKLE_CURRENT}/XPCServices/Installer.xpc"
+codesign "${SIGN_ARGS[@]}" --preserve-metadata=entitlements "${DOWNLOADER_XPC}"
+codesign "${SIGN_ARGS[@]}" "${SPARKLE_CURRENT}/Autoupdate"
+codesign "${SIGN_ARGS[@]}" "${SPARKLE_CURRENT}/Updater.app"
+codesign "${SIGN_ARGS[@]}" "${SPARKLE_BUNDLE}"
+codesign "${SIGN_ARGS[@]}" "${APP_BUNDLE}"
 codesign --verify --deep --strict --verbose=2 "${APP_BUNDLE}"
+
+for ((index = 0; index < ${#SWIFT_ARCHES[@]}; index++)); do
+    required_arch="${SWIFT_ARCHES[index]}"
+    signed_entitlements="$(codesign --display --arch "${required_arch}" --entitlements - --xml "${DOWNLOADER_XPC}" 2>/dev/null)"
+    if [[ "${signed_entitlements}" != "${DOWNLOADER_ENTITLEMENTS[index]}" ]]; then
+        echo -e "${RED}Sparkle Downloader entitlements changed for ${required_arch}.${NC}"
+        exit 1
+    fi
+done
 echo -e "${GREEN}Code signature verified${NC}"
 
 if [[ "${NOTARIZE}" == "1" ]]; then

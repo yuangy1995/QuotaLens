@@ -112,6 +112,11 @@ public struct MainView: View {
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
 
+                if let warning = state.antigravityActivityWarningText,
+                   navigation.selectedContext == .overview || navigation.selectedContext == .tool(.antigravity) {
+                    storageInitializationWarningStrip(warning)
+                }
+
                 ZStack {
                     // 环境自适应背景画布
                     AppTheme.canvasGradient(for: colorScheme)

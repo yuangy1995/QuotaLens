@@ -22,9 +22,11 @@ enum RateLimitSnapshotRetention {
 }
 
 enum ClaudeQuotaRepository {
-    static let accountKey = "claude-local"
+    static let legacyAccountKey = "claude-local"
 
     static func persist(_ snapshot: ClaudeUsageSnapshot, database: SQLiteDatabase) throws {
+        let accountKey = snapshot.accountKey
+        let json = String(decoding: try JSONEncoder().encode(snapshot), as: UTF8.self)
         let observedAt = Int64(snapshot.capturedAt.timeIntervalSince1970)
         let rows = [snapshot.fiveHour, snapshot.sevenDay].compactMap { $0 }
             + snapshot.scopedWeekly
@@ -41,7 +43,7 @@ enum ClaudeQuotaRepository {
                         account_key, observed_at, limit_id, slot,
                         used_percent_milli, window_duration_mins, resets_at,
                         plan_type, raw_json, provider
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '{}', 'claude');
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'claude');
                     """,
                     bindings: [
                         accountKey,
@@ -51,7 +53,8 @@ enum ClaudeQuotaRepository {
                         Int((window.usedPercent * 1_000).rounded()),
                         Int(window.windowDuration / 60),
                         Int64(window.resetAt.timeIntervalSince1970),
-                        snapshot.tier
+                        snapshot.tier,
+                        json
                     ]
                 )
             }
@@ -59,18 +62,53 @@ enum ClaudeQuotaRepository {
         }
     }
 
-    static func hydrate(database: SQLiteDatabase) throws -> ClaudeUsageSnapshot? {
+    static func migrateLegacyAccount(
+        to accountKey: String,
+        confirmedAccountKey: String?,
+        database: SQLiteDatabase
+    ) throws {
+        guard accountKey != legacyAccountKey else { return }
+        try database.transaction {
+            guard try database.stringScalar(sql: "SELECT value FROM app_metadata WHERE key = 'claude_legacy_account_checked';") == nil else { return }
+            let resolved = try ProviderAccountAliases.resolve(legacyAccountKey, provider: .claude, database: database)
+            if confirmedAccountKey == accountKey,
+                  resolved == legacyAccountKey || resolved == accountKey,
+                  try database.intScalar(
+                      sql: "SELECT COUNT(*) FROM rate_limit_snapshots WHERE provider = 'claude' AND account_key NOT IN (?, ?);",
+                      bindings: [legacyAccountKey, accountKey]
+                  ) == 0,
+                  try database.intScalar(
+                      sql: "SELECT COUNT(*) FROM rate_limit_snapshots WHERE provider = 'claude' AND account_key = ?;",
+                      bindings: [legacyAccountKey]
+                  ) > 0 {
+                try ProviderAccountAliases.migrate(from: legacyAccountKey, to: accountKey, provider: .claude, database: database)
+            }
+            // Evaluate legacy ownership once, before any newly refreshed
+            // credentials can be mistaken for evidence about old history.
+            try database.execute(sql: "INSERT INTO app_metadata (key, value, updated_at) VALUES ('claude_legacy_account_checked', '1', unixepoch());")
+        }
+    }
+
+    static func hydrate(accountKey: String, database: SQLiteDatabase) throws -> ClaudeUsageSnapshot? {
         guard let captured = try database.int64Scalar(
-            sql: "SELECT MAX(observed_at) FROM rate_limit_snapshots WHERE provider = 'claude';"
+            sql: "SELECT MAX(observed_at) FROM rate_limit_snapshots WHERE provider = 'claude' AND account_key = ?;",
+            bindings: [accountKey]
         ) else { return nil }
+        if let json = try database.stringScalar(
+            sql: "SELECT raw_json FROM rate_limit_snapshots WHERE provider = 'claude' AND account_key = ? AND observed_at = ? ORDER BY id DESC LIMIT 1;",
+            bindings: [accountKey, captured]
+        ), let snapshot = try? JSONDecoder().decode(ClaudeUsageSnapshot.self, from: Data(json.utf8)),
+           snapshot.accountKey == accountKey {
+            return snapshot
+        }
         let rows = try database.executeQuery(
             sql: """
             SELECT limit_id, used_percent_milli, window_duration_mins, resets_at, plan_type
             FROM rate_limit_snapshots
-            WHERE provider = 'claude' AND observed_at = ?
+            WHERE provider = 'claude' AND account_key = ? AND observed_at = ?
             ORDER BY id ASC;
             """,
-            bindings: [captured]
+            bindings: [accountKey, captured]
         ) { statement -> (String, Double, Int, Int64, String?) in
             let id = String(cString: sqlite3_column_text(statement, 0))
             let percent = Double(sqlite3_column_int64(statement, 1)) / 1_000
@@ -113,10 +151,11 @@ enum ClaudeQuotaRepository {
 
         var staleFiveHour: ClaudeUsageSnapshot.Window?
         if fiveHour == nil {
-            staleFiveHour = try latestExpiredFiveHour(before: captured, database: database)
+            staleFiveHour = try latestExpiredFiveHour(accountKey: accountKey, before: captured, database: database)
         }
         return ClaudeUsageSnapshot(
             capturedAt: capturedAt,
+            accountKey: accountKey,
             tier: tier,
             fiveHour: fiveHour,
             staleFiveHour: staleFiveHour,
@@ -126,6 +165,7 @@ enum ClaudeQuotaRepository {
     }
 
     private static func latestExpiredFiveHour(
+        accountKey: String,
         before captured: Int64,
         database: SQLiteDatabase
     ) throws -> ClaudeUsageSnapshot.Window? {
@@ -134,13 +174,14 @@ enum ClaudeQuotaRepository {
             SELECT used_percent_milli, resets_at
             FROM rate_limit_snapshots
             WHERE provider = 'claude'
+              AND account_key = ?
               AND limit_id = 'claude'
               AND observed_at < ?
               AND resets_at <= ?
             ORDER BY observed_at DESC
             LIMIT 1;
             """,
-            bindings: [captured, captured]
+            bindings: [accountKey, captured, captured]
         ) { statement in
             ClaudeUsageSnapshot.Window(
                 id: "claude",
@@ -160,22 +201,26 @@ actor ClaudeUsagePoller {
     private let client: ClaudeUsageClient
     private let database: SQLiteDatabase
     private let interval: TimeInterval
-    private let onResult: @Sendable (Result<ClaudeUsageSnapshot, Error>) async -> Void
+    private let onResult: @Sendable (Result<ProviderQuotaRefreshResult<ClaudeUsageSnapshot>, Error>) async -> Void
     private let onCooldown: @Sendable (Date?) async -> Void
+    private let onCachedSnapshot: @Sendable (ClaudeUsageSnapshot?) async -> Void
     private var loopTask: Task<Void, Never>?
     private var lastAttemptAt: Date?
     private var cooldownUntil: Date?
     private var rateLimitCount = 0
     private var latestSnapshot: ClaudeUsageSnapshot?
     private var isStopped = false
+    private var isPolling = false
+    private var pendingSnapshots: [String: ClaudeUsageSnapshot] = [:]
 
     init(
         client: ClaudeUsageClient = ClaudeUsageClient(),
         database: SQLiteDatabase,
         interval: TimeInterval = ClaudeUsagePoller.defaultInterval,
         initialSnapshot: ClaudeUsageSnapshot? = nil,
-        onResult: @escaping @Sendable (Result<ClaudeUsageSnapshot, Error>) async -> Void,
-        onCooldown: @escaping @Sendable (Date?) async -> Void
+        onResult: @escaping @Sendable (Result<ProviderQuotaRefreshResult<ClaudeUsageSnapshot>, Error>) async -> Void,
+        onCooldown: @escaping @Sendable (Date?) async -> Void,
+        onCachedSnapshot: @escaping @Sendable (ClaudeUsageSnapshot?) async -> Void = { _ in }
     ) {
         self.client = client
         self.database = database
@@ -183,6 +228,7 @@ actor ClaudeUsagePoller {
         self.latestSnapshot = initialSnapshot
         self.onResult = onResult
         self.onCooldown = onCooldown
+        self.onCachedSnapshot = onCachedSnapshot
     }
 
     func start() {
@@ -206,22 +252,53 @@ actor ClaudeUsagePoller {
     }
 
     func pollOnce(force: Bool = false) async {
-        guard !isStopped else { return }
+        guard !isStopped, !isPolling else { return }
         let now = Date()
         if let cooldownUntil, cooldownUntil > now { return }
         if !force, let lastAttemptAt,
            now.timeIntervalSince(lastAttemptAt) < Self.minimumGap { return }
         lastAttemptAt = now
+        isPolling = true
+        defer { isPolling = false }
+        for (key, pending) in pendingSnapshots {
+            do {
+                try ClaudeQuotaRepository.persist(pending, database: database)
+                pendingSnapshots[key] = nil
+            } catch { /* Retain the snapshot for the next scheduled attempt. */ }
+        }
         do {
+            guard let accountKey = await client.activeAccountKey() else {
+                latestSnapshot = nil
+                await onCachedSnapshot(nil)
+                throw ClaudeUsageClient.FetchError.noCredentials
+            }
+            guard !isStopped else { return }
+            let confirmedKey = await client.legacyAccountKeyForMigration()
+            var historySaved = true
+            do {
+                try ClaudeQuotaRepository.migrateLegacyAccount(to: accountKey, confirmedAccountKey: confirmedKey, database: database)
+            } catch {
+                historySaved = false
+            }
+            if latestSnapshot?.accountKey != accountKey {
+                latestSnapshot = try? ClaudeQuotaRepository.hydrate(accountKey: accountKey, database: database)
+                await onCachedSnapshot(latestSnapshot)
+            }
             let fresh = try await client.fetch()
                 .preservingStaleFiveHour(from: latestSnapshot)
             guard !isStopped else { return }
             latestSnapshot = fresh
             cooldownUntil = nil
             rateLimitCount = 0
+            do {
+                try ClaudeQuotaRepository.persist(fresh, database: database)
+                pendingSnapshots[fresh.accountKey] = nil
+            } catch {
+                historySaved = false
+                pendingSnapshots[fresh.accountKey] = fresh
+            }
             await onCooldown(nil)
-            await onResult(.success(fresh))
-            try? ClaudeQuotaRepository.persist(fresh, database: database)
+            await onResult(.success(ProviderQuotaRefreshResult(snapshot: fresh, historySaved: historySaved)))
         } catch let error as ClaudeUsageClient.FetchError {
             guard !isStopped else { return }
             if case .rateLimited(let retryAfter) = error {
