@@ -36,6 +36,11 @@ private final class OverviewDashboardStore: ObservableObject {
             async let thirty = try? facade.getDashboardMetrics(days: 30, providerFilter: .claude)
             result[.claude] = await UsagePair(sevenDay: seven, thirtyDay: thirty)
         }
+        if enabledTools.contains(.antigravity) {
+            async let seven = try? facade.getDashboardMetrics(days: 7, providerFilter: .antigravity)
+            async let thirty = try? facade.getDashboardMetrics(days: 30, providerFilter: .antigravity)
+            result[.antigravity] = await UsagePair(sevenDay: seven, thirtyDay: thirty)
+        }
         guard generation == request else { return }
         usage = result
     }
@@ -77,6 +82,10 @@ public struct OverviewDashboardView: View {
             Task { await store.load(enabledTools: env.enabledToolsStore.enabledToolIDs) }
         }
         .onChange(of: env.claudeScanCoordinator.isScanning) { _, scanning in
+            guard !scanning else { return }
+            Task { await store.load(enabledTools: env.enabledToolsStore.enabledToolIDs) }
+        }
+        .onChange(of: env.antigravityActivityCoordinator.isScanning) { _, scanning in
             guard !scanning else { return }
             Task { await store.load(enabledTools: env.enabledToolsStore.enabledToolIDs) }
         }
@@ -489,20 +498,26 @@ public struct OverviewDashboardView: View {
     @ViewBuilder
     private func localSummary(for tool: MonitoringToolID) -> some View {
         if tool == .antigravity {
-            let metrics = state.latestAntigravityActivity?.sevenDayMetrics
-            let change = state.latestAntigravityActivity?.taskChangePercent(days: 7)
+            let metrics = store.usage[tool]?.sevenDay
+            let activity = state.latestAntigravityActivity?.sevenDayMetrics
+            let change = tokenChange(for: tool)
             HStack(spacing: 6) {
                 HStack(spacing: 3) {
-                    Image(systemName: "checklist")
+                    Image(systemName: "bubble.left.and.bubble.right.fill")
                         .font(.system(size: 9.5))
-                    Text(L10n.format("%d tasks", zhHans: "%d 个任务", metrics?.taskCount ?? 0))
+                    Text(L10n.format(
+                        "%d sessions",
+                        zhHans: "%d 个会话",
+                        metrics?.totalSessions ?? activity?.taskCount ?? 0
+                    ))
                 }
                 Text("·")
-                Text(L10n.format(
-                    "%@ steps",
-                    zhHans: "%@ 步",
-                    UsageNumberFormatter.compactTokenCount(metrics?.stepCount ?? 0)
-                ))
+                Text(UsageNumberFormatter.compactTokenCount(metrics?.totalTokens.canonicalTotalTokens ?? 0))
+                if metrics?.totalCost.rawValue ?? 0 > 0 {
+                    Text("·")
+                    Text(UsageNumberFormatter.currencyUSD(metrics?.totalCost ?? .zero))
+                        .foregroundStyle(AppTheme.accentEmerald(for: colorScheme))
+                }
                 Spacer()
                 Text(changeText(change))
                     .foregroundStyle(changeTint(change))
@@ -703,11 +718,13 @@ public struct OverviewDashboardView: View {
             HStack(spacing: 12) {
                 overviewActivityCell(
                     title: "7D",
-                    metrics: state.latestAntigravityActivity?.sevenDayMetrics
+                    metrics: state.latestAntigravityActivity?.sevenDayMetrics,
+                    usage: store.usage[.antigravity]?.sevenDay
                 )
                 overviewActivityCell(
                     title: "30D",
-                    metrics: state.latestAntigravityActivity?.thirtyDayMetrics
+                    metrics: state.latestAntigravityActivity?.thirtyDayMetrics,
+                    usage: store.usage[.antigravity]?.thirtyDay
                 )
             }
         }
@@ -717,14 +734,24 @@ public struct OverviewDashboardView: View {
 
     private func overviewActivityCell(
         title: String,
-        metrics: AntigravityActivitySnapshot.PeriodMetrics?
+        metrics: AntigravityActivitySnapshot.PeriodMetrics?,
+        usage: DashboardMetricsDTO? = nil
     ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .font(.system(size: 10, weight: .heavy, design: .monospaced))
                 .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
             HStack(spacing: 8) {
-                Text(L10n.format("%d tasks", zhHans: "%d 个任务", metrics?.taskCount ?? 0))
+                if let usage {
+                    Text(L10n.format(
+                        "%d sessions",
+                        zhHans: "%d 个会话",
+                        usage.totalSessions
+                    ))
+                    Text(UsageNumberFormatter.compactTokenCount(usage.totalTokens.canonicalTotalTokens))
+                } else {
+                    Text(L10n.format("%d tasks", zhHans: "%d 个任务", metrics?.taskCount ?? 0))
+                }
                 Text(L10n.format(
                     "%@ steps",
                     zhHans: "%@ 步",

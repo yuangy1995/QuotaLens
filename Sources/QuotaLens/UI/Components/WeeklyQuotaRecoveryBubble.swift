@@ -5,17 +5,20 @@ struct WeeklyQuotaRecoveryBubbleView: View {
     let items: [WeeklyQuotaRecoveryItem]
     let onAcknowledge: () -> Void
     let theme: ColorScheme?
+    let drawsBackground: Bool
 
     @Environment(\.colorScheme) private var colorScheme
 
     init(
         items: [WeeklyQuotaRecoveryItem],
         onAcknowledge: @escaping () -> Void,
-        theme: ColorScheme? = nil
+        theme: ColorScheme? = nil,
+        drawsBackground: Bool = true
     ) {
         self.items = items
         self.onAcknowledge = onAcknowledge
         self.theme = theme
+        self.drawsBackground = drawsBackground
     }
 
     var body: some View {
@@ -64,19 +67,17 @@ struct WeeklyQuotaRecoveryBubbleView: View {
             }
             .padding(12)
             .frame(width: 280, alignment: .leading)
-            .background(
-                colorScheme == .dark
-                    ? Color(red: 0.08, green: 0.13, blue: 0.12).opacity(0.97)
-                    : Color.white.opacity(0.98),
-                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(AppTheme.accentEmerald(for: colorScheme).opacity(colorScheme == .dark ? 0.62 : 0.42), lineWidth: 1)
-            )
-            .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.42 : 0.18), radius: 7, y: 3)
+            .background {
+                if drawsBackground {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(colorScheme == .dark
+                            ? Color(red: 0.08, green: 0.13, blue: 0.12).opacity(0.97)
+                            : Color.white.opacity(0.98))
+                }
+            }
         }
         .buttonStyle(.plain)
+        .fixedSize(horizontal: false, vertical: true)
         .contentShape(Rectangle())
         .help(L10n.text("点击关闭全部提醒", "Click to close all reminders"))
         .accessibilityElement(children: .ignore)
@@ -142,15 +143,15 @@ final class WeeklyQuotaRecoveryOverlayPresenter {
         if let hostingController = panel.contentViewController as? NSHostingController<WeeklyQuotaRecoveryBubbleView> {
             hostingController.rootView = rootView
             let fittingSize = hostingController.sizeThatFits(in: CGSize(width: 280, height: 600))
-            panel.setContentSize(NSSize(width: 280, height: max(108, ceil(fittingSize.height))))
+            panel.setContentSize(NSSize(width: 280, height: ceil(fittingSize.height)))
         } else {
             let hostingController = NSHostingController(rootView: rootView)
             panel.contentViewController = hostingController
             let fittingSize = hostingController.sizeThatFits(in: CGSize(width: 280, height: 600))
-            panel.setContentSize(NSSize(width: 280, height: max(108, ceil(fittingSize.height))))
+            panel.setContentSize(NSSize(width: 280, height: ceil(fittingSize.height)))
         }
 
-        let frame = positionedFrame(
+        let frame = Self.positionedFrame(
             panelSize: panel.frame.size,
             anchorFrame: anchorFrame,
             targetFrame: targetFrame
@@ -197,21 +198,24 @@ final class WeeklyQuotaRecoveryOverlayPresenter {
         return panel
     }
 
-    private func positionedFrame(panelSize: CGSize, anchorFrame: CGRect, targetFrame: CGRect) -> CGRect {
+    static func positionedFrame(panelSize: CGSize, anchorFrame: CGRect, targetFrame: CGRect) -> CGRect {
         let preferredAbove = CGRect(
-            x: anchorFrame.minX,
+            x: anchorFrame.midX - panelSize.width / 2,
             y: anchorFrame.maxY + 8,
             width: panelSize.width,
             height: panelSize.height
         )
         let preferredBelow = CGRect(
-            x: anchorFrame.minX,
+            x: anchorFrame.midX - panelSize.width / 2,
             y: anchorFrame.minY - panelSize.height - 8,
             width: panelSize.width,
             height: panelSize.height
         )
-        let preferred = preferredAbove.maxY <= targetFrame.maxY ? preferredAbove : preferredBelow
-        return CodexOverlayLayout.clampedFrame(preferred, in: targetFrame)
+        let clampedAbove = CodexOverlayLayout.clampedFrame(preferredAbove, in: targetFrame)
+        if clampedAbove.minY >= preferredAbove.minY {
+            return clampedAbove
+        }
+        return CodexOverlayLayout.clampedFrame(preferredBelow, in: targetFrame)
     }
 
     private func acknowledge() {

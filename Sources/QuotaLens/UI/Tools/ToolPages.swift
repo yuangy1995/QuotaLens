@@ -25,6 +25,18 @@ public struct ClaudeUsageDashboardView: View {
     }
 }
 
+public struct AntigravityUsageDashboardView: View {
+    private let facade: UsageQueryFacade
+
+    public init(facade: UsageQueryFacade) {
+        self.facade = facade
+    }
+
+    public var body: some View {
+        ProviderUsageDashboardView(facade: facade, providerFilter: .antigravity)
+    }
+}
+
 public struct CodexHistoryView: View {
     private let facade: UsageQueryFacade
 
@@ -70,6 +82,18 @@ public struct ClaudeSessionsView: View {
 
     public var body: some View {
         ProviderSessionsView(facade: facade, providerFilter: .claude)
+    }
+}
+
+public struct AntigravitySessionsView: View {
+    private let facade: UsageQueryFacade
+
+    public init(facade: UsageQueryFacade) {
+        self.facade = facade
+    }
+
+    public var body: some View {
+        ProviderSessionsView(facade: facade, providerFilter: .antigravity)
     }
 }
 

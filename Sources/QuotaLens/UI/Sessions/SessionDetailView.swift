@@ -74,11 +74,11 @@ public struct SessionDetailView: View {
                 // 1. 顶部全息信息头
                 sessionHeaderCard
 
-                if detail.session.provider == .codex {
+                if supportsConversation {
                     detailSectionPicker
                 }
 
-                if selectedSection == .conversation && detail.session.provider == .codex {
+                if selectedSection == .conversation && supportsConversation {
                     conversationCard
                 } else {
                     // 2. 四大核心指标卡
@@ -113,6 +113,10 @@ public struct SessionDetailView: View {
                 selectedSection = .usage
             }
         }
+    }
+
+    private var supportsConversation: Bool {
+        detail.session.provider == .codex || detail.session.provider == .antigravity
     }
 
     private var detailSectionPicker: some View {
@@ -309,7 +313,9 @@ public struct SessionDetailView: View {
 
                 MetricHUDTile(
                     title: L10n.text("API 等价价值", "API Equivalent Value"),
-                    value: UsageNumberFormatter.currencyUSD(detail.session.estimatedCost),
+                    value: detail.session.provider == .antigravity && detail.session.pricingStatus == .fullyUnpriced
+                        ? "—"
+                        : UsageNumberFormatter.currencyUSD(detail.session.estimatedCost),
                     caption: pricingCaption(for: detail.session),
                     icon: "dollarsign.circle.fill",
                     accentColor: emerald
@@ -424,7 +430,9 @@ public struct SessionDetailView: View {
                             .font(.system(size: 11, weight: .medium, design: .monospaced))
                             .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
 
-                        Text(UsageNumberFormatter.currencyUSD(model.estimatedCost))
+                        Text(detail.session.provider == .antigravity && model.unpricedCount == model.eventCount
+                            ? "—"
+                            : UsageNumberFormatter.currencyUSD(model.estimatedCost))
                             .font(.system(size: 11, weight: .bold, design: .monospaced))
                             .foregroundStyle(emerald)
                             .frame(width: 65, alignment: .trailing)

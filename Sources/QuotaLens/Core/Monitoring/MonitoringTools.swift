@@ -104,7 +104,7 @@ public struct ToolRegistry: Sendable {
             systemImage: "wand.and.stars",
             accent: .cyan,
             usageProvider: .antigravity,
-            capabilities: [.quota, .usage, .overlay, .settings],
+            capabilities: [.quota, .usage, .sessions, .overlay, .settings],
             bundleIdentifiers: ["com.google.antigravity-ide", "com.google.antigravity"]
         )
     ]

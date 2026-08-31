@@ -244,7 +244,8 @@ public final class SessionsStore: ObservableObject {
         isLoadingDetail = false
         guard let selectedDetail else { return }
 
-        guard selectedDetail.session.provider == .codex else {
+        guard selectedDetail.session.provider == .codex
+            || selectedDetail.session.provider == .antigravity else {
             selectedConversation = CodexSessionConversationDTO(sessionId: sid, messages: [])
             isLoadingConversation = false
             return

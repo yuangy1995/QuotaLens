@@ -258,6 +258,9 @@ public enum L10n {
     }
 
     public static let changelogZhToEnMap: [String: String] = [
+        "新增 Antigravity 深度用量解析与官方 API 定价目录引擎，支持 Gemini 3.7/3.6/3.5 Flash 与 3.1 Pro 成本测算与长上下文折算": "Added Antigravity deep usage parsing and official API pricing catalog engine with cost auditing for Gemini 3.7/3.6/3.5 Flash and 3.1 Pro",
+        "全面优化周度配额完全恢复气泡提醒，支持多项配额折叠提示、确认关闭交互与精致视觉质感": "Enhanced weekly quota recovery notification bubbles with multi-quota folding, interactive dismiss, and refined visual aesthetics",
+        "提升概览看板、用量看板与历史会话的高频刷新性能与暗色模式视觉层次": "Improved high-frequency refresh performance and dark mode visual hierarchy across overview, dashboard, and session views",
         "优先采用系统 CLI 路径检索 Codex 核心二进制，提升对 Homebrew 与本地定制环境的兼容性": "Prioritized CLI search paths for Codex binary detection, improving compatibility with Homebrew and custom environments",
         "优化 Codex 服务器额度快照收集与连接恢复机制，保障弱网与高延迟环境下的数据完整性": "Refined Codex server quota snapshot collection and recovery mechanisms, ensuring data integrity in high-latency environments",
         "改进菜单栏实时预测数据流采样与会话详情默认视图排版，优化用量指标快速查阅体验": "Improved menu bar real-time forecast data stream sampling and streamlined session detail default tab layout",
@@ -864,6 +867,36 @@ private let multiToolTranslations: [AppLanguage: [String: String]] = [
 ]
 
 private let keyedTranslations: [String: [AppLanguage: String]] = [
+    "Added Antigravity deep usage parsing and official API pricing catalog engine with cost auditing for Gemini 3.7/3.6/3.5 Flash and 3.1 Pro": [
+        .traditionalChinese: "新增 Antigravity 深度用量解析與官方 API 定價目錄引擎，支援 Gemini 3.7/3.6/3.5 Flash 與 3.1 Pro 成本測算與長上下文折算",
+        .japanese: "Antigravity 詳細使用量解析と公式 API 価格カタログエンジンを追加し、Gemini 3.7/3.6/3.5 Flash および 3.1 Pro のコスト試算と長文コンテキスト換算に対応",
+        .korean: "Antigravity 심층 사용량 파싱 및 공식 API 요금 카탈로그 엔진을 추가하여 Gemini 3.7/3.6/3.5 Flash 및 3.1 Pro 비용 추산과 롱 컨텍스트 환산 지원",
+        .spanish: "Añadido análisis profundo de uso de Antigravity y motor de catálogo de precios de API oficial con auditoría de costes para Gemini 3.7/3.6/3.5 Flash y 3.1 Pro",
+        .german: "Tiefgehende Antigravity-Nutzungsanalyse und offizielle API-Preiskatalog-Engine mit Kostenprüfung für Gemini 3.7/3.6/3.5 Flash und 3.1 Pro hinzugefügt",
+        .french: "Ajout de l'analyse approfondie de l'utilisation d'Antigravity et du moteur de tarification API officielle avec audit des coûts pour Gemini 3.7/3.6/3.5 Flash et 3.1 Pro",
+        .portuguese: "Adicionada análise profunda de uso do Antigravity e motor de catálogo de preços de API oficial com auditoria de custos para Gemini 3.7/3.6/3.5 Flash e 3.1 Pro",
+        .portugueseBrazil: "Adicionada análise detalhada de uso do Antigravity e motor de catálogo de preços de API oficial com auditoria de custos para Gemini 3.7/3.6/3.5 Flash e 3.1 Pro"
+    ],
+    "Enhanced weekly quota recovery notification bubbles with multi-quota folding, interactive dismiss, and refined visual aesthetics": [
+        .traditionalChinese: "全面優化週度配額完全恢復氣泡提醒，支援多項配額折疊提示、確認關閉互動與精緻視覺質感",
+        .japanese: "週間クォータ完全回復バブル通知を全面的に強化し、複数項目の折りたたみ表示、確認解除操作、洗練されたビジュアル表現に対応",
+        .korean: "주간 할당량 완전 복구 알림 버블을 전면 개선하여 다중 항목 접기, 확인 닫기 상호작용 및 정교한 시각적 완성도 지원",
+        .spanish: "Notificaciones de burbuja de recuperación total de cuota semanal mejoradas con plegado múltiple, cierre interactivo y estética refinada",
+        .german: "Benachrichtigungsblasen zur vollständigen Wiederherstellung des wöchentlichen Kontingents verbessert mit Mehrfachausblendung, interaktivem Schließen und verfeinerter Ästhetik",
+        .french: "Bulles de notification de récupération complète du quota hebdomadaire améliorées avec repliage multiple, fermeture interactive et esthétique soignée",
+        .portuguese: "Notificações em bolha de recuperação total da quota semanal melhoradas com recolhimento múltiplo, fecho interativo e estética refinada",
+        .portugueseBrazil: "Notificações em bolha de recuperação total da cota semanal melhoradas com recolhimento múltiplo, fechamento interativo e estética refinada"
+    ],
+    "Improved high-frequency refresh performance and dark mode visual hierarchy across overview, dashboard, and session views": [
+        .traditionalChinese: "提升概覽看板、用量看板與歷史會話的高頻重新整理效能與深色模式視覺層次",
+        .japanese: "概要ダッシュボード、使用量ダッシュボード、履歴セッションにおける高頻度更新の描画パフォーマンスとダークモードの視覚階層を向上",
+        .korean: "개요 대시보드, 사용량 대시보드 및 기록 세션의 고빈도 새로고침 성능 및 다크 모드 시각적 계층 구조 개선",
+        .spanish: "Rendimiento de actualización frecuente y jerarquía visual en modo oscuro mejorados en la vista general, panel y sesiones",
+        .german: "Leistung bei hoher Aktualisierungsfrequenz und visuelle Hierarchie im Dunkelmodus in Übersicht, Dashboard und Sitzungen verbessert",
+        .french: "Performances d'actualisation haute fréquence et hiérarchie visuelle en mode sombre améliorées dans la vue d'ensemble, le tableau de bord et les sessions",
+        .portuguese: "Desempenho de atualização frequente e hierarquia visual em modo escuro melhorados na visão geral, painel e sessões",
+        .portugueseBrazil: "Desempenho de atualização frequente e hierarquia visual em modo escuro melhorados na visão geral, painel e sessões"
+    ],
     "Tightest Pool": [
         .traditionalChinese: "最吃緊額度池", .japanese: "最も厳しいプール", .korean: "가장 여유가 적은 풀",
         .spanish: "Grupo más ajustado", .german: "Knappster Pool", .french: "Réserve la plus limitée",
@@ -3868,6 +3901,56 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .french: "Certains enregistrements ne sont pas tarifés",
         .portuguese: "Alguns registos não têm preço",
         .portugueseBrazil: "Alguns registros não têm preço"
+    ],
+    "Cost cannot be estimated": [
+        .traditionalChinese: "費用無法估算",
+        .japanese: "費用を見積もれません",
+        .korean: "비용을 추정할 수 없음",
+        .spanish: "No se puede estimar el coste",
+        .german: "Kosten können nicht geschätzt werden",
+        .french: "Impossible d’estimer le coût",
+        .portuguese: "Não é possível estimar o custo",
+        .portugueseBrazil: "Não é possível estimar o custo"
+    ],
+    "Some costs cannot be estimated": [
+        .traditionalChinese: "部分費用無法估算",
+        .japanese: "一部の費用を見積もれません",
+        .korean: "일부 비용을 추정할 수 없음",
+        .spanish: "Algunos costes no se pueden estimar",
+        .german: "Einige Kosten können nicht geschätzt werden",
+        .french: "Certains coûts ne peuvent pas être estimés",
+        .portuguese: "Alguns custos não podem ser estimados",
+        .portugueseBrazil: "Alguns custos não podem ser estimados"
+    ],
+    "model not recognized": [
+        .traditionalChinese: "無法識別模型",
+        .japanese: "モデルを識別できません",
+        .korean: "모델을 인식할 수 없음",
+        .spanish: "modelo no reconocido",
+        .german: "Modell nicht erkannt",
+        .french: "modèle non reconnu",
+        .portuguese: "modelo não reconhecido",
+        .portugueseBrazil: "modelo não reconhecido"
+    ],
+    "price at that time unavailable": [
+        .traditionalChinese: "缺少當時價格",
+        .japanese: "当時の価格が不明です",
+        .korean: "당시 가격을 확인할 수 없음",
+        .spanish: "precio de ese momento no disponible",
+        .german: "damaliger Preis nicht verfügbar",
+        .french: "prix de l’époque indisponible",
+        .portuguese: "preço da altura indisponível",
+        .portugueseBrazil: "preço da época indisponível"
+    ],
+    "Model Breakdown": [
+        .traditionalChinese: "多模型用量與費用分布",
+        .japanese: "モデル別の使用量と費用",
+        .korean: "모델별 사용량 및 비용",
+        .spanish: "Uso y costes por modelo",
+        .german: "Nutzung und Kosten nach Modell",
+        .french: "Utilisation et coûts par modèle",
+        .portuguese: "Utilização e custos por modelo",
+        .portugueseBrazil: "Uso e custos por modelo"
     ],
     "Limited pricing data; showing token trend only": [
         .traditionalChinese: "計價資料不足，僅顯示 Token 趨勢",

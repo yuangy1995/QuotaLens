@@ -202,7 +202,9 @@ public struct MainView: View {
         case (.antigravity, .quota):
             AntigravityOverviewView(state: state)
         case (.antigravity, .usage):
-            AntigravityActivityView(state: state)
+            AntigravityUsageDashboardView(facade: env.usageQueryFacade)
+        case (.antigravity, .sessions):
+            AntigravitySessionsView(facade: env.usageQueryFacade)
         case (.antigravity, .settings):
             AntigravitySettingsView(state: state)
         default:

@@ -43,6 +43,10 @@ struct ProviderSessionsView: View {
             guard store.providerFilter == .claude, !isScanning else { return }
             Task { await store.reloadSessions() }
         }
+        .onChange(of: env.antigravityActivityCoordinator.isScanning) { _, isScanning in
+            guard store.providerFilter == .antigravity, !isScanning else { return }
+            Task { await store.reloadSessions() }
+        }
         .confirmationDialog(
             L10n.text("删除会话？", "Delete Session?"),
             isPresented: Binding(
@@ -88,7 +92,11 @@ struct ProviderSessionsView: View {
         switch store.providerFilter {
         case .codex: return env.scanCoordinator.isScanning
         case .claude: return env.claudeScanCoordinator.isScanning
-        case .all: return env.scanCoordinator.isScanning || env.claudeScanCoordinator.isScanning
+        case .antigravity: return env.antigravityActivityCoordinator.isScanning
+        case .all:
+            return env.scanCoordinator.isScanning
+                || env.claudeScanCoordinator.isScanning
+                || env.antigravityActivityCoordinator.isScanning
         }
     }
 

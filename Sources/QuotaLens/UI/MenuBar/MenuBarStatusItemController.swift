@@ -413,6 +413,7 @@ public final class MenuBarStatusItemController: NSObject {
         )
         updateStatusIcon()
         updateStatusTitle()
+        updateRecoveryPopover()
     }
 
     private func updateRecoveryPopover() {
@@ -431,7 +432,8 @@ public final class MenuBarStatusItemController: NSObject {
             onAcknowledge: { [weak self] in
                 self?.acknowledgeWeeklyQuotaRecovery()
             },
-            theme: state.colorScheme
+            theme: state.colorScheme,
+            drawsBackground: false
         )
         if let hostingController = recoveryPopover.contentViewController as? NSHostingController<WeeklyQuotaRecoveryBubbleView> {
             hostingController.rootView = view
@@ -441,16 +443,24 @@ public final class MenuBarStatusItemController: NSObject {
 
         if let hostingController = recoveryPopover.contentViewController as? NSHostingController<WeeklyQuotaRecoveryBubbleView> {
             let fittingSize = hostingController.sizeThatFits(in: CGSize(width: 280, height: 500))
-            recoveryPopover.contentSize = NSSize(width: 280, height: max(112, ceil(fittingSize.height)))
+            let contentSize = NSSize(width: 280, height: ceil(fittingSize.height))
+            if recoveryPopover.contentSize != contentSize {
+                recoveryPopover.contentSize = contentSize
+            }
         }
 
-        if !recoveryPopover.isShown {
+        if recoveryPopover.isShown {
+            if recoveryPopover.positioningRect != button.bounds {
+                recoveryPopover.positioningRect = button.bounds
+            }
+        } else {
             recoveryPopover.show(
                 relativeTo: button.bounds,
                 of: button,
                 preferredEdge: .minY
             )
         }
+        recoveryPopover.contentViewController?.view.window?.hasShadow = false
     }
 
     private func acknowledgeWeeklyQuotaRecovery() {
@@ -687,6 +697,11 @@ public final class MenuBarStatusItemController: NSObject {
 }
 
 extension MenuBarStatusItemController: NSPopoverDelegate {
+    public func popoverDidShow(_ notification: Notification) {
+        guard notification.object as? NSPopover === recoveryPopover else { return }
+        recoveryPopover.contentViewController?.view.window?.hasShadow = false
+    }
+
     public func popoverDidClose(_ notification: Notification) {
         if notification.object as? NSPopover === recoveryPopover { return }
         stopOutsideClickMonitoring()

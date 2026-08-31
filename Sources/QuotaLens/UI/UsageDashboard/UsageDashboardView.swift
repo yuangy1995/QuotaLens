@@ -248,6 +248,10 @@ struct ProviderUsageDashboardView: View {
             guard store.providerFilter == .claude, !isScanning else { return }
             Task { await reloadData() }
         }
+        .onChange(of: env.antigravityActivityCoordinator.isScanning) { _, isScanning in
+            guard store.providerFilter == .antigravity, !isScanning else { return }
+            Task { await reloadData() }
+        }
         .onReceive(env.state.$currentQuotaSnapshots.dropFirst()) { _ in
             guard store.providerFilter == .codex else { return }
             updateQuotaForecast()
@@ -269,7 +273,11 @@ struct ProviderUsageDashboardView: View {
         switch store.providerFilter {
         case .codex: return env.scanCoordinator.isScanning
         case .claude: return env.claudeScanCoordinator.isScanning
-        case .all: return env.scanCoordinator.isScanning || env.claudeScanCoordinator.isScanning
+        case .antigravity: return env.antigravityActivityCoordinator.isScanning
+        case .all:
+            return env.scanCoordinator.isScanning
+                || env.claudeScanCoordinator.isScanning
+                || env.antigravityActivityCoordinator.isScanning
         }
     }
 
@@ -345,12 +353,13 @@ struct ProviderUsageDashboardView: View {
         }
 
         var points: [QuotaForecastEngine.RateSnapshotPoint] = []
-        if let storedSnaps = try? await env.usageQueryFacade.getRecentRateLimitSnapshots(
-            accountKey: store.providerFilter == .claude
-                ? ClaudeQuotaRepository.accountKey
-                : (env.state.selectedAccountKey ?? env.state.account?.accountKey),
-            limit: 300
-        ) {
+        if store.providerFilter != .antigravity,
+           let storedSnaps = try? await env.usageQueryFacade.getRecentRateLimitSnapshots(
+               accountKey: store.providerFilter == .claude
+                   ? ClaudeQuotaRepository.accountKey
+                   : (env.state.selectedAccountKey ?? env.state.account?.accountKey),
+               limit: 300
+           ) {
             points = storedSnaps.compactMap { s in
                 guard let resetAt = s.resetsAt else { return nil }
                 return QuotaForecastEngine.RateSnapshotPoint(
@@ -397,22 +406,26 @@ struct ProviderUsageDashboardView: View {
     }
 
     private var currentForecastSnapshot: RateLimitSnapshotRecord? {
-        guard store.providerFilter == .claude else {
+        switch store.providerFilter {
+        case .antigravity:
+            return nil
+        case .claude:
+            guard let usage = env.state.latestClaudeUsage,
+                  let window = usage.fiveHour ?? usage.sevenDay else { return nil }
+            return RateLimitSnapshotRecord(
+                accountKey: ClaudeQuotaRepository.accountKey,
+                observedAt: Int64(usage.capturedAt.timeIntervalSince1970),
+                limitId: window.id,
+                slot: window.windowDuration <= 18_000 ? "primary" : "secondary",
+                usedPercentMilli: Int((window.usedPercent * 1_000).rounded()),
+                windowDurationMins: Int(window.windowDuration / 60),
+                resetsAt: Int64(window.resetAt.timeIntervalSince1970),
+                planType: usage.tier,
+                rawJson: "{}"
+            )
+        case .codex, .all:
             return env.state.preferredQuotaForecastSnapshot
         }
-        guard let usage = env.state.latestClaudeUsage,
-              let window = usage.fiveHour ?? usage.sevenDay else { return nil }
-        return RateLimitSnapshotRecord(
-            accountKey: ClaudeQuotaRepository.accountKey,
-            observedAt: Int64(usage.capturedAt.timeIntervalSince1970),
-            limitId: window.id,
-            slot: window.windowDuration <= 18_000 ? "primary" : "secondary",
-            usedPercentMilli: Int((window.usedPercent * 1_000).rounded()),
-            windowDurationMins: Int(window.windowDuration / 60),
-            resetsAt: Int64(window.resetAt.timeIntervalSince1970),
-            planType: usage.tier,
-            rawJson: "{}"
-        )
     }
 
     // MARK: - 子视图组件划分
@@ -422,15 +435,11 @@ struct ProviderUsageDashboardView: View {
 
         return HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text(store.providerFilter == .claude
-                    ? L10n.text("Claude 用量分析", "Claude Usage Analytics")
-                    : L10n.text("Codex 用量分析", "Codex Usage Analytics"))
+                Text(usageTitle)
                     .font(.system(size: 18, weight: .black, design: .rounded))
                     .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
 
-                Text(store.providerFilter == .claude
-                    ? L10n.text("本地用量 · 活跃热力图 · 模型构成", "Local usage · Activity heatmap · Model breakdown")
-                    : L10n.text("本地与云端活动 · 活跃热力图 · 模型构成", "Local and cloud activity · Activity heatmap · Model breakdown"))
+                Text(usageSubtitle)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
             }
@@ -480,7 +489,9 @@ struct ProviderUsageDashboardView: View {
 
             DashboardKPICard(
                 title: L10n.text("API 等价价值", "API Equivalent Value"),
-                value: UsageNumberFormatter.currencyUSD(metrics.totalCost),
+                value: store.providerFilter == .antigravity && metrics.pricingCoverage.coverageRatio == 0
+                    ? "—"
+                    : UsageNumberFormatter.currencyUSD(metrics.totalCost),
                 caption: pricingCoverageCaption(metrics),
                 icon: "dollarsign.circle.fill",
                 color: emerald
@@ -593,6 +604,9 @@ struct ProviderUsageDashboardView: View {
     }
 
     private func pricingCoverageCaption(_ metrics: DashboardMetricsDTO) -> String {
+        if store.providerFilter == .antigravity && metrics.pricingCoverage.coverageRatio == 0 {
+            return L10n.text("费用无法估算", "Cost cannot be estimated")
+        }
         if !metrics.unpricedReasonCounts.isEmpty {
             return L10n.text("部分记录未计价", "Some records are unpriced")
         }
@@ -600,6 +614,28 @@ struct ProviderUsageDashboardView: View {
             return L10n.text("含历史记录", "Includes historical records")
         }
         return L10n.text("按 API 价格折算", "Converted at API rates")
+    }
+
+    private var usageTitle: String {
+        switch store.providerFilter {
+        case .claude:
+            return L10n.text("Claude 用量分析", "Claude Usage Analytics")
+        case .antigravity:
+            return L10n.text("Antigravity 用量分析", "Antigravity Usage Analytics")
+        case .codex, .all:
+            return L10n.text("Codex 用量分析", "Codex Usage Analytics")
+        }
+    }
+
+    private var usageSubtitle: String {
+        switch store.providerFilter {
+        case .claude:
+            return L10n.text("本地用量 · 活跃热力图 · 模型构成", "Local usage · Activity heatmap · Model breakdown")
+        case .antigravity:
+            return L10n.text("本地 Token 用量 · 活跃热力图 · 模型构成", "Local token usage · Activity heatmap · Model breakdown")
+        case .codex, .all:
+            return L10n.text("本地与云端活动 · 活跃热力图 · 模型构成", "Local and cloud activity · Activity heatmap · Model breakdown")
+        }
     }
 
     // MARK: - 3. 双重智能预测引擎
@@ -971,7 +1007,9 @@ struct ProviderUsageDashboardView: View {
             )
             hoverMetricRow(
                 label: L10n.text("费用", "Cost"),
-                value: UsageNumberFormatter.currencyUSD(day.estimatedCost),
+                value: store.providerFilter == .antigravity && day.unpricedEventCount == day.eventCount
+                    ? "—"
+                    : UsageNumberFormatter.currencyUSD(day.estimatedCost),
                 color: emerald
             )
             if day.legacyAggregateCost.rawValue > 0 {
@@ -1085,7 +1123,9 @@ struct ProviderUsageDashboardView: View {
                             Text(UsageNumberFormatter.compactTokenCount(model.tokens.canonicalTotalTokens))
                                 .font(.system(size: 11.5, weight: .heavy, design: .monospaced))
                                 .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
-                            Text(UsageNumberFormatter.currencyUSD(model.estimatedCost))
+                            Text(store.providerFilter == .antigravity && model.unpricedCount == model.eventCount
+                                ? "—"
+                                : UsageNumberFormatter.currencyUSD(model.estimatedCost))
                                 .font(.system(size: 10, weight: .bold, design: .monospaced))
                                 .foregroundStyle(emerald)
                         }

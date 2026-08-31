@@ -197,13 +197,21 @@ struct ProviderHistoryView: View {
             guard store.providerFilter == .claude, !isScanning else { return }
             Task { await store.loadHistory() }
         }
+        .onChange(of: env.antigravityActivityCoordinator.isScanning) { _, isScanning in
+            guard store.providerFilter == .antigravity, !isScanning else { return }
+            Task { await store.loadHistory() }
+        }
     }
 
     private var isRelevantScanActive: Bool {
         switch store.providerFilter {
         case .codex: return env.scanCoordinator.isScanning
         case .claude: return env.claudeScanCoordinator.isScanning
-        case .all: return env.scanCoordinator.isScanning || env.claudeScanCoordinator.isScanning
+        case .antigravity: return env.antigravityActivityCoordinator.isScanning
+        case .all:
+            return env.scanCoordinator.isScanning
+                || env.claudeScanCoordinator.isScanning
+                || env.antigravityActivityCoordinator.isScanning
         }
     }
 

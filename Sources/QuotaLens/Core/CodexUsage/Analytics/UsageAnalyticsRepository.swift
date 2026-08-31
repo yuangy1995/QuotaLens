@@ -295,14 +295,17 @@ public final class UsageAnalyticsRepository: Sendable {
             }
 
             var contentMatches = false
-            if !metadataMatches,
-               candidate.session.provider == .codex,
-               !candidate.sourcePath.isEmpty {
+            if !metadataMatches, !candidate.sourcePath.isEmpty {
                 do {
-                    contentMatches = try CodexConversationReader.containsConversationText(
-                        fileURL: URL(fileURLWithPath: candidate.sourcePath),
-                        query: query
-                    )
+                    if candidate.session.provider == .codex {
+                        contentMatches = try CodexConversationReader.containsConversationText(
+                            fileURL: URL(fileURLWithPath: candidate.sourcePath),
+                            query: query
+                        )
+                    } else if candidate.session.provider == .antigravity {
+                        contentMatches = try AntigravityConversationReader()
+                            .containsConversationText(sessionID: candidate.session.sessionId, query: query)
+                    }
                 } catch let cancellation as CancellationError {
                     throw cancellation
                 } catch {
@@ -584,6 +587,9 @@ public final class UsageAnalyticsRepository: Sendable {
             )
         }
         guard let source = rows.first else { return nil }
+        if source.2 == UsageProvider.antigravity.rawValue {
+            return try AntigravityConversationReader().readConversation(sessionID: sessionId)
+        }
         guard source.2 == UsageProvider.codex.rawValue else {
             return CodexSessionConversationDTO(sessionId: sessionId, messages: [])
         }

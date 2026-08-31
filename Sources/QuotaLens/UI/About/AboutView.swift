@@ -53,6 +53,17 @@ public struct AboutView: View {
     private var defaultChangelogs: [ChangelogEntry] {
         [
             ChangelogEntry(
+                id: "v1.0.26",
+                version: "v1.0.26",
+                date: "2026-08-31",
+                changes: [
+                    L10n.text("新增 Antigravity 深度用量解析与官方 API 定价目录引擎，支持 Gemini 3.7/3.6/3.5 Flash 与 3.1 Pro 成本测算与长上下文折算", "Added Antigravity deep usage parsing and official API pricing catalog engine with cost auditing for Gemini 3.7/3.6/3.5 Flash and 3.1 Pro"),
+                    L10n.text("全面优化周度配额完全恢复气泡提醒，支持多项配额折叠提示、确认关闭交互与精致视觉质感", "Enhanced weekly quota recovery notification bubbles with multi-quota folding, interactive dismiss, and refined visual aesthetics"),
+                    L10n.text("提升概览看板、用量看板与历史会话的高频刷新性能与暗色模式视觉层次", "Improved high-frequency refresh performance and dark mode visual hierarchy across overview, dashboard, and session views"),
+                    L10n.text("全面完善 10 种语言的多语言本地化翻译字典与更新日志多语言映射", "Comprehensive localization dictionary refinements and changelog translation mapping across 10 supported languages")
+                ]
+            ),
+            ChangelogEntry(
                 id: "v1.0.25",
                 version: "v1.0.25",
                 date: "2026-08-30",

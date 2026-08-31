@@ -16,6 +16,60 @@ public struct AntigravityActivityRecord: Sendable, Equatable {
     }
 }
 
+public struct AntigravityUsageRecord: Sendable, Equatable {
+    public let generationIndex: Int64
+    public let timestamp: Date
+    public let timestampSource: TimestampSource
+    public let modelRaw: String
+    public let modelDisplayName: String?
+    public let tokens: TokenBreakdown
+    public let responseID: String?
+
+    public init(
+        generationIndex: Int64,
+        timestamp: Date,
+        timestampSource: TimestampSource,
+        modelRaw: String,
+        modelDisplayName: String?,
+        tokens: TokenBreakdown,
+        responseID: String?
+    ) {
+        self.generationIndex = generationIndex
+        self.timestamp = timestamp
+        self.timestampSource = timestampSource
+        self.modelRaw = modelRaw
+        self.modelDisplayName = modelDisplayName
+        self.tokens = tokens
+        self.responseID = responseID
+    }
+}
+
+public struct AntigravityConversationData: Sendable, Equatable {
+    public let sessionID: String
+    public let sourcePath: String
+    public let sourceProfile: String
+    public let trajectoryID: String
+    public let createdAt: Date?
+    public let lastModifiedAt: Date?
+    public let lastUserInputAt: Date?
+    public let stepCount: Int64
+    public let projectName: String?
+    public let cwd: String?
+    public let usageRecords: [AntigravityUsageRecord]
+
+    public var activityRecord: AntigravityActivityRecord {
+        AntigravityActivityRecord(
+            sourceProfile: sourceProfile,
+            trajectoryID: trajectoryID,
+            createdAt: createdAt,
+            lastModifiedAt: lastModifiedAt,
+            lastUserInputAt: lastUserInputAt,
+            stepCount: stepCount,
+            projectName: projectName
+        )
+    }
+}
+
 public struct AntigravityActivityScanSummary: Sendable, Equatable {
     public let recordsRead: Int
     public let sourceProfile: String?
@@ -30,6 +84,14 @@ public struct AntigravityConversationReader: Sendable {
             .appendingPathComponent(".gemini/antigravity/conversations", isDirectory: true)
     }
 
+    public static var candidateDirectoryURLs: [URL] {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        return [
+            defaultDirectoryURL,
+            home.appendingPathComponent(".gemini/antigravity-cli/conversations", isDirectory: true)
+        ]
+    }
+
     public let directoryURL: URL
 
     public init(directoryURL: URL = Self.defaultDirectoryURL) {
@@ -37,39 +99,62 @@ public struct AntigravityConversationReader: Sendable {
     }
 
     public var isAvailable: Bool {
-        var isDirectory: ObjCBool = false
-        return FileManager.default.fileExists(atPath: directoryURL.path, isDirectory: &isDirectory)
-            && isDirectory.boolValue
+        conversationDirectories.contains { url in
+            var isDirectory: ObjCBool = false
+            return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
+                && isDirectory.boolValue
+        }
     }
 
-    public func readRecords() throws -> [AntigravityActivityRecord] {
-        guard isAvailable else { return [] }
-        let urls = try FileManager.default.contentsOfDirectory(
-            at: directoryURL,
-            includingPropertiesForKeys: [.isRegularFileKey, .creationDateKey, .contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-        )
-        .filter { $0.pathExtension.lowercased() == "db" }
-        .sorted { $0.lastPathComponent < $1.lastPathComponent }
+    public func readConversations() throws -> [AntigravityConversationData] {
+        let urls = try databaseURLs()
+        guard !urls.isEmpty else { return [] }
 
-        var records: [AntigravityActivityRecord] = []
+        var conversations: [AntigravityConversationData] = []
         var firstError: Error?
         for url in urls {
             do {
-                if let record = try readRecord(from: url) {
-                    records.append(record)
+                if let conversation = try readConversationData(from: url) {
+                    conversations.append(conversation)
                 }
             } catch {
                 firstError = firstError ?? error
             }
         }
-        if records.isEmpty, let firstError {
+        if conversations.isEmpty, let firstError {
             throw firstError
         }
-        return records
+        return conversations
     }
 
-    private func readRecord(from url: URL) throws -> AntigravityActivityRecord? {
+    public func readRecords() throws -> [AntigravityActivityRecord] {
+        try readConversations().map(\.activityRecord)
+    }
+
+    private var conversationDirectories: [URL] {
+        if directoryURL.standardizedFileURL == Self.defaultDirectoryURL.standardizedFileURL {
+            return Self.candidateDirectoryURLs
+        }
+        return [directoryURL]
+    }
+
+    private func databaseURLs() throws -> [URL] {
+        var result: [URL] = []
+        for directory in conversationDirectories {
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: directory.path, isDirectory: &isDirectory),
+                  isDirectory.boolValue else { continue }
+            let urls = try FileManager.default.contentsOfDirectory(
+                at: directory,
+                includingPropertiesForKeys: [.isRegularFileKey, .creationDateKey, .contentModificationDateKey],
+                options: [.skipsHiddenFiles]
+            )
+            result.append(contentsOf: urls.filter { $0.pathExtension.lowercased() == "db" })
+        }
+        return result.sorted { $0.path < $1.path }
+    }
+
+    private func readConversationData(from url: URL) throws -> AntigravityConversationData? {
         var database: OpaquePointer?
         let status = sqlite3_open_v2(url.path, &database, SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX, nil)
         guard status == SQLITE_OK, let database else {
@@ -80,13 +165,25 @@ public struct AntigravityConversationReader: Sendable {
                 userInfo: [NSLocalizedDescriptionKey: "Unable to read Antigravity conversation database"]
             )
         }
-        defer { sqlite3_close(database) }
         sqlite3_busy_timeout(database, 750)
+        if canReadDatabase(database) {
+            defer { sqlite3_close(database) }
+            return try makeConversationData(database: database, sourceURL: url)
+        }
+        sqlite3_close(database)
+        return try readConversationDataFromTemporaryCopy(url)
+    }
 
-        guard let trajectoryID = try stringValue(
+    private func makeConversationData(
+        database: OpaquePointer,
+        sourceURL url: URL
+    ) throws -> AntigravityConversationData? {
+
+        let sessionID = url.deletingPathExtension().lastPathComponent
+        let trajectoryID = try stringValue(
             database: database,
             sql: "SELECT trajectory_id FROM trajectory_meta ORDER BY rowid LIMIT 1;"
-        ) else { return nil }
+        ) ?? sessionID
 
         let stepCount = try int64Value(database: database, sql: "SELECT COUNT(*) FROM steps;") ?? 0
         let trajectoryMetadata = try blobValue(
@@ -94,20 +191,70 @@ public struct AntigravityConversationReader: Sendable {
             sql: "SELECT data FROM trajectory_metadata_blob ORDER BY CASE WHEN id = 'main' THEN 0 ELSE 1 END LIMIT 1;"
         )
         let parsedMetadata = trajectoryMetadata.map(Self.parseTrajectoryMetadata)
-        let latestStepAt = try latestStepTimestamp(database: database)
+        let stepInfo = readStepInfo(database: database)
         let fileValues = try? url.resourceValues(forKeys: [.creationDateKey, .contentModificationDateKey])
         let createdAt = parsedMetadata?.createdAt ?? fileValues?.creationDate
-        let lastModifiedAt = latestStepAt ?? fileValues?.contentModificationDate ?? createdAt
+        let lastModifiedAt = stepInfo.latestStepAt ?? fileValues?.contentModificationDate ?? createdAt
+        let fallbackDate = createdAt ?? lastModifiedAt ?? fileValues?.contentModificationDate ?? Date()
+        let usageRecords = readUsageRecords(
+            database: database,
+            modelStepTimestamps: stepInfo.modelStepTimestamps,
+            createdAt: createdAt,
+            fallbackDate: fallbackDate
+        )
 
-        return AntigravityActivityRecord(
+        return AntigravityConversationData(
+            sessionID: sessionID,
+            sourcePath: url.path,
             sourceProfile: AntigravityStateProfile.legacy.rawValue,
             trajectoryID: trajectoryID,
             createdAt: createdAt,
             lastModifiedAt: lastModifiedAt,
-            lastUserInputAt: nil,
+            lastUserInputAt: stepInfo.lastUserInputAt,
             stepCount: max(0, stepCount),
-            projectName: parsedMetadata?.projectName
+            projectName: parsedMetadata?.projectName,
+            cwd: parsedMetadata?.cwd,
+            usageRecords: usageRecords
         )
+    }
+
+    private func canReadDatabase(_ database: OpaquePointer) -> Bool {
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, "SELECT COUNT(*) FROM sqlite_master;", -1, &statement, nil) == SQLITE_OK,
+              let statement else { return false }
+        defer { sqlite3_finalize(statement) }
+        return sqlite3_step(statement) == SQLITE_ROW
+    }
+
+    private func readConversationDataFromTemporaryCopy(_ url: URL) throws -> AntigravityConversationData? {
+        let temporaryDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("QuotaLens-Antigravity-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+
+        let copyURL = temporaryDirectory.appendingPathComponent(url.lastPathComponent)
+        try FileManager.default.copyItem(at: url, to: copyURL)
+        for suffix in ["-wal", "-shm"] {
+            let sidecar = URL(fileURLWithPath: url.path + suffix)
+            let sidecarCopy = URL(fileURLWithPath: copyURL.path + suffix)
+            if FileManager.default.fileExists(atPath: sidecar.path) {
+                try? FileManager.default.copyItem(at: sidecar, to: sidecarCopy)
+            }
+        }
+
+        var database: OpaquePointer?
+        let status = sqlite3_open_v2(copyURL.path, &database, SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX, nil)
+        guard status == SQLITE_OK, let database else {
+            if let database { sqlite3_close(database) }
+            throw NSError(
+                domain: "QuotaLens.AntigravityConversationReader",
+                code: Int(status),
+                userInfo: [NSLocalizedDescriptionKey: "Unable to read Antigravity conversation database"]
+            )
+        }
+        defer { sqlite3_close(database) }
+        sqlite3_busy_timeout(database, 750)
+        return try makeConversationData(database: database, sourceURL: url)
     }
 
     private func stringValue(database: OpaquePointer, sql: String) throws -> String? {
@@ -140,62 +287,258 @@ public struct AntigravityConversationReader: Sendable {
         return Data(bytes: bytes, count: Int(sqlite3_column_bytes(statement, 0)))
     }
 
-    private func latestStepTimestamp(database: OpaquePointer) throws -> Date? {
+    private struct StepInfo {
+        var latestStepAt: Date?
+        var lastUserInputAt: Date?
+        var modelStepTimestamps: [Date]
+    }
+
+    private func readStepInfo(database: OpaquePointer) -> StepInfo {
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(
             database,
-            "SELECT metadata FROM steps WHERE metadata IS NOT NULL;",
+            "SELECT step_type, metadata FROM steps ORDER BY idx;",
             -1,
             &statement,
             nil
-        ) == SQLITE_OK, let statement else { return nil }
+        ) == SQLITE_OK, let statement else {
+            return readLegacyStepInfo(database: database)
+        }
+        defer { sqlite3_finalize(statement) }
+
+        var info = StepInfo(latestStepAt: nil, lastUserInputAt: nil, modelStepTimestamps: [])
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard sqlite3_column_type(statement, 1) != SQLITE_NULL,
+                  let bytes = sqlite3_column_blob(statement, 1) else { continue }
+            let data = Data(bytes: bytes, count: Int(sqlite3_column_bytes(statement, 1)))
+            guard let timestamp = Self.latestTimestamp(inStepMetadata: data) else { continue }
+            info.latestStepAt = info.latestStepAt.map { max($0, timestamp) } ?? timestamp
+            let stepType = sqlite3_column_int(statement, 0)
+            if stepType == 14 {
+                info.lastUserInputAt = info.lastUserInputAt.map { max($0, timestamp) } ?? timestamp
+            } else if stepType == 15 {
+                info.modelStepTimestamps.append(timestamp)
+            }
+        }
+        return info
+    }
+
+    private func readLegacyStepInfo(database: OpaquePointer) -> StepInfo {
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(
+            database,
+            "SELECT metadata FROM steps ORDER BY idx;",
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK, let statement else {
+            return StepInfo(latestStepAt: nil, lastUserInputAt: nil, modelStepTimestamps: [])
+        }
         defer { sqlite3_finalize(statement) }
 
         var latest: Date?
         while sqlite3_step(statement) == SQLITE_ROW {
-            guard let bytes = sqlite3_column_blob(statement, 0) else { continue }
+            guard sqlite3_column_type(statement, 0) != SQLITE_NULL,
+                  let bytes = sqlite3_column_blob(statement, 0) else { continue }
             let data = Data(bytes: bytes, count: Int(sqlite3_column_bytes(statement, 0)))
             if let timestamp = Self.latestTimestamp(inStepMetadata: data) {
                 latest = latest.map { max($0, timestamp) } ?? timestamp
             }
         }
-        return latest
+        return StepInfo(latestStepAt: latest, lastUserInputAt: nil, modelStepTimestamps: [])
     }
 
-    private static func parseTrajectoryMetadata(_ data: Data) -> (createdAt: Date?, projectName: String?) {
-        var reader = AntigravityProtoReader(data: data)
-        var createdAt: Date?
-        var projectName: String?
-        while let field = try? reader.nextField() {
-            switch field.number {
-            case 1 where field.wireType == 2:
-                projectName = projectName ?? projectNameFromWorkspaceMetadata(field.bytes)
-            case 2 where field.wireType == 2:
-                createdAt = parseTimestamp(field.bytes)
-            case 7 where field.wireType == 2:
-                projectName = projectName ?? projectNameFromFileURLData(field.bytes)
-            default:
-                break
+    private func readUsageRecords(
+        database: OpaquePointer,
+        modelStepTimestamps: [Date],
+        createdAt: Date?,
+        fallbackDate: Date
+    ) -> [AntigravityUsageRecord] {
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(
+            database,
+            "SELECT idx, data FROM gen_metadata ORDER BY idx;",
+            -1,
+            &statement,
+            nil
+        ) == SQLITE_OK, let statement else { return [] }
+        defer { sqlite3_finalize(statement) }
+
+        var records: [AntigravityUsageRecord] = []
+        var seenResponseIDs = Set<String>()
+        var rowIndex = 0
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard sqlite3_column_type(statement, 1) != SQLITE_NULL,
+                  let bytes = sqlite3_column_blob(statement, 1) else {
+                rowIndex += 1
+                continue
             }
+            let data = Data(bytes: bytes, count: Int(sqlite3_column_bytes(statement, 1)))
+            let generationIndex = sqlite3_column_int64(statement, 0)
+            guard let parsed = Self.parseUsage(data) else {
+                rowIndex += 1
+                continue
+            }
+            if let responseID = parsed.responseID, !seenResponseIDs.insert(responseID).inserted {
+                rowIndex += 1
+                continue
+            }
+
+            let stepTimestamp = rowIndex < modelStepTimestamps.count ? modelStepTimestamps[rowIndex] : nil
+            let timestamp = parsed.timestamp ?? stepTimestamp ?? fallbackDate
+            let timestampSource: TimestampSource
+            if parsed.timestamp != nil || stepTimestamp != nil {
+                timestampSource = .metadataTimestamp
+            } else if createdAt != nil {
+                timestampSource = .sessionMetadata
+            } else {
+                timestampSource = .fileModification
+            }
+            records.append(AntigravityUsageRecord(
+                generationIndex: generationIndex,
+                timestamp: timestamp,
+                timestampSource: timestampSource,
+                modelRaw: parsed.modelRaw,
+                modelDisplayName: parsed.modelDisplayName,
+                tokens: parsed.tokens,
+                responseID: parsed.responseID
+            ))
+            rowIndex += 1
         }
-        return (createdAt, projectName)
+        return records
     }
 
-    private static func projectNameFromWorkspaceMetadata(_ data: Data) -> String? {
+    private static func parseUsage(_ data: Data) -> (
+        modelRaw: String,
+        modelDisplayName: String?,
+        timestamp: Date?,
+        tokens: TokenBreakdown,
+        responseID: String?
+    )? {
+        guard let chatModel = messageField(data, number: 1),
+              let usage = messageField(chatModel, number: 4) else { return nil }
+
+        let fixedInput = clampedInt64(varintField(usage, number: 1))
+        let newInput = clampedInt64(varintField(usage, number: 2))
+        let cacheRead = clampedInt64(varintField(usage, number: 5))
+        let textOutput = clampedInt64(varintField(usage, number: 9))
+        let reasoning = clampedInt64(varintField(usage, number: 10))
+        let inputWithoutCache = adding(fixedInput, newInput)
+        let input = adding(inputWithoutCache, cacheRead)
+        let output = adding(textOutput, reasoning)
+        let total = adding(input, output)
+        guard total > 0 else { return nil }
+
+        let responseModel = nonEmpty(stringField(chatModel, number: 19))
+        let displayName = nonEmpty(stringField(chatModel, number: 21))
+        let modelRaw: String
+        if let responseModel, responseModel.lowercased() != "gemini-default" {
+            modelRaw = responseModel
+        } else {
+            modelRaw = displayName ?? responseModel ?? "unknown"
+        }
+
+        return (
+            modelRaw: modelRaw,
+            modelDisplayName: displayName,
+            timestamp: generationTimestamp(from: chatModel),
+            tokens: TokenBreakdown(
+                inputTokens: input,
+                cachedInputTokens: cacheRead,
+                outputTokens: output,
+                reasoningOutputTokens: reasoning,
+                sourceTotalTokens: total
+            ),
+            responseID: nonEmpty(stringField(usage, number: 11))
+        )
+    }
+
+    private static func generationTimestamp(from chatModel: Data) -> Date? {
+        guard let generation = messageField(chatModel, number: 9),
+              let timestamp = messageField(generation, number: 4) else { return nil }
+        return parseTimestamp(timestamp)
+    }
+
+    private static func messageField(_ data: Data, number: Int) -> Data? {
         var reader = AntigravityProtoReader(data: data)
         while let field = try? reader.nextField() {
-            guard (field.number == 1 || field.number == 2), field.wireType == 2,
-                  let project = projectNameFromFileURLData(field.bytes) else { continue }
-            return project
+            if field.number == number, field.wireType == 2 {
+                return field.bytes
+            }
         }
         return nil
     }
 
-    private static func projectNameFromFileURLData(_ data: Data) -> String? {
+    private static func stringField(_ data: Data, number: Int) -> String? {
+        guard let value = messageField(data, number: number) else { return nil }
+        return String(data: value, encoding: .utf8)
+    }
+
+    private static func varintField(_ data: Data, number: Int) -> UInt64? {
+        var reader = AntigravityProtoReader(data: data)
+        while let field = try? reader.nextField() {
+            if field.number == number, field.wireType == 0 {
+                return field.varint
+            }
+        }
+        return nil
+    }
+
+    private static func clampedInt64(_ value: UInt64?) -> Int64 {
+        guard let value else { return 0 }
+        return value > UInt64(Int64.max) ? Int64.max : Int64(value)
+    }
+
+    private static func adding(_ lhs: Int64, _ rhs: Int64) -> Int64 {
+        let (value, overflow) = lhs.addingReportingOverflow(rhs)
+        return overflow ? Int64.max : value
+    }
+
+    private static func parseTrajectoryMetadata(_ data: Data) -> (createdAt: Date?, projectName: String?, cwd: String?) {
+        var reader = AntigravityProtoReader(data: data)
+        var createdAt: Date?
+        var projectName: String?
+        var cwd: String?
+        while let field = try? reader.nextField() {
+            switch field.number {
+            case 1 where field.wireType == 2:
+                let path = filePathFromWorkspaceMetadata(field.bytes)
+                cwd = cwd ?? path
+                projectName = projectName ?? path.map { URL(fileURLWithPath: $0).lastPathComponent }
+            case 2 where field.wireType == 2:
+                createdAt = parseTimestamp(field.bytes)
+            case 7 where field.wireType == 2:
+                let path = filePathFromFileURLData(field.bytes)
+                cwd = cwd ?? path
+                projectName = projectName ?? path.map { URL(fileURLWithPath: $0).lastPathComponent }
+            default:
+                break
+            }
+        }
+        return (createdAt, nonEmpty(projectName), nonEmpty(cwd))
+    }
+
+    private static func nonEmpty(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private static func filePathFromWorkspaceMetadata(_ data: Data) -> String? {
+        var reader = AntigravityProtoReader(data: data)
+        while let field = try? reader.nextField() {
+            guard (field.number == 1 || field.number == 2), field.wireType == 2,
+                  let path = filePathFromFileURLData(field.bytes) else { continue }
+            return path
+        }
+        return nil
+    }
+
+    private static func filePathFromFileURLData(_ data: Data) -> String? {
         guard let value = String(data: data, encoding: .utf8),
               let url = URL(string: value), url.scheme == "file" else { return nil }
-        let name = url.lastPathComponent.trimmingCharacters(in: .whitespacesAndNewlines)
-        return name.isEmpty ? nil : name
+        let path = url.path.trimmingCharacters(in: .whitespacesAndNewlines)
+        return path.isEmpty ? nil : path
     }
 
     private static func latestTimestamp(inStepMetadata data: Data) -> Date? {
@@ -220,6 +563,97 @@ public struct AntigravityConversationReader: Sendable {
         }
         guard let seconds, seconds > 0 else { return nil }
         return Date(timeIntervalSince1970: Double(seconds) + Double(nanos) / 1_000_000_000)
+    }
+
+    public func readConversation(sessionID: String) throws -> CodexSessionConversationDTO {
+        guard let url = transcriptURL(for: sessionID) else {
+            return CodexSessionConversationDTO(sessionId: sessionID, messages: [])
+        }
+        let data = try Data(contentsOf: url, options: [.mappedIfSafe])
+        let lines = String(decoding: data, as: UTF8.self).split(whereSeparator: \.isNewline)
+        var messages: [CodexConversationMessageDTO] = []
+
+        for line in lines {
+            guard let jsonData = line.data(using: .utf8),
+                  let raw = try JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+                  let type = raw["type"] as? String,
+                  let source = raw["source"] as? String else { continue }
+
+            let role: CodexConversationRole
+            if source == "USER_EXPLICIT", type == "USER_INPUT" {
+                role = .user
+            } else if source == "MODEL", type == "PLANNER_RESPONSE" {
+                role = .assistant
+            } else {
+                continue
+            }
+
+            let content = (raw["content"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let text = role == .user ? userRequest(from: content) : content
+            guard !text.isEmpty else { continue }
+            let timestamp = transcriptDate(raw["created_at"] as? String)
+            if let previous = messages.last,
+               previous.role == role,
+               previous.text == text {
+                continue
+            }
+            messages.append(CodexConversationMessageDTO(
+                id: "\(sessionID):\(raw["step_index"] as? Int ?? messages.count)",
+                role: role,
+                timestamp: timestamp,
+                text: text
+            ))
+        }
+
+        return CodexSessionConversationDTO(sessionId: sessionID, messages: messages)
+    }
+
+    public func containsConversationText(sessionID: String, query: String) throws -> Bool {
+        let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedQuery.isEmpty else { return false }
+        let conversation = try readConversation(sessionID: sessionID)
+        return conversation.messages.contains {
+            $0.text.range(
+                of: normalizedQuery,
+                options: [.caseInsensitive, .diacriticInsensitive],
+                range: nil,
+                locale: L10n.locale
+            ) != nil
+        }
+    }
+
+    private func transcriptURL(for sessionID: String) -> URL? {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let roots = [
+            home.appendingPathComponent(".gemini/antigravity/brain", isDirectory: true),
+            home.appendingPathComponent(".gemini/antigravity-cli/brain", isDirectory: true)
+        ]
+        for root in roots {
+            let directory = root.appendingPathComponent(sessionID, isDirectory: true)
+                .appendingPathComponent(".system_generated/logs", isDirectory: true)
+            for name in ["transcript_full.jsonl", "transcript.jsonl"] {
+                let url = directory.appendingPathComponent(name)
+                if FileManager.default.fileExists(atPath: url.path) { return url }
+            }
+        }
+        return nil
+    }
+
+    private func transcriptDate(_ value: String?) -> Date? {
+        guard let value else { return nil }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.date(from: value) ?? ISO8601DateFormatter().date(from: value)
+    }
+
+    private func userRequest(from content: String) -> String {
+        guard let start = content.range(of: "<USER_REQUEST>") else { return content }
+        let requestStart = start.upperBound
+        if let end = content.range(of: "</USER_REQUEST>", range: requestStart..<content.endIndex) {
+            return String(content[requestStart..<end.lowerBound])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return String(content[requestStart...]).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
@@ -248,13 +682,18 @@ public actor AntigravityActivityStore {
             let records = Self.parseRecords(raw.value, sourceProfile: raw.source.profile.rawValue)
             recordsByProfile[raw.source.profile.rawValue, default: []].append(contentsOf: records)
         }
+        let conversations: [AntigravityConversationData]
         if conversationReader.isAvailable {
+            conversations = try conversationReader.readConversations()
             recordsByProfile[AntigravityStateProfile.legacy.rawValue, default: []]
-                .append(contentsOf: try conversationReader.readRecords())
+                .append(contentsOf: conversations.map(\.activityRecord))
+        } else {
+            conversations = []
         }
         for (sourceProfile, records) in recordsByProfile {
             try replace(Self.deduplicated(records), sourceProfile: sourceProfile)
         }
+        try AntigravityUsageImporter.replace(conversations: conversations, database: database)
 
         let now = Date()
         let stored = Set(try storedProfiles())
@@ -589,8 +1028,8 @@ public final class AntigravityActivityScanCoordinator: ObservableObject {
             snapshotsByProfile = result.snapshotsByProfile
             lastScanTime = Date()
             statusText = L10n.format(
-                "Read %d local sources · %d Antigravity tasks",
-                zhHans: "已从 %d 个本机来源读取 %d 个 Antigravity 任务",
+                "Read %d local sources · %d Antigravity sessions",
+                zhHans: "已从 %d 个本机来源读取 %d 个 Antigravity 会话",
                 result.sourceProfiles.count,
                 result.recordsRead
             )
@@ -614,7 +1053,7 @@ final class AntigravityStateFileWatcher: @unchecked Sendable {
     init(onChange: @escaping @Sendable () -> Void) {
         let stateDirectories = AntigravityLocalStateReader.candidateSources()
             .map { $0.databaseURL.deletingLastPathComponent() }
-        self.directories = (stateDirectories + [AntigravityConversationReader.defaultDirectoryURL])
+        self.directories = (stateDirectories + AntigravityConversationReader.candidateDirectoryURLs)
             .filter { FileManager.default.fileExists(atPath: $0.path) }
             .reduce(into: []) { result, url in
                 if !result.contains(url) { result.append(url) }

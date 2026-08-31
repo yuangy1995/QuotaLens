@@ -23,6 +23,7 @@ public enum UsageProviderFilter: String, CaseIterable, Identifiable, Sendable, C
     case all
     case codex
     case claude
+    case antigravity
 
     public var id: String { rawValue }
 
@@ -31,6 +32,7 @@ public enum UsageProviderFilter: String, CaseIterable, Identifiable, Sendable, C
         case .all: return L10n.text("全部", "All")
         case .codex: return "Codex"
         case .claude: return "Claude"
+        case .antigravity: return "Antigravity"
         }
     }
 
@@ -39,6 +41,7 @@ public enum UsageProviderFilter: String, CaseIterable, Identifiable, Sendable, C
         case .all: return nil
         case .codex: return .codex
         case .claude: return .claude
+        case .antigravity: return .antigravity
         }
     }
 }

@@ -385,8 +385,8 @@ final class SessionDeletionAndQuotaStateTests: XCTestCase {
             }
         }
 
-        let chinese = "重构 Codex 连接、重连与额度刷新状态，连接失败和缓存数据现在会准确显示"
-        let english = "Reworked Codex connection, reconnection, and quota refresh states so failures and cached data are shown accurately"
+        let chinese = "新增 Antigravity 深度用量解析与官方 API 定价目录引擎，支持 Gemini 3.7/3.6/3.5 Flash 与 3.1 Pro 成本测算与长上下文折算"
+        let english = "Added Antigravity deep usage parsing and official API pricing catalog engine with cost auditing for Gemini 3.7/3.6/3.5 Flash and 3.1 Pro"
         for mode in AppLanguageMode.allCases where mode != .system {
             defaults.set(mode.rawValue, forKey: L10n.languageModeDefaultsKey)
             let localized = L10n.text(chinese, english)
@@ -413,7 +413,7 @@ final class SessionDeletionAndQuotaStateTests: XCTestCase {
             }
         }
 
-        let chinese = "重构 Codex 连接、重连与额度刷新状态，连接失败和缓存数据现在会准确显示"
+        let chinese = "新增 Antigravity 深度用量解析与官方 API 定价目录引擎，支持 Gemini 3.7/3.6/3.5 Flash 与 3.1 Pro 成本测算与长上下文折算"
         for mode in AppLanguageMode.allCases where mode != .system {
             defaults.set(mode.rawValue, forKey: L10n.languageModeDefaultsKey)
             let localized = L10n.localizeChangelogText(chinese)
