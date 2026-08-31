@@ -871,8 +871,13 @@ final class QueryAndForecastTests: XCTestCase {
             (-20, 40, "Current"), (-35, 50, "Historical")
         ]
         for (index, sample) in samples.enumerated() {
-            let date = try XCTUnwrap(calendar.date(byAdding: .day, value: sample.offset, to: today))
-                .addingTimeInterval(12 * 3_600)
+            let date: Date
+            if sample.offset == 0 {
+                date = Date().addingTimeInterval(-60)
+            } else {
+                date = try XCTUnwrap(calendar.date(byAdding: .day, value: sample.offset, to: today))
+                    .addingTimeInterval(12 * 3_600)
+            }
             try insertAntigravityActivity(
                 database,
                 id: "activity-\(index)",
