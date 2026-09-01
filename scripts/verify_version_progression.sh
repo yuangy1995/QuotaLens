@@ -4,9 +4,15 @@ set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CURRENT_VERSION="$(tr -d '[:space:]' < "${PROJECT_DIR}/VERSION")"
-LATEST_VERSION="$(git -C "${PROJECT_DIR}" tag --list 'v[0-9]*' --sort=-v:refname | head -n 1 | sed 's/^v//')"
+LATEST_TAG="$(git -C "${PROJECT_DIR}" tag --list 'v[0-9]*' --sort=-v:refname | head -n 1)"
+LATEST_VERSION="${LATEST_TAG#v}"
 
 if [[ -z "${LATEST_VERSION}" ]]; then
+    exit 0
+fi
+
+if [[ "${CURRENT_VERSION}" == "${LATEST_VERSION}" ]] &&
+   [[ "$(git -C "${PROJECT_DIR}" rev-list -n 1 "${LATEST_TAG}")" == "$(git -C "${PROJECT_DIR}" rev-parse HEAD)" ]]; then
     exit 0
 fi
 

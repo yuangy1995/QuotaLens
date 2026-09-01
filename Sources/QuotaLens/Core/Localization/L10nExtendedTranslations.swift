@@ -1,4 +1,74 @@
 let extendedTranslations: [String: [AppLanguage: String]] = [
+    "Prevents Claude child tasks without a complete identity from changing the parent-session hierarchy": [
+        .traditionalChinese: "避免尚未寫入完整身分的 Claude 子任務影響父工作階段層級。",
+        .japanese: "完全な識別情報がまだない Claude の子タスクが親セッション階層を変更しないようにします。",
+        .korean: "완전한 식별 정보가 없는 Claude 하위 작업이 상위 세션 계층에 영향을 주지 않도록 합니다.",
+        .spanish: "Evita que las tareas secundarias de Claude sin identidad completa alteren la jerarquía de la sesión principal.",
+        .german: "Verhindert, dass Claude-Unteraufgaben ohne vollständige Identität die Hierarchie der übergeordneten Sitzung verändern.",
+        .french: "Empêche les sous-tâches Claude sans identité complète de modifier la hiérarchie de la session parente.",
+        .portuguese: "Impede que subtarefas do Claude sem identidade completa alterem a hierarquia da sessão principal.",
+        .portugueseBrazil: "Impede que subtarefas do Claude sem identidade completa alterem a hierarquia da sessão principal."
+    ],
+    "Adds Claude local-record completeness checks and chunked reading with clear warnings for damage or format changes": [
+        .traditionalChinese: "新增 Claude 本機記錄完整度檢查與分塊讀取，損壞或格式變更時會明確提示。",
+        .japanese: "Claude のローカル記録の完全性チェックと分割読み込みを追加し、破損や形式変更を明確に通知します。",
+        .korean: "Claude 로컬 기록 완전성 검사와 분할 읽기를 추가하고 손상 또는 형식 변경을 명확히 안내합니다.",
+        .spanish: "Añade comprobaciones de integridad y lectura por bloques para los registros locales de Claude, con avisos claros ante daños o cambios de formato.",
+        .german: "Fügt Vollständigkeitsprüfungen und blockweises Lesen für lokale Claude-Aufzeichnungen mit klaren Hinweisen bei Schäden oder Formatänderungen hinzu.",
+        .french: "Ajoute des contrôles d’intégrité et une lecture par blocs des historiques locaux Claude, avec des avertissements clairs en cas de dommage ou de changement de format.",
+        .portuguese: "Adiciona verificações de integridade e leitura em blocos aos registos locais do Claude, com avisos claros sobre danos ou mudanças de formato.",
+        .portugueseBrazil: "Adiciona verificações de integridade e leitura em blocos aos registros locais do Claude, com avisos claros sobre danos ou mudanças de formato."
+    ],
+    "Retries upgrade repairs per source so one problematic file no longer triggers repeated full rebuilds": [
+        .traditionalChinese: "升級修復改為按來源重試，單一異常檔案不再觸發反覆完整重建。",
+        .japanese: "アップグレード修復をソース単位で再試行し、1 つの問題ファイルによる全体再構築の繰り返しを防ぎます。",
+        .korean: "업그레이드 복구를 소스별로 다시 시도하여 하나의 문제 파일이 반복적인 전체 재구축을 유발하지 않도록 합니다.",
+        .spanish: "Reintenta las reparaciones por origen para que un archivo problemático no provoque reconstrucciones completas repetidas.",
+        .german: "Wiederholt Upgrade-Reparaturen pro Quelle, damit eine problematische Datei keine wiederholten vollständigen Neuaufbauten auslöst.",
+        .french: "Réessaie les réparations source par source afin qu’un fichier problématique ne déclenche plus de reconstructions complètes répétées.",
+        .portuguese: "Repete as reparações por origem para que um ficheiro problemático não provoque reconstruções completas repetidas.",
+        .portugueseBrazil: "Repete as correções por origem para que um arquivo problemático não provoque reconstruções completas repetidas."
+    ],
+    "Tightens account-alias migration evidence and removes duplicate scan paths": [
+        .traditionalChinese: "收緊帳號別名移轉依據並移除重複掃描路徑。",
+        .japanese: "アカウント別名移行の根拠を厳格化し、重複するスキャンパスを除外します。",
+        .korean: "계정 별칭 마이그레이션 근거를 강화하고 중복 스캔 경로를 제거합니다.",
+        .spanish: "Refuerza las pruebas para migrar alias de cuenta y elimina rutas de análisis duplicadas.",
+        .german: "Verschärft die Nachweise für Kontoalias-Migrationen und entfernt doppelte Scanpfade.",
+        .french: "Renforce les preuves requises pour migrer les alias de compte et supprime les chemins d’analyse en double.",
+        .portuguese: "Reforça as provas exigidas para migrar aliases de conta e remove caminhos de análise duplicados.",
+        .portugueseBrazil: "Reforça as evidências exigidas para migrar aliases de conta e remove caminhos de análise duplicados."
+    ],
+    "A Claude child-task relationship is invalid. Existing statistics were kept.": [
+        .traditionalChinese: "Claude 子任務的工作階段關係無效，已保留原有統計。",
+        .japanese: "Claude の子タスクのセッション関係が無効なため、既存の統計を保持しました。",
+        .korean: "Claude 하위 작업의 세션 관계가 올바르지 않아 기존 통계를 유지했습니다.",
+        .spanish: "La relación de sesión de una tarea secundaria de Claude no es válida. Se conservaron las estadísticas existentes.",
+        .german: "Die Sitzungsbeziehung einer Claude-Unteraufgabe ist ungültig. Vorhandene Statistiken wurden beibehalten.",
+        .french: "La relation de session d’une sous-tâche Claude est invalide. Les statistiques existantes ont été conservées.",
+        .portuguese: "A relação de sessão de uma subtarefa do Claude é inválida. As estatísticas existentes foram mantidas.",
+        .portugueseBrazil: "A relação de sessão de uma subtarefa do Claude é inválida. As estatísticas existentes foram mantidas."
+    ],
+    "Some Claude records could not be recognized, so current statistics may be incomplete.": [
+        .traditionalChinese: "部分 Claude 記錄無法識別，目前的統計可能不完整。",
+        .japanese: "一部の Claude 記録を認識できなかったため、現在の統計が不完全な可能性があります。",
+        .korean: "일부 Claude 기록을 인식하지 못해 현재 통계가 불완전할 수 있습니다.",
+        .spanish: "No se pudieron reconocer algunos registros de Claude, por lo que las estadísticas actuales pueden estar incompletas.",
+        .german: "Einige Claude-Aufzeichnungen konnten nicht erkannt werden; die aktuellen Statistiken sind möglicherweise unvollständig.",
+        .french: "Certains historiques Claude n’ont pas pu être reconnus ; les statistiques actuelles peuvent être incomplètes.",
+        .portuguese: "Não foi possível reconhecer alguns registos do Claude, pelo que as estatísticas atuais podem estar incompletas.",
+        .portugueseBrazil: "Não foi possível reconhecer alguns registros do Claude, portanto as estatísticas atuais podem estar incompletas."
+    ],
+    "The Claude record format has changed. Check for a QuotaLens update.": [
+        .traditionalChinese: "Claude 記錄格式已變更，請檢查 QuotaLens 更新。",
+        .japanese: "Claude の記録形式が変更されました。QuotaLens の更新を確認してください。",
+        .korean: "Claude 기록 형식이 변경되었습니다. QuotaLens 업데이트를 확인하세요.",
+        .spanish: "El formato de los registros de Claude ha cambiado. Busca una actualización de QuotaLens.",
+        .german: "Das Format der Claude-Aufzeichnungen hat sich geändert. Suchen Sie nach einem QuotaLens-Update.",
+        .french: "Le format des historiques Claude a changé. Recherchez une mise à jour de QuotaLens.",
+        .portuguese: "O formato dos registos do Claude mudou. Procure uma atualização do QuotaLens.",
+        .portugueseBrazil: "O formato dos registros do Claude mudou. Verifique se há uma atualização do QuotaLens."
+    ],
     "A Claude child-task record could not be read and will be retried on the next scan.": [
         .traditionalChinese: "Claude 子任務記錄暫時無法讀取，將在下次掃描重試。",
         .japanese: "Claude の子タスク記録を読み取れなかったため、次回のスキャンで再試行します。",

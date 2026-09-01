@@ -385,8 +385,8 @@ final class SessionDeletionAndQuotaStateTests: XCTestCase {
             }
         }
 
-        let chinese = "升级后自动修复 Claude 子任务的历史用量、费用汇总与父子层级"
-        let english = "Automatically repairs historical Claude child-task usage, cost summaries, and parent-child hierarchy after upgrading"
+        let chinese = "避免尚未写入完整身份的 Claude 子任务影响父会话层级"
+        let english = "Prevents Claude child tasks without a complete identity from changing the parent-session hierarchy"
         for mode in AppLanguageMode.allCases where mode != .system {
             defaults.set(mode.rawValue, forKey: L10n.languageModeDefaultsKey)
             let localized = L10n.text(chinese, english)
@@ -413,7 +413,7 @@ final class SessionDeletionAndQuotaStateTests: XCTestCase {
             }
         }
 
-        let chinese = "升级后自动修复 Claude 子任务的历史用量、费用汇总与父子层级"
+        let chinese = "避免尚未写入完整身份的 Claude 子任务影响父会话层级"
         for mode in AppLanguageMode.allCases where mode != .system {
             defaults.set(mode.rawValue, forKey: L10n.languageModeDefaultsKey)
             let localized = L10n.localizeChangelogText(chinese)

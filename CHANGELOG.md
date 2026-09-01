@@ -7,6 +7,10 @@ All notable changes to QuotaLens will be documented in this file.
 - 优化 Claude 登录失效后的凭据刷新，避免重复使用已失效的访问凭据
 - 增强 Antigravity 账号切换与凭据轮换期间的缓存保留和错误提示
 - 强化多工具会话隔离、旧账号迁移与 Universal 安装包验证
+- 避免尚未写入完整身份的 Claude 子任务影响父会话层级
+- 新增 Claude 本地记录完整度诊断与分块读取，损坏或格式变化会明确提示
+- 升级修复改为按来源重试，单个异常文件不再触发反复全量重建
+- 收紧账号别名迁移依据并去重重复扫描路径
 
 ## [v1.0.26] - 2026-08-31
 - 新增 Antigravity 深度用量解析与官方 API 定价目录引擎，支持 Gemini 3.7/3.6/3.5 Flash 与 3.1 Pro 成本测算与长上下文折算

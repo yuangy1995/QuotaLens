@@ -258,6 +258,10 @@ public enum L10n {
     }
 
     public static let changelogZhToEnMap: [String: String] = [
+        "避免尚未写入完整身份的 Claude 子任务影响父会话层级": "Prevents Claude child tasks without a complete identity from changing the parent-session hierarchy",
+        "新增 Claude 本地记录完整度诊断与分块读取，损坏或格式变化会明确提示": "Adds Claude local-record completeness checks and chunked reading with clear warnings for damage or format changes",
+        "升级修复改为按来源重试，单个异常文件不再触发反复全量重建": "Retries upgrade repairs per source so one problematic file no longer triggers repeated full rebuilds",
+        "收紧账号别名迁移依据并去重重复扫描路径": "Tightens account-alias migration evidence and removes duplicate scan paths",
         "升级后自动修复 Claude 子任务的历史用量、费用汇总与父子层级": "Automatically repairs historical Claude child-task usage, cost summaries, and parent-child hierarchy after upgrading",
         "优化 Claude 登录失效后的凭据刷新，避免重复使用已失效的访问凭据": "Improved Claude credential refresh after sign-in expiration without retrying rejected access credentials",
         "增强 Antigravity 账号切换与凭据轮换期间的缓存保留和错误提示": "Improved cache retention and error messages during Antigravity account changes and credential rotation",

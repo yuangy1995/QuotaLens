@@ -183,15 +183,22 @@ actor ClaudeUsageImportActor {
         let files = fileScan.files
         let states = try loadSourceStates()
         let discoveredPaths = Set(files.map { Self.canonicalPath($0.path) })
-        let migrationRepairPaths = Set(states.values.compactMap { state -> String? in
-            claudeSubagentRelationship(relativePath: state.relativePath) == nil
-                ? nil : Self.canonicalPath(state.sourcePath)
-        })
+        let migrationRepairPaths = requiresRepair
+            ? Set(states.values.compactMap { state -> String? in
+                claudeSubagentRelationship(relativePath: state.relativePath) == nil
+                    ? nil : Self.canonicalPath(state.sourcePath)
+            })
+            : []
         if requiresRepair {
             try database.transaction {
                 for state in states.values where claudeSubagentRelationship(relativePath: state.relativePath) != nil {
                     try database.executeUpdate(
-                        sql: "UPDATE claude_import_sources SET status = ? WHERE source_path = ?;",
+                        sql: """
+                        UPDATE claude_import_sources
+                        SET status = ?
+                        WHERE source_path = ?
+                          AND status NOT IN ('partial', 'incompatible', 'pending_session_identity');
+                        """,
                         bindings: [Self.repairPendingStatus, state.sourcePath]
                     )
                 }
@@ -280,6 +287,16 @@ actor ClaudeUsageImportActor {
             errors.append(error.localizedDescription)
         }
         try updateChildRepairStatus()
+        let currentStates = try loadSourceStates()
+        for state in currentStates.values where state.status == "partial" || state.status == "incompatible" {
+            let message = sourceErrorMessage(status: state.status)
+                ?? L10n.text(
+                    "部分 Claude 记录暂时无法读取。",
+                    "Some Claude records could not be read."
+                )
+            errors.append("\(state.relativePath): \(message)")
+        }
+        errors = Array(Set(errors)).sorted()
 
         try database.executeUpdate(
             sql: "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES ('claude_usage_generation', ?, unixepoch());",
@@ -305,6 +322,9 @@ actor ClaudeUsageImportActor {
         for file in files {
             let state = states[file.path]
             let shouldReset = requestedResetSourcePaths.contains(file.path)
+            if shouldReset, let previousPath = state?.sourcePath {
+                resetSourcePaths.insert(previousPath)
+            }
             let unchanged = !shouldReset
                 && state?.fileSize == file.size
                 && state?.mtimeMs == file.mtimeMs
@@ -823,12 +843,10 @@ actor ClaudeUsageImportActor {
                     bindings: [rootSessionID, sessionID]
                 )
                 try rebuildSummaries(sessionID: sessionID)
-                if state.status == Self.repairPendingStatus {
-                    try database.executeUpdate(
-                        sql: "UPDATE claude_import_sources SET status = 'indexed', error_message = NULL WHERE source_path = ?;",
-                        bindings: [state.sourcePath]
-                    )
-                }
+                try database.executeUpdate(
+                    sql: "UPDATE claude_import_sources SET status = 'indexed', error_message = NULL WHERE source_path = ? AND status = ?;",
+                    bindings: [state.sourcePath, Self.repairPendingStatus]
+                )
                 repairedSessionIDs.insert(sessionID)
                 parentSessionIDs.insert(parentSessionID)
             }
