@@ -269,6 +269,7 @@ public final class AppState: ObservableObject {
     @Published public var providerHistoryWarnings: Set<UsageProvider> = []
     @Published public var quotaRecommendations: [QuotaRecommendation] = []
     @Published public var antigravitySyncState = ProviderSyncState(provider: .antigravity)
+    @Published public var antigravityAccountResolutionState: AccountResolutionState?
 
     public func historyWarningText(for provider: UsageProvider) -> String? {
         guard providerHistoryWarnings.contains(provider) else { return nil }

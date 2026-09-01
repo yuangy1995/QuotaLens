@@ -10,14 +10,21 @@ private struct ClaudeHistoryFile: Sendable {
     let mtimeMs: Int64
 
     var path: String { url.path }
-    var fallbackSessionID: String {
+    private var subagentAncestors: [String] {
         let components = url.pathComponents
-        if let index = components.firstIndex(of: "subagents"), index > components.startIndex {
+        return components.indices.compactMap { index in
+            guard components[index] == "subagents", index > components.startIndex else { return nil }
             return components[components.index(before: index)]
         }
+    }
+    var fallbackSessionID: String {
+        if let rootSessionID { return rootSessionID }
         return url.deletingPathExtension().lastPathComponent
     }
-    var isSubagent: Bool { url.pathComponents.contains("subagents") }
+    var isSubagent: Bool { !subagentAncestors.isEmpty }
+    var rootSessionID: String? { subagentAncestors.first }
+    var parentSessionID: String? { subagentAncestors.last }
+    var depth: Int { subagentAncestors.count }
 }
 
 private struct ClaudeImportSourceState: Sendable {
@@ -107,7 +114,7 @@ actor ClaudeUsageImportActor {
                     states: states,
                     reset: reset
                 )
-                sessionsUpdated += result.sessionChanged ? 1 : 0
+                sessionsUpdated += result.sessionsChanged
                 eventsUpdated += result.eventsChanged
             } catch {
                 errors.append("\(group): \(error.localizedDescription)")
@@ -132,8 +139,9 @@ actor ClaudeUsageImportActor {
         files: [ClaudeHistoryFile],
         states: [String: ClaudeImportSourceState],
         reset: Bool
-    ) throws -> (sessionChanged: Bool, eventsChanged: Int) {
+    ) throws -> (sessionsChanged: Int, eventsChanged: Int) {
         var slices: [(ClaudeHistoryFile, ParsedClaudeSlice)] = []
+        var resetSourcePaths = Set<String>()
         for file in files {
             let state = states[file.path]
             let unchanged = !reset
@@ -141,40 +149,76 @@ actor ClaudeUsageImportActor {
                 && state?.mtimeMs == file.mtimeMs
             if unchanged { continue }
             let offset = reset ? 0 : min(max(0, state?.byteOffset ?? 0), file.size)
-            let parsed = try Self.parse(file: file, fromOffset: offset)
+            var parsed = try Self.parse(file: file, fromOffset: offset)
+            if !reset,
+               offset > 0,
+               let previousSessionID = state?.sessionID,
+               !parsed.sessionID.isEmpty,
+               parsed.sessionID != previousSessionID {
+                parsed = try Self.parse(file: file, fromOffset: 0)
+                resetSourcePaths.insert(file.path)
+            }
+            if reset { resetSourcePaths.insert(file.path) }
             slices.append((file, parsed))
         }
-        guard !slices.isEmpty else { return (false, 0) }
+        guard !slices.isEmpty else { return (0, 0) }
 
         let groupKey = UsageSessionIdentity.key(provider: .claude, rawSessionID: groupID)
+        var affectedSessionKeys: Set<String> = [groupKey]
+        var parentSessionKeys = Set<String>()
+        for (file, slice) in slices {
+            let rawSessionID = slice.sessionID.isEmpty ? groupID : slice.sessionID
+            affectedSessionKeys.insert(UsageSessionIdentity.key(provider: .claude, rawSessionID: rawSessionID))
+            if let previousSessionID = states[file.path]?.sessionID {
+                affectedSessionKeys.insert(UsageSessionIdentity.key(provider: .claude, rawSessionID: previousSessionID))
+            }
+            if let parentSessionID = file.parentSessionID {
+                let parentKey = UsageSessionIdentity.key(provider: .claude, rawSessionID: parentSessionID)
+                affectedSessionKeys.insert(parentKey)
+                parentSessionKeys.insert(parentKey)
+            }
+        }
         var changedEvents = 0
         try database.transaction {
-            if reset {
+            for sourcePath in resetSourcePaths {
+                let existingSessionKeys = try database.executeQuery(
+                    sql: "SELECT DISTINCT session_id FROM codex_usage_events WHERE provider = 'claude' AND source_path = ?;",
+                    bindings: [sourcePath]
+                ) { statement in
+                    String(cString: sqlite3_column_text(statement, 0))
+                }
+                affectedSessionKeys.formUnion(existingSessionKeys)
                 try database.executeUpdate(
-                    sql: "DELETE FROM codex_usage_events WHERE provider = 'claude' AND session_id = ?;",
-                    bindings: [groupKey]
-                )
-                try database.executeUpdate(
-                    sql: "DELETE FROM codex_session_summaries WHERE provider = 'claude' AND session_id = ?;",
-                    bindings: [groupKey]
-                )
-                try database.executeUpdate(
-                    sql: "DELETE FROM codex_daily_usage_summaries WHERE provider = 'claude' AND session_id = ?;",
-                    bindings: [groupKey]
+                    sql: "DELETE FROM codex_usage_events WHERE provider = 'claude' AND source_path = ?;",
+                    bindings: [sourcePath]
                 )
             }
 
             for (file, slice) in slices {
                 let rawSessionID = slice.sessionID.isEmpty ? groupID : slice.sessionID
                 let sessionID = UsageSessionIdentity.key(provider: .claude, rawSessionID: rawSessionID)
+                let rootSessionID = UsageSessionIdentity.key(
+                    provider: .claude,
+                    rawSessionID: file.rootSessionID ?? rawSessionID
+                )
+                let parentSessionID = file.parentSessionID.map {
+                    UsageSessionIdentity.key(provider: .claude, rawSessionID: $0)
+                }
                 for event in slice.events {
                     changedEvents += try upsert(
                         event: event,
                         sessionID: sessionID,
+                        rootSessionID: rootSessionID,
                         sourcePath: file.path
                     ) ? 1 : 0
                 }
-                try upsertSessionMetadata(slice: slice, file: file, sessionID: sessionID)
+                try upsertSessionMetadata(
+                    slice: slice,
+                    file: file,
+                    sessionID: sessionID,
+                    rootSessionID: rootSessionID,
+                    parentSessionID: parentSessionID
+                )
                 try database.executeUpdate(
                     sql: """
                     INSERT INTO claude_import_sources (
@@ -194,14 +238,21 @@ actor ClaudeUsageImportActor {
                     bindings: [file.path, file.relativePath, rawSessionID, file.size, file.mtimeMs, slice.endOffset]
                 )
             }
-            try rebuildSummaries(sessionID: groupKey)
+            for sessionID in affectedSessionKeys.sorted() {
+                try rebuildSummaries(sessionID: sessionID)
+            }
+            try removeOrphanedSessions(affectedSessionKeys)
+            for parentSessionID in parentSessionKeys {
+                try updateHasSubagents(sessionID: parentSessionID)
+            }
         }
-        return (true, changedEvents)
+        return (affectedSessionKeys.count, changedEvents)
     }
 
     private func upsert(
         event: ParsedClaudeEvent,
         sessionID: String,
+        rootSessionID: String,
         sourcePath: String
     ) throws -> Bool {
         let calendar = UsageDayBucketer.calendar()
@@ -277,6 +328,7 @@ actor ClaudeUsageImportActor {
                 ?, 'claude', ?
             )
             ON CONFLICT(event_id) DO UPDATE SET
+                root_session_id = excluded.root_session_id,
                 timestamp_ms = excluded.timestamp_ms,
                 model_raw = excluded.model_raw,
                 model_canonical = excluded.model_canonical,
@@ -297,7 +349,7 @@ actor ClaudeUsageImportActor {
                 pricing_catalog_version = excluded.pricing_catalog_version;
             """,
             bindings: [
-                eventID, sessionID, sessionID, timestampMs,
+                eventID, sessionID, rootSessionID, timestampMs,
                 event.modelRaw, price.modelCanonical,
                 grossInput, cached, write5m + write1h, write5m, write1h,
                 output, total, uncached,
@@ -313,7 +365,9 @@ actor ClaudeUsageImportActor {
     private func upsertSessionMetadata(
         slice: ParsedClaudeSlice,
         file: ClaudeHistoryFile,
-        sessionID: String
+        sessionID: String,
+        rootSessionID: String,
+        parentSessionID: String?
     ) throws {
         let startedMs = Int64((slice.startedAt ?? slice.updatedAt ?? Date()).timeIntervalSince1970 * 1_000)
         let updatedMs = Int64((slice.updatedAt ?? slice.startedAt ?? Date()).timeIntervalSince1970 * 1_000)
@@ -332,10 +386,13 @@ actor ClaudeUsageImportActor {
                 pricing_status, metadata_fingerprint, has_subagents,
                 summary_provenance, provider
             ) VALUES (
-                ?, ?, NULL, 0, ?, ?, 'active', ?, ?, ?, ?, ?, ?, 0,
-                0, 0, 0, 0, 0, 0, 0, 'fullyUnpriced', NULL, ?, 'eventLedger', 'claude'
+                ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, 0,
+                0, 0, 0, 0, 0, 0, 0, 'fullyUnpriced', NULL, 0, 'eventLedger', 'claude'
             )
             ON CONFLICT(session_id) DO UPDATE SET
+                root_session_id = excluded.root_session_id,
+                parent_session_id = excluded.parent_session_id,
+                depth = excluded.depth,
                 source_path = CASE WHEN ? = 0 THEN excluded.source_path ELSE codex_sessions.source_path END,
                 relative_path = CASE WHEN ? = 0 THEN excluded.relative_path ELSE codex_sessions.relative_path END,
                 title = COALESCE(excluded.title, codex_sessions.title),
@@ -344,15 +401,62 @@ actor ClaudeUsageImportActor {
                 created_at = MIN(codex_sessions.created_at, excluded.created_at),
                 updated_at = MAX(codex_sessions.updated_at, excluded.updated_at),
                 last_event_at = MAX(COALESCE(codex_sessions.last_event_at, 0), COALESCE(excluded.last_event_at, 0)),
-                has_subagents = MAX(codex_sessions.has_subagents, excluded.has_subagents),
+                has_subagents = EXISTS (
+                    SELECT 1 FROM codex_sessions AS children
+                    WHERE children.provider = 'claude'
+                      AND children.parent_session_id = excluded.session_id
+                ),
                 provider = 'claude';
             """,
             bindings: [
-                sessionID, sessionID, file.path, file.relativePath,
+                sessionID, rootSessionID, parentSessionID, file.depth,
+                file.path, file.relativePath,
                 slice.title, project, slice.cwd,
-                startedMs, updatedMs, updatedMs, file.isSubagent ? 1 : 0,
+                startedMs, updatedMs, updatedMs,
                 file.isSubagent ? 1 : 0, file.isSubagent ? 1 : 0
             ]
+        )
+    }
+
+    private func removeOrphanedSessions(_ sessionIDs: Set<String>) throws {
+        for sessionID in sessionIDs {
+            let rawSessionID = UsageSessionIdentity.rawID(provider: .claude, sessionKey: sessionID)
+            try database.executeUpdate(
+                sql: """
+                DELETE FROM codex_sessions
+                WHERE provider = 'claude'
+                  AND session_id = ?
+                  AND NOT EXISTS (
+                      SELECT 1 FROM codex_usage_events
+                      WHERE provider = 'claude' AND session_id = ?
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM claude_import_sources
+                      WHERE session_id = ?
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM codex_sessions AS children
+                      WHERE children.provider = 'claude'
+                        AND children.parent_session_id = ?
+                  );
+                """,
+                bindings: [sessionID, sessionID, rawSessionID, sessionID]
+            )
+        }
+    }
+
+    private func updateHasSubagents(sessionID: String) throws {
+        try database.executeUpdate(
+            sql: """
+            UPDATE codex_sessions
+            SET has_subagents = EXISTS (
+                SELECT 1 FROM codex_sessions AS children
+                WHERE children.provider = 'claude'
+                  AND children.parent_session_id = codex_sessions.session_id
+            )
+            WHERE provider = 'claude' AND session_id = ?;
+            """,
+            bindings: [sessionID]
         )
     }
 

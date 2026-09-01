@@ -67,6 +67,12 @@ public struct ProviderQuotaRefreshResult<Snapshot: Sendable>: Sendable {
     }
 }
 
+public enum AccountResolutionState: Equatable, Sendable {
+    case resolved(String)
+    case resolving(previousAccountKey: String)
+    case switched(from: String, to: String)
+}
+
 public struct ProviderSyncState: Equatable, Sendable {
     public let provider: UsageProvider
     public let lastAttemptAt: Date?

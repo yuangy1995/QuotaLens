@@ -1264,6 +1264,7 @@ public final class AppEnvironment: ObservableObject {
             state.antigravityQuotaErrorText = nil
             state.isRefreshingAntigravityQuota = false
             state.antigravitySyncState = ProviderSyncState(provider: .antigravity)
+            state.antigravityAccountResolutionState = nil
             state.providerQuotaInsights[.antigravity] = nil
         }
         Task { @MainActor [weak self] in
@@ -1323,6 +1324,20 @@ public final class AppEnvironment: ObservableObject {
                             )
                         }
                     }
+                },
+                onAccountResolutionState: { [weak self] resolutionState in
+                    await MainActor.run {
+                        guard let self, self.enabledToolsStore.isEnabled(.antigravity) else { return }
+                        self.state.antigravityAccountResolutionState = resolutionState
+                        if case .resolving = resolutionState,
+                           self.state.latestAntigravityQuota?.hasQuota == true {
+                            self.state.antigravityQuotaStatus = .available
+                            self.state.antigravityQuotaErrorText = L10n.text(
+                                "正在确认 Antigravity 账号，当前显示上次缓存。",
+                                "Confirming the Antigravity account. Showing the previous cache for now."
+                            )
+                        }
+                    }
                 }
             )
             antigravityQuotaPoller = poller
@@ -1352,6 +1367,19 @@ public final class AppEnvironment: ObservableObject {
 
     private func applyAntigravityQuotaResult(_ result: Result<ProviderQuotaRefreshResult<AntigravityQuotaSnapshot>, Error>) {
         guard enabledToolsStore.isEnabled(.antigravity) else { return }
+        if case .failure = result,
+           case .resolving = state.antigravityAccountResolutionState,
+           state.latestAntigravityQuota?.hasQuota == true {
+            state.antigravityQuotaStatus = .available
+            state.antigravityQuotaErrorText = L10n.text(
+                "正在确认 Antigravity 账号，当前显示上次缓存。",
+                "Confirming the Antigravity account. Showing the previous cache for now."
+            )
+            Task { @MainActor [weak self] in
+                await self?.refreshProviderQuotaInsights()
+            }
+            return
+        }
         switch result {
         case .success(let refresh):
             let snapshot = refresh.snapshot
@@ -2548,6 +2576,7 @@ public final class AppEnvironment: ObservableObject {
         state.providerHistoryWarnings = []
         state.quotaRecommendations = []
         state.antigravitySyncState = ProviderSyncState(provider: .antigravity)
+        state.antigravityAccountResolutionState = nil
         enabledToolsStore.resetToDefaults()
         frontmostToolTracker.refresh()
         navigationStore.normalize(

@@ -38,13 +38,30 @@ public struct AccountIdentity: Sendable {
 }
 
 enum ProviderAccountAliases {
-    enum MigrationError: Error { case conflictingIdentity }
+    enum MigrationError: Error {
+        case conflictingIdentity
+        case aliasCycle
+        case aliasChainTooDeep
+    }
 
     static func resolve(_ key: String, provider: UsageProvider, database: SQLiteDatabase) throws -> String {
-        try database.stringScalar(
+        var current = key
+        var visited = Set<String>()
+        for _ in 0..<8 {
+            guard visited.insert(current).inserted else { throw MigrationError.aliasCycle }
+            guard let next = try database.stringScalar(
+                sql: "SELECT canonical_account_key FROM account_aliases WHERE provider = ? AND legacy_account_key = ?;",
+                bindings: [provider.rawValue, current]
+            ) else { return current }
+            current = next
+        }
+        if try database.stringScalar(
             sql: "SELECT canonical_account_key FROM account_aliases WHERE provider = ? AND legacy_account_key = ?;",
-            bindings: [provider.rawValue, key]
-        ) ?? key
+            bindings: [provider.rawValue, current]
+        ) != nil {
+            throw MigrationError.aliasChainTooDeep
+        }
+        return current
     }
 
     // The caller's transaction also covers provider-specific cached payloads.
@@ -64,8 +81,11 @@ enum ProviderAccountAliases {
         )
         try database.executeUpdate(
             sql: """
-            INSERT OR IGNORE INTO account_aliases (provider, legacy_account_key, canonical_account_key, migrated_at)
-            VALUES (?, ?, ?, unixepoch());
+            INSERT INTO account_aliases (provider, legacy_account_key, canonical_account_key, migrated_at)
+            VALUES (?, ?, ?, unixepoch())
+            ON CONFLICT(provider, legacy_account_key) DO UPDATE SET
+                canonical_account_key = excluded.canonical_account_key,
+                migrated_at = excluded.migrated_at;
             """,
             bindings: [provider.rawValue, legacyKey, accountKey]
         )

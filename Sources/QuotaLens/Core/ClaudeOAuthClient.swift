@@ -388,6 +388,7 @@ actor ClaudeUsageClient {
     private let endpoint: URL
     private let cacheURL: URL
     private let tokenRefresher: ClaudeTokenRefresher
+    private let credentialsProvider: (@Sendable () -> [ClaudeStoredCredentials])?
     private var memoryToken: String?
     private var memoryAccountKey: String?
     private var rejectedTokens: Set<String> = []
@@ -399,12 +400,14 @@ actor ClaudeUsageClient {
         session: URLSession = .shared,
         endpoint: URL = ClaudeUsageClient.usageEndpoint,
         cacheURL: URL = ClaudeOAuthCache.defaultURL(),
-        tokenRefresher: ClaudeTokenRefresher = ClaudeTokenRefresher()
+        tokenRefresher: ClaudeTokenRefresher = ClaudeTokenRefresher(),
+        credentialsProvider: (@Sendable () -> [ClaudeStoredCredentials])? = nil
     ) {
         self.session = session
         self.endpoint = endpoint
         self.cacheURL = cacheURL
         self.tokenRefresher = tokenRefresher
+        self.credentialsProvider = credentialsProvider
     }
 
     func fetch() async throws -> ClaudeUsageSnapshot {
@@ -475,19 +478,21 @@ actor ClaudeUsageClient {
     }
 
     private func loadAccessToken() async -> (accessToken: String, identity: ClaudeAccountIdentity)? {
-        let cached = ClaudeOAuthCache.load(from: cacheURL)
-        var localCredentials: [ClaudeStoredCredentials] = []
-        if let file = Self.readClaudeCredentialsFile() {
-            localCredentials.append(file)
-        }
-        if !keychainUnavailable {
-            switch Self.readKeychainCredentials(timeout: 2) {
-            case .credentials(let credentials):
-                localCredentials.append(credentials)
-            case .permanentlyUnavailable:
-                keychainUnavailable = true
-            case .temporarilyUnavailable:
-                break
+        let cached = credentialsProvider == nil ? ClaudeOAuthCache.load(from: cacheURL) : nil
+        var localCredentials = credentialsProvider?() ?? []
+        if credentialsProvider == nil {
+            if let file = Self.readClaudeCredentialsFile() {
+                localCredentials.append(file)
+            }
+            if !keychainUnavailable {
+                switch Self.readKeychainCredentials(timeout: 2) {
+                case .credentials(let credentials):
+                    localCredentials.append(credentials)
+                case .permanentlyUnavailable:
+                    keychainUnavailable = true
+                case .temporarilyUnavailable:
+                    break
+                }
             }
         }
 
@@ -529,9 +534,7 @@ actor ClaudeUsageClient {
             memoryAccountKey = activeKey
             return (refreshed.accessToken, refreshed.identity)
         }
-        guard let first = candidates.first else { return nil }
-        memoryAccountKey = activeKey
-        return (first.accessToken, identity)
+        return nil
     }
 
     private func refreshSingleFlight(

@@ -652,6 +652,7 @@ public actor AntigravityQuotaPoller {
     private let onResult: @Sendable (Result<ProviderQuotaRefreshResult<AntigravityQuotaSnapshot>, Error>) async -> Void
     private let onSyncState: @Sendable (ProviderSyncState) async -> Void
     private let onCachedSnapshot: @Sendable (AntigravityQuotaSnapshot?) async -> Void
+    private let onAccountResolutionState: @Sendable (AccountResolutionState) async -> Void
     private var loopTask: Task<Void, Never>?
     private var lastAttemptAt: Date?
     private var lastSuccessAt: Date?
@@ -670,7 +671,8 @@ public actor AntigravityQuotaPoller {
         initialSnapshot: AntigravityQuotaSnapshot? = nil,
         onResult: @escaping @Sendable (Result<ProviderQuotaRefreshResult<AntigravityQuotaSnapshot>, Error>) async -> Void,
         onSyncState: @escaping @Sendable (ProviderSyncState) async -> Void = { _ in },
-        onCachedSnapshot: @escaping @Sendable (AntigravityQuotaSnapshot?) async -> Void = { _ in }
+        onCachedSnapshot: @escaping @Sendable (AntigravityQuotaSnapshot?) async -> Void = { _ in },
+        onAccountResolutionState: @escaping @Sendable (AccountResolutionState) async -> Void = { _ in }
     ) {
         self.client = client
         self.database = database
@@ -680,14 +682,17 @@ public actor AntigravityQuotaPoller {
         self.onResult = onResult
         self.onSyncState = onSyncState
         self.onCachedSnapshot = onCachedSnapshot
+        self.onAccountResolutionState = onAccountResolutionState
     }
 
-    public func start() {
+    public func start() async {
         guard loopTask == nil else { return }
         isStopped = false
         nextAttemptAt = Date().addingTimeInterval(2)
-        let initialState = syncState()
-        Task { await onSyncState(initialState) }
+        await onSyncState(syncState())
+        if let latestSnapshot {
+            await onAccountResolutionState(.resolved(latestSnapshot.accountKey))
+        }
         loopTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             while !Task.isCancelled {
@@ -728,20 +733,34 @@ public actor AntigravityQuotaPoller {
         }
         do {
             let credentials = try client.localCredentials(preferredProfile: preferredProfile)
-            if latestSnapshot?.legacyAccountKey != credentials.legacyAccountKey,
-               latestSnapshot?.accountKey != credentials.legacyAccountKey {
-                latestSnapshot = try? AntigravityQuotaRepository.hydrate(
+            let previousSnapshot = latestSnapshot
+            if let previousSnapshot,
+               previousSnapshot.legacyAccountKey != credentials.legacyAccountKey,
+               previousSnapshot.accountKey != credentials.legacyAccountKey {
+                let hydrated = try? AntigravityQuotaRepository.hydrate(
                     database: database,
                     accountKey: credentials.legacyAccountKey,
                     sourceProfile: credentials.source.profile.rawValue
                 )
-                lastSuccessAt = latestSnapshot?.capturedAt
-                await onCachedSnapshot(latestSnapshot)
+                if let hydrated {
+                    latestSnapshot = hydrated
+                    lastSuccessAt = hydrated.capturedAt
+                    await onCachedSnapshot(hydrated)
+                    await onAccountResolutionState(.resolved(hydrated.accountKey))
+                } else {
+                    await onAccountResolutionState(.resolving(previousAccountKey: previousSnapshot.accountKey))
+                }
             }
             let snapshot = try await client.fetch(credentials: credentials)
             guard !isStopped else { return }
+            let previousAccountKey = latestSnapshot?.accountKey
             latestSnapshot = snapshot
             lastSuccessAt = snapshot.capturedAt
+            if let previousAccountKey, previousAccountKey != snapshot.accountKey {
+                await onAccountResolutionState(.switched(from: previousAccountKey, to: snapshot.accountKey))
+            } else {
+                await onAccountResolutionState(.resolved(snapshot.accountKey))
+            }
             cooldownUntil = nil
             nextAttemptAt = Date().addingTimeInterval(interval)
             var historySaved = true

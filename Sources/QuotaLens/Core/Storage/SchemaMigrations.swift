@@ -102,14 +102,29 @@ private struct V17ProviderSessionNamespaceMigration: DatabaseMigration {
 
     func apply(database: SQLiteDatabase) throws {
         for table in ["codex_sessions", "codex_usage_events", "codex_session_summaries", "codex_daily_usage_summaries"] {
-            var assignments = ["session_id = provider || ':' || session_id"]
+            try database.execute(sql: """
+            UPDATE \(table)
+            SET session_id = provider || ':' || session_id
+            WHERE provider IN ('claude', 'antigravity')
+              AND session_id NOT LIKE provider || ':%';
+            """)
             if table == "codex_sessions" || table == "codex_usage_events" {
-                assignments.append("root_session_id = provider || ':' || root_session_id")
+                try database.execute(sql: """
+                UPDATE \(table)
+                SET root_session_id = provider || ':' || root_session_id
+                WHERE provider IN ('claude', 'antigravity')
+                  AND root_session_id NOT LIKE provider || ':%';
+                """)
             }
             if table == "codex_sessions" {
-                assignments.append("parent_session_id = provider || ':' || parent_session_id")
+                try database.execute(sql: """
+                UPDATE codex_sessions
+                SET parent_session_id = provider || ':' || parent_session_id
+                WHERE provider IN ('claude', 'antigravity')
+                  AND parent_session_id IS NOT NULL
+                  AND parent_session_id NOT LIKE provider || ':%';
+                """)
             }
-            try database.execute(sql: "UPDATE \(table) SET \(assignments.joined(separator: ", ")) WHERE provider IN ('claude', 'antigravity');")
         }
     }
 }

@@ -1,4 +1,14 @@
 let extendedTranslations: [String: [AppLanguage: String]] = [
+    "Confirming the Antigravity account. Showing the previous cache for now.": [
+        .traditionalChinese: "正在確認 Antigravity 帳號，目前顯示上次快取。",
+        .japanese: "Antigravity アカウントを確認しています。現在は前回のキャッシュを表示しています。",
+        .korean: "Antigravity 계정을 확인하는 동안 이전 캐시를 표시합니다.",
+        .spanish: "Confirmando la cuenta de Antigravity. Por ahora se muestra la caché anterior.",
+        .german: "Das Antigravity-Konto wird bestätigt. Derzeit wird der vorherige Cache angezeigt.",
+        .french: "Confirmation du compte Antigravity. Le cache précédent est affiché pour le moment.",
+        .portuguese: "A confirmar a conta Antigravity. Por agora, é apresentada a cache anterior.",
+        .portugueseBrazil: "Confirmando a conta do Antigravity. Por enquanto, o cache anterior é exibido."
+    ],
     "Some Antigravity usage could not be recognized. Previously saved usage statistics have been kept.": [
         .traditionalChinese: "部分 Antigravity 用量暫時無法識別，已保留上次的用量統計。",
         .japanese: "一部の Antigravity 使用量を認識できなかったため、以前保存した使用量の統計を保持しています。",
