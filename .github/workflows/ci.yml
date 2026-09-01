@@ -18,7 +18,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 2
+          fetch-depth: 0
+
+      - name: Version progression check
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./scripts/verify_version_progression.sh
 
       - name: Full test suite
         shell: bash

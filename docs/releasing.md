@@ -63,6 +63,7 @@ SPARKLE_KEYS_TOOL="./.build/artifacts/sparkle/Sparkle/bin/generate_keys"
 Put the printed public key into `SPARKLE_PUBLIC_ED_KEY`, and put the private key file contents into `SPARKLE_PRIVATE_ED_KEY`.
 
 1. Update `VERSION`.
+   The version must be newer than the latest published `vX.Y.Z` tag; ordinary CI verifies this automatically.
 2. Commit the version change.
 3. Create and push a matching tag:
 

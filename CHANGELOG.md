@@ -2,6 +2,12 @@
 
 All notable changes to QuotaLens will be documented in this file.
 
+## [v1.0.27] - 2026-09-01
+- 升级后自动修复 Claude 子任务的历史用量、费用汇总与父子层级
+- 优化 Claude 登录失效后的凭据刷新，避免重复使用已失效的访问凭据
+- 增强 Antigravity 账号切换与凭据轮换期间的缓存保留和错误提示
+- 强化多工具会话隔离、旧账号迁移与 Universal 安装包验证
+
 ## [v1.0.26] - 2026-08-31
 - 新增 Antigravity 深度用量解析与官方 API 定价目录引擎，支持 Gemini 3.7/3.6/3.5 Flash 与 3.1 Pro 成本测算与长上下文折算
 - 全面优化周度配额完全恢复气泡提醒，支持多项配额折叠提示、确认关闭交互与精致视觉质感

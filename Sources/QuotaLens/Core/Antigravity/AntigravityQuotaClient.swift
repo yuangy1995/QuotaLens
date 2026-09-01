@@ -660,6 +660,8 @@ public actor AntigravityQuotaPoller {
     private var cooldownUntil: Date?
     private var latestSnapshot: AntigravityQuotaSnapshot?
     private var isStopped = false
+    private var isStarting = false
+    private var startGeneration: UInt64 = 0
     private var isPolling = false
     private var pendingSnapshots: [String: AntigravityQuotaSnapshot] = [:]
     private var migrationWarnings = Set<String>()
@@ -686,19 +688,27 @@ public actor AntigravityQuotaPoller {
     }
 
     public func start() async {
-        guard loopTask == nil else { return }
+        guard loopTask == nil, !isStarting else { return }
+        isStarting = true
         isStopped = false
+        startGeneration &+= 1
+        let generation = startGeneration
+        defer {
+            if generation == startGeneration { isStarting = false }
+        }
         nextAttemptAt = Date().addingTimeInterval(2)
         await onSyncState(syncState())
         if let latestSnapshot {
             await onAccountResolutionState(.resolved(latestSnapshot.accountKey))
         }
+        guard !isStopped, generation == startGeneration else { return }
         loopTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             while !Task.isCancelled {
-                await self?.pollOnce(force: false, preferredProfile: nil)
-                guard let self else { return }
+                guard let self, await self.startGeneration == generation else { return }
+                await self.pollOnce(force: false, preferredProfile: nil)
                 let delay = await self.nextDelay()
+                guard await self.startGeneration == generation else { return }
                 await self.scheduleNextAttempt(after: delay)
                 try? await Task.sleep(nanoseconds: UInt64(max(1, delay) * 1_000_000_000))
             }
@@ -707,6 +717,8 @@ public actor AntigravityQuotaPoller {
 
     public func stop() {
         isStopped = true
+        startGeneration &+= 1
+        isStarting = false
         loopTask?.cancel()
         loopTask = nil
         nextAttemptAt = nil

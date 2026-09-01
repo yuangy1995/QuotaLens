@@ -258,6 +258,10 @@ public enum L10n {
     }
 
     public static let changelogZhToEnMap: [String: String] = [
+        "升级后自动修复 Claude 子任务的历史用量、费用汇总与父子层级": "Automatically repairs historical Claude child-task usage, cost summaries, and parent-child hierarchy after upgrading",
+        "优化 Claude 登录失效后的凭据刷新，避免重复使用已失效的访问凭据": "Improved Claude credential refresh after sign-in expiration without retrying rejected access credentials",
+        "增强 Antigravity 账号切换与凭据轮换期间的缓存保留和错误提示": "Improved cache retention and error messages during Antigravity account changes and credential rotation",
+        "强化多工具会话隔离、旧账号迁移与 Universal 安装包验证": "Strengthened cross-tool session isolation, legacy account migration, and Universal package verification",
         "新增 Antigravity 深度用量解析与官方 API 定价目录引擎，支持 Gemini 3.7/3.6/3.5 Flash 与 3.1 Pro 成本测算与长上下文折算": "Added Antigravity deep usage parsing and official API pricing catalog engine with cost auditing for Gemini 3.7/3.6/3.5 Flash and 3.1 Pro",
         "全面优化周度配额完全恢复气泡提醒，支持多项配额折叠提示、确认关闭交互与精致视觉质感": "Enhanced weekly quota recovery notification bubbles with multi-quota folding, interactive dismiss, and refined visual aesthetics",
         "提升概览看板、用量看板与历史会话的高频刷新性能与暗色模式视觉层次": "Improved high-frequency refresh performance and dark mode visual hierarchy across overview, dashboard, and session views",

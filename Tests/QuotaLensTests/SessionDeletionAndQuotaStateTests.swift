@@ -385,8 +385,8 @@ final class SessionDeletionAndQuotaStateTests: XCTestCase {
             }
         }
 
-        let chinese = "新增 Antigravity 深度用量解析与官方 API 定价目录引擎，支持 Gemini 3.7/3.6/3.5 Flash 与 3.1 Pro 成本测算与长上下文折算"
-        let english = "Added Antigravity deep usage parsing and official API pricing catalog engine with cost auditing for Gemini 3.7/3.6/3.5 Flash and 3.1 Pro"
+        let chinese = "升级后自动修复 Claude 子任务的历史用量、费用汇总与父子层级"
+        let english = "Automatically repairs historical Claude child-task usage, cost summaries, and parent-child hierarchy after upgrading"
         for mode in AppLanguageMode.allCases where mode != .system {
             defaults.set(mode.rawValue, forKey: L10n.languageModeDefaultsKey)
             let localized = L10n.text(chinese, english)
@@ -413,7 +413,7 @@ final class SessionDeletionAndQuotaStateTests: XCTestCase {
             }
         }
 
-        let chinese = "新增 Antigravity 深度用量解析与官方 API 定价目录引擎，支持 Gemini 3.7/3.6/3.5 Flash 与 3.1 Pro 成本测算与长上下文折算"
+        let chinese = "升级后自动修复 Claude 子任务的历史用量、费用汇总与父子层级"
         for mode in AppLanguageMode.allCases where mode != .system {
             defaults.set(mode.rawValue, forKey: L10n.languageModeDefaultsKey)
             let localized = L10n.localizeChangelogText(chinese)

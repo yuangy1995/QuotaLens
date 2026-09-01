@@ -53,6 +53,17 @@ public struct AboutView: View {
     private var defaultChangelogs: [ChangelogEntry] {
         [
             ChangelogEntry(
+                id: "v1.0.27",
+                version: "v1.0.27",
+                date: "2026-09-01",
+                changes: [
+                    L10n.text("升级后自动修复 Claude 子任务的历史用量、费用汇总与父子层级", "Automatically repairs historical Claude child-task usage, cost summaries, and parent-child hierarchy after upgrading"),
+                    L10n.text("优化 Claude 登录失效后的凭据刷新，避免重复使用已失效的访问凭据", "Improved Claude credential refresh after sign-in expiration without retrying rejected access credentials"),
+                    L10n.text("增强 Antigravity 账号切换与凭据轮换期间的缓存保留和错误提示", "Improved cache retention and error messages during Antigravity account changes and credential rotation"),
+                    L10n.text("强化多工具会话隔离、旧账号迁移与 Universal 安装包验证", "Strengthened cross-tool session isolation, legacy account migration, and Universal package verification")
+                ]
+            ),
+            ChangelogEntry(
                 id: "v1.0.26",
                 version: "v1.0.26",
                 date: "2026-08-31",

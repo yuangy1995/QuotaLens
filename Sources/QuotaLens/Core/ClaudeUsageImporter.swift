@@ -3,6 +3,38 @@ import SQLite3
 import Combine
 import CoreServices
 
+private struct ClaudeSubagentRelationship: Sendable {
+    let rootSessionID: String
+    let parentSessionID: String
+    let depth: Int
+}
+
+private func claudeSubagentRelationship(relativePath: String) -> ClaudeSubagentRelationship? {
+    let components = (relativePath as NSString).pathComponents
+    guard let lastSubagentsIndex = components.lastIndex(of: "subagents"),
+          lastSubagentsIndex > components.startIndex,
+          components.index(after: lastSubagentsIndex) == components.index(before: components.endIndex) else {
+        return nil
+    }
+
+    var ancestors = [components[components.index(before: lastSubagentsIndex)]]
+    var currentAncestorIndex = components.index(before: lastSubagentsIndex)
+    while currentAncestorIndex >= components.index(components.startIndex, offsetBy: 2) {
+        let separatorIndex = components.index(before: currentAncestorIndex)
+        guard components[separatorIndex] == "subagents" else { break }
+        let ancestorIndex = components.index(before: separatorIndex)
+        ancestors.append(components[ancestorIndex])
+        currentAncestorIndex = ancestorIndex
+    }
+    ancestors.reverse()
+    guard let root = ancestors.first, let parent = ancestors.last else { return nil }
+    return ClaudeSubagentRelationship(
+        rootSessionID: root,
+        parentSessionID: parent,
+        depth: ancestors.count
+    )
+}
+
 private struct ClaudeHistoryFile: Sendable {
     let url: URL
     let relativePath: String
@@ -10,29 +42,31 @@ private struct ClaudeHistoryFile: Sendable {
     let mtimeMs: Int64
 
     var path: String { url.path }
-    private var subagentAncestors: [String] {
-        let components = url.pathComponents
-        return components.indices.compactMap { index in
-            guard components[index] == "subagents", index > components.startIndex else { return nil }
-            return components[components.index(before: index)]
-        }
+    private var subagentRelationship: ClaudeSubagentRelationship? {
+        claudeSubagentRelationship(relativePath: relativePath)
     }
     var fallbackSessionID: String {
         if let rootSessionID { return rootSessionID }
         return url.deletingPathExtension().lastPathComponent
     }
-    var isSubagent: Bool { !subagentAncestors.isEmpty }
-    var rootSessionID: String? { subagentAncestors.first }
-    var parentSessionID: String? { subagentAncestors.last }
-    var depth: Int { subagentAncestors.count }
+    var isSubagent: Bool { subagentRelationship != nil }
+    var rootSessionID: String? { subagentRelationship?.rootSessionID }
+    var parentSessionID: String? { subagentRelationship?.parentSessionID }
+    var depth: Int { subagentRelationship?.depth ?? 0 }
 }
 
 private struct ClaudeImportSourceState: Sendable {
     let sourcePath: String
+    let relativePath: String
     let sessionID: String?
     let fileSize: Int64
     let mtimeMs: Int64
     let byteOffset: Int64
+}
+
+private struct ClaudeHistoryScanResult {
+    let files: [ClaudeHistoryFile]
+    let errors: [String]
 }
 
 private struct ParsedClaudeEvent: Sendable {
@@ -52,6 +86,28 @@ private struct ParsedClaudeEvent: Sendable {
     }
 }
 
+private struct ClaudeStoredEventFingerprint: Equatable {
+    let rootSessionID: String
+    let timestampMs: Int64
+    let modelRaw: String
+    let modelCanonical: String
+    let input: Int64
+    let cached: Int64
+    let cacheWrite: Int64
+    let cacheWrite5m: Int64
+    let cacheWrite1h: Int64
+    let output: Int64
+    let total: Int64
+    let uncached: Int64
+    let cost: Int64
+    let pricingRuleID: String?
+    let pricingStatus: String
+    let sourcePath: String
+    let lineOffset: Int64
+    let lineBytes: Int64
+    let catalogVersion: String?
+}
+
 private struct ParsedClaudeSlice: Sendable {
     let sessionID: String
     let title: String?
@@ -63,6 +119,8 @@ private struct ParsedClaudeSlice: Sendable {
 }
 
 actor ClaudeUsageImportActor {
+    private static let currentImportVersion = 2
+    private static let importVersionKey = "claude_usage_import_version"
     private let database: SQLiteDatabase
     private let roots: [URL]
 
@@ -73,9 +131,22 @@ actor ClaudeUsageImportActor {
 
     func scan(forceRebuild: Bool = false) async throws -> ClaudeUsageImportSummary {
         try ClaudePricingCatalogService.ensureInstalled(database: database)
-        let files = Self.scanFiles(roots: roots)
+        let storedImportVersion = try database.int64Scalar(
+            sql: "SELECT CAST(value AS INTEGER) FROM app_metadata WHERE key = ?;",
+            bindings: [Self.importVersionKey]
+        ) ?? 0
+        let requiresRepair = storedImportVersion < Self.currentImportVersion
+        let effectiveForceRebuild = forceRebuild || requiresRepair
+        let fileScan = Self.scanFiles(roots: roots)
+        let files = fileScan.files
         let states = try loadSourceStates()
         let knownGroups = Set(states.values.compactMap(\.sessionID))
+        let discoveredPaths = Set(files.map { Self.canonicalPath($0.path) })
+        let inaccessibleRepairSources = requiresRepair ? states.values.filter { state in
+            guard claudeSubagentRelationship(relativePath: state.relativePath) != nil,
+                  FileManager.default.fileExists(atPath: state.sourcePath) else { return false }
+            return !discoveredPaths.contains(Self.canonicalPath(state.sourcePath))
+        } : []
 
         var filesByGroup: [String: [ClaudeHistoryFile]] = [:]
         for file in files {
@@ -92,7 +163,7 @@ actor ClaudeUsageImportActor {
                     if !knownGroups.contains(group) { resetGroups.insert(group) }
                     continue
                 }
-                if forceRebuild || file.size < state.byteOffset || state.byteOffset == 0 {
+                if effectiveForceRebuild || file.size < state.byteOffset || state.byteOffset == 0 {
                     changedGroups.insert(group)
                     resetGroups.insert(group)
                 } else if file.size != state.fileSize || file.mtimeMs != state.mtimeMs {
@@ -103,7 +174,12 @@ actor ClaudeUsageImportActor {
 
         var sessionsUpdated = 0
         var eventsUpdated = 0
-        var errors: [String] = []
+        var errors = fileScan.errors + inaccessibleRepairSources.map {
+            "\($0.relativePath): " + L10n.text(
+                "Claude 子任务记录暂时无法读取，将在下次扫描重试。",
+                "A Claude child-task record could not be read and will be retried on the next scan."
+            )
+        }
         for group in changedGroups.sorted() {
             guard let groupFiles = filesByGroup[group] else { continue }
             let reset = resetGroups.contains(group)
@@ -118,6 +194,23 @@ actor ClaudeUsageImportActor {
                 eventsUpdated += result.eventsChanged
             } catch {
                 errors.append("\(group): \(error.localizedDescription)")
+            }
+        }
+
+        if requiresRepair {
+            do {
+                let storedOnlyStates = Dictionary(uniqueKeysWithValues: states.filter {
+                    !discoveredPaths.contains(Self.canonicalPath($0.value.sourcePath))
+                })
+                sessionsUpdated += try repairStoredSubagentSessions(states: storedOnlyStates)
+            } catch {
+                errors.append(error.localizedDescription)
+            }
+            if errors.isEmpty {
+                try database.executeUpdate(
+                    sql: "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES (?, ?, unixepoch());",
+                    bindings: [Self.importVersionKey, Self.currentImportVersion]
+                )
             }
         }
 
@@ -303,10 +396,65 @@ actor ClaudeUsageImportActor {
         let total = grossInput + output
         let eventID = "\(sessionID):\(providerMessageID)"
         let timestampMs = Int64(event.timestamp.timeIntervalSince1970 * 1_000)
-        let before = try database.intScalar(
-            sql: "SELECT COUNT(*) FROM codex_usage_events WHERE event_id = ?;",
-            bindings: [eventID]
+        let proposed = ClaudeStoredEventFingerprint(
+            rootSessionID: rootSessionID,
+            timestampMs: timestampMs,
+            modelRaw: event.modelRaw,
+            modelCanonical: price.modelCanonical,
+            input: grossInput,
+            cached: cached,
+            cacheWrite: write5m + write1h,
+            cacheWrite5m: write5m,
+            cacheWrite1h: write1h,
+            output: output,
+            total: total,
+            uncached: uncached,
+            cost: price.cost.rawValue,
+            pricingRuleID: price.ruleID,
+            pricingStatus: price.status.rawValue,
+            sourcePath: sourcePath,
+            lineOffset: event.lineOffset,
+            lineBytes: event.lineBytes,
+            catalogVersion: ClaudeBundledPricingCatalog.version
         )
+        let existing = try database.executeQuery(
+            sql: """
+            SELECT root_session_id, timestamp_ms, model_raw, model_canonical,
+                   input_tokens, cached_input_tokens, cache_write_input_tokens,
+                   cache_write_5m_input_tokens, cache_write_1h_input_tokens,
+                   output_tokens, total_tokens, uncached_input_tokens,
+                   estimated_cost_usd_nano, pricing_rule_id, pricing_status,
+                   source_path, line_offset, line_bytes, pricing_catalog_version
+            FROM codex_usage_events
+            WHERE event_id = ?;
+            """,
+            bindings: [eventID]
+        ) { statement in
+            ClaudeStoredEventFingerprint(
+                rootSessionID: String(cString: sqlite3_column_text(statement, 0)),
+                timestampMs: sqlite3_column_int64(statement, 1),
+                modelRaw: String(cString: sqlite3_column_text(statement, 2)),
+                modelCanonical: String(cString: sqlite3_column_text(statement, 3)),
+                input: sqlite3_column_int64(statement, 4),
+                cached: sqlite3_column_int64(statement, 5),
+                cacheWrite: sqlite3_column_int64(statement, 6),
+                cacheWrite5m: sqlite3_column_int64(statement, 7),
+                cacheWrite1h: sqlite3_column_int64(statement, 8),
+                output: sqlite3_column_int64(statement, 9),
+                total: sqlite3_column_int64(statement, 10),
+                uncached: sqlite3_column_int64(statement, 11),
+                cost: sqlite3_column_int64(statement, 12),
+                pricingRuleID: sqlite3_column_type(statement, 13) == SQLITE_NULL
+                    ? nil : String(cString: sqlite3_column_text(statement, 13)),
+                pricingStatus: String(cString: sqlite3_column_text(statement, 14)),
+                sourcePath: String(cString: sqlite3_column_text(statement, 15)),
+                lineOffset: sqlite3_column_int64(statement, 16),
+                lineBytes: sqlite3_column_int64(statement, 17),
+                catalogVersion: sqlite3_column_type(statement, 18) == SQLITE_NULL
+                    ? nil : String(cString: sqlite3_column_text(statement, 18))
+            )
+        }.first
+        if existing == proposed { return false }
         try database.executeUpdate(
             sql: """
             INSERT INTO codex_usage_events (
@@ -358,7 +506,6 @@ actor ClaudeUsageImportActor {
                 ClaudeBundledPricingCatalog.version, providerMessageID
             ]
         )
-        if before == 0 { return true }
         return true
     }
 
@@ -458,6 +605,56 @@ actor ClaudeUsageImportActor {
             """,
             bindings: [sessionID]
         )
+    }
+
+    private func repairStoredSubagentSessions(
+        states: [String: ClaudeImportSourceState]
+    ) throws -> Int {
+        var repairedSessionIDs = Set<String>()
+        var parentSessionIDs = Set<String>()
+        try database.transaction {
+            for state in states.values {
+                guard let rawSessionID = state.sessionID,
+                      let relationship = claudeSubagentRelationship(relativePath: state.relativePath) else { continue }
+                let sessionID = UsageSessionIdentity.key(provider: .claude, rawSessionID: rawSessionID)
+                let rootSessionID = UsageSessionIdentity.key(
+                    provider: .claude,
+                    rawSessionID: relationship.rootSessionID
+                )
+                let parentSessionID = UsageSessionIdentity.key(
+                    provider: .claude,
+                    rawSessionID: relationship.parentSessionID
+                )
+                try database.executeUpdate(
+                    sql: """
+                    UPDATE codex_sessions
+                    SET root_session_id = ?, parent_session_id = ?, depth = ?,
+                        has_subagents = EXISTS (
+                            SELECT 1 FROM codex_sessions AS children
+                            WHERE children.provider = 'claude'
+                              AND children.parent_session_id = codex_sessions.session_id
+                        )
+                    WHERE provider = 'claude' AND session_id = ?;
+                    """,
+                    bindings: [rootSessionID, parentSessionID, relationship.depth, sessionID]
+                )
+                try database.executeUpdate(
+                    sql: """
+                    UPDATE codex_usage_events
+                    SET root_session_id = ?
+                    WHERE provider = 'claude' AND session_id = ?;
+                    """,
+                    bindings: [rootSessionID, sessionID]
+                )
+                try rebuildSummaries(sessionID: sessionID)
+                repairedSessionIDs.insert(sessionID)
+                parentSessionIDs.insert(parentSessionID)
+            }
+            for parentSessionID in parentSessionIDs {
+                try updateHasSubagents(sessionID: parentSessionID)
+            }
+        }
+        return repairedSessionIDs.count
     }
 
     private func rebuildSummaries(sessionID: String) throws {
@@ -582,17 +779,18 @@ actor ClaudeUsageImportActor {
     private func loadSourceStates() throws -> [String: ClaudeImportSourceState] {
         let values = try database.executeQuery(
             sql: """
-            SELECT source_path, session_id, file_size, mtime_ms, byte_offset
+            SELECT source_path, relative_path, session_id, file_size, mtime_ms, byte_offset
             FROM claude_import_sources;
             """
         ) { statement -> ClaudeImportSourceState in
             ClaudeImportSourceState(
                 sourcePath: String(cString: sqlite3_column_text(statement, 0)),
-                sessionID: sqlite3_column_type(statement, 1) == SQLITE_NULL
-                    ? nil : String(cString: sqlite3_column_text(statement, 1)),
-                fileSize: sqlite3_column_int64(statement, 2),
-                mtimeMs: sqlite3_column_int64(statement, 3),
-                byteOffset: sqlite3_column_int64(statement, 4)
+                relativePath: String(cString: sqlite3_column_text(statement, 1)),
+                sessionID: sqlite3_column_type(statement, 2) == SQLITE_NULL
+                    ? nil : String(cString: sqlite3_column_text(statement, 2)),
+                fileSize: sqlite3_column_int64(statement, 3),
+                mtimeMs: sqlite3_column_int64(statement, 4),
+                byteOffset: sqlite3_column_int64(statement, 5)
             )
         }
         return Dictionary(uniqueKeysWithValues: values.map { ($0.sourcePath, $0) })
@@ -606,21 +804,52 @@ actor ClaudeUsageImportActor {
         ]
     }
 
-    private static func scanFiles(roots: [URL]) -> [ClaudeHistoryFile] {
+    private static func canonicalPath(_ path: String) -> String {
+        URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path
+    }
+
+    private static func scanFiles(roots: [URL]) -> ClaudeHistoryScanResult {
         let manager = FileManager.default
         var results: [ClaudeHistoryFile] = []
-        for root in roots where manager.fileExists(atPath: root.path) {
+        var errors: [String] = []
+        for root in roots {
+            do {
+                let attributes = try manager.attributesOfItem(atPath: root.path)
+                guard attributes[.type] as? FileAttributeType == .typeDirectory else { continue }
+            } catch CocoaError.fileReadNoSuchFile, CocoaError.fileNoSuchFile {
+                continue
+            } catch {
+                errors.append("\(root.lastPathComponent): \(error.localizedDescription)")
+                continue
+            }
+            let canonicalRoot = root.resolvingSymlinksInPath().standardizedFileURL
             guard let enumerator = manager.enumerator(
                 at: root,
                 includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey],
-                options: [.skipsHiddenFiles]
-            ) else { continue }
+                options: [.skipsHiddenFiles],
+                errorHandler: { url, error in
+                    errors.append("\(url.lastPathComponent): \(error.localizedDescription)")
+                    return true
+                }
+            ) else {
+                errors.append("\(root.lastPathComponent): directory could not be read")
+                continue
+            }
             for case let url as URL in enumerator where url.pathExtension == "jsonl" {
-                guard let values = try? url.resourceValues(forKeys: [
-                    .isRegularFileKey, .fileSizeKey, .contentModificationDateKey
-                ]), values.isRegularFile == true else { continue }
-                let relative = url.path.hasPrefix(root.path)
-                    ? String(url.path.dropFirst(root.path.count)).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+                let values: URLResourceValues
+                do {
+                    values = try url.resourceValues(forKeys: [
+                        .isRegularFileKey, .fileSizeKey, .contentModificationDateKey
+                    ])
+                } catch {
+                    errors.append("\(url.lastPathComponent): \(error.localizedDescription)")
+                    continue
+                }
+                guard values.isRegularFile == true else { continue }
+                let canonicalURL = url.resolvingSymlinksInPath().standardizedFileURL
+                let rootPrefix = canonicalRoot.path.hasSuffix("/") ? canonicalRoot.path : canonicalRoot.path + "/"
+                let relative = canonicalURL.path.hasPrefix(rootPrefix)
+                    ? String(canonicalURL.path.dropFirst(rootPrefix.count))
                     : url.lastPathComponent
                 results.append(ClaudeHistoryFile(
                     url: url,
@@ -630,7 +859,10 @@ actor ClaudeUsageImportActor {
                 ))
             }
         }
-        return results.sorted { $0.path < $1.path }
+        return ClaudeHistoryScanResult(
+            files: results.sorted { $0.path < $1.path },
+            errors: errors
+        )
     }
 
     private static func parse(file: ClaudeHistoryFile, fromOffset: Int64) throws -> ParsedClaudeSlice {

@@ -1,4 +1,54 @@
 let extendedTranslations: [String: [AppLanguage: String]] = [
+    "A Claude child-task record could not be read and will be retried on the next scan.": [
+        .traditionalChinese: "Claude 子任務記錄暫時無法讀取，將在下次掃描重試。",
+        .japanese: "Claude の子タスク記録を読み取れなかったため、次回のスキャンで再試行します。",
+        .korean: "Claude 하위 작업 기록을 읽지 못해 다음 스캔에서 다시 시도합니다.",
+        .spanish: "No se pudo leer un registro de tarea secundaria de Claude y se volverá a intentar en el próximo análisis.",
+        .german: "Ein Datensatz einer Claude-Unteraufgabe konnte nicht gelesen werden und wird beim nächsten Scan erneut versucht.",
+        .french: "Un historique de sous-tâche Claude n’a pas pu être lu et sera réessayé lors de la prochaine analyse.",
+        .portuguese: "Não foi possível ler um registo de subtarefa do Claude; será efetuada uma nova tentativa na próxima análise.",
+        .portugueseBrazil: "Não foi possível ler um registro de subtarefa do Claude; uma nova tentativa será feita na próxima análise."
+    ],
+    "Automatically repairs historical Claude child-task usage, cost summaries, and parent-child hierarchy after upgrading": [
+        .traditionalChinese: "升級後自動修復 Claude 子任務的歷史用量、費用彙總與父子層級。",
+        .japanese: "アップグレード後に Claude の子タスクの過去の使用量、コスト集計、親子階層を自動修復します。",
+        .korean: "업그레이드 후 Claude 하위 작업의 이전 사용량, 비용 요약 및 상하위 관계를 자동으로 복구합니다.",
+        .spanish: "Repara automáticamente tras la actualización el uso histórico, los costes y la jerarquía de las tareas secundarias de Claude.",
+        .german: "Repariert nach dem Update automatisch historische Nutzung, Kostenübersichten und die Hierarchie von Claude-Unteraufgaben.",
+        .french: "Répare automatiquement après la mise à niveau l’utilisation historique, les coûts et la hiérarchie des sous-tâches Claude.",
+        .portuguese: "Repara automaticamente após a atualização o uso histórico, os custos e a hierarquia das subtarefas do Claude.",
+        .portugueseBrazil: "Repara automaticamente após a atualização o uso histórico, os custos e a hierarquia das subtarefas do Claude."
+    ],
+    "Improved Claude credential refresh after sign-in expiration without retrying rejected access credentials": [
+        .traditionalChinese: "改善 Claude 登入失效後的憑證重新整理，避免重複使用已失效的存取憑證。",
+        .japanese: "Claude のサインイン期限切れ後の認証情報更新を改善し、拒否された認証情報を再利用しないようにしました。",
+        .korean: "Claude 로그인 만료 후 자격 증명 갱신을 개선하고 거부된 접근 자격 증명을 다시 사용하지 않도록 했습니다.",
+        .spanish: "Mejora la renovación de credenciales de Claude tras caducar la sesión sin reutilizar credenciales rechazadas.",
+        .german: "Verbessert die Erneuerung von Claude-Anmeldedaten nach Ablauf der Anmeldung, ohne abgelehnte Zugangsdaten erneut zu verwenden.",
+        .french: "Améliore le renouvellement des identifiants Claude après expiration de la connexion sans réutiliser les identifiants refusés.",
+        .portuguese: "Melhora a renovação das credenciais do Claude após a sessão expirar, sem reutilizar credenciais rejeitadas.",
+        .portugueseBrazil: "Melhora a renovação das credenciais do Claude após a sessão expirar, sem reutilizar credenciais rejeitadas."
+    ],
+    "Improved cache retention and error messages during Antigravity account changes and credential rotation": [
+        .traditionalChinese: "改善 Antigravity 帳號切換與憑證輪換期間的快取保留和錯誤提示。",
+        .japanese: "Antigravity のアカウント変更や認証情報の更新中に、キャッシュ保持とエラー表示を改善しました。",
+        .korean: "Antigravity 계정 변경 및 자격 증명 교체 중 캐시 유지와 오류 안내를 개선했습니다.",
+        .spanish: "Mejora la conservación de la caché y los mensajes de error durante cambios de cuenta y credenciales de Antigravity.",
+        .german: "Verbessert Cache-Erhalt und Fehlermeldungen bei Antigravity-Kontowechseln und der Erneuerung von Zugangsdaten.",
+        .french: "Améliore la conservation du cache et les messages d’erreur lors des changements de compte et d’identifiants Antigravity.",
+        .portuguese: "Melhora a preservação da cache e as mensagens de erro durante mudanças de conta e credenciais do Antigravity.",
+        .portugueseBrazil: "Melhora a preservação do cache e as mensagens de erro durante mudanças de conta e credenciais do Antigravity."
+    ],
+    "Strengthened cross-tool session isolation, legacy account migration, and Universal package verification": [
+        .traditionalChinese: "強化跨工具工作階段隔離、舊帳號移轉與 Universal 安裝包驗證。",
+        .japanese: "ツール間のセッション分離、旧アカウント移行、Universal パッケージ検証を強化しました。",
+        .korean: "도구 간 세션 분리, 이전 계정 마이그레이션 및 Universal 패키지 검증을 강화했습니다.",
+        .spanish: "Refuerza el aislamiento de sesiones entre herramientas, la migración de cuentas antiguas y la verificación del paquete Universal.",
+        .german: "Stärkt die werkzeugübergreifende Sitzungstrennung, die Migration älterer Konten und die Prüfung des Universal-Pakets.",
+        .french: "Renforce l’isolation des sessions entre outils, la migration des anciens comptes et la vérification du paquet Universal.",
+        .portuguese: "Reforça o isolamento de sessões entre ferramentas, a migração de contas antigas e a verificação do pacote Universal.",
+        .portugueseBrazil: "Reforça o isolamento de sessões entre ferramentas, a migração de contas antigas e a verificação do pacote Universal."
+    ],
     "Confirming the Antigravity account. Showing the previous cache for now.": [
         .traditionalChinese: "正在確認 Antigravity 帳號，目前顯示上次快取。",
         .japanese: "Antigravity アカウントを確認しています。現在は前回のキャッシュを表示しています。",

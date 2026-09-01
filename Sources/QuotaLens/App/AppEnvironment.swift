@@ -1367,19 +1367,6 @@ public final class AppEnvironment: ObservableObject {
 
     private func applyAntigravityQuotaResult(_ result: Result<ProviderQuotaRefreshResult<AntigravityQuotaSnapshot>, Error>) {
         guard enabledToolsStore.isEnabled(.antigravity) else { return }
-        if case .failure = result,
-           case .resolving = state.antigravityAccountResolutionState,
-           state.latestAntigravityQuota?.hasQuota == true {
-            state.antigravityQuotaStatus = .available
-            state.antigravityQuotaErrorText = L10n.text(
-                "正在确认 Antigravity 账号，当前显示上次缓存。",
-                "Confirming the Antigravity account. Showing the previous cache for now."
-            )
-            Task { @MainActor [weak self] in
-                await self?.refreshProviderQuotaInsights()
-            }
-            return
-        }
         switch result {
         case .success(let refresh):
             let snapshot = refresh.snapshot
@@ -1392,67 +1379,14 @@ public final class AppEnvironment: ObservableObject {
             state.latestAntigravityQuota = snapshot
             state.antigravityQuotaStatus = .available
             state.antigravityQuotaErrorText = refresh.storageWarningText
-        case .failure(let error as AntigravityCredentialError):
-            state.antigravityQuotaStatus = error == .credentialsMissing ? .missingCredentials : .unavailable
-            state.antigravityQuotaErrorText = error.errorDescription
-        case .failure(let error as AntigravityFetchError):
-            switch error {
-            case .missingCredentials:
-                state.antigravityQuotaStatus = .missingCredentials
-                state.antigravityQuotaErrorText = L10n.text(
-                    "请先在 Antigravity 中登录。",
-                    "Sign in to Antigravity first."
-                )
-            case .unauthorized:
-                state.antigravityQuotaStatus = .signInRequired
-                state.antigravityQuotaErrorText = L10n.text(
-                    "Antigravity 登录已失效，请重新登录。",
-                    "Your Antigravity sign-in has expired. Sign in again."
-                )
-            case .forbidden:
-                state.antigravityQuotaStatus = .unavailable
-                state.antigravityQuotaErrorText = L10n.text(
-                    "当前账号暂时无法读取 Antigravity 额度。",
-                    "This account cannot read Antigravity quota right now."
-                )
-            case .needsInitialization:
-                state.antigravityQuotaStatus = .needsInitialization
-                state.antigravityQuotaErrorText = L10n.text(
-                    "请先在 Antigravity 中完成首次设置。",
-                    "Finish the initial Antigravity setup first."
-                )
-            case .rateLimited:
-                state.antigravityQuotaStatus = .limited(until: nil)
-                state.antigravityQuotaErrorText = L10n.text(
-                    "Antigravity 暂时延迟刷新，将自动重试。",
-                    "Antigravity refresh is delayed and will retry automatically."
-                )
-            case .noQuotaData, .unavailable:
-                state.antigravityQuotaStatus = .unavailable
-                state.antigravityQuotaErrorText = L10n.text(
-                    "暂时无法更新 Antigravity 额度。",
-                    "Antigravity quota could not be updated right now."
-                )
-            case .malformedCredentials, .incompatibleResponse, .partialResponse:
-                state.antigravityQuotaStatus = .unavailable
-                state.antigravityQuotaErrorText = L10n.format(
-                    "%@ quota could not be read completely. Check for a QuotaLens update.",
-                    zhHans: "暂时无法完整读取 %@ 额度，请检查 QuotaLens 更新。",
-                    "Antigravity"
-                )
-            case .endpointUnavailable:
-                state.antigravityQuotaStatus = .unavailable
-                state.antigravityQuotaErrorText = L10n.text(
-                    "Antigravity 的额度服务暂时不可用，请检查 QuotaLens 更新。",
-                    "Antigravity quota service is unavailable. Check for a QuotaLens update."
-                )
-            }
-        case .failure:
-            state.antigravityQuotaStatus = .unavailable
-            state.antigravityQuotaErrorText = L10n.text(
-                "暂时无法更新 Antigravity 额度。",
-                "Antigravity quota could not be updated right now."
+        case .failure(let error):
+            let presentation = AntigravityQuotaFailurePresentation.make(
+                error: error,
+                accountResolution: state.antigravityAccountResolutionState,
+                hasCachedQuota: state.latestAntigravityQuota?.hasQuota == true
             )
+            state.antigravityQuotaStatus = presentation.status
+            state.antigravityQuotaErrorText = presentation.message
         }
         Task { @MainActor [weak self] in
             await self?.refreshProviderQuotaInsights()
