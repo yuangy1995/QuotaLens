@@ -76,10 +76,38 @@ public final class Repositories: @unchecked Sendable {
                 last_seen_at = MAX(accounts.last_seen_at, excluded.last_seen_at);
             """, bindings: [newKey, oldKey])
 
-            try db.executeUpdate(
-                sql: "UPDATE OR IGNORE account_daily_snapshots SET account_key = ? WHERE account_key = ?;",
-                bindings: [newKey, oldKey]
+            try db.executeUpdate(sql: """
+            INSERT INTO account_daily_snapshots (
+                account_key, server_start_date, observed_at, total_tokens, data_state, raw_json
             )
+            SELECT ?, server_start_date, observed_at, total_tokens, data_state, raw_json
+            FROM account_daily_snapshots
+            WHERE account_key = ?
+            ON CONFLICT(account_key, server_start_date, observed_at) DO UPDATE SET
+                total_tokens = excluded.total_tokens,
+                data_state = excluded.data_state,
+                raw_json = excluded.raw_json
+            WHERE
+                CASE excluded.data_state
+                    WHEN 'finalized' THEN 5
+                    WHEN 'reopened' THEN 4
+                    WHEN 'stable' THEN 3
+                    WHEN 'pending_reconciliation' THEN 2
+                    ELSE 1
+                END
+                >
+                CASE account_daily_snapshots.data_state
+                    WHEN 'finalized' THEN 5
+                    WHEN 'reopened' THEN 4
+                    WHEN 'stable' THEN 3
+                    WHEN 'pending_reconciliation' THEN 2
+                    ELSE 1
+                END
+                OR (
+                    excluded.data_state = account_daily_snapshots.data_state
+                    AND LENGTH(excluded.raw_json) > LENGTH(account_daily_snapshots.raw_json)
+                );
+            """, bindings: [newKey, oldKey])
             try db.executeUpdate(
                 sql: "DELETE FROM account_daily_snapshots WHERE account_key = ?;",
                 bindings: [oldKey]
@@ -97,6 +125,27 @@ public final class Repositories: @unchecked Sendable {
                 bindings: [oldKey]
             )
         }
+    }
+
+    @discardableResult
+    public func migrateLegacyChatGPTAccount(to newKey: String, emailHash: String) throws -> Bool {
+        let legacyKey = AccountIdentity.stableAccountKey(from: "chatgpt_user")
+        guard legacyKey != newKey else { return false }
+        let legacyEmailHash = try db.stringScalar(
+            sql: "SELECT email_hash FROM accounts WHERE account_key = ?;",
+            bindings: [legacyKey]
+        )
+        guard legacyEmailHash != nil else { return false }
+
+        let otherAccountCount = try db.intScalar(
+            sql: "SELECT COUNT(*) FROM accounts WHERE account_key NOT IN (?, ?);",
+            bindings: [legacyKey, newKey]
+        )
+        let matchingEmail = !emailHash.isEmpty && legacyEmailHash == emailHash
+        guard matchingEmail || otherAccountCount == 0 else { return false }
+
+        try migrateAccountKey(from: legacyKey, to: newKey)
+        return true
     }
 
     // MARK: - 账户每日总账快照 (account/usage/read)

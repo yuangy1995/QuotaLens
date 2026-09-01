@@ -46,24 +46,41 @@ public struct ProviderQuotaRefreshResult<Snapshot: Sendable>: Sendable {
     public let snapshot: Snapshot
     public let historySaved: Bool
     public let migrationWarning: Bool
+    public let credentialPersistenceWarning: Bool
 
-    public init(snapshot: Snapshot, historySaved: Bool, migrationWarning: Bool = false) {
+    public init(
+        snapshot: Snapshot,
+        historySaved: Bool,
+        migrationWarning: Bool = false,
+        credentialPersistenceWarning: Bool = false
+    ) {
         self.snapshot = snapshot
         self.historySaved = historySaved
         self.migrationWarning = migrationWarning
+        self.credentialPersistenceWarning = credentialPersistenceWarning
     }
 
     public var storageWarningText: String? {
+        var warnings: [String] = []
         if !historySaved {
-            return L10n.text("在线额度已更新，但本地历史记录暂时未保存。", "Online quota was updated, but local history was not saved.")
+            warnings.append(L10n.text(
+                "在线额度已更新，但本地历史记录暂时未保存。",
+                "Online quota was updated, but local history was not saved."
+            ))
         }
         if migrationWarning {
-            return L10n.text(
+            warnings.append(L10n.text(
                 "额度和新记录已保存，但部分旧记录未能恢复。",
                 "Quota and new records were saved, but some older records could not be recovered."
-            )
+            ))
         }
-        return nil
+        if credentialPersistenceWarning {
+            warnings.append(L10n.text(
+                "Claude 登录信息已临时刷新，但未能保存到系统钥匙串；重启后可能需要重新登录。",
+                "Claude sign-in was refreshed temporarily but could not be saved to the system keychain. You may need to sign in again after restarting."
+            ))
+        }
+        return warnings.isEmpty ? nil : warnings.joined(separator: " ")
     }
 }
 

@@ -24,6 +24,10 @@ public struct LocalAccountImporter: Sendable {
                     to: identity.accountKey
                 )
             }
+            _ = try? repositories.migrateLegacyChatGPTAccount(
+                to: identity.accountKey,
+                emailHash: identity.emailHash
+            )
 
             let account = AccountRecord(
                 accountKey: identity.accountKey,
@@ -97,8 +101,6 @@ public struct LocalAccountImporter: Sendable {
             legacyIdentifiers.append("account_\(accountID.prefix(8))")
             legacyIdentifiers.append(accountID)
         }
-        legacyIdentifiers.append("chatgpt_user")
-
         let legacyAccountKeys = Array(Set(
             legacyIdentifiers.map(AccountIdentity.stableAccountKey(from:))
         )).sorted()

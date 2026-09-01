@@ -1094,6 +1094,14 @@ public final class AppEnvironment: ObservableObject {
         await poller.pollOnce(force: force)
     }
 
+    public func redetectClaudeCredentials() async {
+        guard ClaudeUsageSettings.shared.isEnabled,
+              let poller = claudeUsagePoller else { return }
+        state.isRefreshingClaudeUsage = true
+        defer { state.isRefreshingClaudeUsage = false }
+        await poller.redetectCredentials()
+    }
+
     private func startClaudeServices() {
         guard ClaudeUsageSettings.shared.isEnabled else { return }
         if claudeUsagePoller == nil {
@@ -1924,8 +1932,7 @@ public final class AppEnvironment: ObservableObject {
                 accountInfo.email,
                 accountInfo.accountId.map { "account_\($0.prefix(8))" },
                 accountInfo.id,
-                accountInfo.type,
-                "chatgpt_user"
+                accountInfo.type
             ].compactMap { $0 }
             for legacyIdentifier in Set(legacyIdentifiers) {
                 do {
@@ -1936,6 +1943,14 @@ public final class AppEnvironment: ObservableObject {
                 } catch {
                     storageFailed = true
                 }
+            }
+            do {
+                try repositories.migrateLegacyChatGPTAccount(
+                    to: accountKey,
+                    emailHash: emailHash
+                )
+            } catch {
+                storageFailed = true
             }
             if state.selectedAccountKey != accountKey {
                 beginAccountScopeChange(invalidateServerSnapshot: false, invalidateRefreshRequests: false)

@@ -53,6 +53,17 @@ public struct AboutView: View {
     private var defaultChangelogs: [ChangelogEntry] {
         [
             ChangelogEntry(
+                id: "v1.0.28",
+                version: "v1.0.28",
+                date: "2026-09-01",
+                changes: [
+                    L10n.text("修复 Claude 登录失效时重复使用被拒绝凭据的问题，并隔离不同账号的凭据状态", "Stops retrying rejected Claude credentials and keeps credential state isolated between accounts"),
+                    L10n.text("Claude 登录信息刷新后若未能保存到系统钥匙串，会继续显示额度并给出明确提醒", "Keeps Claude quota available and shows a clear warning when refreshed sign-in data cannot be saved"),
+                    L10n.text("收紧旧版 Codex 未识别账号的迁移条件，避免多账号历史被错误归属", "Tightens legacy Codex account migration to prevent incorrect history ownership across accounts"),
+                    L10n.text("改进账号迁移时的每日快照合并规则，并让测试打包与版本检查分别反馈结果", "Improves daily snapshot merging during account migration and separates package tests from version policy checks")
+                ]
+            ),
+            ChangelogEntry(
                 id: "v1.0.27",
                 version: "v1.0.27",
                 date: "2026-09-01",

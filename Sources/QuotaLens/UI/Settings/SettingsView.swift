@@ -439,6 +439,13 @@ public struct SettingsView: View {
                             Label(L10n.text("重新读取全部", "Read All Again"), systemImage: "arrow.counterclockwise")
                         }
                         .disabled(env.claudeScanCoordinator.isScanning)
+
+                        Button {
+                            Task { await env.redetectClaudeCredentials() }
+                        } label: {
+                            Label(L10n.text("重新检测登录", "Check Sign-in Again"), systemImage: "person.crop.circle.badge.checkmark")
+                        }
+                        .disabled(state.isRefreshingClaudeUsage)
                     }
                     .buttonStyle(.bordered)
 

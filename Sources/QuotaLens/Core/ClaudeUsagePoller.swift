@@ -328,6 +328,11 @@ actor ClaudeUsagePoller {
         loopTask = nil
     }
 
+    func redetectCredentials() async {
+        await client.redetectCredentials()
+        await pollOnce(force: true)
+    }
+
     func pollOnce(force: Bool = false) async {
         guard !isStopped, !isPolling else { return }
         let now = Date()
@@ -368,6 +373,7 @@ actor ClaudeUsagePoller {
             let fresh = try await client.fetch()
                 .preservingStaleFiveHour(from: latestSnapshot)
             guard !isStopped else { return }
+            let credentialPersistenceWarning = await client.hasCredentialPersistenceWarning()
             latestSnapshot = fresh
             cooldownUntil = nil
             rateLimitCount = 0
@@ -384,7 +390,8 @@ actor ClaudeUsagePoller {
             await onResult(.success(ProviderQuotaRefreshResult(
                 snapshot: fresh,
                 historySaved: historySaved,
-                migrationWarning: migrationWarnings.remove(fresh.accountKey) != nil
+                migrationWarning: migrationWarnings.remove(fresh.accountKey) != nil,
+                credentialPersistenceWarning: credentialPersistenceWarning
             )))
         } catch let error as ClaudeUsageClient.FetchError {
             guard !isStopped else { return }

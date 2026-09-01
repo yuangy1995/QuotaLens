@@ -258,6 +258,10 @@ public enum L10n {
     }
 
     public static let changelogZhToEnMap: [String: String] = [
+        "修复 Claude 登录失效时重复使用被拒绝凭据的问题，并隔离不同账号的凭据状态": "Stops retrying rejected Claude credentials and keeps credential state isolated between accounts",
+        "Claude 登录信息刷新后若未能保存到系统钥匙串，会继续显示额度并给出明确提醒": "Keeps Claude quota available and shows a clear warning when refreshed sign-in data cannot be saved",
+        "收紧旧版 Codex 未识别账号的迁移条件，避免多账号历史被错误归属": "Tightens legacy Codex account migration to prevent incorrect history ownership across accounts",
+        "改进账号迁移时的每日快照合并规则，并让测试打包与版本检查分别反馈结果": "Improves daily snapshot merging during account migration and separates package tests from version policy checks",
         "避免尚未写入完整身份的 Claude 子任务影响父会话层级": "Prevents Claude child tasks without a complete identity from changing the parent-session hierarchy",
         "新增 Claude 本地记录完整度诊断与分块读取，损坏或格式变化会明确提示": "Adds Claude local-record completeness checks and chunked reading with clear warnings for damage or format changes",
         "升级修复改为按来源重试，单个异常文件不再触发反复全量重建": "Retries upgrade repairs per source so one problematic file no longer triggers repeated full rebuilds",
@@ -875,6 +879,66 @@ private let multiToolTranslations: [AppLanguage: [String: String]] = [
 ]
 
 private let keyedTranslations: [String: [AppLanguage: String]] = [
+    "Stops retrying rejected Claude credentials and keeps credential state isolated between accounts": [
+        .traditionalChinese: "修復 Claude 登入失效時重複使用被拒絕憑證的問題，並隔離不同帳號的憑證狀態",
+        .japanese: "Claude ログイン失効時に拒否された認証情報の再試行を停止し、アカウント間の認証状態を分離",
+        .korean: "Claude 로그인 만료 시 거부된 자격 증명 재사용을 방지하고 계정 간 자격 증명 상태 격리",
+        .spanish: "Deja de reintentar credenciales rechazadas de Claude y mantiene aislado el estado entre cuentas",
+        .german: "Verhindert erneute Versuche mit abgelehnten Claude-Anmeldedaten und isoliert den Anmeldestatus zwischen Konten",
+        .french: "Arrête de réessayer les identifiants Claude rejetés et isole l'état de connexion entre les comptes",
+        .portuguese: "Interrompe novas tentativas com credenciais rejeitadas do Claude e isola o estado entre contas",
+        .portugueseBrazil: "Interrompe novas tentativas com credenciais rejeitadas do Claude e isola o estado entre contas"
+    ],
+    "Keeps Claude quota available and shows a clear warning when refreshed sign-in data cannot be saved": [
+        .traditionalChinese: "Claude 登入資訊重新整理後若未能儲存到系統鑰匙圈，會繼續顯示額度並給出明確提醒",
+        .japanese: "Claude のログイン情報更新後にキーチェーンへの保存に失敗した場合でもクォータ表示を維持し明確な警告を表示",
+        .korean: "Claude 로그인 정보 갱신 후 시스템 키체인 저장에 실패하더라도 할당량을 계속 표시하고 명확한 경고 안내",
+        .spanish: "Mantiene disponible la cuota de Claude y muestra una advertencia clara si no se pueden guardar los datos en el llavero",
+        .german: "Hält das Claude-Kontingent verfügbar und zeigt eine deutliche Warnung an, wenn aktualisierte Anmeldedaten nicht gespeichert werden können",
+        .french: "Maintient le quota Claude disponible et affiche un avertissement clair si les identifiants actualisés ne peuvent pas être enregistrés",
+        .portuguese: "Mantém a quota do Claude disponível e apresenta um aviso claro caso os dados atualizados não possam ser guardados no porta-chaves",
+        .portugueseBrazil: "Mantém a cota do Claude disponível e exibe um aviso claro se os dados atualizados não puderem ser salvos nas chaves do sistema"
+    ],
+    "Tightens legacy Codex account migration to prevent incorrect history ownership across accounts": [
+        .traditionalChinese: "收緊舊版 Codex 未識別帳號的遷移條件，避免多帳號歷史被錯誤歸屬",
+        .japanese: "旧版 Codex の未識別アカウント移行条件を厳格化し、複数アカウント履歴の誤帰属を防止",
+        .korean: "기존 Codex 미식별 계정 마이그레이션 조건을 강화하여 다중 계정 기록의 잘못된 소유권 이전 방지",
+        .spanish: "Endurece la migración de cuentas heredadas de Codex para evitar la atribución incorrecta del historial entre cuentas",
+        .german: "Verschärft die Migration alter unerkannter Codex-Konten, um fehlerhafte Verlaufszuordnungen zwischen Konten zu verhindern",
+        .french: "Durcit la migration des anciens comptes Codex non identifiés pour éviter toute mauvaise attribution d'historique entre comptes",
+        .portuguese: "Reforça a migração de contas legadas do Codex para evitar a atribuição incorreta de histórico entre contas",
+        .portugueseBrazil: "Endurece a migração de contas legadas do Codex para evitar atribuição incorreta de histórico entre contas"
+    ],
+    "Improves daily snapshot merging during account migration and separates package tests from version policy checks": [
+        .traditionalChinese: "改進帳號遷移時的每日快照合併規則，並讓測試打包與版本檢查分別回饋結果",
+        .japanese: "アカウント移行時の日次スナップショット統合ルールを改善し、パッケージテストとバージョン検証結果を個別に表示",
+        .korean: "계정 마이그레이션 시 일일 스냅샷 병합 규칙을 개선하고 패키지 테스트와 버전 검사 피드백 분리",
+        .spanish: "Mejora la combinación de instantáneas diarias durante la migración de cuentas y separa las pruebas de paquete de las comprobaciones de versión",
+        .german: "Verbessert die Zusammenführung täglicher Snapshots bei Kontomigrationen und trennt Pakettests von Versionsprüfungen",
+        .french: "Améliore la fusion des instantanés quotidiens lors de la migration des comptes et sépare les tests de paquet des vérifications de version",
+        .portuguese: "Melhora a união de instantâneos diários durante a migração de contas e separa os testes de pacote das verificações de versão",
+        .portugueseBrazil: "Melhora a mesclagem de snapshots diários durante a migração de contas e separa os testes de pacote das verificações de versão"
+    ],
+    "Claude sign-in was refreshed temporarily but could not be saved to the system keychain. You may need to sign in again after restarting.": [
+        .traditionalChinese: "Claude 登入資訊已暫時重新整理，但未能儲存到系統鑰匙圈；重啟後可能需要重新登入。",
+        .japanese: "Claude のログイン情報は一時的に更新されましたが、システム キーチェーンに保存できませんでした。再起動後に再ログインが必要になる場合があります。",
+        .korean: "Claude 로그인 정보가 임시로 갱신되었으나 시스템 키체인에 저장되지 않았습니다. 앱 재시작 후 다시 로그인해야 할 수 있습니다.",
+        .spanish: "La sesión de Claude se actualizó temporalmente, pero no se pudo guardar en el llavero del sistema. Es posible que debas iniciar sesión de nuevo tras reiniciar.",
+        .german: "Die Claude-Anmeldung wurde vorübergehend aktualisiert, konnte jedoch nicht im System-Schlüsselbund gespeichert werden. Nach einem Neustart müssen Sie sich eventuell erneut anmelden.",
+        .french: "La connexion Claude a été actualisée temporairement mais n'a pas pu être enregistrée dans le trousseau système. Vous devrez peut-être vous reconnecter après redémarrage.",
+        .portuguese: "O início de sessão do Claude foi atualizado temporariamente, mas não pôde ser guardado no porta-chaves do sistema. Poderá ter de iniciar sessão novamente após reiniciar.",
+        .portugueseBrazil: "O login do Claude foi atualizado temporariamente, mas não pôde ser salvo nas chaves do sistema. Pode ser necessário fazer login novamente após reiniciar."
+    ],
+    "Check Sign-in Again": [
+        .traditionalChinese: "重新檢測登入",
+        .japanese: "ログイン状態を再確認",
+        .korean: "로그인 다시 확인",
+        .spanish: "Comprobar inicio de sesión de nuevo",
+        .german: "Anmeldung erneut prüfen",
+        .french: "Vérifier à nouveau la connexion",
+        .portuguese: "Verificar início de sessão novamente",
+        .portugueseBrazil: "Verificar login novamente"
+    ],
     "Added Antigravity deep usage parsing and official API pricing catalog engine with cost auditing for Gemini 3.7/3.6/3.5 Flash and 3.1 Pro": [
         .traditionalChinese: "新增 Antigravity 深度用量解析與官方 API 定價目錄引擎，支援 Gemini 3.7/3.6/3.5 Flash 與 3.1 Pro 成本測算與長上下文折算",
         .japanese: "Antigravity 詳細使用量解析と公式 API 価格カタログエンジンを追加し、Gemini 3.7/3.6/3.5 Flash および 3.1 Pro のコスト試算と長文コンテキスト換算に対応",

@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Security
 
@@ -384,16 +385,52 @@ actor ClaudeUsageClient {
     }
 
     private static let usageEndpoint = URL(string: "https://api.anthropic.com/api/oauth/usage")!
+    private static let rejectedTokenTTL: TimeInterval = 24 * 60 * 60
+
+    private struct RejectedTokenKey: Hashable, Sendable {
+        let accountKey: String
+        let tokenDigest: String
+    }
+
+    private enum CredentialRefreshResult: Sendable {
+        case refreshedAndPersisted(ClaudeStoredCredentials)
+        case refreshedButNotPersisted(ClaudeStoredCredentials)
+
+        var credentials: ClaudeStoredCredentials {
+            switch self {
+            case .refreshedAndPersisted(let credentials),
+                 .refreshedButNotPersisted(let credentials):
+                return credentials
+            }
+        }
+
+        var wasPersisted: Bool {
+            if case .refreshedAndPersisted = self { return true }
+            return false
+        }
+    }
+
+    typealias CredentialSaver = @Sendable (
+        ClaudeRefreshedCredentials,
+        [String]?,
+        ClaudeAccountIdentity,
+        String,
+        URL
+    ) throws -> Void
+
     private let session: URLSession
     private let endpoint: URL
     private let cacheURL: URL
     private let tokenRefresher: ClaudeTokenRefresher
     private let credentialsProvider: (@Sendable () -> [ClaudeStoredCredentials])?
+    private let credentialSaver: CredentialSaver
     private var memoryToken: String?
     private var memoryAccountKey: String?
-    private var rejectedTokens: Set<String> = []
+    private var rejectedTokens: [RejectedTokenKey: Date] = [:]
     private var keychainUnavailable = false
-    private var refreshTask: Task<ClaudeStoredCredentials?, Never>?
+    private var keychainRetryAfter: Date?
+    private var refreshTask: Task<CredentialRefreshResult?, Never>?
+    private var credentialPersistenceWarning = false
     private var confirmedLegacyAccountKey: String?
 
     init(
@@ -401,13 +438,23 @@ actor ClaudeUsageClient {
         endpoint: URL = ClaudeUsageClient.usageEndpoint,
         cacheURL: URL = ClaudeOAuthCache.defaultURL(),
         tokenRefresher: ClaudeTokenRefresher = ClaudeTokenRefresher(),
-        credentialsProvider: (@Sendable () -> [ClaudeStoredCredentials])? = nil
+        credentialsProvider: (@Sendable () -> [ClaudeStoredCredentials])? = nil,
+        credentialSaver: @escaping CredentialSaver = { credentials, scopes, identity, fallbackRefreshToken, url in
+            try ClaudeOAuthCache.save(
+                credentials,
+                scopes: scopes,
+                identity: identity,
+                fallbackRefreshToken: fallbackRefreshToken,
+                to: url
+            )
+        }
     ) {
         self.session = session
         self.endpoint = endpoint
         self.cacheURL = cacheURL
         self.tokenRefresher = tokenRefresher
         self.credentialsProvider = credentialsProvider
+        self.credentialSaver = credentialSaver
     }
 
     func fetch() async throws -> ClaudeUsageSnapshot {
@@ -417,6 +464,16 @@ actor ClaudeUsageClient {
     func clearMemoryToken() {
         memoryToken = nil
         memoryAccountKey = nil
+    }
+
+    func redetectCredentials() {
+        keychainUnavailable = false
+        keychainRetryAfter = nil
+        clearMemoryToken()
+    }
+
+    func hasCredentialPersistenceWarning() -> Bool {
+        credentialPersistenceWarning
     }
 
     func activeAccountIdentity() async -> ClaudeAccountIdentity? {
@@ -451,7 +508,7 @@ actor ClaudeUsageClient {
         }
         switch http.statusCode {
         case 200:
-            rejectedTokens.removeAll()
+            acceptToken(token, accountKey: credentials.identity.accountKey)
             return try Self.decode(
                 data,
                 capturedAt: Date(),
@@ -460,20 +517,40 @@ actor ClaudeUsageClient {
                 accountAliases: credentials.identity.aliases
             )
         case 401:
-            rejectedTokens.insert(token)
-            memoryToken = nil
-            memoryAccountKey = nil
-            if !retriedAfterUnauthorized {
-                return try await fetch(retriedAfterUnauthorized: true)
-            }
-            throw FetchError.unauthorized
+            return try await retryAfterRejectingToken(
+                token,
+                accountKey: credentials.identity.accountKey,
+                alreadyRetried: retriedAfterUnauthorized
+            )
         case 403:
             let body = String(data: data, encoding: .utf8)?.lowercased() ?? ""
-            throw body.contains("scope") ? FetchError.insufficientScope : FetchError.unauthorized
+            if body.contains("scope") {
+                throw FetchError.insufficientScope
+            }
+            return try await retryAfterRejectingToken(
+                token,
+                accountKey: credentials.identity.accountKey,
+                alreadyRetried: retriedAfterUnauthorized
+            )
         case 429:
             throw FetchError.rateLimited(retryAfter: Self.retryAfter(from: http))
         default:
             throw FetchError.unavailable
+        }
+    }
+
+    private func retryAfterRejectingToken(
+        _ token: String,
+        accountKey: String,
+        alreadyRetried: Bool
+    ) async throws -> ClaudeUsageSnapshot {
+        rejectToken(token, accountKey: accountKey)
+        clearMemoryToken()
+        guard !alreadyRetried else { throw FetchError.unauthorized }
+        do {
+            return try await fetch(retriedAfterUnauthorized: true)
+        } catch FetchError.noCredentials {
+            throw FetchError.unauthorized
         }
     }
 
@@ -484,14 +561,17 @@ actor ClaudeUsageClient {
             if let file = Self.readClaudeCredentialsFile() {
                 localCredentials.append(file)
             }
-            if !keychainUnavailable {
-                switch Self.readKeychainCredentials(timeout: 2) {
+            let mayReadKeychain = !keychainUnavailable
+                && (keychainRetryAfter.map { $0 <= Date() } ?? true)
+            if mayReadKeychain {
+                switch Self.readKeychainCredentials() {
                 case .credentials(let credentials):
+                    keychainRetryAfter = nil
                     localCredentials.append(credentials)
                 case .permanentlyUnavailable:
                     keychainUnavailable = true
-                case .temporarilyUnavailable:
-                    break
+                case .temporarilyUnavailable(let retryAfter):
+                    keychainRetryAfter = retryAfter.map { Date().addingTimeInterval($0) }
                 }
             }
         }
@@ -517,11 +597,14 @@ actor ClaudeUsageClient {
             || (cached.refreshToken != nil && cached.refreshToken == active.refreshToken) {
             candidates.insert(cached, at: 0)
         }
-        if let memoryToken, memoryAccountKey == activeKey, !rejectedTokens.contains(memoryToken) {
+        let rejectedDigests = rejectedTokenDigests(for: activeKey)
+        if let memoryToken,
+           memoryAccountKey == activeKey,
+           !rejectedDigests.contains(Self.tokenDigest(memoryToken)) {
             return (memoryToken, identity)
         }
         clearMemoryToken()
-        for candidate in candidates where Self.isUsable(candidate, rejected: rejectedTokens) {
+        for candidate in candidates where Self.isUsable(candidate, rejectedDigests: rejectedDigests) {
             memoryToken = candidate.accessToken
             memoryAccountKey = activeKey
             return (candidate.accessToken, identity)
@@ -542,8 +625,10 @@ actor ClaudeUsageClient {
         candidates: [ClaudeStoredCredentials],
         identity: ClaudeAccountIdentity
     ) async -> ClaudeStoredCredentials? {
-        if let refreshTask { return await refreshTask.value }
-        let task = Task<ClaudeStoredCredentials?, Never> {
+        if let refreshTask {
+            return applyRefreshResult(await refreshTask.value)
+        }
+        let task = Task<CredentialRefreshResult?, Never> {
             var seen = Set<String>()
             let ordered = ([refreshToken] + candidates.compactMap(\.refreshToken))
                 .filter { seen.insert($0).inserted }
@@ -562,14 +647,18 @@ actor ClaudeUsageClient {
                         identityConfidence: identity.confidence,
                         accountAliases: identity.aliases
                     )
-                    try? ClaudeOAuthCache.save(
-                        refreshed,
-                        scopes: scopes,
-                        identity: credentials.identity,
-                        fallbackRefreshToken: token,
-                        to: self.cacheURL
-                    )
-                    return credentials
+                    do {
+                        try self.credentialSaver(
+                            refreshed,
+                            scopes,
+                            credentials.identity,
+                            token,
+                            self.cacheURL
+                        )
+                        return .refreshedAndPersisted(credentials)
+                    } catch {
+                        return .refreshedButNotPersisted(credentials)
+                    }
                 } catch ClaudeTokenRefresher.RefreshError.http(let code) where (400..<500).contains(code) {
                     if ClaudeOAuthCache.load(from: self.cacheURL)?.refreshToken == token {
                         ClaudeOAuthCache.clear(at: self.cacheURL)
@@ -584,7 +673,13 @@ actor ClaudeUsageClient {
         refreshTask = task
         let result = await task.value
         refreshTask = nil
-        return result
+        return applyRefreshResult(result)
+    }
+
+    private func applyRefreshResult(_ result: CredentialRefreshResult?) -> ClaudeStoredCredentials? {
+        guard let result else { return nil }
+        credentialPersistenceWarning = !result.wasPersisted
+        return result.credentials
     }
 
     static func decode(
@@ -770,10 +865,10 @@ actor ClaudeUsageClient {
     private enum KeychainReadResult {
         case credentials(ClaudeStoredCredentials)
         case permanentlyUnavailable
-        case temporarilyUnavailable
+        case temporarilyUnavailable(retryAfter: TimeInterval?)
     }
 
-    private static func readKeychainCredentials(timeout _: TimeInterval) -> KeychainReadResult {
+    private static func readKeychainCredentials() -> KeychainReadResult {
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: "Claude Code-credentials",
@@ -784,21 +879,23 @@ actor ClaudeUsageClient {
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         guard status == errSecSuccess else {
             switch status {
-            case errSecAuthFailed, errSecUserCanceled:
+            case errSecUnimplemented:
                 return .permanentlyUnavailable
+            case errSecAuthFailed, errSecUserCanceled:
+                return .temporarilyUnavailable(retryAfter: 5 * 60)
             default:
-                return .temporarilyUnavailable
+                return .temporarilyUnavailable(retryAfter: nil)
             }
         }
-        guard let data = item as? Data else { return .temporarilyUnavailable }
+        guard let data = item as? Data else { return .temporarilyUnavailable(retryAfter: nil) }
         let trimmed = String(data: data, encoding: .utf8)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !trimmed.isEmpty else { return .temporarilyUnavailable }
+        guard !trimmed.isEmpty else { return .temporarilyUnavailable(retryAfter: nil) }
         if let parsed = parseCredentials(Data(trimmed.utf8)) {
             return .credentials(parsed)
         }
         if (try? JSONSerialization.jsonObject(with: Data(trimmed.utf8))) != nil {
-            return .temporarilyUnavailable
+            return .temporarilyUnavailable(retryAfter: nil)
         }
         return .credentials(ClaudeStoredCredentials(
             accessToken: trimmed,
@@ -811,12 +908,46 @@ actor ClaudeUsageClient {
 
     private static func isUsable(
         _ credentials: ClaudeStoredCredentials,
-        rejected: Set<String>,
+        rejectedDigests: Set<String>,
         now: Date = Date()
     ) -> Bool {
-        guard !rejected.contains(credentials.accessToken) else { return false }
+        guard !rejectedDigests.contains(tokenDigest(credentials.accessToken)) else { return false }
         guard let expiresAtMs = credentials.expiresAtMs else { return true }
         return now.timeIntervalSince1970 < expiresAtMs / 1_000 - 60
+    }
+
+    private func rejectToken(_ token: String, accountKey: String, now: Date = Date()) {
+        pruneRejectedTokens(now: now)
+        rejectedTokens[RejectedTokenKey(
+            accountKey: accountKey,
+            tokenDigest: Self.tokenDigest(token)
+        )] = now
+    }
+
+    private func acceptToken(_ token: String, accountKey: String, now: Date = Date()) {
+        pruneRejectedTokens(now: now)
+        rejectedTokens.removeValue(forKey: RejectedTokenKey(
+            accountKey: accountKey,
+            tokenDigest: Self.tokenDigest(token)
+        ))
+    }
+
+    private func rejectedTokenDigests(for accountKey: String, now: Date = Date()) -> Set<String> {
+        pruneRejectedTokens(now: now)
+        return Set(rejectedTokens.keys.lazy
+            .filter { $0.accountKey == accountKey }
+            .map(\.tokenDigest))
+    }
+
+    private func pruneRejectedTokens(now: Date) {
+        let cutoff = now.addingTimeInterval(-Self.rejectedTokenTTL)
+        rejectedTokens = rejectedTokens.filter { $0.value >= cutoff }
+    }
+
+    private static func tokenDigest(_ token: String) -> String {
+        SHA256.hash(data: Data(token.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
     }
 
     private static func retryAfter(from response: HTTPURLResponse) -> TimeInterval? {
