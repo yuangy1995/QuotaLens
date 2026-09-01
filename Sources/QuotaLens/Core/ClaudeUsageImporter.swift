@@ -6,6 +6,7 @@ import CoreServices
 private struct ClaudeSubagentRelationship: Sendable {
     let rootSessionID: String
     let parentSessionID: String
+    let ancestorSessionIDs: [String]
     let depth: Int
 }
 
@@ -31,6 +32,7 @@ private func claudeSubagentRelationship(relativePath: String) -> ClaudeSubagentR
     return ClaudeSubagentRelationship(
         rootSessionID: root,
         parentSessionID: parent,
+        ancestorSessionIDs: ancestors,
         depth: ancestors.count
     )
 }
@@ -52,6 +54,7 @@ private struct ClaudeHistoryFile: Sendable {
     var isSubagent: Bool { subagentRelationship != nil }
     var rootSessionID: String? { subagentRelationship?.rootSessionID }
     var parentSessionID: String? { subagentRelationship?.parentSessionID }
+    var ancestorSessionIDs: [String] { subagentRelationship?.ancestorSessionIDs ?? [] }
     var depth: Int { subagentRelationship?.depth ?? 0 }
 }
 
@@ -64,6 +67,7 @@ private struct ClaudeImportSourceState: Sendable {
     let byteOffset: Int64
     let status: String
     let malformedLineCount: Int
+    let errorMessage: String?
 }
 
 private struct ClaudeHistoryScanResult {
@@ -85,6 +89,138 @@ private struct ParsedClaudeEvent: Sendable {
 
     var totalTokens: Int64 {
         uncachedInput + cachedInput + cacheWrite5m + cacheWrite1h + output
+    }
+}
+
+private final class ClaudeParsedEventStore: @unchecked Sendable {
+    private var database: SQLiteDatabase?
+    private let directoryURL: URL
+
+    init() throws {
+        directoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("QuotaLens-Claude-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directoryURL,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        database = nil
+        do {
+            let database = try SQLiteDatabase(path: directoryURL.appendingPathComponent("events.sqlite").path)
+            try database.execute(sql: """
+            PRAGMA journal_mode = DELETE;
+            PRAGMA synchronous = OFF;
+            PRAGMA temp_store = FILE;
+            CREATE TABLE parsed_events (
+                message_id TEXT NOT NULL,
+                day_key TEXT NOT NULL,
+                timestamp_ms INTEGER NOT NULL,
+                model_raw TEXT NOT NULL,
+                uncached_input INTEGER NOT NULL,
+                cached_input INTEGER NOT NULL,
+                cache_write_5m INTEGER NOT NULL,
+                cache_write_1h INTEGER NOT NULL,
+                output_tokens INTEGER NOT NULL,
+                line_offset INTEGER NOT NULL,
+                line_bytes INTEGER NOT NULL,
+                order_offset INTEGER NOT NULL,
+                total_tokens INTEGER NOT NULL,
+                PRIMARY KEY (message_id, day_key)
+            );
+            """)
+            self.database = database
+        } catch {
+            try? FileManager.default.removeItem(at: directoryURL)
+            throw error
+        }
+    }
+
+    deinit {
+        database = nil
+        try? FileManager.default.removeItem(at: directoryURL)
+    }
+
+    func store(_ events: [ParsedClaudeEvent]) throws {
+        guard !events.isEmpty, let database else { return }
+        let calendar = UsageDayBucketer.calendar()
+        try database.transaction {
+            try database.executePreparedUpdates(
+                sql: """
+                INSERT INTO parsed_events (
+                    message_id, day_key, timestamp_ms, model_raw,
+                    uncached_input, cached_input, cache_write_5m, cache_write_1h,
+                    output_tokens, line_offset, line_bytes, order_offset, total_tokens
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(message_id, day_key) DO UPDATE SET
+                    timestamp_ms = excluded.timestamp_ms,
+                    model_raw = excluded.model_raw,
+                    uncached_input = excluded.uncached_input,
+                    cached_input = excluded.cached_input,
+                    cache_write_5m = excluded.cache_write_5m,
+                    cache_write_1h = excluded.cache_write_1h,
+                    output_tokens = excluded.output_tokens,
+                    line_offset = excluded.line_offset,
+                    line_bytes = excluded.line_bytes,
+                    total_tokens = excluded.total_tokens
+                WHERE excluded.total_tokens >= parsed_events.total_tokens;
+                """,
+                values: events
+            ) { event in
+                let day = LocalDayKey(date: event.timestamp, calendar: calendar).yyyyMMdd
+                return [
+                    event.messageID,
+                    day,
+                    Int64(event.timestamp.timeIntervalSince1970 * 1_000),
+                    event.modelRaw,
+                    event.uncachedInput,
+                    event.cachedInput,
+                    event.cacheWrite5m,
+                    event.cacheWrite1h,
+                    event.output,
+                    event.lineOffset,
+                    event.lineBytes,
+                    event.lineOffset,
+                    event.totalTokens
+                ]
+            }
+        }
+    }
+
+    func forEachEvent(_ body: (ParsedClaudeEvent) throws -> Void) throws {
+        guard let database else { return }
+        try database.withPreparedStatement(sql: """
+        SELECT message_id, timestamp_ms, model_raw, uncached_input, cached_input,
+               cache_write_5m, cache_write_1h, output_tokens, line_offset, line_bytes
+        FROM parsed_events
+        ORDER BY order_offset ASC;
+        """) { statement in
+            var result = sqlite3_step(statement)
+            while result == SQLITE_ROW {
+                try body(ParsedClaudeEvent(
+                    messageID: String(cString: sqlite3_column_text(statement, 0)),
+                    timestamp: Date(timeIntervalSince1970: Double(sqlite3_column_int64(statement, 1)) / 1_000),
+                    modelRaw: String(cString: sqlite3_column_text(statement, 2)),
+                    uncachedInput: sqlite3_column_int64(statement, 3),
+                    cachedInput: sqlite3_column_int64(statement, 4),
+                    cacheWrite5m: sqlite3_column_int64(statement, 5),
+                    cacheWrite1h: sqlite3_column_int64(statement, 6),
+                    output: sqlite3_column_int64(statement, 7),
+                    lineOffset: sqlite3_column_int64(statement, 8),
+                    lineBytes: sqlite3_column_int64(statement, 9)
+                ))
+                result = sqlite3_step(statement)
+            }
+            guard result == SQLITE_DONE else {
+                throw NSError(
+                    domain: "QuotaLens.ClaudeParsedEventStore",
+                    code: Int(result),
+                    userInfo: [NSLocalizedDescriptionKey: L10n.text(
+                        "Claude 记录暂时无法处理。",
+                        "Claude records could not be processed right now."
+                    )]
+                )
+            }
+        }
     }
 }
 
@@ -140,9 +276,29 @@ private struct ParsedClaudeSlice: Sendable {
     let cwd: String?
     let startedAt: Date?
     let updatedAt: Date?
-    let events: [ParsedClaudeEvent]
+    let eventStore: ClaudeParsedEventStore
     let endOffset: Int64
     let health: ClaudeParseHealth
+}
+
+private enum ClaudeUsageSchemaVersion: Equatable {
+    case legacyFlat
+    case cacheCreationObject
+}
+
+private enum ClaudeSourceReplacementPolicy: Equatable {
+    case replace
+    case mergeRecognizedEvents
+    case preserveLastGood
+}
+
+private struct ClaudeSourceImportPlan {
+    let file: ClaudeHistoryFile
+    let slice: ParsedClaudeSlice
+    let rawSessionID: String?
+    let sourceStatus: String
+    let replacementPolicy: ClaudeSourceReplacementPolicy
+    let replacementSourcePaths: Set<String>
 }
 
 private enum ClaudeImportError: LocalizedError {
@@ -160,7 +316,7 @@ private enum ClaudeImportError: LocalizedError {
 }
 
 actor ClaudeUsageImportActor {
-    private static let currentImportVersion = 3
+    private static let currentImportVersion = 4
     private static let importVersionKey = "claude_usage_import_version"
     private static let childRepairStatusKey = "claude_child_repair_status"
     private static let repairPendingStatus = "repair_pending"
@@ -237,9 +393,10 @@ actor ClaudeUsageImportActor {
                 let fileChanged = file.size != state.fileSize || file.mtimeMs != state.mtimeMs
                 let canonicalPath = Self.canonicalPath(file.path)
                 let requiresSourceRepair = state.status == Self.repairPendingStatus
+                    || state.status == "repair_invalid_identity"
                     || migrationRepairPaths.contains(canonicalPath)
                 let requiresSafeRestart = fileChanged && [
-                    "partial", "incompatible", "pending_session_identity"
+                    "partial", "incompatible", "pending", "pending_session_identity"
                 ].contains(state.status)
                 if forceRebuild || requiresSourceRepair || file.size < state.byteOffset || requiresSafeRestart {
                     changedGroups.insert(group)
@@ -288,8 +445,15 @@ actor ClaudeUsageImportActor {
         }
         try updateChildRepairStatus()
         let currentStates = try loadSourceStates()
-        for state in currentStates.values where state.status == "partial" || state.status == "incompatible" {
-            let message = sourceErrorMessage(status: state.status)
+        let diagnosticStatuses = Set([
+            "partial",
+            "incompatible",
+            "pending_session_identity",
+            Self.repairPendingStatus,
+            "repair_invalid_identity"
+        ])
+        for state in currentStates.values where diagnosticStatuses.contains(state.status) {
+            let message = state.errorMessage ?? sourceErrorMessage(status: state.status)
                 ?? L10n.text(
                     "部分 Claude 记录暂时无法读取。",
                     "Some Claude records could not be read."
@@ -317,14 +481,10 @@ actor ClaudeUsageImportActor {
         states: [String: ClaudeImportSourceState],
         resetSourcePaths requestedResetSourcePaths: Set<String>
     ) throws -> (sessionsChanged: Int, eventsChanged: Int, warnings: [String]) {
-        var slices: [(ClaudeHistoryFile, ParsedClaudeSlice)] = []
-        var resetSourcePaths = requestedResetSourcePaths
+        var plans: [ClaudeSourceImportPlan] = []
         for file in files {
             let state = states[file.path]
-            let shouldReset = requestedResetSourcePaths.contains(file.path)
-            if shouldReset, let previousPath = state?.sourcePath {
-                resetSourcePaths.insert(previousPath)
-            }
+            var shouldReset = requestedResetSourcePaths.contains(file.path)
             let unchanged = !shouldReset
                 && state?.fileSize == file.size
                 && state?.mtimeMs == file.mtimeMs
@@ -337,21 +497,39 @@ actor ClaudeUsageImportActor {
                let payloadSessionID = parsed.payloadSessionID,
                payloadSessionID != previousSessionID {
                 parsed = try Self.parse(file: file, fromOffset: 0)
-                resetSourcePaths.insert(file.path)
+                shouldReset = true
             }
-            slices.append((file, parsed))
+            let rawSessionID = resolvedSessionID(file: file, slice: parsed, previousState: state)
+            let status = sourceStatus(file: file, slice: parsed, sessionID: rawSessionID)
+            let replacementPolicy: ClaudeSourceReplacementPolicy
+            if status == "incompatible" || status == "pending_session_identity" {
+                replacementPolicy = .preserveLastGood
+            } else if shouldReset, status == "indexed" {
+                replacementPolicy = .replace
+            } else {
+                replacementPolicy = .mergeRecognizedEvents
+            }
+            var replacementSourcePaths: Set<String> = [file.path]
+            if let previousPath = state?.sourcePath {
+                replacementSourcePaths.insert(previousPath)
+            }
+            plans.append(ClaudeSourceImportPlan(
+                file: file,
+                slice: parsed,
+                rawSessionID: rawSessionID,
+                sourceStatus: status,
+                replacementPolicy: replacementPolicy,
+                replacementSourcePaths: replacementSourcePaths
+            ))
         }
-        guard !slices.isEmpty else { return (0, 0, []) }
+        guard !plans.isEmpty else { return (0, 0, []) }
 
         let groupKey = UsageSessionIdentity.key(provider: .claude, rawSessionID: groupID)
         var affectedSessionKeys: Set<String> = [groupKey]
         var parentSessionKeys = Set<String>()
-        for (file, slice) in slices {
-            if let rawSessionID = resolvedSessionID(
-                file: file,
-                slice: slice,
-                previousState: states[file.path]
-            ) {
+        for plan in plans {
+            let file = plan.file
+            if let rawSessionID = plan.rawSessionID {
                 affectedSessionKeys.insert(UsageSessionIdentity.key(provider: .claude, rawSessionID: rawSessionID))
             }
             if let previousSessionID = states[file.path]?.sessionID {
@@ -366,37 +544,51 @@ actor ClaudeUsageImportActor {
         var changedEvents = 0
         var warnings: [String] = []
         try database.transaction {
-            for sourcePath in resetSourcePaths {
-                let existingSessionKeys = try database.executeQuery(
-                    sql: "SELECT DISTINCT session_id FROM codex_usage_events WHERE provider = 'claude' AND source_path = ?;",
-                    bindings: [sourcePath]
-                ) { statement in
-                    String(cString: sqlite3_column_text(statement, 0))
+            for plan in plans {
+                guard case .replace = plan.replacementPolicy else { continue }
+                for sourcePath in plan.replacementSourcePaths {
+                    let existingSessionKeys = try database.executeQuery(
+                        sql: "SELECT DISTINCT session_id FROM codex_usage_events WHERE provider = 'claude' AND source_path = ?;",
+                        bindings: [sourcePath]
+                    ) { statement in
+                        String(cString: sqlite3_column_text(statement, 0))
+                    }
+                    affectedSessionKeys.formUnion(existingSessionKeys)
+                    try database.executeUpdate(
+                        sql: "DELETE FROM codex_usage_events WHERE provider = 'claude' AND source_path = ?;",
+                        bindings: [sourcePath]
+                    )
                 }
-                affectedSessionKeys.formUnion(existingSessionKeys)
-                try database.executeUpdate(
-                    sql: "DELETE FROM codex_usage_events WHERE provider = 'claude' AND source_path = ?;",
-                    bindings: [sourcePath]
-                )
             }
 
-            for (file, slice) in slices {
-                let rawSessionID = resolvedSessionID(
-                    file: file,
-                    slice: slice,
-                    previousState: states[file.path]
+            for plan in plans {
+                let file = plan.file
+                let slice = plan.slice
+                let preservedLastGood: Bool
+                if plan.replacementPolicy == .preserveLastGood {
+                    preservedLastGood = try hasStoredEvents(sourcePaths: plan.replacementSourcePaths)
+                } else {
+                    preservedLastGood = false
+                }
+                let sourceError = sourceErrorMessage(
+                    status: plan.sourceStatus,
+                    preservedLastGood: preservedLastGood
                 )
-                let sourceStatus = sourceStatus(file: file, slice: slice, sessionID: rawSessionID)
-                let sourceError = sourceErrorMessage(status: sourceStatus)
-                if sourceStatus == "partial" || sourceStatus == "incompatible" {
+                if sourceError != nil {
                     warnings.append("\(file.relativePath): \(sourceError ?? "Claude record is incomplete")")
                 }
-                guard let rawSessionID else {
+                try migrateStoredEventSourcePath(
+                    previousState: states[file.path],
+                    canonicalPath: file.path
+                )
+                guard plan.replacementPolicy != .preserveLastGood,
+                      let rawSessionID = plan.rawSessionID else {
                     try persistSourceState(
                         file: file,
-                        sessionID: nil,
+                        sessionID: plan.sourceStatus == "pending_session_identity"
+                            ? nil : plan.rawSessionID,
                         slice: slice,
-                        status: sourceStatus,
+                        status: plan.sourceStatus,
                         errorMessage: sourceError
                     )
                     try removeSupersededSourceState(
@@ -416,7 +608,7 @@ actor ClaudeUsageImportActor {
                 if parentSessionID == sessionID {
                     throw ClaudeImportError.selfParentSession(sessionID)
                 }
-                for event in slice.events {
+                try slice.eventStore.forEachEvent { event in
                     changedEvents += try upsert(
                         event: event,
                         sessionID: sessionID,
@@ -435,7 +627,7 @@ actor ClaudeUsageImportActor {
                     file: file,
                     sessionID: rawSessionID,
                     slice: slice,
-                    status: sourceStatus,
+                    status: plan.sourceStatus,
                     errorMessage: sourceError
                 )
                 try removeSupersededSourceState(
@@ -460,10 +652,15 @@ actor ClaudeUsageImportActor {
         previousState: ClaudeImportSourceState?
     ) -> String? {
         if let sessionID = slice.payloadSessionID?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !sessionID.isEmpty {
+           !sessionID.isEmpty,
+           !file.ancestorSessionIDs.contains(sessionID) {
             return sessionID
         }
-        if let sessionID = previousState?.sessionID, !sessionID.isEmpty { return sessionID }
+        if let sessionID = previousState?.sessionID,
+           !sessionID.isEmpty,
+           !file.ancestorSessionIDs.contains(sessionID) {
+            return sessionID
+        }
         return file.isSubagent ? nil : file.url.deletingPathExtension().lastPathComponent
     }
 
@@ -479,21 +676,66 @@ actor ClaudeUsageImportActor {
         return slice.health.status
     }
 
-    private func sourceErrorMessage(status: String) -> String? {
+    private func sourceErrorMessage(status: String, preservedLastGood: Bool = false) -> String? {
         switch status {
         case "partial":
             return L10n.text(
-                "部分 Claude 记录无法识别，当前统计可能不完整。",
-                "Some Claude records could not be recognized, so current statistics may be incomplete."
+                "部分 Claude 记录无法识别，已计入可识别记录并保留原有统计。",
+                "Some Claude records could not be recognized. Recognized records were counted and existing statistics were kept."
             )
         case "incompatible":
+            if preservedLastGood {
+                return L10n.text(
+                    "Claude 记录格式已变化，当前继续显示上次成功统计。",
+                    "The Claude record format has changed. The last successful statistics are still shown."
+                )
+            }
             return L10n.text(
-                "Claude 记录格式已变化，请检查 QuotaLens 更新。",
-                "The Claude record format has changed. Check for a QuotaLens update."
+                "Claude 记录格式已变化，新记录尚未计入统计，请检查 QuotaLens 更新。",
+                "The Claude record format has changed. New records are not yet included; check for a QuotaLens update."
+            )
+        case "pending_session_identity":
+            return L10n.text(
+                "该 Claude 子任务暂时缺少可靠身份，用量尚未计入统计。",
+                "This Claude child task does not yet have a reliable identity, so its usage is not included."
+            )
+        case Self.repairPendingStatus:
+            return L10n.text(
+                "旧 Claude 子任务正在等待重新修复。",
+                "An older Claude child task is waiting to be repaired."
+            )
+        case "repair_invalid_identity":
+            return L10n.text(
+                "旧 Claude 子任务缺少可靠身份，已忽略错误层级，原始文件已不存在。",
+                "An older Claude child task has no reliable identity. Its invalid hierarchy was ignored because the original file no longer exists."
             )
         default:
             return nil
         }
+    }
+
+    private func hasStoredEvents(sourcePaths: Set<String>) throws -> Bool {
+        for sourcePath in sourcePaths {
+            if try database.intScalar(
+                sql: "SELECT COUNT(*) FROM codex_usage_events WHERE provider = 'claude' AND source_path = ?;",
+                bindings: [sourcePath]
+            ) > 0 {
+                return true
+            }
+        }
+        return false
+    }
+
+    private func migrateStoredEventSourcePath(
+        previousState: ClaudeImportSourceState?,
+        canonicalPath: String
+    ) throws {
+        guard let previousPath = previousState?.sourcePath,
+              previousPath != canonicalPath else { return }
+        try database.executeUpdate(
+            sql: "UPDATE codex_usage_events SET source_path = ? WHERE provider = 'claude' AND source_path = ?;",
+            bindings: [canonicalPath, previousPath]
+        )
     }
 
     private func persistSourceState(
@@ -810,8 +1052,66 @@ actor ClaudeUsageImportActor {
         var parentSessionIDs = Set<String>()
         try database.transaction {
             for state in states.values {
-                guard let rawSessionID = state.sessionID,
-                      let relationship = claudeSubagentRelationship(relativePath: state.relativePath) else { continue }
+                guard let relationship = claudeSubagentRelationship(relativePath: state.relativePath) else { continue }
+                guard let rawSessionID = state.sessionID?.trimmingCharacters(in: .whitespacesAndNewlines),
+                      !rawSessionID.isEmpty,
+                      !relationship.ancestorSessionIDs.contains(rawSessionID) else {
+                    let errorMessage = sourceErrorMessage(status: "repair_invalid_identity")
+                    try database.executeUpdate(
+                        sql: """
+                        UPDATE claude_import_sources
+                        SET status = 'repair_invalid_identity', error_message = ?, last_imported_at = unixepoch()
+                        WHERE source_path = ?;
+                        """,
+                        bindings: [errorMessage, state.sourcePath]
+                    )
+                    if let rawSessionID = state.sessionID,
+                       let ancestorIndex = relationship.ancestorSessionIDs.firstIndex(of: rawSessionID) {
+                        let sessionID = UsageSessionIdentity.key(provider: .claude, rawSessionID: rawSessionID)
+                        let rootSessionID = UsageSessionIdentity.key(
+                            provider: .claude,
+                            rawSessionID: relationship.rootSessionID
+                        )
+                        let parentSessionID = ancestorIndex == 0 ? nil : UsageSessionIdentity.key(
+                            provider: .claude,
+                            rawSessionID: relationship.ancestorSessionIDs[ancestorIndex - 1]
+                        )
+                        let isSelfParent = try database.intScalar(
+                            sql: """
+                            SELECT COUNT(*) FROM codex_sessions
+                            WHERE provider = 'claude' AND session_id = ? AND parent_session_id = session_id;
+                            """,
+                            bindings: [sessionID]
+                        ) > 0
+                        if isSelfParent {
+                            try database.executeUpdate(
+                                sql: """
+                                UPDATE codex_sessions
+                                SET root_session_id = ?, parent_session_id = ?, depth = ?,
+                                    has_subagents = EXISTS (
+                                        SELECT 1 FROM codex_sessions AS children
+                                        WHERE children.provider = 'claude'
+                                          AND children.parent_session_id = codex_sessions.session_id
+                                          AND children.session_id != codex_sessions.session_id
+                                    )
+                                WHERE provider = 'claude' AND session_id = ? AND parent_session_id = session_id;
+                                """,
+                                bindings: [rootSessionID, parentSessionID, ancestorIndex, sessionID]
+                            )
+                            try database.executeUpdate(
+                                sql: """
+                                UPDATE codex_usage_events
+                                SET root_session_id = ?
+                                WHERE provider = 'claude' AND session_id = ?;
+                                """,
+                                bindings: [rootSessionID, sessionID]
+                            )
+                            repairedSessionIDs.insert(sessionID)
+                            if let parentSessionID { parentSessionIDs.insert(parentSessionID) }
+                        }
+                    }
+                    continue
+                }
                 let sessionID = UsageSessionIdentity.key(provider: .claude, rawSessionID: rawSessionID)
                 let rootSessionID = UsageSessionIdentity.key(
                     provider: .claude,
@@ -865,7 +1165,8 @@ actor ClaudeUsageImportActor {
                 Self.repairPendingStatus,
                 "partial",
                 "incompatible",
-                "pending_session_identity"
+                "pending_session_identity",
+                "repair_invalid_identity"
             ].contains(state.status)
         }
         try database.executeUpdate(
@@ -875,29 +1176,55 @@ actor ClaudeUsageImportActor {
     }
 
     private func rebuildSummaries(sessionID: String) throws {
-        let events = try database.executeQuery(
-            sql: """
-            SELECT timestamp_ms, model_canonical, input_tokens, cached_input_tokens,
-                   cache_write_input_tokens, output_tokens, reasoning_output_tokens,
-                   total_tokens, estimated_cost_usd_nano, pricing_status
-            FROM codex_usage_events
-            WHERE provider = 'claude' AND session_id = ?
-            ORDER BY timestamp_ms ASC;
-            """,
-            bindings: [sessionID]
-        ) { statement -> ClaudeAggregateEvent in
-            ClaudeAggregateEvent(
-                timestampMs: sqlite3_column_int64(statement, 0),
-                model: String(cString: sqlite3_column_text(statement, 1)),
-                input: sqlite3_column_int64(statement, 2),
-                cached: sqlite3_column_int64(statement, 3),
-                cacheWrite: sqlite3_column_int64(statement, 4),
-                output: sqlite3_column_int64(statement, 5),
-                reasoning: sqlite3_column_int64(statement, 6),
-                total: sqlite3_column_int64(statement, 7),
-                cost: sqlite3_column_int64(statement, 8),
-                priced: String(cString: sqlite3_column_text(statement, 9)) == PricingStatus.priced.rawValue
-            )
+        var byModel: [String: ClaudeAggregate] = [:]
+        var byDayModel: [ClaudeDayModelKey: ClaudeAggregate] = [:]
+        var all = ClaudeAggregate.zero
+        let calendar = UsageDayBucketer.calendar()
+        try database.withPreparedStatement(sql: """
+        SELECT timestamp_ms, model_canonical, input_tokens, cached_input_tokens,
+               cache_write_input_tokens, output_tokens, reasoning_output_tokens,
+               total_tokens, estimated_cost_usd_nano, pricing_status
+        FROM codex_usage_events
+        WHERE provider = 'claude' AND session_id = ?
+        ORDER BY timestamp_ms ASC;
+        """) { statement in
+            let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+            sqlite3_bind_text(statement, 1, (sessionID as NSString).utf8String, -1, transient)
+            var result = sqlite3_step(statement)
+            while result == SQLITE_ROW {
+                let event = ClaudeAggregateEvent(
+                    timestampMs: sqlite3_column_int64(statement, 0),
+                    model: String(cString: sqlite3_column_text(statement, 1)),
+                    input: sqlite3_column_int64(statement, 2),
+                    cached: sqlite3_column_int64(statement, 3),
+                    cacheWrite: sqlite3_column_int64(statement, 4),
+                    output: sqlite3_column_int64(statement, 5),
+                    reasoning: sqlite3_column_int64(statement, 6),
+                    total: sqlite3_column_int64(statement, 7),
+                    cost: sqlite3_column_int64(statement, 8),
+                    priced: String(cString: sqlite3_column_text(statement, 9)) == PricingStatus.priced.rawValue
+                )
+                byModel[event.model, default: .zero].add(event)
+                let date = Date(timeIntervalSince1970: Double(event.timestampMs) / 1_000)
+                let key = LocalDayKey(date: date, calendar: calendar)
+                let dayStart = Int64(calendar.startOfDay(for: date).timeIntervalSince1970 * 1_000)
+                byDayModel[
+                    ClaudeDayModelKey(dayKey: key.yyyyMMdd, dayStartMs: dayStart, model: event.model),
+                    default: .zero
+                ].add(event)
+                all.add(event)
+                result = sqlite3_step(statement)
+            }
+            guard result == SQLITE_DONE else {
+                throw NSError(
+                    domain: "QuotaLens.ClaudeUsageImporter",
+                    code: Int(result),
+                    userInfo: [NSLocalizedDescriptionKey: L10n.text(
+                        "Claude 统计暂时无法更新。",
+                        "Claude statistics could not be updated right now."
+                    )]
+                )
+            }
         }
 
         try database.executeUpdate(
@@ -909,17 +1236,6 @@ actor ClaudeUsageImportActor {
             bindings: [sessionID]
         )
 
-        var byModel: [String: ClaudeAggregate] = [:]
-        var byDayModel: [ClaudeDayModelKey: ClaudeAggregate] = [:]
-        let calendar = UsageDayBucketer.calendar()
-        for event in events {
-            byModel[event.model, default: .zero].add(event)
-            let date = Date(timeIntervalSince1970: Double(event.timestampMs) / 1_000)
-            let key = LocalDayKey(date: date, calendar: calendar)
-            let dayStart = Int64(calendar.startOfDay(for: date).timeIntervalSince1970 * 1_000)
-            byDayModel[ClaudeDayModelKey(dayKey: key.yyyyMMdd, dayStartMs: dayStart, model: event.model), default: .zero]
-                .add(event)
-        }
         for (model, aggregate) in byModel {
             try insertSessionSummary(sessionID: sessionID, model: model, aggregate: aggregate)
         }
@@ -927,7 +1243,6 @@ actor ClaudeUsageImportActor {
             try insertDailySummary(sessionID: sessionID, key: key, aggregate: aggregate)
         }
 
-        let all = events.reduce(into: ClaudeAggregate.zero) { $0.add($1) }
         let status = AggregatePricingStatus(
             eventCount: all.eventCount,
             unpricedEventCount: all.unpricedCount
@@ -997,7 +1312,7 @@ actor ClaudeUsageImportActor {
         let values = try database.executeQuery(
             sql: """
             SELECT source_path, relative_path, session_id, file_size, mtime_ms,
-                   byte_offset, status, malformed_line_count
+                   byte_offset, status, malformed_line_count, error_message
             FROM claude_import_sources;
             """
         ) { statement -> ClaudeImportSourceState in
@@ -1010,7 +1325,9 @@ actor ClaudeUsageImportActor {
                 mtimeMs: sqlite3_column_int64(statement, 4),
                 byteOffset: sqlite3_column_int64(statement, 5),
                 status: String(cString: sqlite3_column_text(statement, 6)),
-                malformedLineCount: Int(sqlite3_column_int(statement, 7))
+                malformedLineCount: Int(sqlite3_column_int(statement, 7)),
+                errorMessage: sqlite3_column_type(statement, 8) == SQLITE_NULL
+                    ? nil : String(cString: sqlite3_column_text(statement, 8))
             )
         }
         var result: [String: ClaudeImportSourceState] = [:]
@@ -1111,11 +1428,17 @@ actor ClaudeUsageImportActor {
         var cwd: String?
         var startedAt: Date?
         var updatedAt: Date?
-        var eventsByKey: [String: ParsedClaudeEvent] = [:]
-        var order: [String] = []
+        let eventStore = try ClaudeParsedEventStore()
+        var eventBatch: [ParsedClaudeEvent] = []
+        eventBatch.reserveCapacity(256)
         var health = ClaudeParseHealth()
 
-        func processLine(_ line: Data, lineOffset: Int64, lineBytes: Int64) {
+        func flushEvents() throws {
+            try eventStore.store(eventBatch)
+            eventBatch.removeAll(keepingCapacity: true)
+        }
+
+        func processLine(_ line: Data, lineOffset: Int64, lineBytes: Int64) throws {
             guard !line.isEmpty else { return }
             health.completeLineCount += 1
             guard line.count <= maximumLineBytes else {
@@ -1162,28 +1485,36 @@ actor ClaudeUsageImportActor {
                 health.recognizedUsageLineCount += 1
                 return
             }
-            let recognizedKeys = [
+            guard let schema = usageSchemaVersion(usage) else {
+                health.incompatibleUsageLineCount += 1
+                return
+            }
+            let flatTokenKeys = [
                 "input_tokens", "cache_read_input_tokens",
-                "cache_creation_input_tokens", "output_tokens", "cache_creation"
+                "cache_creation_input_tokens", "output_tokens"
             ]
-            guard recognizedKeys.contains(where: { usage[$0] != nil }) else {
+            guard flatTokenKeys.allSatisfy({ key in
+                !usage.keys.contains(key) || parsedInt64(usage[key]) != nil
+            }) else {
                 health.incompatibleUsageLineCount += 1
                 return
             }
-            if let rawCache = usage["cache_creation"], !(rawCache is [String: Any]) {
+            let cache = schema == .cacheCreationObject
+                ? usage["cache_creation"] as? [String: Any] : nil
+            let nestedTokenKeys = ["ephemeral_1h_input_tokens", "ephemeral_5m_input_tokens"]
+            guard nestedTokenKeys.allSatisfy({ key in
+                guard let cache else { return true }
+                return !cache.keys.contains(key) || parsedInt64(cache[key]) != nil
+            }) else {
                 health.incompatibleUsageLineCount += 1
                 return
             }
-            let cache = usage["cache_creation"] as? [String: Any]
-            guard let uncached = parsedInt64(usage["input_tokens"]),
-                  let cached = parsedInt64(usage["cache_read_input_tokens"]),
-                  let totalWrite = parsedInt64(usage["cache_creation_input_tokens"]),
-                  let output = parsedInt64(usage["output_tokens"]),
-                  let oneHour = parsedInt64(cache?["ephemeral_1h_input_tokens"]),
-                  let fiveRaw = parsedInt64(cache?["ephemeral_5m_input_tokens"]) else {
-                health.incompatibleUsageLineCount += 1
-                return
-            }
+            let uncached = parsedInt64(usage["input_tokens"]) ?? 0
+            let cached = parsedInt64(usage["cache_read_input_tokens"]) ?? 0
+            let totalWrite = parsedInt64(usage["cache_creation_input_tokens"]) ?? 0
+            let output = parsedInt64(usage["output_tokens"]) ?? 0
+            let oneHour = parsedInt64(cache?["ephemeral_1h_input_tokens"]) ?? 0
+            let fiveRaw = parsedInt64(cache?["ephemeral_5m_input_tokens"]) ?? 0
             health.recognizedUsageLineCount += 1
             let five = fiveRaw + max(0, totalWrite - oneHour - fiveRaw)
             let event = ParsedClaudeEvent(
@@ -1199,13 +1530,9 @@ actor ClaudeUsageImportActor {
                 lineBytes: lineBytes
             )
             guard event.totalTokens > 0 else { return }
-            let day = LocalDayKey(date: timestamp, calendar: UsageDayBucketer.calendar()).yyyyMMdd
-            let key = "\(messageID):\(day)"
-            if let previous = eventsByKey[key] {
-                if event.totalTokens >= previous.totalTokens { eventsByKey[key] = event }
-            } else {
-                eventsByKey[key] = event
-                order.append(key)
+            eventBatch.append(event)
+            if eventBatch.count == 256 {
+                try flushEvents()
             }
         }
 
@@ -1231,7 +1558,7 @@ actor ClaudeUsageImportActor {
                 let line = Data(buffer[cursor..<newlineIndex])
                 let lineBytes = Int64(lineLength + 1)
                 let relativeOffset = buffer.distance(from: buffer.startIndex, to: cursor)
-                processLine(
+                try processLine(
                     line,
                     lineOffset: bufferStartOffset + Int64(relativeOffset),
                     lineBytes: lineBytes
@@ -1255,7 +1582,7 @@ actor ClaudeUsageImportActor {
         var endOffset = bufferStartOffset
         if !buffer.isEmpty {
             if (try? JSONSerialization.jsonObject(with: buffer)) != nil {
-                processLine(
+                try processLine(
                     buffer,
                     lineOffset: bufferStartOffset,
                     lineBytes: Int64(buffer.count)
@@ -1265,13 +1592,14 @@ actor ClaudeUsageImportActor {
                 health.trailingPartialBytes = buffer.count
             }
         }
+        try flushEvents()
         return ParsedClaudeSlice(
             payloadSessionID: sessionID,
             title: title,
             cwd: cwd,
             startedAt: startedAt,
             updatedAt: updatedAt,
-            events: order.compactMap { eventsByKey[$0] },
+            eventStore: eventStore,
             endOffset: endOffset,
             health: health
         )
@@ -1284,14 +1612,27 @@ actor ClaudeUsageImportActor {
         return fractional.date(from: raw) ?? ISO8601DateFormatter().date(from: raw)
     }
 
-    private static func parsedInt64(_ value: Any?) -> Int64? {
-        if value == nil { return 0 }
-        if let value = value as? Int64 { return max(0, value) }
-        if let value = value as? Int { return Int64(max(0, value)) }
-        if let value = value as? NSNumber, CFGetTypeID(value) != CFBooleanGetTypeID() {
-            return max(0, value.int64Value)
+    private static func usageSchemaVersion(_ usage: [String: Any]) -> ClaudeUsageSchemaVersion? {
+        guard usage.keys.contains("input_tokens"),
+              usage.keys.contains("output_tokens") else { return nil }
+        if usage.keys.contains("cache_creation") {
+            return usage["cache_creation"] is [String: Any] ? .cacheCreationObject : nil
         }
-        if let value = value as? String, let parsed = Int64(value) { return max(0, parsed) }
+        return .legacyFlat
+    }
+
+    private static func parsedInt64(_ value: Any?) -> Int64? {
+        if let value = value as? Int64 { return value >= 0 ? value : nil }
+        if let value = value as? Int { return value >= 0 ? Int64(value) : nil }
+        if let value = value as? NSNumber, CFGetTypeID(value) != CFBooleanGetTypeID() {
+            let number = value.doubleValue
+            let parsed = value.int64Value
+            guard number.isFinite,
+                  parsed >= 0,
+                  Double(parsed) == number else { return nil }
+            return parsed
+        }
+        if let value = value as? String, let parsed = Int64(value), parsed >= 0 { return parsed }
         return nil
     }
 
@@ -1414,12 +1755,35 @@ public final class ClaudeUsageScanCoordinator: ObservableObject {
                 )
             } else {
                 statusText = L10n.text("Claude 本地记录已部分更新", "Claude local history was partially updated")
-                errorText = L10n.text("部分 Claude 记录暂时无法读取。", "Some Claude records could not be read.")
+                errorText = userFacingErrorText(summary.errors)
             }
         } catch {
             statusText = L10n.text("Claude 本地记录更新失败", "Claude local history update failed")
             errorText = L10n.text("暂时无法读取 Claude 本地记录，请稍后重试。", "Claude local history could not be read. Try again later.")
         }
+    }
+
+    private func userFacingErrorText(_ errors: [String]) -> String {
+        var messages: [String] = []
+        for error in errors {
+            let message: String
+            if let separator = error.range(of: ": ") {
+                message = String(error[separator.upperBound...])
+            } else {
+                message = error
+            }
+            if !messages.contains(message) { messages.append(message) }
+        }
+        let visible = messages.prefix(3)
+        var text = visible.joined(separator: "\n")
+        if messages.count > visible.count {
+            text += "\n" + L10n.format(
+                "%d more Claude records need attention.",
+                zhHans: "另有 %d 条 Claude 记录需要处理。",
+                messages.count - visible.count
+            )
+        }
+        return text
     }
 }
 

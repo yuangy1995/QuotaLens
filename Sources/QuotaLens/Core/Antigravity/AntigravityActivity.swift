@@ -630,9 +630,17 @@ public struct AntigravityConversationReader: Sendable {
         var messages: [CodexConversationMessageDTO] = []
 
         for line in lines {
-            guard let jsonData = line.data(using: .utf8),
-                  let raw = try JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
-                  let type = raw["type"] as? String,
+            guard let jsonData = line.data(using: .utf8) else { continue }
+            let raw: [String: Any]
+            do {
+                guard let value = try JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
+                    continue
+                }
+                raw = value
+            } catch {
+                continue
+            }
+            guard let type = raw["type"] as? String,
                   let source = raw["source"] as? String else { continue }
 
             let role: CodexConversationRole

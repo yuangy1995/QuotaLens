@@ -698,10 +698,11 @@ public actor AntigravityQuotaPoller {
         }
         nextAttemptAt = Date().addingTimeInterval(2)
         await onSyncState(syncState())
+        guard !isStopped, generation == startGeneration else { return }
         if let latestSnapshot {
             await onAccountResolutionState(.resolved(latestSnapshot.accountKey))
+            guard !isStopped, generation == startGeneration else { return }
         }
-        guard !isStopped, generation == startGeneration else { return }
         loopTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             while !Task.isCancelled {
@@ -727,6 +728,7 @@ public actor AntigravityQuotaPoller {
 
     public func pollOnce(force: Bool, preferredProfile: AntigravityStateProfile?) async {
         guard !isStopped, !isPolling else { return }
+        let generation = startGeneration
         let now = Date()
         if let cooldownUntil, cooldownUntil > now { return }
         if !force, let lastAttemptAt, now.timeIntervalSince(lastAttemptAt) < Self.minimumGap { return }
@@ -734,6 +736,7 @@ public actor AntigravityQuotaPoller {
         isPolling = true
         defer { isPolling = false }
         await onSyncState(syncState())
+        guard !isStopped, generation == startGeneration else { return }
         for (key, pending) in pendingSnapshots {
             do {
                 if try AntigravityQuotaRepository.persist(pending, database: database) {
@@ -754,24 +757,28 @@ public actor AntigravityQuotaPoller {
                     sourceProfile: credentials.source.profile.rawValue
                 )
                 if let hydrated {
+                    await onCachedSnapshot(hydrated)
+                    guard !isStopped, generation == startGeneration else { return }
+                    await onAccountResolutionState(.resolved(hydrated.accountKey))
+                    guard !isStopped, generation == startGeneration else { return }
                     latestSnapshot = hydrated
                     lastSuccessAt = hydrated.capturedAt
-                    await onCachedSnapshot(hydrated)
-                    await onAccountResolutionState(.resolved(hydrated.accountKey))
                 } else {
                     await onAccountResolutionState(.resolving(previousAccountKey: previousSnapshot.accountKey))
+                    guard !isStopped, generation == startGeneration else { return }
                 }
             }
             let snapshot = try await client.fetch(credentials: credentials)
-            guard !isStopped else { return }
+            guard !isStopped, generation == startGeneration else { return }
             let previousAccountKey = latestSnapshot?.accountKey
-            latestSnapshot = snapshot
-            lastSuccessAt = snapshot.capturedAt
             if let previousAccountKey, previousAccountKey != snapshot.accountKey {
                 await onAccountResolutionState(.switched(from: previousAccountKey, to: snapshot.accountKey))
             } else {
                 await onAccountResolutionState(.resolved(snapshot.accountKey))
             }
+            guard !isStopped, generation == startGeneration else { return }
+            latestSnapshot = snapshot
+            lastSuccessAt = snapshot.capturedAt
             cooldownUntil = nil
             nextAttemptAt = Date().addingTimeInterval(interval)
             var historySaved = true
@@ -785,23 +792,26 @@ public actor AntigravityQuotaPoller {
                 pendingSnapshots[snapshot.accountKey] = snapshot
             }
             await onSyncState(syncState())
+            guard !isStopped, generation == startGeneration else { return }
             await onResult(.success(ProviderQuotaRefreshResult(
                 snapshot: snapshot,
                 historySaved: historySaved,
                 migrationWarning: migrationWarnings.remove(snapshot.accountKey) != nil
             )))
         } catch let error as AntigravityCredentialError {
-            guard !isStopped else { return }
+            guard !isStopped, generation == startGeneration else { return }
             if error == .credentialsMissing || error == .applicationNotFound || error == .profileNotFound {
+                await onCachedSnapshot(nil)
+                guard !isStopped, generation == startGeneration else { return }
                 latestSnapshot = nil
                 lastSuccessAt = nil
-                await onCachedSnapshot(nil)
             }
             nextAttemptAt = Date().addingTimeInterval(interval)
             await onSyncState(syncState())
+            guard !isStopped, generation == startGeneration else { return }
             await onResult(.failure(error))
         } catch let error as AntigravityFetchError {
-            guard !isStopped else { return }
+            guard !isStopped, generation == startGeneration else { return }
             if case .rateLimited(let retryAfter) = error {
                 cooldownUntil = now.addingTimeInterval(max(60, retryAfter ?? 300))
                 nextAttemptAt = cooldownUntil
@@ -809,11 +819,13 @@ public actor AntigravityQuotaPoller {
                 nextAttemptAt = Date().addingTimeInterval(interval)
             }
             await onSyncState(syncState())
+            guard !isStopped, generation == startGeneration else { return }
             await onResult(.failure(error))
         } catch {
-            guard !isStopped else { return }
+            guard !isStopped, generation == startGeneration else { return }
             nextAttemptAt = Date().addingTimeInterval(interval)
             await onSyncState(syncState())
+            guard !isStopped, generation == startGeneration else { return }
             await onResult(.failure(error))
         }
     }

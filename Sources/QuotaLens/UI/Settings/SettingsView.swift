@@ -457,6 +457,8 @@ public struct SettingsView: View {
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
                     }
+
+                    ClaudeScanDiagnosticText(coordinator: env.claudeScanCoordinator)
                 }
                 .padding(12)
                 .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))
@@ -2334,6 +2336,19 @@ public struct SettingsView: View {
         formatter.timeZone = .current
         formatter.dateFormat = "yyyyMMdd-HHmmss"
         return formatter.string(from: Date())
+    }
+}
+
+private struct ClaudeScanDiagnosticText: View {
+    @ObservedObject var coordinator: ClaudeUsageScanCoordinator
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        if !coordinator.isScanning, let error = coordinator.errorText {
+            Text(error)
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(AppTheme.accentAmber(for: colorScheme))
+        }
     }
 }
 
