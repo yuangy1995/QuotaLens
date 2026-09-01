@@ -9,6 +9,19 @@ public enum AccountIdentityConfidence: String, Codable, Sendable {
     case provisionalTokenDerived
 }
 
+enum ProviderIdentityEvidence: Equatable, Sendable {
+    case stableProviderID(String)
+    case verifiedEmail(String)
+    case verifiedCredentialLineage(String)
+
+    var value: String {
+        switch self {
+        case .stableProviderID(let value), .verifiedEmail(let value), .verifiedCredentialLineage(let value):
+            return value.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+}
+
 public struct AccountIdentity: Sendable {
     private static let unknownSessionIdentifier = UUID().uuidString
 
@@ -75,8 +88,45 @@ enum ProviderAccountAliases {
         return path
     }
 
+    static func attachLegacyAlias(
+        legacyKey: String,
+        canonicalKey: String,
+        provider: UsageProvider,
+        database: SQLiteDatabase
+    ) throws {
+        guard legacyKey != canonicalKey else {
+            _ = try resolve(legacyKey, provider: provider, database: database)
+            return
+        }
+        let resolvedLegacy = try resolve(legacyKey, provider: provider, database: database)
+        let finalTarget = try resolve(canonicalKey, provider: provider, database: database)
+        guard finalTarget != legacyKey else { throw MigrationError.aliasCycle }
+        guard resolvedLegacy == legacyKey || resolvedLegacy == finalTarget else {
+            throw MigrationError.conflictingIdentity
+        }
+        try database.executeUpdate(
+            sql: "UPDATE rate_limit_snapshots SET account_key = ? WHERE provider = ? AND account_key = ?;",
+            bindings: [finalTarget, provider.rawValue, legacyKey]
+        )
+        try upsertAlias(
+            legacyKey: legacyKey,
+            canonicalKey: finalTarget,
+            provider: provider,
+            database: database
+        )
+    }
+
     // The caller's transaction also covers provider-specific cached payloads.
-    static func migrate(from legacyKey: String, to accountKey: String, provider: UsageProvider, database: SQLiteDatabase) throws {
+    static func recanonicalize(
+        from oldCanonicalKey: String,
+        to newCanonicalKey: String,
+        provider: UsageProvider,
+        evidence: ProviderIdentityEvidence,
+        database: SQLiteDatabase
+    ) throws {
+        guard !evidence.value.isEmpty else { throw MigrationError.conflictingIdentity }
+        let legacyKey = oldCanonicalKey
+        let accountKey = newCanonicalKey
         if legacyKey == accountKey {
             _ = try resolve(legacyKey, provider: provider, database: database)
             return
@@ -99,16 +149,31 @@ enum ProviderAccountAliases {
                 sql: "UPDATE account_aliases SET canonical_account_key = ? WHERE provider = ? AND canonical_account_key = ?;",
                 bindings: [finalTarget, provider.rawValue, key]
             )
-            try database.executeUpdate(
-                sql: """
-                INSERT INTO account_aliases (provider, legacy_account_key, canonical_account_key, migrated_at)
-                VALUES (?, ?, ?, unixepoch())
-                ON CONFLICT(provider, legacy_account_key) DO UPDATE SET
-                    canonical_account_key = excluded.canonical_account_key,
-                    migrated_at = excluded.migrated_at;
-                """,
-                bindings: [provider.rawValue, key, finalTarget]
+            try upsertAlias(
+                legacyKey: key,
+                canonicalKey: finalTarget,
+                provider: provider,
+                database: database
             )
         }
+    }
+
+    private static func upsertAlias(
+        legacyKey: String,
+        canonicalKey: String,
+        provider: UsageProvider,
+        database: SQLiteDatabase
+    ) throws {
+        guard legacyKey != canonicalKey else { throw MigrationError.aliasCycle }
+        try database.executeUpdate(
+            sql: """
+            INSERT INTO account_aliases (provider, legacy_account_key, canonical_account_key, migrated_at)
+            VALUES (?, ?, ?, unixepoch())
+            ON CONFLICT(provider, legacy_account_key) DO UPDATE SET
+                canonical_account_key = excluded.canonical_account_key,
+                migrated_at = excluded.migrated_at;
+            """,
+            bindings: [provider.rawValue, legacyKey, canonicalKey]
+        )
     }
 }

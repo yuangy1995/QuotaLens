@@ -1288,7 +1288,12 @@ enum AntigravityQuotaRepository {
     }
 
     private static func migrateLegacyAccount(from legacyKey: String, to accountKey: String, database: SQLiteDatabase) throws -> Bool {
-        try ProviderAccountAliases.migrate(from: legacyKey, to: accountKey, provider: .antigravity, database: database)
+        try ProviderAccountAliases.attachLegacyAlias(
+            legacyKey: legacyKey,
+            canonicalKey: accountKey,
+            provider: .antigravity,
+            database: database
+        )
         let payloads = try database.executeQuery(
             sql: "SELECT source_profile, payload_json FROM antigravity_quota_cache WHERE account_key = ?;",
             bindings: [legacyKey]

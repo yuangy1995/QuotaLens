@@ -81,6 +81,15 @@ enum ClaudeQuotaRepository {
         guard identity.confidence != .provisionalTokenDerived else { return }
         let aliases = identity.aliases.subtracting([legacyAccountKey, identity.accountKey])
         guard !aliases.isEmpty else { return }
+        let evidence: ProviderIdentityEvidence
+        switch identity.confidence {
+        case .stableProviderID:
+            evidence = .stableProviderID(identity.accountKey)
+        case .verifiedEmail:
+            evidence = .verifiedEmail(identity.accountKey)
+        case .provisionalTokenDerived:
+            return
+        }
         try database.transaction {
             let resolved = try aliases.map { key in
                 (key, try ProviderAccountAliases.resolve(key, provider: .claude, database: database))
@@ -90,10 +99,21 @@ enum ClaudeQuotaRepository {
             }
             // Move the old root identity first so its aliases stay canonical.
             for (key, target) in resolved where key == target {
-                try ProviderAccountAliases.migrate(from: key, to: identity.accountKey, provider: .claude, database: database)
+                try ProviderAccountAliases.recanonicalize(
+                    from: key,
+                    to: identity.accountKey,
+                    provider: .claude,
+                    evidence: evidence,
+                    database: database
+                )
             }
             for key in aliases {
-                try ProviderAccountAliases.migrate(from: key, to: identity.accountKey, provider: .claude, database: database)
+                try ProviderAccountAliases.attachLegacyAlias(
+                    legacyKey: key,
+                    canonicalKey: identity.accountKey,
+                    provider: .claude,
+                    database: database
+                )
                 try database.executeUpdate(
                     sql: "UPDATE app_metadata SET value = ?, updated_at = unixepoch() WHERE key = 'claude_legacy_account_migration_state' AND value = ?;",
                     bindings: ["migrated:\(identity.accountKey)", "migrated:\(key)"]
@@ -126,7 +146,13 @@ enum ClaudeQuotaRepository {
             } else if (resolved != legacyAccountKey && resolved != accountKey) || otherAccountCount > 0 {
                 nextState = "conflict"
             } else if confirmedAccountKey == accountKey {
-                try ProviderAccountAliases.migrate(from: legacyAccountKey, to: accountKey, provider: .claude, database: database)
+                try ProviderAccountAliases.recanonicalize(
+                    from: legacyAccountKey,
+                    to: accountKey,
+                    provider: .claude,
+                    evidence: .verifiedCredentialLineage(accountKey),
+                    database: database
+                )
                 nextState = "migrated:\(accountKey)"
             } else {
                 nextState = "pending"

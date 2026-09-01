@@ -715,15 +715,14 @@ public actor AntigravityQuotaPoller {
         }
     }
 
-    public func stop() {
+    public func stop() async {
         isStopped = true
         startGeneration &+= 1
         isStarting = false
         loopTask?.cancel()
         loopTask = nil
         nextAttemptAt = nil
-        let state = syncState()
-        Task { await onSyncState(state) }
+        await onSyncState(syncState())
     }
 
     public func pollOnce(force: Bool, preferredProfile: AntigravityStateProfile?) async {
