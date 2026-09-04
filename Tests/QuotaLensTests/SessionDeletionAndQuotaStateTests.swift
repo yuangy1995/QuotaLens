@@ -596,4 +596,40 @@ final class SessionDeletionAndQuotaStateTests: XCTestCase {
             bindings: ["event-\(sessionID)", sessionID, rootID, sourceURL.path]
         )
     }
+
+    func testQuotaWindowLocalizationAndLabels() {
+        let defaults = UserDefaults.standard
+        let previousLanguage = defaults.string(forKey: L10n.languageModeDefaultsKey)
+        defer {
+            if let previousLanguage {
+                defaults.set(previousLanguage, forKey: L10n.languageModeDefaultsKey)
+            } else {
+                defaults.removeObject(forKey: L10n.languageModeDefaultsKey)
+            }
+        }
+
+        // 测试中文
+        defaults.set(AppLanguageMode.simplifiedChinese.rawValue, forKey: L10n.languageModeDefaultsKey)
+        XCTAssertEqual(L10n.text("5 小时额度", "5-Hour Quota"), "5 小时额度")
+        XCTAssertEqual(L10n.text("周额度", "Weekly Quota"), "周额度")
+        XCTAssertEqual(L10n.text("额度告急", "Quota Critical"), "额度告急")
+
+        // 测试英文
+        defaults.set(AppLanguageMode.english.rawValue, forKey: L10n.languageModeDefaultsKey)
+        XCTAssertEqual(L10n.text("5 小时额度", "5-Hour Quota"), "5-Hour Quota")
+        XCTAssertEqual(L10n.text("周额度", "Weekly Quota"), "Weekly Quota")
+        XCTAssertEqual(L10n.text("额度告急", "Quota Critical"), "Quota Critical")
+
+        // 测试繁体中文
+        defaults.set(AppLanguageMode.traditionalChinese.rawValue, forKey: L10n.languageModeDefaultsKey)
+        XCTAssertEqual(L10n.text("5 小时额度", "5-Hour Quota"), "5 小時額度")
+        XCTAssertEqual(L10n.text("周额度", "Weekly Quota"), "每週額度")
+        XCTAssertEqual(L10n.text("额度告急", "Quota Critical"), "額度告急")
+
+        // 测试日文
+        defaults.set(AppLanguageMode.japanese.rawValue, forKey: L10n.languageModeDefaultsKey)
+        XCTAssertEqual(L10n.text("5 小时额度", "5-Hour Quota"), "5時間クォータ")
+        XCTAssertEqual(L10n.text("周额度", "Weekly Quota"), "週間クォータ")
+        XCTAssertEqual(L10n.text("额度告急", "Quota Critical"), "クォータ逼迫")
+    }
 }

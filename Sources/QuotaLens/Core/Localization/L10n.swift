@@ -974,6 +974,16 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .spanish: "Grupo más ajustado", .german: "Knappster Pool", .french: "Réserve la plus limitée",
         .portuguese: "Grupo mais limitado", .portugueseBrazil: "Grupo mais restrito"
     ],
+    "Quota Critical": [
+        .traditionalChinese: "額度告急", .japanese: "クォータ逼迫", .korean: "할당량 부족",
+        .spanish: "Cuota crítica", .german: "Kontingent knapp", .french: "Quota critique",
+        .portuguese: "Quota crítica", .portugueseBrazil: "Cota crítica"
+    ],
+    "%@ Quota": [
+        .traditionalChinese: "%@額度", .japanese: "%@クォータ", .korean: "%@ 할당량",
+        .spanish: "Cuota de %@", .german: "Kontingent für %@", .french: "Quota %@",
+        .portuguese: "Quota de %@", .portugueseBrazil: "Cota de %@"
+    ],
     "Tight Pool": [
         .traditionalChinese: "吃緊池", .japanese: "厳しいプール", .korean: "여유 부족 풀",
         .spanish: "Grupo ajustado", .german: "Knapper Pool", .french: "Réserve limitée",
@@ -1563,6 +1573,11 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .traditionalChinese: "選取後查看此額度池趨勢", .japanese: "選択してこのクォータプールの推移を表示", .korean: "선택하여 이 할당량 풀 추세 보기",
         .spanish: "Selecciona para ver la tendencia de este grupo de cuota", .german: "Auswählen, um den Trend dieses Kontingentpools anzuzeigen", .french: "Sélectionnez pour afficher la tendance de cette réserve de quota",
         .portuguese: "Selecione para ver a tendência deste grupo de quota", .portugueseBrazil: "Selecione para ver a tendência deste grupo de cota"
+    ],
+    "Select to view this quota trend": [
+        .traditionalChinese: "選取後查看此額度趨勢", .japanese: "選択してこのクォータの推移を表示", .korean: "선택하여 이 할당량 추세 보기",
+        .spanish: "Selecciona para ver la tendencia de esta cuota", .german: "Auswählen, um den Trend dieses Kontingents anzuzeigen", .french: "Sélectionnez pour afficher la tendance de ce quota",
+        .portuguese: "Selecione para ver a tendência desta quota", .portugueseBrazil: "Selecione para ver a tendência desta cota"
     ],
     "Selected": [
         .traditionalChinese: "已選取", .japanese: "選択済み", .korean: "선택됨",

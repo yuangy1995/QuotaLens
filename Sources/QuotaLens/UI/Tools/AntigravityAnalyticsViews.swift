@@ -127,7 +127,7 @@ struct AntigravityQuotaAnalyticsView: View {
 
             if let insight {
                 HStack(spacing: 24) {
-                    // 全息双环表盘（以最紧俏池为主焦点）
+                    // 全息双环表盘
                     CircularProgressView(
                         progress: shownPercent / 100.0,
                         riskProgress: (100.0 - insight.remainingPercent) / 100.0,
@@ -135,7 +135,7 @@ struct AntigravityQuotaAnalyticsView: View {
                         size: 148,
                         title: state.quotaDisplayMode.pickerTitle,
                         valueText: UsageNumberFormatter.percent(shownPercent, maximumFractionDigits: 0),
-                        subtitle: L10n.text("最紧俏池", "Tightest Pool")
+                        subtitle: quotaWindowSubtitle(for: insight)
                     )
 
                     // 2x2 结构化遥测指标网格
@@ -284,7 +284,7 @@ struct AntigravityQuotaAnalyticsView: View {
                     insight.input.windowTitle,
                     UsageNumberFormatter.percent(insight.remainingPercent, maximumFractionDigits: 0)
                 ))
-                .accessibilityHint(L10n.text("选择后查看该额度池趋势", "Select to view this quota pool trend"))
+                .accessibilityHint(L10n.text("选择后查看该额度趋势", "Select to view this quota trend"))
             }
         }
     }
@@ -321,7 +321,7 @@ struct AntigravityQuotaAnalyticsView: View {
                         HStack(spacing: 4) {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .font(.system(size: 9))
-                            Text(L10n.text("紧俏池", "Tight Pool"))
+                            Text(L10n.text("额度告急", "Quota Critical"))
                                 .font(.system(size: 9.5, weight: .bold, design: .rounded))
                         }
                         .foregroundStyle(AppTheme.accentRose(for: colorScheme))
@@ -797,6 +797,21 @@ struct AntigravityQuotaAnalyticsView: View {
             QuotaChartProjectionPoint(kind: "sustainable", date: insight.input.capturedAt, value: insight.input.usedPercent),
             QuotaChartProjectionPoint(kind: "sustainable", date: reset, value: 100)
         ]
+    }
+
+    // MARK: - 额度窗口副标题
+    private func quotaWindowSubtitle(for insight: ProviderQuotaInsight) -> String {
+        if insight.input.windowDurationMins == 300 {
+            return L10n.text("5 小时额度", "5-Hour Quota")
+        } else if insight.input.windowDurationMins == 10_080 {
+            return L10n.text("周额度", "Weekly Quota")
+        } else if insight.input.windowTitle.contains("5") {
+            return L10n.text("5 小时额度", "5-Hour Quota")
+        } else if insight.input.windowTitle.contains("7") || insight.input.windowTitle.contains("周") || insight.input.windowTitle.localizedCaseInsensitiveContains("week") {
+            return L10n.text("周额度", "Weekly Quota")
+        } else {
+            return L10n.format("%@ Quota", zhHans: "%@额度", insight.input.windowTitle)
+        }
     }
 
     private func heroStatusTitle(_ insight: ProviderQuotaInsight?) -> String {
