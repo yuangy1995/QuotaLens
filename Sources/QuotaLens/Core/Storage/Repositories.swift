@@ -51,9 +51,19 @@ public final class Repositories: @unchecked Sendable {
         }
     }
 
+    public func getStoredAccountKeys(provider: UsageProvider) throws -> [String] {
+        try db.executeQuery(sql: "SELECT DISTINCT account_key FROM rate_limit_snapshots WHERE provider = ? ORDER BY account_key;", bindings: [provider.rawValue]) { stmt in
+            String(cString: sqlite3_column_text(stmt, 0))
+        }
+    }
+
     public func deleteAccount(accountKey: String) throws {
-        let sql = "DELETE FROM accounts WHERE account_key = ?;"
-        try db.executeUpdate(sql: sql, bindings: [accountKey])
+        try db.transaction {
+            for table in ["rate_limit_snapshots", "account_daily_snapshots", "quota_cycles", "antigravity_quota_cache"] {
+                try db.executeUpdate(sql: "DELETE FROM \(table) WHERE account_key = ?;", bindings: [accountKey])
+            }
+            try db.executeUpdate(sql: "DELETE FROM accounts WHERE account_key = ?;", bindings: [accountKey])
+        }
     }
 
     public func migrateAccountKey(from oldKey: String, to newKey: String) throws {

@@ -807,6 +807,11 @@ public struct OverviewDashboardView: View {
                 HStack(spacing: 6) {
                     Text(descriptor.displayName)
                         .font(.system(size: 12, weight: .black, design: .rounded))
+                    if let provider = UsageProvider(rawValue: descriptor.id.rawValue) {
+                        Text(L10n.format("%lld accounts", zhHans: "%lld 个账号", Int64(state.storedAccountKeys(for: provider).count)))
+                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                            .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                    }
                     HStack(spacing: 4) {
                         Image(systemName: details.icon)
                             .font(.system(size: 9))
@@ -820,6 +825,19 @@ public struct OverviewDashboardView: View {
                         .font(.system(size: 9.5, weight: .medium))
                         .foregroundStyle(AppTheme.accentAmber(for: colorScheme))
                         .lineLimit(1)
+                }
+            }
+            if let provider = UsageProvider(rawValue: descriptor.id.rawValue), !state.storedAccountKeys(for: provider).isEmpty {
+                HStack(spacing: 4) {
+                    ForEach(state.storedAccountKeys(for: provider).prefix(3), id: \.self) { key in
+                        let name = state.accountDisplayNames[key] ?? String(key.prefix(8))
+                        let quota = state.cachedQuotaSnapshotsByAccount[provider]?[key]?.first.map { UsageNumberFormatter.percent($0.remainingPercent, maximumFractionDigits: 0) }
+                        Text(quota.map { "\(name) \($0)" } ?? name)
+                            .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 3)
+                            .background(AppTheme.insetSurface(for: colorScheme), in: Capsule())
+                    }
                 }
             }
             Spacer()

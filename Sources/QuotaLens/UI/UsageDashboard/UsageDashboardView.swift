@@ -449,6 +449,30 @@ struct ProviderUsageDashboardView: View {
 
             Spacer()
 
+            if let provider = dashboardProvider,
+               !env.state.storedAccountKeys(for: provider).isEmpty {
+                Picker(L10n.text("账号", "Account"), selection: Binding(
+                    get: {
+                        switch provider {
+                        case .codex: return env.state.selectedAccountKey ?? env.state.storedAccountKeys(for: provider).first ?? ""
+                        case .claude: return env.state.selectedClaudeAccountKey ?? env.state.storedAccountKeys(for: provider).first ?? ""
+                        case .antigravity: return env.state.selectedAntigravityAccountKey ?? env.state.storedAccountKeys(for: provider).first ?? ""
+                        }
+                    },
+                    set: { key in
+                        env.selectStoredAccount(accountKey: key, provider: provider)
+                    }
+                )) {
+                    ForEach(env.state.storedAccountKeys(for: provider), id: \.self) { key in
+                        let title = env.state.accountDisplayNames[key] ?? String(key.prefix(12))
+                        Text(title)
+                            .tag(key)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(maxWidth: 180)
+            }
+
             // 时间跨度芯片选择器
             HStack(spacing: 6) {
                 ForEach([7, 30, 90, 365], id: \.self) { rangeDays in
@@ -471,6 +495,15 @@ struct ProviderUsageDashboardView: View {
                     .buttonStyle(.plain)
                 }
             }
+        }
+    }
+
+    private var dashboardProvider: UsageProvider? {
+        switch store.providerFilter {
+        case .codex: return .codex
+        case .claude: return .claude
+        case .antigravity: return .antigravity
+        case .all: return nil
         }
     }
 

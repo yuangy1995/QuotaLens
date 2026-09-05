@@ -141,6 +141,10 @@ public enum AppThemeMode: String, CaseIterable, Identifiable {
 public final class AppState: ObservableObject {
     private static let themeModeDefaultsKey = "QuotaLens.themeMode"
     private static let quotaDisplayModeDefaultsKey = "QuotaLens.quotaDisplayMode"
+    private static let selectedAccountKeyDefaultsKey = "QuotaLens.selectedAccountKey"
+    private static let selectedClaudeAccountKeyDefaultsKey = "QuotaLens.selectedClaudeAccountKey"
+    private static let selectedAntigravityAccountKeyDefaultsKey = "QuotaLens.selectedAntigravityAccountKey"
+    private static let accountDisplayNamesDefaultsKey = "QuotaLens.accountDisplayNames"
     private static let refreshIntervalDefaultsKey = "QuotaLens.refreshIntervalSeconds"
     private static let claudeRefreshIntervalDefaultsKey = "QuotaLens.claudeRefreshIntervalSeconds"
     private static let antigravityRefreshIntervalDefaultsKey = "QuotaLens.antigravityRefreshIntervalSeconds"
@@ -173,13 +177,35 @@ public final class AppState: ObservableObject {
     }
     @Published public var account: AccountRecord?
     @Published public var allAccounts: [AccountRecord] = []
+    @Published public var storedAccountKeysByProvider: [UsageProvider: [String]] = [:]
+    @Published public var cachedQuotaSnapshotsByAccount: [UsageProvider: [String: [RateLimitSnapshotRecord]]] = [:]
+    @Published public var cachedClaudeUsageByAccount: [String: ClaudeUsageSnapshot] = [:]
+    @Published public var cachedAntigravityQuotaByAccount: [String: AntigravityQuotaSnapshot] = [:]
     @Published public var selectedAccountKey: String? = nil {
         didSet {
             guard oldValue != selectedAccountKey else { return }
+            UserDefaults.standard.set(selectedAccountKey, forKey: Self.selectedAccountKeyDefaultsKey)
             resetAccountScopedStateForAccountChange(to: selectedAccountKey)
         }
     }
+    @Published public var selectedClaudeAccountKey: String? {
+        didSet { UserDefaults.standard.set(selectedClaudeAccountKey, forKey: Self.selectedClaudeAccountKeyDefaultsKey) }
+    }
+    @Published public var selectedAntigravityAccountKey: String? {
+        didSet { UserDefaults.standard.set(selectedAntigravityAccountKey, forKey: Self.selectedAntigravityAccountKeyDefaultsKey) }
+    }
+
+    public func storedAccountKeys(for provider: UsageProvider) -> [String] {
+        storedAccountKeysByProvider[provider] ?? []
+    }
     @Published public var accountDisplayNames: [String: String] = [:]
+
+    public func setAccountDisplayName(_ name: String, for accountKey: String) {
+        let value = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.isEmpty { accountDisplayNames.removeValue(forKey: accountKey) }
+        else { accountDisplayNames[accountKey] = value }
+        UserDefaults.standard.set(accountDisplayNames, forKey: Self.accountDisplayNamesDefaultsKey)
+    }
     @Published public var connectionStatus: ProcessStatus = .disconnected
     @Published public var isRefreshing: Bool = false
     @Published public var isRetryingServerConnection: Bool = false
@@ -292,6 +318,10 @@ public final class AppState: ObservableObject {
         let storedTheme = UserDefaults.standard.string(forKey: Self.themeModeDefaultsKey)
         self.themeMode = AppThemeMode(rawValue: storedTheme ?? "") ?? .light
         self.languageMode = L10n.languageMode
+        self.selectedAccountKey = UserDefaults.standard.string(forKey: Self.selectedAccountKeyDefaultsKey)
+        self.selectedClaudeAccountKey = UserDefaults.standard.string(forKey: Self.selectedClaudeAccountKeyDefaultsKey)
+        self.selectedAntigravityAccountKey = UserDefaults.standard.string(forKey: Self.selectedAntigravityAccountKeyDefaultsKey)
+        self.accountDisplayNames = UserDefaults.standard.dictionary(forKey: Self.accountDisplayNamesDefaultsKey) as? [String: String] ?? [:]
 
         let storedMode = UserDefaults.standard.string(forKey: Self.quotaDisplayModeDefaultsKey)
         self.quotaDisplayMode = QuotaDisplayMode(rawValue: storedMode ?? "") ?? .used
@@ -1660,7 +1690,6 @@ public final class AppState: ObservableObject {
     private func resetAccountScopedStateForAccountChange(to accountKey: String?) {
         if account?.accountKey != accountKey {
             account = nil
-            allAccounts = []
         }
         currentQuotaSnapshots = []
         latestRateLimit = nil

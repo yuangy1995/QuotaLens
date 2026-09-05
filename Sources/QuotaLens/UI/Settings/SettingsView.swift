@@ -348,8 +348,57 @@ public struct SettingsView: View {
     private var accountTabPane: some View {
         VStack(spacing: 18) {
             accountIdentityHUDCard
+            savedAccountsHUDCard
             syncPolicyHUDCard
         }
+    }
+
+    private var savedAccountsHUDCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            CyberSectionHeader(title: L10n.text("已保存的账号", "Saved Accounts"), icon: "person.2.fill")
+            CyberDivider()
+            if [UsageProvider.codex, .claude, .antigravity].allSatisfy({ state.storedAccountKeys(for: $0).isEmpty }) {
+                Text(L10n.text("还没有保存过账号数据。", "No saved account data yet."))
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+            } else {
+                ForEach([UsageProvider.codex, .claude, .antigravity], id: \.self) { provider in
+                    Text(provider.localizedName)
+                        .font(.system(size: 10, weight: .black, design: .rounded))
+                        .foregroundStyle(AppTheme.accentCyan(for: colorScheme))
+                    ForEach(state.storedAccountKeys(for: provider), id: \.self) { key in
+                    let account = state.allAccounts.first { $0.accountKey == key } ?? AccountRecord(accountKey: key, emailHash: nil, planType: nil, firstSeenAt: 0, lastSeenAt: 0)
+                    HStack(spacing: 10) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            TextField(L10n.text("账号名称", "Account name"), text: Binding(
+                                get: { state.accountDisplayNames[account.accountKey] ?? String(account.accountKey.prefix(16)) },
+                                set: { state.setAccountDisplayName($0, for: account.accountKey) }
+                            ))
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        Text(account.lastSeenAt > 0 ? L10n.format("Last read %@", zhHans: "最近读取 %@", UsageNumberFormatter.relativeTimeString(from: Date(timeIntervalSince1970: Double(account.lastSeenAt)))) : L10n.text("有已保存额度", "Saved quota available"))
+                                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
+                        }
+                        Spacer()
+                        if (provider == .codex ? state.selectedAccountKey : provider == .claude ? state.selectedClaudeAccountKey : state.selectedAntigravityAccountKey) == account.accountKey {
+                            Text(L10n.text("当前", "Current"))
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(AppTheme.accentCyan(for: colorScheme))
+                        }
+                        Button(role: .destructive) {
+                            env.deleteAccount(accountKey: account.accountKey)
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                    .padding(.vertical, 4)
+                    }
+                }
+            }
+        }
+        .cyberCard(cornerRadius: 16, padding: 18)
     }
 
     // MARK: - Tab 3 · 悬浮窗与挂件

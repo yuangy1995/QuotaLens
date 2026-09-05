@@ -203,10 +203,24 @@ public final class AppEnvironment: ObservableObject {
             _ = LocalAccountImporter.importLocalAccounts(into: repositories)
             self.state.accountDisplayNames = LocalAccountImporter.displayNamesByAccountKey()
             let loadedAccounts = (try? repositories.getAllAccounts()) ?? []
+            for provider in [UsageProvider.codex, .claude, .antigravity] {
+                self.state.storedAccountKeysByProvider[provider] = (try? repositories.getStoredAccountKeys(provider: provider)) ?? []
+                var cached: [String: [RateLimitSnapshotRecord]] = [:]
+                for key in self.state.storedAccountKeys(for: provider) {
+                    cached[key] = try? repositories.getLatestRateLimitSnapshots(accountKey: key)
+                }
+                self.state.cachedQuotaSnapshotsByAccount[provider] = cached
+            }
+            for key in self.state.storedAccountKeys(for: .claude) {
+                if let snapshot = try? ClaudeQuotaRepository.hydrate(accountKey: key, database: database) { self.state.cachedClaudeUsageByAccount[key] = snapshot }
+            }
+            for key in self.state.storedAccountKeys(for: .antigravity) {
+                if let snapshot = try? AntigravityQuotaRepository.hydrate(database: database, accountKey: key) { self.state.cachedAntigravityQuotaByAccount[key] = snapshot }
+            }
             if let firstAcc = loadedAccounts.first {
                 self.state.account = firstAcc
-                self.state.selectedAccountKey = firstAcc.accountKey
-                self.state.allAccounts = [firstAcc]
+                if self.state.selectedAccountKey == nil { self.state.selectedAccountKey = firstAcc.accountKey }
+                self.state.allAccounts = loadedAccounts
             }
         }
 
@@ -674,6 +688,22 @@ public final class AppEnvironment: ObservableObject {
         }
     }
 
+    /// 选择已保存的历史账号，仅加载 QuotaLens 缓存，不切换工具本地登录账号。
+    public func selectStoredAccount(accountKey: String, provider: UsageProvider) {
+        beginAccountScopeChange()
+        switch provider {
+        case .claude:
+            state.selectedClaudeAccountKey = accountKey
+            state.latestClaudeUsage = try? ClaudeQuotaRepository.hydrate(accountKey: accountKey, database: repositories.db)
+        case .antigravity:
+            state.selectedAntigravityAccountKey = accountKey
+            state.latestAntigravityQuota = try? AntigravityQuotaRepository.hydrate(database: repositories.db, accountKey: accountKey)
+        case .codex:
+            state.selectedAccountKey = accountKey
+            _ = applyCachedQuotaSnapshotIfAvailable(for: accountKey)
+        }
+    }
+
     /// 导入本地 ~/.codex 账号
     public func importLocalAccount() {
         let list = LocalAccountImporter.importLocalAccounts(into: repositories)
@@ -714,6 +744,12 @@ public final class AppEnvironment: ObservableObject {
     /// 删除指定账户
     public func deleteAccount(accountKey: String) {
         try? repositories.deleteAccount(accountKey: accountKey)
+        state.accountDisplayNames.removeValue(forKey: accountKey)
+        UserDefaults.standard.set(state.accountDisplayNames, forKey: "QuotaLens.accountDisplayNames")
+        state.allAccounts.removeAll { $0.accountKey == accountKey }
+        for provider in [UsageProvider.codex, .claude, .antigravity] {
+            state.storedAccountKeysByProvider[provider]?.removeAll { $0 == accountKey }
+        }
         resetCreditStatesByAccountKey.removeValue(forKey: accountKey)
         removeResetCreditIdempotencyKeys(for: accountKey)
         removePersistedResetCreditState(for: accountKey)
@@ -721,6 +757,8 @@ public final class AppEnvironment: ObservableObject {
             beginAccountScopeChange()
             state.selectedAccountKey = nil
         }
+        if state.selectedClaudeAccountKey == accountKey { state.selectedClaudeAccountKey = nil }
+        if state.selectedAntigravityAccountKey == accountKey { state.selectedAntigravityAccountKey = nil }
         Task {
             await refreshData()
         }
@@ -799,7 +837,7 @@ public final class AppEnvironment: ObservableObject {
                 guard requestGeneration == refreshDataRequestGeneration else { return }
             }
 
-            // 1. 只展示当前 Codex 账号。历史账号保留在本地库里，但不进入当前界面。
+            // 1. 保留 QuotaLens 中曾经读取过的全部账号。当前本地凭据只决定哪个账号可以刷新。
             var displayNames = LocalAccountImporter.displayNamesByAccountKey()
             for (key, value) in serverAccountDisplayNames {
                 displayNames[key] = value
@@ -807,13 +845,16 @@ public final class AppEnvironment: ObservableObject {
             state.accountDisplayNames = displayNames
 
             let storedAccounts = try repositories.getAllAccounts()
+            for provider in [UsageProvider.codex, .claude, .antigravity] {
+                state.storedAccountKeysByProvider[provider] = (try? repositories.getStoredAccountKeys(provider: provider)) ?? []
+            }
             if let selected = state.selectedAccountKey, let matched = storedAccounts.first(where: { $0.accountKey == selected }) {
                 state.account = matched
-                state.allAccounts = [matched]
+                state.allAccounts = storedAccounts
             } else if let firstAcc = storedAccounts.first {
                 state.account = firstAcc
                 state.selectedAccountKey = firstAcc.accountKey
-                state.allAccounts = [firstAcc]
+                state.allAccounts = storedAccounts
             } else {
                 state.account = nil
                 state.allAccounts = []
@@ -1183,6 +1224,8 @@ public final class AppEnvironment: ObservableObject {
                 now: snapshot.capturedAt
             )
             state.latestClaudeUsage = snapshot
+            state.storedAccountKeysByProvider[.claude] = (try? repositories.getStoredAccountKeys(provider: .claude)) ?? []
+            if let snapshot = try? ClaudeQuotaRepository.hydrate(accountKey: snapshot.accountKey, database: repositories.db) { state.cachedClaudeUsageByAccount[snapshot.accountKey] = snapshot }
             state.claudeUsageStatus = .available
             state.claudeUsageErrorText = refresh.storageWarningText
             state.claudeUsageCooldownUntil = nil
@@ -1385,6 +1428,8 @@ public final class AppEnvironment: ObservableObject {
                 now: snapshot.capturedAt
             )
             state.latestAntigravityQuota = snapshot
+            state.storedAccountKeysByProvider[.antigravity] = (try? repositories.getStoredAccountKeys(provider: .antigravity)) ?? []
+            state.cachedAntigravityQuotaByAccount[snapshot.accountKey] = snapshot
             state.antigravityQuotaStatus = .available
             state.antigravityQuotaErrorText = refresh.storageWarningText
         case .failure(let error):
