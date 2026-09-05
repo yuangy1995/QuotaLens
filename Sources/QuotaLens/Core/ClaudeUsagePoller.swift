@@ -287,6 +287,7 @@ actor ClaudeUsagePoller {
     private var latestSnapshot: ClaudeUsageSnapshot?
     private var isStopped = false
     private var isPolling = false
+    private var lifecycleGeneration: UInt64 = 0
     private var pendingSnapshots: [String: ClaudeUsageSnapshot] = [:]
     private var migrationWarnings = Set<String>()
 
@@ -311,10 +312,12 @@ actor ClaudeUsagePoller {
     func start() {
         guard loopTask == nil else { return }
         isStopped = false
+        lifecycleGeneration &+= 1
+        let generation = lifecycleGeneration
         loopTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             while !Task.isCancelled {
-                await self?.pollOnce()
+                await self?.pollOnce(generation: generation)
                 guard let self else { return }
                 let delay = await self.nextDelay()
                 try? await Task.sleep(nanoseconds: UInt64(max(1, delay) * 1_000_000_000))
@@ -324,19 +327,22 @@ actor ClaudeUsagePoller {
 
     func stop() {
         isStopped = true
+        lifecycleGeneration &+= 1
         loopTask?.cancel()
         loopTask = nil
     }
 
     func redetectCredentials() async {
         await client.redetectCredentials()
-        await pollOnce(force: true)
+        lifecycleGeneration &+= 1
+        await pollOnce(force: true, generation: lifecycleGeneration)
     }
 
-    func pollOnce(force: Bool = false) async {
+    func pollOnce(force: Bool = false, generation: UInt64? = nil) async {
+        let expectedGeneration = generation ?? lifecycleGeneration
         guard !isStopped, !isPolling else { return }
         let now = Date()
-        if let cooldownUntil, cooldownUntil > now { return }
+        if !force, let cooldownUntil, cooldownUntil > now { return }
         if !force, let lastAttemptAt,
            now.timeIntervalSince(lastAttemptAt) < Self.minimumGap { return }
         lastAttemptAt = now
@@ -356,7 +362,7 @@ actor ClaudeUsagePoller {
                 await onCachedSnapshot(nil)
                 throw ClaudeUsageClient.FetchError.noCredentials
             }
-            guard !isStopped else { return }
+            guard !isStopped, expectedGeneration == lifecycleGeneration else { return }
             let accountKey = identity.accountKey
             let confirmedKey = await client.legacyAccountKeyForMigration()
             var historySaved = true
@@ -372,7 +378,7 @@ actor ClaudeUsagePoller {
             }
             let fresh = try await client.fetch()
                 .preservingStaleFiveHour(from: latestSnapshot)
-            guard !isStopped else { return }
+            guard !isStopped, expectedGeneration == lifecycleGeneration else { return }
             let credentialPersistenceWarning = await client.hasCredentialPersistenceWarning()
             latestSnapshot = fresh
             cooldownUntil = nil
@@ -386,6 +392,7 @@ actor ClaudeUsagePoller {
                 historySaved = false
                 pendingSnapshots[fresh.accountKey] = fresh
             }
+            guard !isStopped, expectedGeneration == lifecycleGeneration else { return }
             await onCooldown(nil)
             await onResult(.success(ProviderQuotaRefreshResult(
                 snapshot: fresh,
@@ -394,7 +401,7 @@ actor ClaudeUsagePoller {
                 credentialPersistenceWarning: credentialPersistenceWarning
             )))
         } catch let error as ClaudeUsageClient.FetchError {
-            guard !isStopped else { return }
+            guard !isStopped, expectedGeneration == lifecycleGeneration else { return }
             if case .rateLimited(let retryAfter) = error {
                 rateLimitCount += 1
                 let fallback: TimeInterval = rateLimitCount == 1 ? 300 : 1_800

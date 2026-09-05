@@ -292,7 +292,10 @@ enum ClaudeOAuthCache {
 
 actor ClaudeTokenRefresher {
     enum RefreshError: Error {
-        case http(Int)
+        case invalidGrant
+        case invalidClient
+        case rateLimited(retryAfter: TimeInterval?)
+        case temporarilyUnavailable(status: Int)
         case malformed
         case transport
     }
@@ -336,7 +339,23 @@ actor ClaudeTokenRefresher {
             throw RefreshError.malformed
         }
         guard http.statusCode == 200 else {
-            throw RefreshError.http(http.statusCode)
+            struct OAuthError: Decodable {
+                let error: String?
+                let error_description: String?
+            }
+            let oauthError = try? JSONDecoder().decode(OAuthError.self, from: data)
+            switch (http.statusCode, oauthError?.error?.lowercased()) {
+            case (_, "invalid_grant"):
+                throw RefreshError.invalidGrant
+            case (_, "invalid_client"):
+                throw RefreshError.invalidClient
+            case (429, _):
+                throw RefreshError.rateLimited(retryAfter: Self.retryAfter(from: http))
+            case (500...599, _):
+                throw RefreshError.temporarilyUnavailable(status: http.statusCode)
+            default:
+                throw RefreshError.malformed
+            }
         }
 
         struct Wire: Decodable {
@@ -354,6 +373,23 @@ actor ClaudeTokenRefresher {
             refreshToken: wire.refresh_token,
             expiresAtMs: (Date().timeIntervalSince1970 + (wire.expires_in ?? 28_800)) * 1_000
         )
+    }
+
+    private static func retryAfter(from response: HTTPURLResponse) -> TimeInterval? {
+        guard let value = response.value(forHTTPHeaderField: "Retry-After")?.trimmingCharacters(in: .whitespacesAndNewlines) else { return nil }
+        if let seconds = TimeInterval(value), seconds >= 0 { return seconds }
+        guard let date = HTTPDateFormatter.date(from: value) else { return nil }
+        return max(0, date.timeIntervalSinceNow)
+    }
+
+    private enum HTTPDateFormatter {
+        static func date(from value: String) -> Date? {
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = TimeZone(secondsFromGMT: 0)
+            formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+            return formatter.date(from: value)
+        }
     }
 
     static func formBody(_ pairs: [(String, String)]) -> String {
@@ -429,7 +465,11 @@ actor ClaudeUsageClient {
     private var rejectedTokens: [RejectedTokenKey: Date] = [:]
     private var keychainUnavailable = false
     private var keychainRetryAfter: Date?
-    private var refreshTask: Task<CredentialRefreshResult?, Never>?
+    private struct RefreshKey: Hashable, Sendable {
+        let accountKey: String
+        let refreshTokenDigest: String
+    }
+    private var refreshTasks: [RefreshKey: Task<CredentialRefreshResult?, Never>] = [:]
     private var credentialPersistenceWarning = false
     private var confirmedLegacyAccountKey: String?
 
@@ -558,9 +598,7 @@ actor ClaudeUsageClient {
         let cached = credentialsProvider == nil ? ClaudeOAuthCache.load(from: cacheURL) : nil
         var localCredentials = credentialsProvider?() ?? []
         if credentialsProvider == nil {
-            if let file = Self.readClaudeCredentialsFile() {
-                localCredentials.append(file)
-            }
+            localCredentials.append(contentsOf: Self.readClaudeCredentialsFiles())
             let mayReadKeychain = !keychainUnavailable
                 && (keychainRetryAfter.map { $0 <= Date() } ?? true)
             if mayReadKeychain {
@@ -625,7 +663,8 @@ actor ClaudeUsageClient {
         candidates: [ClaudeStoredCredentials],
         identity: ClaudeAccountIdentity
     ) async -> ClaudeStoredCredentials? {
-        if let refreshTask {
+        let key = RefreshKey(accountKey: identity.accountKey, refreshTokenDigest: Self.tokenDigest(refreshToken))
+        if let refreshTask = refreshTasks[key] {
             return applyRefreshResult(await refreshTask.value)
         }
         let task = Task<CredentialRefreshResult?, Never> {
@@ -659,7 +698,7 @@ actor ClaudeUsageClient {
                     } catch {
                         return .refreshedButNotPersisted(credentials)
                     }
-                } catch ClaudeTokenRefresher.RefreshError.http(let code) where (400..<500).contains(code) {
+                } catch ClaudeTokenRefresher.RefreshError.invalidGrant {
                     if ClaudeOAuthCache.load(from: self.cacheURL)?.refreshToken == token {
                         ClaudeOAuthCache.clear(at: self.cacheURL)
                     }
@@ -670,9 +709,9 @@ actor ClaudeUsageClient {
             }
             return nil
         }
-        refreshTask = task
+        refreshTasks[key] = task
         let result = await task.value
-        refreshTask = nil
+        refreshTasks[key] = nil
         return applyRefreshResult(result)
     }
 
@@ -854,12 +893,17 @@ actor ClaudeUsageClient {
         )
     }
 
-    private static func readClaudeCredentialsFile() -> ClaudeStoredCredentials? {
-        let url = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude", isDirectory: true)
-            .appendingPathComponent(".credentials.json")
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        return parseCredentials(data)
+    private static func readClaudeCredentialsFiles() -> [ClaudeStoredCredentials] {
+        let environment = ProcessInfo.processInfo.environment
+        let configured = (environment["CLAUDE_CONFIG_DIRS"] ?? environment["CLAUDE_CONFIG_DIR"] ?? "")
+            .split(separator: ":").map(String.init).filter { !$0.isEmpty }
+        let roots = configured.isEmpty
+            ? [FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude", isDirectory: true)]
+            : configured.map { URL(fileURLWithPath: $0, isDirectory: true) }
+        return roots.compactMap { root in
+            guard let data = try? Data(contentsOf: root.appendingPathComponent(".credentials.json")) else { return nil }
+            return parseCredentials(data)
+        }
     }
 
     private enum KeychainReadResult {
@@ -872,7 +916,7 @@ actor ClaudeUsageClient {
         let query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: "Claude Code-credentials",
-            kSecMatchLimit: kSecMatchLimitOne,
+            kSecMatchLimit: kSecMatchLimitAll,
             kSecReturnData: true
         ]
         var item: CFTypeRef?
@@ -887,7 +931,11 @@ actor ClaudeUsageClient {
                 return .temporarilyUnavailable(retryAfter: nil)
             }
         }
-        guard let data = item as? Data else { return .temporarilyUnavailable(retryAfter: nil) }
+        let values: [Data]
+        if let data = item as? Data { values = [data] }
+        else if let items = item as? [Data] { values = items }
+        else { return .temporarilyUnavailable(retryAfter: nil) }
+        guard let data = values.first else { return .temporarilyUnavailable(retryAfter: nil) }
         let trimmed = String(data: data, encoding: .utf8)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !trimmed.isEmpty else { return .temporarilyUnavailable(retryAfter: nil) }
