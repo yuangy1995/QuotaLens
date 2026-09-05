@@ -398,7 +398,7 @@ actor ClaudeUsageImportActor {
                 let requiresSafeRestart = fileChanged && [
                     "partial", "incompatible", "pending", "pending_session_identity"
                 ].contains(state.status)
-                if forceRebuild || requiresSourceRepair || file.size < state.byteOffset || requiresSafeRestart {
+                if forceRebuild || requiresSourceRepair || fileChanged || file.size < state.byteOffset || requiresSafeRestart {
                     changedGroups.insert(group)
                     resetPathsByGroup[group, default: []].insert(file.path)
                 } else if fileChanged {
@@ -802,9 +802,10 @@ actor ClaudeUsageImportActor {
             WHERE provider = 'claude'
               AND session_id = ?
               AND provider_message_id LIKE ? ESCAPE '\\'
-              AND provider_message_id != ?;
+              AND provider_message_id != ?
+              AND timestamp_ms < ?;
             """,
-            bindings: [sessionID, Self.escapeLike(event.messageID) + ":%", providerMessageID]
+            bindings: [sessionID, Self.escapeLike(event.messageID) + ":%", providerMessageID, Int64(event.timestamp.timeIntervalSince1970 * 1_000)]
         ) { statement in
             (
                 sqlite3_column_int64(statement, 0),
@@ -892,7 +893,7 @@ actor ClaudeUsageImportActor {
                     ? nil : String(cString: sqlite3_column_text(statement, 18))
             )
         }.first
-        if existing == proposed { return false }
+        if let existing, existing.total >= proposed.total { return false }
         try database.executeUpdate(
             sql: """
             INSERT INTO codex_usage_events (
@@ -1516,7 +1517,18 @@ actor ClaudeUsageImportActor {
             let oneHour = parsedInt64(cache?["ephemeral_1h_input_tokens"]) ?? 0
             let fiveRaw = parsedInt64(cache?["ephemeral_5m_input_tokens"]) ?? 0
             health.recognizedUsageLineCount += 1
-            let five = fiveRaw + max(0, totalWrite - oneHour - fiveRaw)
+            let remainingWrite = totalWrite.subtractingReportingOverflow(oneHour)
+            let remainingAfterFive = remainingWrite.partialValue.subtractingReportingOverflow(fiveRaw)
+            let fiveSum = fiveRaw.addingReportingOverflow(max(0, remainingAfterFive.partialValue))
+            let total = [uncached, cached, fiveSum.partialValue, oneHour, output].reduce((Int64(0), false)) { result, value in
+                let sum = result.0.addingReportingOverflow(value)
+                return (sum.partialValue, result.1 || sum.overflow)
+            }
+            guard !remainingWrite.overflow, !remainingAfterFive.overflow, !fiveSum.overflow, !total.1 else {
+                health.incompatibleUsageLineCount += 1
+                return
+            }
+            let five = fiveSum.partialValue
             let event = ParsedClaudeEvent(
                 messageID: messageID,
                 timestamp: timestamp,

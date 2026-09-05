@@ -334,8 +334,11 @@ actor ClaudeUsagePoller {
 
     func redetectCredentials() async {
         await client.redetectCredentials()
+        loopTask?.cancel()
+        loopTask = nil
         lifecycleGeneration &+= 1
         await pollOnce(force: true, generation: lifecycleGeneration)
+        if !isStopped { start() }
     }
 
     func pollOnce(force: Bool = false, generation: UInt64? = nil) async {
