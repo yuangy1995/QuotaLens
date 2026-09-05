@@ -288,6 +288,9 @@ actor ClaudeUsagePoller {
     private var isStopped = false
     private var isPolling = false
     private var lifecycleGeneration: UInt64 = 0
+    private var loopGeneration: UInt64 = 0
+    private var pendingForcedPoll = false
+    private var isRedetecting = false
     private var pendingSnapshots: [String: ClaudeUsageSnapshot] = [:]
     private var migrationWarnings = Set<String>()
 
@@ -312,13 +315,12 @@ actor ClaudeUsagePoller {
     func start() {
         guard loopTask == nil else { return }
         isStopped = false
-        lifecycleGeneration &+= 1
-        let generation = lifecycleGeneration
+        loopGeneration &+= 1
+        let generation = loopGeneration
         loopTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             while !Task.isCancelled {
-                await self?.pollOnce(generation: generation)
-                guard let self else { return }
+                guard let self, await self.pollScheduled(generation) else { return }
                 let delay = await self.nextDelay()
                 try? await Task.sleep(nanoseconds: UInt64(max(1, delay) * 1_000_000_000))
             }
@@ -328,29 +330,53 @@ actor ClaudeUsagePoller {
     func stop() {
         isStopped = true
         lifecycleGeneration &+= 1
+        loopGeneration &+= 1
+        pendingForcedPoll = false
+        isRedetecting = false
         loopTask?.cancel()
         loopTask = nil
     }
 
     func redetectCredentials() async {
-        await client.redetectCredentials()
-        loopTask?.cancel()
-        loopTask = nil
         lifecycleGeneration &+= 1
-        await pollOnce(force: true, generation: lifecycleGeneration)
-        if !isStopped { start() }
+        let generation = lifecycleGeneration
+        isRedetecting = true
+        await client.redetectCredentials()
+        guard generation == lifecycleGeneration else {
+            if isStopped { isRedetecting = false }
+            return
+        }
+        isRedetecting = false
+        await pollOnce(force: true)
+    }
+
+    private func pollScheduled(_ generation: UInt64) async -> Bool {
+        guard !isStopped, generation == loopGeneration else { return false }
+        await pollOnce()
+        return !isStopped && generation == loopGeneration
     }
 
     func pollOnce(force: Bool = false, generation: UInt64? = nil) async {
         let expectedGeneration = generation ?? lifecycleGeneration
-        guard !isStopped, !isPolling else { return }
+        guard !isStopped, expectedGeneration == lifecycleGeneration else { return }
+        guard !isPolling, !isRedetecting else {
+            if force { pendingForcedPoll = true }
+            return
+        }
         let now = Date()
         if !force, let cooldownUntil, cooldownUntil > now { return }
         if !force, let lastAttemptAt,
            now.timeIntervalSince(lastAttemptAt) < Self.minimumGap { return }
         lastAttemptAt = now
         isPolling = true
-        defer { isPolling = false }
+        pendingForcedPoll = false
+        defer {
+            isPolling = false
+            if pendingForcedPoll, !isStopped, !isRedetecting {
+                let generation = lifecycleGeneration
+                Task { await self.pollOnce(force: true, generation: generation) }
+            }
+        }
         for (key, pending) in pendingSnapshots {
             do {
                 if try ClaudeQuotaRepository.persist(pending, database: database) {
@@ -360,7 +386,9 @@ actor ClaudeUsagePoller {
             } catch { /* Retain the snapshot for the next scheduled attempt. */ }
         }
         do {
-            guard let identity = await client.activeAccountIdentity() else {
+            let activeIdentity = await client.activeAccountIdentity()
+            guard !isStopped, expectedGeneration == lifecycleGeneration else { return }
+            guard let identity = activeIdentity else {
                 latestSnapshot = nil
                 await onCachedSnapshot(nil)
                 throw ClaudeUsageClient.FetchError.noCredentials
@@ -368,6 +396,7 @@ actor ClaudeUsagePoller {
             guard !isStopped, expectedGeneration == lifecycleGeneration else { return }
             let accountKey = identity.accountKey
             let confirmedKey = await client.legacyAccountKeyForMigration()
+            guard !isStopped, expectedGeneration == lifecycleGeneration else { return }
             var historySaved = true
             do {
                 try ClaudeQuotaRepository.migrateIdentity(identity, database: database)
@@ -379,10 +408,12 @@ actor ClaudeUsagePoller {
                 latestSnapshot = try? ClaudeQuotaRepository.hydrate(accountKey: accountKey, database: database)
                 await onCachedSnapshot(latestSnapshot)
             }
+            guard !isStopped, expectedGeneration == lifecycleGeneration else { return }
             let fresh = try await client.fetch()
                 .preservingStaleFiveHour(from: latestSnapshot)
             guard !isStopped, expectedGeneration == lifecycleGeneration else { return }
             let credentialPersistenceWarning = await client.hasCredentialPersistenceWarning()
+            guard !isStopped, expectedGeneration == lifecycleGeneration else { return }
             latestSnapshot = fresh
             cooldownUntil = nil
             rateLimitCount = 0
@@ -397,6 +428,7 @@ actor ClaudeUsagePoller {
             }
             guard !isStopped, expectedGeneration == lifecycleGeneration else { return }
             await onCooldown(nil)
+            guard !isStopped, expectedGeneration == lifecycleGeneration else { return }
             await onResult(.success(ProviderQuotaRefreshResult(
                 snapshot: fresh,
                 historySaved: historySaved,
@@ -412,9 +444,10 @@ actor ClaudeUsagePoller {
                 cooldownUntil = until
                 await onCooldown(until)
             }
+            guard !isStopped, expectedGeneration == lifecycleGeneration else { return }
             await onResult(.failure(error))
         } catch {
-            guard !isStopped else { return }
+            guard !isStopped, expectedGeneration == lifecycleGeneration else { return }
             await onResult(.failure(error))
         }
     }

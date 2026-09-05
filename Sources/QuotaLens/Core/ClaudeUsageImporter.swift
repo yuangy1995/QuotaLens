@@ -2,6 +2,7 @@ import Foundation
 import SQLite3
 import Combine
 import CoreServices
+import CryptoKit
 
 private struct ClaudeSubagentRelationship: Sendable {
     let rootSessionID: String
@@ -42,6 +43,7 @@ private struct ClaudeHistoryFile: Sendable {
     let relativePath: String
     let size: Int64
     let mtimeMs: Int64
+    let contentHash: String
 
     var path: String { url.path }
     private var subagentRelationship: ClaudeSubagentRelationship? {
@@ -303,9 +305,12 @@ private struct ClaudeSourceImportPlan {
 
 private enum ClaudeImportError: LocalizedError {
     case selfParentSession(String)
+    case numericOverflow
 
     var errorDescription: String? {
         switch self {
+        case .numericOverflow:
+            return L10n.text("Claude 记录中的用量数值过大，已保留原有统计。", "A Claude usage value is too large. Existing statistics were kept.")
         case .selfParentSession:
             return L10n.text(
                 "Claude 子任务的会话关系无效，已保留原有统计。",
@@ -315,8 +320,16 @@ private enum ClaudeImportError: LocalizedError {
     }
 }
 
+private func claudeCheckedSum(_ values: Int64...) throws -> Int64 {
+    try values.reduce(0) { total, value in
+        let sum = total.addingReportingOverflow(value)
+        guard !sum.overflow else { throw ClaudeImportError.numericOverflow }
+        return sum.partialValue
+    }
+}
+
 actor ClaudeUsageImportActor {
-    private static let currentImportVersion = 4
+    private static let currentImportVersion = 5
     private static let importVersionKey = "claude_usage_import_version"
     private static let childRepairStatusKey = "claude_child_repair_status"
     private static let repairPendingStatus = "repair_pending"
@@ -390,7 +403,12 @@ actor ClaudeUsageImportActor {
                     changedGroups.insert(group)
                     continue
                 }
+                let storedHash = try database.stringScalar(
+                    sql: "SELECT content_hash FROM claude_source_hashes WHERE source_path = ?;",
+                    bindings: [file.path]
+                )
                 let fileChanged = file.size != state.fileSize || file.mtimeMs != state.mtimeMs
+                    || storedHash != file.contentHash
                 let canonicalPath = Self.canonicalPath(file.path)
                 let requiresSourceRepair = state.status == Self.repairPendingStatus
                     || state.status == "repair_invalid_identity"
@@ -398,11 +416,9 @@ actor ClaudeUsageImportActor {
                 let requiresSafeRestart = fileChanged && [
                     "partial", "incompatible", "pending", "pending_session_identity"
                 ].contains(state.status)
-                if forceRebuild || requiresSourceRepair || fileChanged || file.size < state.byteOffset || requiresSafeRestart {
+                if forceRebuild || requiresRepair || requiresSourceRepair || fileChanged || file.size < state.byteOffset || requiresSafeRestart {
                     changedGroups.insert(group)
                     resetPathsByGroup[group, default: []].insert(file.path)
-                } else if fileChanged {
-                    changedGroups.insert(group)
                 }
             }
         }
@@ -547,6 +563,10 @@ actor ClaudeUsageImportActor {
             for plan in plans {
                 guard case .replace = plan.replacementPolicy else { continue }
                 for sourcePath in plan.replacementSourcePaths {
+                    try database.executeUpdate(
+                        sql: "DELETE FROM claude_usage_snapshots WHERE source_path = ?;",
+                        bindings: [sourcePath]
+                    )
                     let existingSessionKeys = try database.executeQuery(
                         sql: "SELECT DISTINCT session_id FROM codex_usage_events WHERE provider = 'claude' AND source_path = ?;",
                         bindings: [sourcePath]
@@ -609,12 +629,12 @@ actor ClaudeUsageImportActor {
                     throw ClaudeImportError.selfParentSession(sessionID)
                 }
                 try slice.eventStore.forEachEvent { event in
-                    changedEvents += try upsert(
+                    try storeSnapshot(
                         event: event,
                         sessionID: sessionID,
                         rootSessionID: rootSessionID,
                         sourcePath: file.path
-                    ) ? 1 : 0
+                    )
                 }
                 try upsertSessionMetadata(
                     slice: slice,
@@ -636,6 +656,7 @@ actor ClaudeUsageImportActor {
                 )
             }
             for sessionID in affectedSessionKeys.sorted() {
+                changedEvents += try rebuildEvents(sessionID: sessionID)
                 try rebuildSummaries(sessionID: sessionID)
             }
             try removeOrphanedSessions(affectedSessionKeys)
@@ -746,6 +767,10 @@ actor ClaudeUsageImportActor {
         errorMessage: String?
     ) throws {
         try database.executeUpdate(
+            sql: "INSERT OR REPLACE INTO claude_source_hashes (source_path, content_hash) VALUES (?, ?);",
+            bindings: [file.path, file.contentHash]
+        )
+        try database.executeUpdate(
             sql: """
             INSERT INTO claude_import_sources (
                 source_path, relative_path, session_id, file_size, mtime_ms,
@@ -780,6 +805,86 @@ actor ClaudeUsageImportActor {
         )
     }
 
+    private func storeSnapshot(
+        event: ParsedClaudeEvent,
+        sessionID: String,
+        rootSessionID: String,
+        sourcePath: String
+    ) throws {
+        let day = LocalDayKey(date: event.timestamp, calendar: UsageDayBucketer.calendar()).yyyyMMdd
+        try database.executeUpdate(sql: """
+        INSERT INTO claude_usage_snapshots VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(source_path, session_id, message_id, day_key) DO UPDATE SET
+            root_session_id = excluded.root_session_id, timestamp_ms = excluded.timestamp_ms,
+            model_raw = excluded.model_raw, uncached_input = excluded.uncached_input,
+            cached_input = excluded.cached_input, cache_write_5m = excluded.cache_write_5m,
+            cache_write_1h = excluded.cache_write_1h, output_tokens = excluded.output_tokens,
+            line_offset = excluded.line_offset, line_bytes = excluded.line_bytes,
+            total_tokens = excluded.total_tokens
+        WHERE excluded.total_tokens >= claude_usage_snapshots.total_tokens;
+        """, bindings: [
+            sourcePath, sessionID, rootSessionID, event.messageID, day,
+            Int64(event.timestamp.timeIntervalSince1970 * 1_000), event.modelRaw,
+            event.uncachedInput, event.cachedInput, event.cacheWrite5m, event.cacheWrite1h,
+            event.output, event.lineOffset, event.lineBytes, event.totalTokens
+        ])
+    }
+
+    private func rebuildEvents(sessionID: String) throws -> Int {
+        // Keep legacy events whose source is unavailable until it can be read again.
+        try database.executeUpdate(sql: """
+        DELETE FROM codex_usage_events
+        WHERE provider = 'claude' AND session_id = ? AND EXISTS (
+            SELECT 1 FROM claude_usage_snapshots s
+            WHERE s.session_id = codex_usage_events.session_id
+              AND codex_usage_events.provider_message_id = s.message_id || ':' || s.day_key
+        );
+        """, bindings: [sessionID])
+        let snapshots = try database.executeQuery(sql: """
+        SELECT message_id, timestamp_ms, model_raw, uncached_input, cached_input,
+               cache_write_5m, cache_write_1h, output_tokens, line_offset, line_bytes,
+               root_session_id, source_path
+        FROM (
+            SELECT *, ROW_NUMBER() OVER (
+                PARTITION BY message_id, day_key
+                ORDER BY total_tokens DESC, line_offset DESC, source_path ASC
+            ) AS rank
+            FROM claude_usage_snapshots WHERE session_id = ?
+        ) WHERE rank = 1 ORDER BY timestamp_ms, message_id;
+        """, bindings: [sessionID]) { statement in
+            (ParsedClaudeEvent(
+                messageID: String(cString: sqlite3_column_text(statement, 0)),
+                timestamp: Date(timeIntervalSince1970: Double(sqlite3_column_int64(statement, 1)) / 1_000),
+                modelRaw: String(cString: sqlite3_column_text(statement, 2)),
+                uncachedInput: sqlite3_column_int64(statement, 3),
+                cachedInput: sqlite3_column_int64(statement, 4),
+                cacheWrite5m: sqlite3_column_int64(statement, 5),
+                cacheWrite1h: sqlite3_column_int64(statement, 6),
+                output: sqlite3_column_int64(statement, 7),
+                lineOffset: sqlite3_column_int64(statement, 8),
+                lineBytes: sqlite3_column_int64(statement, 9)
+            ), String(cString: sqlite3_column_text(statement, 10)),
+               String(cString: sqlite3_column_text(statement, 11)))
+        }
+        var count = 0
+        var cumulative: [String: [Int64]] = [:]
+        for (event, root, path) in snapshots {
+            let values = [event.uncachedInput, event.cachedInput, event.cacheWrite5m, event.cacheWrite1h, event.output]
+            let previous = cumulative[event.messageID] ?? [0, 0, 0, 0, 0]
+            let delta = zip(values, previous).map { max(0, $0 - $1) }
+            cumulative[event.messageID] = zip(values, previous).map { max($0, $1) }
+            let derived = ParsedClaudeEvent(
+                messageID: event.messageID, timestamp: event.timestamp, modelRaw: event.modelRaw,
+                uncachedInput: delta[0], cachedInput: delta[1], cacheWrite5m: delta[2],
+                cacheWrite1h: delta[3], output: delta[4], lineOffset: event.lineOffset, lineBytes: event.lineBytes
+            )
+            if try upsert(event: derived, sessionID: sessionID, rootSessionID: root, sourcePath: path) {
+                count += 1
+            }
+        }
+        return count
+    }
+
     private func upsert(
         event: ParsedClaudeEvent,
         sessionID: String,
@@ -790,38 +895,13 @@ actor ClaudeUsageImportActor {
         let dayKey = LocalDayKey(date: event.timestamp, calendar: calendar).yyyyMMdd
         let providerMessageID = "\(event.messageID):\(dayKey)"
 
-        let previous = try database.executeQuery(
-            sql: """
-            SELECT
-                COALESCE(SUM(uncached_input_tokens), 0),
-                COALESCE(SUM(cached_input_tokens), 0),
-                COALESCE(SUM(cache_write_5m_input_tokens), 0),
-                COALESCE(SUM(cache_write_1h_input_tokens), 0),
-                COALESCE(SUM(output_tokens), 0)
-            FROM codex_usage_events
-            WHERE provider = 'claude'
-              AND session_id = ?
-              AND provider_message_id LIKE ? ESCAPE '\\'
-              AND provider_message_id != ?
-              AND timestamp_ms < ?;
-            """,
-            bindings: [sessionID, Self.escapeLike(event.messageID) + ":%", providerMessageID, Int64(event.timestamp.timeIntervalSince1970 * 1_000)]
-        ) { statement in
-            (
-                sqlite3_column_int64(statement, 0),
-                sqlite3_column_int64(statement, 1),
-                sqlite3_column_int64(statement, 2),
-                sqlite3_column_int64(statement, 3),
-                sqlite3_column_int64(statement, 4)
-            )
-        }.first ?? (0, 0, 0, 0, 0)
-
-        let uncached = max(0, event.uncachedInput - previous.0)
-        let cached = max(0, event.cachedInput - previous.1)
-        let write5m = max(0, event.cacheWrite5m - previous.2)
-        let write1h = max(0, event.cacheWrite1h - previous.3)
-        let output = max(0, event.output - previous.4)
-        guard uncached + cached + write5m + write1h + output > 0 else { return false }
+        let uncached = event.uncachedInput
+        let cached = event.cachedInput
+        let write5m = event.cacheWrite5m
+        let write1h = event.cacheWrite1h
+        let output = event.output
+        let total = try claudeCheckedSum(uncached, cached, write5m, write1h, output)
+        guard total > 0 else { return false }
 
         let price = ClaudePricingCatalogService.evaluate(
             modelRaw: event.modelRaw,
@@ -831,8 +911,7 @@ actor ClaudeUsageImportActor {
             cacheWrite1h: write1h,
             output: output
         )
-        let grossInput = uncached + cached + write5m + write1h
-        let total = grossInput + output
+        let grossInput = try claudeCheckedSum(uncached, cached, write5m, write1h)
         let eventID = "\(sessionID):\(providerMessageID)"
         let timestampMs = Int64(event.timestamp.timeIntervalSince1970 * 1_000)
         let proposed = ClaudeStoredEventFingerprint(
@@ -893,7 +972,7 @@ actor ClaudeUsageImportActor {
                     ? nil : String(cString: sqlite3_column_text(statement, 18))
             )
         }.first
-        if let existing, existing.total >= proposed.total { return false }
+        if existing == proposed { return false }
         try database.executeUpdate(
             sql: """
             INSERT INTO codex_usage_events (
@@ -1205,15 +1284,15 @@ actor ClaudeUsageImportActor {
                     cost: sqlite3_column_int64(statement, 8),
                     priced: String(cString: sqlite3_column_text(statement, 9)) == PricingStatus.priced.rawValue
                 )
-                byModel[event.model, default: .zero].add(event)
+                try byModel[event.model, default: .zero].add(event)
                 let date = Date(timeIntervalSince1970: Double(event.timestampMs) / 1_000)
                 let key = LocalDayKey(date: date, calendar: calendar)
                 let dayStart = Int64(calendar.startOfDay(for: date).timeIntervalSince1970 * 1_000)
-                byDayModel[
+                try byDayModel[
                     ClaudeDayModelKey(dayKey: key.yyyyMMdd, dayStartMs: dayStart, model: event.model),
                     default: .zero
                 ].add(event)
-                all.add(event)
+                try all.add(event)
                 result = sqlite3_step(statement)
             }
             guard result == SQLITE_DONE else {
@@ -1400,11 +1479,25 @@ actor ClaudeUsageImportActor {
                 let relative = canonicalURL.path.hasPrefix(rootPrefix)
                     ? String(canonicalURL.path.dropFirst(rootPrefix.count))
                     : url.lastPathComponent
+                let contentHash: String
+                do {
+                    let handle = try FileHandle(forReadingFrom: canonicalURL)
+                    defer { try? handle.close() }
+                    var hash = SHA256()
+                    while let chunk = try handle.read(upToCount: 256 * 1_024), !chunk.isEmpty {
+                        hash.update(data: chunk)
+                    }
+                    contentHash = hash.finalize().map { String(format: "%02x", $0) }.joined()
+                } catch {
+                    errors.append("\(url.lastPathComponent): \(error.localizedDescription)")
+                    continue
+                }
                 results.append(ClaudeHistoryFile(
                     url: canonicalURL,
                     relativePath: relative,
                     size: Int64(values.fileSize ?? 0),
-                    mtimeMs: Int64((values.contentModificationDate?.timeIntervalSince1970 ?? 0) * 1_000)
+                    mtimeMs: Int64((values.contentModificationDate?.timeIntervalSince1970 ?? 0) * 1_000),
+                    contentHash: contentHash
                 ))
             }
         }
@@ -1516,19 +1609,21 @@ actor ClaudeUsageImportActor {
             let output = parsedInt64(usage["output_tokens"]) ?? 0
             let oneHour = parsedInt64(cache?["ephemeral_1h_input_tokens"]) ?? 0
             let fiveRaw = parsedInt64(cache?["ephemeral_5m_input_tokens"]) ?? 0
-            health.recognizedUsageLineCount += 1
-            let remainingWrite = totalWrite.subtractingReportingOverflow(oneHour)
-            let remainingAfterFive = remainingWrite.partialValue.subtractingReportingOverflow(fiveRaw)
-            let fiveSum = fiveRaw.addingReportingOverflow(max(0, remainingAfterFive.partialValue))
-            let total = [uncached, cached, fiveSum.partialValue, oneHour, output].reduce((Int64(0), false)) { result, value in
-                let sum = result.0.addingReportingOverflow(value)
-                return (sum.partialValue, result.1 || sum.overflow)
-            }
-            guard !remainingWrite.overflow, !remainingAfterFive.overflow, !fiveSum.overflow, !total.1 else {
+            // Both operands are nonnegative Int64 values, so this single subtraction is safe.
+            let five = max(fiveRaw, max(0, totalWrite - oneHour))
+            guard (try? claudeCheckedSum(uncached, cached, five, oneHour, output)) != nil else {
                 health.incompatibleUsageLineCount += 1
                 return
             }
-            let five = fiveSum.partialValue
+            let price = ClaudePricingCatalogService.evaluate(
+                modelRaw: model, uncachedInput: uncached, cachedInput: cached,
+                cacheWrite5m: five, cacheWrite1h: oneHour, output: output
+            )
+            guard price.status != .unpricedCalculationOverflow else {
+                health.incompatibleUsageLineCount += 1
+                return
+            }
+            health.recognizedUsageLineCount += 1
             let event = ParsedClaudeEvent(
                 messageID: messageID,
                 timestamp: timestamp,
@@ -1648,11 +1743,6 @@ actor ClaudeUsageImportActor {
         return nil
     }
 
-    private static func escapeLike(_ value: String) -> String {
-        value.replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "%", with: "\\%")
-            .replacingOccurrences(of: "_", with: "\\_")
-    }
 }
 
 private struct ClaudeAggregateEvent {
@@ -1682,18 +1772,18 @@ private struct ClaudeAggregate {
 
     static let zero = ClaudeAggregate()
 
-    mutating func add(_ event: ClaudeAggregateEvent) {
+    mutating func add(_ event: ClaudeAggregateEvent) throws {
         eventCount += 1
-        input += event.input
-        cached += event.cached
-        cacheWrite += event.cacheWrite
-        output += event.output
-        reasoning += event.reasoning
-        total += event.total
-        cost += event.cost
+        input = try claudeCheckedSum(input, event.input)
+        cached = try claudeCheckedSum(cached, event.cached)
+        cacheWrite = try claudeCheckedSum(cacheWrite, event.cacheWrite)
+        output = try claudeCheckedSum(output, event.output)
+        reasoning = try claudeCheckedSum(reasoning, event.reasoning)
+        total = try claudeCheckedSum(total, event.total)
+        cost = try claudeCheckedSum(cost, event.cost)
         if !event.priced {
             unpricedCount += 1
-            unpricedTokens += event.total
+            unpricedTokens = try claudeCheckedSum(unpricedTokens, event.total)
         }
     }
 
