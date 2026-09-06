@@ -4,7 +4,7 @@ import Foundation
 
 public struct ParserCheckpoint: Codable, Sendable {
     /// 解析、归因或 Replay 边界语义变化时递增；旧版本检查点必须重建后再继续。
-    public static let currentParserVersion = 7
+    public static let currentParserVersion = 8
 
     public let lineOffset: Int64
     public let lineCount: Int

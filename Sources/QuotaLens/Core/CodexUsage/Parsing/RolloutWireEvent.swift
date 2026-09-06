@@ -103,6 +103,7 @@ public struct RolloutSessionMetadataEvent: Sendable {
     public let parentSessionId: String?
     public let agentType: String?
     public let isChildSession: Bool
+    public var model: String? = nil
 }
 
 public enum RolloutLineDecoder {
@@ -140,6 +141,8 @@ public enum RolloutLineDecoder {
         var payloadTimestamp: Int64?
         var payloadId: String?
         var payloadSessionId: String?
+        var topLevelModel: String?
+        var payloadModel: String?
         var cwd: String?
         var parentSessionId: String?
         var parentSessionIdCamel: String?
@@ -275,7 +278,8 @@ public enum RolloutLineDecoder {
             agentType: agentType,
             isChildSession: parentSessionId != nil
                 || threadSource == "subagent"
-                || fields.hasSubagent
+                || fields.hasSubagent,
+            model: firstString([fields.payloadModel, fields.topLevelModel])
         )
     }
 
@@ -322,6 +326,8 @@ public enum RolloutLineDecoder {
                     fields.topLevelId = jsonString(bytes, range: valueRange)
                 case "session_id":
                     fields.topLevelSessionId = jsonString(bytes, range: valueRange)
+                case "model":
+                    fields.topLevelModel = jsonString(bytes, range: valueRange)
                 default:
                     break
                 }
@@ -352,6 +358,7 @@ public enum RolloutLineDecoder {
             switch key {
             case "id": fields.payloadId = jsonString(bytes, range: valueRange)
             case "session_id": fields.payloadSessionId = jsonString(bytes, range: valueRange)
+            case "model": fields.payloadModel = jsonString(bytes, range: valueRange)
             case "timestamp": fields.payloadTimestamp = jsonTimestamp(bytes, range: valueRange)
             case "cwd": fields.cwd = jsonString(bytes, range: valueRange)
             case "parent_session_id": fields.parentSessionId = jsonString(bytes, range: valueRange)
@@ -662,7 +669,8 @@ public enum RolloutLineDecoder {
                 timestampConflictCount: metadata.timestampConflictCount,
                 sessionId: metadata.sessionId,
                 parentSessionId: metadata.parentSessionId,
-                isChildSessionMeta: metadata.isChildSession
+                isChildSessionMeta: metadata.isChildSession,
+                model: metadata.model
             )
         }
 
@@ -678,6 +686,8 @@ public enum RolloutLineDecoder {
         let metadata = payload["metadata"] as? [String: Any]
         let infoMetadata = info?["metadata"] as? [String: Any]
         let threadSettings = payload["thread_settings"] as? [String: Any]
+        let collabMode = payload["collaboration_mode"] as? [String: Any] ?? json["collaboration_mode"] as? [String: Any]
+        let collabSettings = collabMode?["settings"] as? [String: Any]
 
         let payloadType = payload["type"] as? String
         let type = outerType == "event_msg"
@@ -686,6 +696,8 @@ public enum RolloutLineDecoder {
 
         let model = firstString([
             payload["model"],
+            threadSettings?["model"],
+            collabSettings?["model"],
             info?["model"],
             info?["model_name"],
             metadata?["model"],
@@ -697,8 +709,6 @@ public enum RolloutLineDecoder {
             payload["service_tier"],
             json["service_tier"]
         ])
-        let collabMode = payload["collaboration_mode"] as? [String: Any] ?? json["collaboration_mode"] as? [String: Any]
-        let collabSettings = collabMode?["settings"] as? [String: Any]
         let reasoningEffort = firstString([
             payload["reasoning_effort"],
             payload["effort"],

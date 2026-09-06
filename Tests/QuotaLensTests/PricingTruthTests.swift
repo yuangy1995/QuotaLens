@@ -12,6 +12,7 @@ final class PricingTruthTests: XCTestCase {
 
         XCTAssertEqual(snapshot.catalogVersion, BundledPricingCatalog.currentVersion)
         let rates: [(String, Int64, Int64, Int64)] = [
+            ("gpt-6-astra", 10_000, 1_000, 50_000),
             ("gpt-5.6-sol", 4_000, 400, 20_000),
             ("gpt-5.6-terra", 2_000, 200, 12_000),
             ("gpt-5.6-luna", 200, 20, 1_200),
@@ -366,6 +367,7 @@ final class PricingTruthTests: XCTestCase {
         let fastShort25 = TierCase(name: "fast", multiplier: 2.5, supportsLongContext: false)
 
         let models: [ModelCase] = [
+            ModelCase(model: "gpt-6-astra", input: 10_000, cached: 1_000, cacheWrite: 12_500, output: 50_000, tiers: [standardLong, flexLong, fastLong]),
             ModelCase(model: "gpt-5.6-sol", input: 4_000, cached: 400, cacheWrite: 5_000, output: 20_000, tiers: [standardLong, flexLong, fastLong]),
             ModelCase(model: "gpt-5.6-terra", input: 2_000, cached: 200, cacheWrite: 2_500, output: 12_000, tiers: [standardLong, flexLong, fastLong]),
             ModelCase(model: "gpt-5.6-luna", input: 200, cached: 20, cacheWrite: 250, output: 1_200, tiers: [standardLong, flexLong, fastLong]),

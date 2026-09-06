@@ -187,7 +187,7 @@ struct ProviderHistoryView: View {
             guard !isRelevantScanActive else { return }
             await store.loadHistory()
         }
-        .onChange(of: env.scanCoordinator.isScanning) { _, isScanning in
+        .onReceive(env.scanCoordinator.$isScanning.removeDuplicates().dropFirst()) { isScanning in
             guard store.providerFilter == .codex, !isScanning else { return }
             Task {
                 await store.loadHistory()

@@ -88,11 +88,11 @@ public struct PricingRuleEntry: Codable, Sendable {
     }
 }
 
-// MARK: - 内置官方 OpenAI 价格目录 (2026-08-25 官方列表价)
+// MARK: - 内置官方 OpenAI 价格目录 (2026-09-06 官方列表价)
 public enum BundledPricingCatalog {
-    // v5 保持 v4 不可变，补齐旧模型 Cache Write、官方上线日期和 Sol 促销精确切点。
-    public static let currentVersion = "2026-08-v5"
-    public static let publishedAtMs: Int64 = 1787616000000 // 2026-08-25
+    // 保留历史规则，新增 Astra 上线后的标准、Flex 和 Fast 费率。
+    public static let currentVersion = "2026-09-v6"
+    public static let publishedAtMs: Int64 = 1788652800000 // 2026-09-06
     private static let gpt56ReleaseMs: Int64 = 1783555200000 // 2026-07-09
     private static let gpt56TerraLunaCutoverMs: Int64 = 1785369600000 // 2026-07-30
     private static let gpt56FastLongContextFromMs: Int64 = 1785888000000 // 2026-08-05
@@ -304,6 +304,7 @@ public enum BundledPricingCatalog {
         publishedAt: publishedAtMs,
         catalogSha256: "",
         sourceURLs: [
+            "https://developers.openai.com/api/docs/models/gpt-6-astra",
             "https://developers.openai.com/api/docs/pricing",
             "https://developers.openai.com/api/docs/changelog",
             "https://developers.openai.com/api/docs/guides/deployment-checklist",
@@ -327,6 +328,27 @@ public enum BundledPricingCatalog {
             "https://developers.openai.com/api/docs/models/gpt-5-codex"
         ],
         models: [
+            PricingModelEntry(
+                modelKey: "gpt-6-astra",
+                aliases: ["gpt-6-astra"],
+                rules: [
+                    (tier: Optional<String>.none, multiplier: Int64(1_000_000)),
+                    (tier: "flex", multiplier: Int64(500_000)),
+                    (tier: "fast", multiplier: Int64(2_000_000))
+                ].map { tier, multiplier in
+                    Self.gpt56Rule(
+                        modelKey: "gpt-6-astra",
+                        suffix: "v6",
+                        serviceTier: tier,
+                        effectiveFromMs: 1788393600000, // 2026-09-03
+                        effectiveToMs: nil,
+                        rate: Self.scaledGPT56Rate(
+                            GPT56Rate(input: 10_000, cached: 1_000, cacheWrite: 12_500, output: 50_000),
+                            multiplierPpm: multiplier
+                        )
+                    )
+                }
+            ),
             // 1. GPT-5.6 系列 (旗舰推理模型)
             PricingModelEntry(
                 modelKey: "gpt-5.6-sol",

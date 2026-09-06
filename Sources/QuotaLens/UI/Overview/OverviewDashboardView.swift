@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 @MainActor
 private final class OverviewDashboardStore: ObservableObject {
@@ -77,7 +78,7 @@ public struct OverviewDashboardView: View {
         .task {
             await store.load(enabledTools: env.enabledToolsStore.enabledToolIDs)
         }
-        .onChange(of: env.scanCoordinator.isScanning) { _, scanning in
+        .onReceive(env.scanCoordinator.$isScanning.removeDuplicates().dropFirst()) { scanning in
             guard !scanning else { return }
             Task { await store.load(enabledTools: env.enabledToolsStore.enabledToolIDs) }
         }

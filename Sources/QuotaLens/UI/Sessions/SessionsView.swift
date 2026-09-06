@@ -33,10 +33,10 @@ struct ProviderSessionsView: View {
             guard !isRelevantScanActive else { return }
             await store.reloadSessions()
         }
-        .onChange(of: env.scanCoordinator.isScanning) { _, isScanning in
+        .onReceive(env.scanCoordinator.$isScanning.removeDuplicates().dropFirst()) { isScanning in
             guard store.providerFilter == .codex, !isScanning else { return }
             Task {
-                await store.reloadSessions()
+                await store.reloadSessions(refreshSelectedDetail: true)
             }
         }
         .onChange(of: env.claudeScanCoordinator.isScanning) { _, isScanning in

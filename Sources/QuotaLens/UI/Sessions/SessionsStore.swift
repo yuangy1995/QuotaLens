@@ -66,6 +66,12 @@ public final class SessionsStore: ObservableObject {
     private var queryGeneration = 0
     private let pageSize = 50
     private let eventPageSize = 500
+    private struct ConversationFileStamp: Equatable {
+        let path: String
+        let size: Int
+        let modified: Date
+    }
+    private var conversationFileStamp: ConversationFileStamp?
 
     public var hasMoreSessions: Bool { nextCursor != nil }
 
@@ -136,7 +142,7 @@ public final class SessionsStore: ObservableObject {
         selectedProject = nil
     }
 
-    public func reloadSessions() async {
+    public func reloadSessions(refreshSelectedDetail: Bool = false) async {
         queryGeneration += 1
         let generation = queryGeneration
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -169,6 +175,13 @@ public final class SessionsStore: ObservableObject {
 
             if let selectedSessionId,
                page.sessions.contains(where: { $0.sessionId == selectedSessionId }) {
+                if refreshSelectedDetail {
+                    detailLoadTask?.cancel()
+                    detailLoadTask = Task { @MainActor [weak self] in
+                        await self?.loadSelectedSessionDetail()
+                    }
+                    await detailLoadTask?.value
+                }
                 return
             }
             self.selectedSessionId = page.sessions.first?.sessionId
@@ -217,6 +230,9 @@ public final class SessionsStore: ObservableObject {
             return
         }
 
+        let cachedConversation = selectedConversation
+        let cachedStamp = conversationFileStamp
+        conversationFileStamp = nil
         selectedDetail = nil
         selectedConversation = nil
         conversationErrorMessage = nil
@@ -253,6 +269,21 @@ public final class SessionsStore: ObservableObject {
 
         isLoadingConversation = true
         do {
+            // 仅重新读取发生变化的正文；刷新列表或其他会话不应反复读取大文件。
+            let stamp: ConversationFileStamp?
+            if selectedDetail.session.provider == .codex,
+               let values = try? URL(fileURLWithPath: selectedDetail.sourcePath).resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]),
+               let size = values.fileSize, let modified = values.contentModificationDate {
+                stamp = ConversationFileStamp(path: selectedDetail.sourcePath, size: size, modified: modified)
+            } else {
+                stamp = nil
+            }
+            if let stamp, stamp == cachedStamp, cachedConversation?.sessionId == sid {
+                selectedConversation = cachedConversation
+                conversationFileStamp = stamp
+                isLoadingConversation = false
+                return
+            }
             let conversation = try await facade.getSessionConversation(sessionId: sid)
             try Task.checkCancellation()
             guard selectedSessionId == sid else { return }
@@ -260,6 +291,7 @@ public final class SessionsStore: ObservableObject {
                 sessionId: sid,
                 messages: []
             )
+            conversationFileStamp = stamp
         } catch is CancellationError {
             return
         } catch {

@@ -19,6 +19,8 @@ public final class CodexUsageScanCoordinator: ObservableObject {
     private var importActor: CodexUsageImportActor?
     private var scanDebounceTask: Task<Void, Never>?
     private var lastRequestedScanTime: Date?
+    private var pendingScan = false
+    private var pendingRebuild = false
     private var lastGenerationPublishTime = Date.distantPast
     private var lastProgressPublishTime = Date.distantPast
     private let automaticRescanInterval: TimeInterval = 60
@@ -32,9 +34,9 @@ public final class CodexUsageScanCoordinator: ObservableObject {
     }
 
     /// 触发扫描并导入（带 1 秒 Debounce，防止快速重复调用）
-    public func triggerScan(forceRebuild: Bool = false) {
+    public func triggerScan(forceRebuild: Bool = false, bypassInterval: Bool = false) {
         let now = Date()
-        if !forceRebuild {
+        if !forceRebuild && !bypassInterval {
             guard !isScanning else { return }
             if let lastScanTime,
                now.timeIntervalSince(lastScanTime) < automaticRescanInterval {
@@ -60,6 +62,12 @@ public final class CodexUsageScanCoordinator: ObservableObject {
     /// 立即强制执行扫描
     public func scanNow(forceRebuild: Bool = false) async {
         scanDebounceTask?.cancel()
+        if isScanning {
+            // 手动刷新合并成一次补扫，避免吞掉扫描期间新写入的记录。
+            pendingScan = true
+            pendingRebuild = pendingRebuild || forceRebuild
+            return
+        }
         await performScan(forceRebuild: forceRebuild)
     }
 
@@ -79,6 +87,12 @@ public final class CodexUsageScanCoordinator: ObservableObject {
         defer {
             isScanning = false
             progress = nil
+            if pendingScan {
+                let rebuild = pendingRebuild
+                pendingScan = false
+                pendingRebuild = false
+                triggerScan(forceRebuild: rebuild, bypassInterval: true)
+            }
         }
 
         let paths = CodexHistoryRootResolver.resolvePaths()

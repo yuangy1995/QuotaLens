@@ -45,7 +45,7 @@ private func addUnpricedReasonColumns(database: SQLiteDatabase, table: String) t
 }
 
 public struct SchemaMigrations {
-    public static let targetSchemaVersion = 18
+    public static let targetSchemaVersion = 19
 
     public static func migrate(database: SQLiteDatabase) throws {
         let currentVersion = try database.intScalar(sql: "PRAGMA user_version;")
@@ -82,7 +82,8 @@ public struct SchemaMigrations {
             V15AntigravityMigration(),
             V16ProviderAccountAliasesMigration(),
             V17ProviderSessionNamespaceMigration(),
-            V18ClaudeSnapshotsMigration()
+            V18ClaudeSnapshotsMigration(),
+            V19PricingScanIndexMigration()
         ]
 
         for migration in migrations where migration.version > currentVersion {
@@ -1153,6 +1154,27 @@ private struct V5AggregateOnlyUsageMigration: DatabaseMigration {
             sql: "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES (?, '1', unixepoch());",
             bindings: [completionKey]
         )
+    }
+}
+
+// MARK: - V19: 扫描价格检查索引与模型归因修复
+private struct V19PricingScanIndexMigration: DatabaseMigration {
+    let version = 19
+    let name = "V19PricingScanIndex"
+
+    func apply(database: SQLiteDatabase) throws {
+        // 扫描入口只检查目录版本；覆盖索引避免逐条读取大型事件账本。
+        try database.execute(sql: """
+        CREATE INDEX IF NOT EXISTS idx_usage_events_provider_catalog
+            ON codex_usage_events(provider, pricing_catalog_version);
+        UPDATE codex_import_sources
+            SET status = 'stale'
+            WHERE status != 'tombstoned' AND parser_version < 8;
+        INSERT OR REPLACE INTO app_metadata (key, value, updated_at)
+            VALUES ('codex_parser_version', '8', unixepoch());
+        INSERT OR REPLACE INTO app_metadata (key, value, updated_at)
+            VALUES ('codex_parser_rebuild_status', 'pending', unixepoch());
+        """)
     }
 }
 

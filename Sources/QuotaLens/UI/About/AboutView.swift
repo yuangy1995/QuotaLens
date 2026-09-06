@@ -53,6 +53,17 @@ public struct AboutView: View {
     private var defaultChangelogs: [ChangelogEntry] {
         [
             ChangelogEntry(
+                id: "v1.0.29",
+                version: "v1.0.29",
+                date: "2026-09-06",
+                changes: [
+                    L10n.text("新增多账号管理体系，支持按工具保存、切换、重命名与删除账号，并增强凭据隔离", "Introduced multi-account management with per-tool saved accounts, switching, renaming, deletion, and hardened credential isolation"),
+                    L10n.text("引入 Claude 累计用量快照与内容哈希校验，支持大数值溢出保护、陈旧事件去重与轮询并发防护", "Added Claude cumulative usage snapshots with content hashing, overflow protection, stale event deduplication, and poller concurrency guards"),
+                    L10n.text("升级窗口感知额度副标题与额度告急状态，完善 Claude 3.7 模型官方定价目录", "Upgraded window-aware quota subtitles with critical quota status and refined official pricing catalog for Claude 3.7 models"),
+                    L10n.text("全面完善 10 种语言的多语言本地化翻译字典与更新日志多语言映射", "Comprehensive localization dictionary refinements and changelog translation mapping across 10 supported languages")
+                ]
+            ),
+            ChangelogEntry(
                 id: "v1.0.28",
                 version: "v1.0.28",
                 date: "2026-09-01",

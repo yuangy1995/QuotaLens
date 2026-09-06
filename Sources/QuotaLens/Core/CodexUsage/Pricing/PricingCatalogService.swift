@@ -149,6 +149,9 @@ public final class PricingCatalogService: Sendable {
         onProgress?(0, L10n.text("正在更新费用估算…", "Updating cost estimates..."))
 
         do {
+            var processed = try database.intScalar(
+                sql: "SELECT COUNT(*) FROM codex_usage_event_reprice_shadow;"
+            )
             while true {
                 let lastRowID = try database.int64Scalar(
                     sql: "SELECT value FROM app_metadata WHERE key = 'pricing_reprice_last_rowid';"
@@ -160,7 +163,6 @@ public final class PricingCatalogService: Sendable {
                 )
                 guard !rows.isEmpty else { break }
 
-                var processed = 0
                 try database.transaction {
                     try database.executePreparedUpdates(
                         sql: """
@@ -187,9 +189,7 @@ public final class PricingCatalogService: Sendable {
                         ]
                     }
                     let finalRowID = rows.last?.rowID ?? lastRowID
-                    processed = try database.intScalar(
-                        sql: "SELECT COUNT(*) FROM codex_usage_event_reprice_shadow;"
-                    )
+                    processed += rows.count
                     try updateRepriceMetadata(
                         database: database,
                         status: "running",
@@ -381,15 +381,15 @@ public final class PricingCatalogService: Sendable {
         )
         // 直接依据事件账本重建日汇总，原始日志缺失或归档扫描关闭时也能统一切换时区。
         guard aggregatedTimeZone == timeZone.identifier else { return true }
-        let staleEventCount = try database.intScalar(
+        let hasStaleEvents = try database.intScalar(
             sql: """
-            SELECT COUNT(*)
+            SELECT EXISTS(SELECT 1
             FROM codex_usage_events
-            WHERE provider = 'codex' AND COALESCE(pricing_catalog_version, '') != ?;
+            WHERE provider = 'codex' AND (pricing_catalog_version IS NULL OR pricing_catalog_version != ?));
             """,
             bindings: [catalogVersion]
         )
-        return staleEventCount > 0
+        return hasStaleEvents > 0
     }
 
     private struct RepriceEventRow {
@@ -907,7 +907,7 @@ public final class PricingCatalogService: Sendable {
                 e.rowid, e.event_id, e.model_canonical, e.service_tier, e.timestamp_ms,
                 e.input_tokens, e.cached_input_tokens, e.cache_write_input_tokens,
                 e.output_tokens, e.reasoning_output_tokens, e.total_tokens
-            FROM codex_usage_events e
+            FROM codex_usage_events e NOT INDEXED
             LEFT JOIN codex_usage_event_reprice_shadow r
               ON r.source_rowid = e.rowid AND r.event_id = e.event_id
             WHERE e.provider = 'codex' AND e.rowid > ? AND r.source_rowid IS NULL

@@ -292,6 +292,10 @@ public final class AppEnvironment: ObservableObject {
                 }
 
                 if Task.isCancelled { return }
+                if let self, self.enabledToolsStore.isEnabled(.codex),
+                   UsageFeatureFlags.shared.isAnalyticsEnabled {
+                    self.scanCoordinator.triggerScan()
+                }
                 await self?.refreshData()
             }
         }

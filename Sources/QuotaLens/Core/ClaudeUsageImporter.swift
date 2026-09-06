@@ -343,6 +343,7 @@ actor ClaudeUsageImportActor {
 
     func scan(forceRebuild: Bool = false) async throws -> ClaudeUsageImportSummary {
         try ClaudePricingCatalogService.ensureInstalled(database: database)
+        try repriceStoredEventsIfNeeded()
         let storedImportVersion = try database.int64Scalar(
             sql: "SELECT CAST(value AS INTEGER) FROM app_metadata WHERE key = ?;",
             bindings: [Self.importVersionKey]
@@ -1252,6 +1253,61 @@ actor ClaudeUsageImportActor {
         try database.executeUpdate(
             sql: "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES (?, ?, unixepoch());",
             bindings: [Self.childRepairStatusKey, hasPendingRepair ? "partial" : "completed"]
+        )
+    }
+
+    private func repriceStoredEventsIfNeeded() throws {
+        let version = ClaudeBundledPricingCatalog.version
+        let key = "claude_usage_pricing_version"
+        guard try database.stringScalar(
+            sql: "SELECT value FROM app_metadata WHERE key = ?;", bindings: [key]
+        ) != version else { return }
+
+        // 从已保存的用量重算，不为价格更新重新读取全部 Claude 对话文件。
+        let sessions = try database.executeQuery(sql: """
+        SELECT DISTINCT session_id FROM codex_usage_events
+        WHERE provider = 'claude' AND (pricing_catalog_version IS NULL OR pricing_catalog_version != ?);
+        """, bindings: [version]) { String(cString: sqlite3_column_text($0, 0)) }
+        for sessionID in sessions {
+            try database.transaction {
+                var lastRowID: Int64 = 0
+                while true {
+                    let rows = try database.executeQuery(sql: """
+                    SELECT rowid, model_raw, uncached_input_tokens, cached_input_tokens,
+                           cache_write_5m_input_tokens, cache_write_1h_input_tokens, output_tokens
+                    FROM codex_usage_events
+                    WHERE rowid > ? AND provider = 'claude' AND session_id = ?
+                    ORDER BY rowid LIMIT 500;
+                    """, bindings: [lastRowID, sessionID]) { statement in
+                        (
+                            sqlite3_column_int64(statement, 0),
+                            ClaudePricingCatalogService.evaluate(
+                                modelRaw: String(cString: sqlite3_column_text(statement, 1)),
+                                uncachedInput: sqlite3_column_int64(statement, 2),
+                                cachedInput: sqlite3_column_int64(statement, 3),
+                                cacheWrite5m: sqlite3_column_int64(statement, 4),
+                                cacheWrite1h: sqlite3_column_int64(statement, 5),
+                                output: sqlite3_column_int64(statement, 6)
+                            )
+                        )
+                    }
+                    guard let last = rows.last else { break }
+                    try database.executePreparedUpdates(sql: """
+                    UPDATE codex_usage_events
+                    SET model_canonical = ?, estimated_cost_usd_nano = ?, pricing_status = ?,
+                        pricing_rule_id = ?, pricing_catalog_version = ? WHERE rowid = ?;
+                    """, values: rows) { rowID, price in
+                        [price.modelCanonical, price.cost.rawValue, price.status.rawValue,
+                         price.ruleID, version, rowID]
+                    }
+                    lastRowID = last.0
+                }
+                try rebuildSummaries(sessionID: sessionID)
+            }
+        }
+        try database.executeUpdate(
+            sql: "INSERT OR REPLACE INTO app_metadata (key, value, updated_at) VALUES (?, ?, unixepoch());",
+            bindings: [key, version]
         )
     }
 

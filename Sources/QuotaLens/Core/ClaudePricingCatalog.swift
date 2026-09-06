@@ -13,10 +13,13 @@ struct ClaudePricingEntry: Codable, Sendable {
 }
 
 enum ClaudeBundledPricingCatalog {
-    static let version = "2026-08-claude-v1"
-    static let publishedAtMs: Int64 = 1_787_875_200_000
+    static let version = "2026-09-claude-v2"
+    static let publishedAtMs: Int64 = 1_788_652_800_000 // 2026-09-06
 
     static let entries: [ClaudePricingEntry] = [
+        entry("claude-fable-5-1", input: 10, cached: 0.25, output: 50),
+        entry("claude-mythos-5-1", input: 10, cached: 0.25, output: 50),
+        entry("claude-mythos-5", input: 10, cached: 1, output: 50),
         entry("claude-opus-5", input: 5, cached: 0.5, output: 25),
         entry("claude-fable-5", input: 10, cached: 1, output: 50),
         entry("claude-sonnet-5", input: 2, cached: 0.2, output: 10),

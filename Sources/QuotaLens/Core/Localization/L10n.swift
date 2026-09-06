@@ -258,6 +258,9 @@ public enum L10n {
     }
 
     public static let changelogZhToEnMap: [String: String] = [
+        "新增多账号管理体系，支持按工具保存、切换、重命名与删除账号，并增强凭据隔离": "Introduced multi-account management with per-tool saved accounts, switching, renaming, deletion, and hardened credential isolation",
+        "引入 Claude 累计用量快照与内容哈希校验，支持大数值溢出保护、陈旧事件去重与轮询并发防护": "Added Claude cumulative usage snapshots with content hashing, overflow protection, stale event deduplication, and poller concurrency guards",
+        "升级窗口感知额度副标题与额度告急状态，完善 Claude 3.7 模型官方定价目录": "Upgraded window-aware quota subtitles with critical quota status and refined official pricing catalog for Claude 3.7 models",
         "修复 Claude 登录失效时重复使用被拒绝凭据的问题，并隔离不同账号的凭据状态": "Stops retrying rejected Claude credentials and keeps credential state isolated between accounts",
         "Claude 登录信息刷新后若未能保存到系统钥匙串，会继续显示额度并给出明确提醒": "Keeps Claude quota available and shows a clear warning when refreshed sign-in data cannot be saved",
         "收紧旧版 Codex 未识别账号的迁移条件，避免多账号历史被错误归属": "Tightens legacy Codex account migration to prevent incorrect history ownership across accounts",
@@ -879,6 +882,96 @@ private let multiToolTranslations: [AppLanguage: [String: String]] = [
 ]
 
 private let keyedTranslations: [String: [AppLanguage: String]] = [
+    "Introduced multi-account management with per-tool saved accounts, switching, renaming, deletion, and hardened credential isolation": [
+        .traditionalChinese: "新增多帳號管理體系，支援按工具儲存、切換、重新命名與刪除帳號，並增強憑證隔離",
+        .japanese: "ツールごとのアカウント保存・切替・名前変更・削除に対応したマルチアカウント管理システムを導入し、認証情報の分離を強化",
+        .korean: "도구별 계정 저장, 전환, 이름 변경 및 삭제를 지원하는 다중 계정 관리 시스템 도입 및 자격 증명 격리 강화",
+        .spanish: "Sistema de gestión multicuenta introducido con guardado, cambio, cambio de nombre y eliminación por herramienta, aislando credenciales",
+        .german: "Multi-Account-Verwaltungssystem mit toolbezogener Speicherung, Wechsel, Umbenennung und Löschung sowie verbesserter Zugangsdatenisolation eingeführt",
+        .french: "Système de gestion multi-comptes introduit avec enregistrement, basculement, renommage et suppression par outil, renforçant l'isolation des identifiants",
+        .portuguese: "Sistema de gestão multiconas introduzido com gravação, alternância, renomeação e eliminação por ferramenta, isolando credenciais",
+        .portugueseBrazil: "Sistema de gerenciamento multicontas introduzido com salvamento, troca, renomeação e exclusão por ferramenta, isolando credenciais"
+    ],
+    "Added Claude cumulative usage snapshots with content hashing, overflow protection, stale event deduplication, and poller concurrency guards": [
+        .traditionalChinese: "引入 Claude 累計用量快照與內容雜湊校驗，支援大數值溢位保護、陳舊事件去重與輪詢並行防護",
+        .japanese: "Claude 累積使用量スナップショットとコンテンツハッシュ検証を導入し、オーバーフロー保護、古いイベントの重複排除、ポーラー並行制御を強化",
+        .korean: "Claude 누적 사용량 스냅샷 및 콘텐츠 해시 검증을 도입하여 오버플로 방지, 이전 이벤트 중복 제거 및 폴러 동시성 보호 강화",
+        .spanish: "Instantáneas de uso acumulativo de Claude con hash de contenido, protección contra desbordamiento, deduplicación de eventos y control de concurrencia",
+        .german: "Kumulative Claude-Nutzungs-Snapshots mit Inhalts-Hashing, Überlaufschutz, Deduplizierung alter Ereignisse und Poller-Gleichzeitigkeitsschutz hinzugefügt",
+        .french: "Instantanés d'utilisation cumulative de Claude avec hachage de contenu, protection contre les dépassements, déduplication et protection de concurrence",
+        .portuguese: "Instantâneos de uso cumulativo do Claude com hash de conteúdo, proteção contra transbordo, desduplicação de eventos e proteção de concorrência",
+        .portugueseBrazil: "Snapshots de uso cumulativo do Claude com hash de conteúdo, proteção contra estouro, deduplicação de eventos e proteção de concorrência"
+    ],
+    "Upgraded window-aware quota subtitles with critical quota status and refined official pricing catalog for Claude 3.7 models": [
+        .traditionalChinese: "升級視窗感知額度副標題與額度告急狀態，完善 Claude 3.7 模型官方定價目錄",
+        .japanese: "ウィンドウ認識のクォータ副見出しとクォータ逼迫ステータスを追加し、Claude 3.7 モデルの公式価格カタログを拡充",
+        .korean: "윈도우 인식 할당량 부제목 및 할당량 부족 상태를 개선하고 Claude 3.7 모델 공식 요금 카탈로그 보완",
+        .spanish: "Subtítulos de cuota conscientes de la ventana con estado crítico y catálogo de precios oficial mejorado para modelos Claude 3.7",
+        .german: "Fensterbewusste Kontingent-Untertitel mit kritischem Kontingentstatus und verfeinertem offiziellem Preiskatalog für Claude 3.7-Modelle aktualisiert",
+        .french: "Sous-titres de quota adaptés à la fenêtre avec état critique et catalogue de prix officiel affiné pour les modèles Claude 3.7",
+        .portuguese: "Subtítulos de quota adaptados à janela com estado crítico e catálogo de preços oficial melhorado para modelos Claude 3.7",
+        .portugueseBrazil: "Subtítulos de cota adaptados à janela com estado crítico e catálogo de preços oficial aprimorado para modelos Claude 3.7"
+    ],
+    "A Claude usage value is too large. Existing statistics were kept.": [
+        .traditionalChinese: "Claude 記錄中的用量數值過大，已保留原有統計。",
+        .japanese: "Claude ログ内の使用量数値が大きすぎるため、既存の統計を保持しました。",
+        .korean: "Claude 기록의 사용량 수치가 너무 커서 기존 통계를 유지했습니다.",
+        .spanish: "Un valor de uso de Claude es demasiado grande. Se mantuvieron las estadísticas existentes.",
+        .german: "Ein Claude-Nutzungswert ist zu groß. Bestehende Statistiken wurden beibehalten.",
+        .french: "Une valeur d'utilisation Claude est trop grande. Les statistiques existantes ont été conservées.",
+        .portuguese: "Um valor de utilização do Claude é demasiado grande. As estatísticas existentes foram mantidas.",
+        .portugueseBrazil: "Um valor de uso do Claude é grande demais. As estatísticas existentes foram mantidas."
+    ],
+    "Saved Accounts": [
+        .traditionalChinese: "已儲存的帳號",
+        .japanese: "保存済みアカウント",
+        .korean: "저장된 계정",
+        .spanish: "Cuentas guardadas",
+        .german: "Gespeicherte Konten",
+        .french: "Comptes enregistrés",
+        .portuguese: "Contas guardadas",
+        .portugueseBrazil: "Contas salvas"
+    ],
+    "No saved account data yet.": [
+        .traditionalChinese: "還沒有儲存過帳號資料。",
+        .japanese: "保存されたアカウントデータはまだありません。",
+        .korean: "아직 저장된 계정 데이터가 없습니다.",
+        .spanish: "Aún no hay datos de cuenta guardados.",
+        .german: "Noch keine gespeicherten Kontodaten vorhanden.",
+        .french: "Aucune donnée de compte enregistrée pour le moment.",
+        .portuguese: "Ainda não existem dados de conta guardados.",
+        .portugueseBrazil: "Nenhum dado de conta salvo ainda."
+    ],
+    "Account name": [
+        .traditionalChinese: "帳號名稱",
+        .japanese: "アカウント名",
+        .korean: "계정 이름",
+        .spanish: "Nombre de la cuenta",
+        .german: "Kontoname",
+        .french: "Nom du compte",
+        .portuguese: "Nome da conta",
+        .portugueseBrazil: "Nome da conta"
+    ],
+    "Saved quota available": [
+        .traditionalChinese: "有已儲存額度",
+        .japanese: "保存済みクォータあり",
+        .korean: "저장된 할당량 있음",
+        .spanish: "Cuota guardada disponible",
+        .german: "Gespeichertes Kontingent verfügbar",
+        .french: "Quota enregistré disponible",
+        .portuguese: "Quota guardada disponível",
+        .portugueseBrazil: "Cota salva disponível"
+    ],
+    "Current": [
+        .traditionalChinese: "目前",
+        .japanese: "現在",
+        .korean: "현재",
+        .spanish: "Actual",
+        .german: "Aktuell",
+        .french: "Actuel",
+        .portuguese: "Atual",
+        .portugueseBrazil: "Atual"
+    ],
     "Stops retrying rejected Claude credentials and keeps credential state isolated between accounts": [
         .traditionalChinese: "修復 Claude 登入失效時重複使用被拒絕憑證的問題，並隔離不同帳號的憑證狀態",
         .japanese: "Claude ログイン失効時に拒否された認証情報の再試行を停止し、アカウント間の認証状態を分離",
