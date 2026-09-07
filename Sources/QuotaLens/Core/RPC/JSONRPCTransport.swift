@@ -78,14 +78,20 @@ public actor JSONRPCTransport {
     }
 
     /// 发送 JSON-RPC 请求并等待响应。
+    public func connectionID() -> UUID? { currentConnectionID }
+
     public func sendRequest(
         method: String,
         params: [String: AnyCodable]? = nil,
-        timeoutSeconds: Double = 5.0
+        timeoutSeconds: Double = 5.0,
+        expectedConnectionID: UUID? = nil
     ) async throws -> JSONRPCResponse {
         guard let connectionID = currentConnectionID,
               let output = outputHandle else {
             throw JSONRPCTransportError.disconnected
+        }
+        if let expectedConnectionID, expectedConnectionID != connectionID {
+            throw JSONRPCTransportError.connectionClosed
         }
 
         let requestId = nextRequestId

@@ -1,4 +1,94 @@
 let extendedTranslations: [String: [AppLanguage: String]] = [
+    "This reset card could not be verified as available. Refresh and try again.": [
+        .traditionalChinese: "無法確認這張重設卡仍可使用，請重新整理後再試。",
+        .japanese: "このリセットカードが利用可能か確認できません。更新して再試行してください。",
+        .korean: "이 재설정 카드의 사용 가능 여부를 확인할 수 없습니다. 새로고침 후 다시 시도하세요.",
+        .spanish: "No se pudo confirmar que esta tarjeta esté disponible. Actualiza y vuelve a intentarlo.",
+        .german: "Die Verfügbarkeit dieser Reset-Karte konnte nicht bestätigt werden. Aktualisieren Sie die Daten und versuchen Sie es erneut.",
+        .french: "Impossible de confirmer la disponibilité de cette carte. Actualisez puis réessayez.",
+        .portuguese: "Não foi possível confirmar a disponibilidade deste cartão. Atualize e tente novamente.",
+        .portugueseBrazil: "Não foi possível confirmar a disponibilidade deste cartão. Atualize e tente novamente."
+    ],
+    "The signed-in account does not match this reset card. Refresh and check your account before trying again.": [
+        .traditionalChinese: "登入帳號與這張重設卡不一致，請重新整理並確認帳號後再試。",
+        .japanese: "ログイン中のアカウントがこのカードと一致しません。更新してアカウントを確認してください。",
+        .korean: "로그인한 계정이 이 카드의 계정과 다릅니다. 새로고침하고 계정을 확인하세요.",
+        .spanish: "La cuenta conectada no corresponde a esta tarjeta. Actualiza y comprueba tu cuenta antes de reintentar.",
+        .german: "Das angemeldete Konto gehört nicht zu dieser Reset-Karte. Aktualisieren und prüfen Sie Ihr Konto.",
+        .french: "Le compte connecté ne correspond pas à cette carte. Actualisez et vérifiez votre compte avant de réessayer.",
+        .portuguese: "A conta ligada não corresponde a este cartão. Atualize e confirme a conta antes de tentar novamente.",
+        .portugueseBrazil: "A conta conectada não corresponde a este cartão. Atualize e confira a conta antes de tentar novamente."
+    ],
+    "The connected Codex does not support using reset cards. Update Codex or ChatGPT and try again.": [
+        .traditionalChinese: "目前連接的 Codex 不支援使用重設卡，請更新 Codex 或 ChatGPT 後再試。",
+        .japanese: "接続中の Codex はリセットカードに対応していません。Codex または ChatGPT を更新してください。",
+        .korean: "연결된 Codex는 재설정 카드 사용을 지원하지 않습니다. Codex 또는 ChatGPT를 업데이트하세요.",
+        .spanish: "El Codex conectado no admite tarjetas de reinicio. Actualiza Codex o ChatGPT y reinténtalo.",
+        .german: "Das verbundene Codex unterstützt keine Reset-Karten. Aktualisieren Sie Codex oder ChatGPT.",
+        .french: "Le Codex connecté ne prend pas en charge les cartes de réinitialisation. Mettez à jour Codex ou ChatGPT.",
+        .portuguese: "O Codex ligado não suporta cartões de reposição. Atualize o Codex ou o ChatGPT e tente novamente.",
+        .portugueseBrazil: "O Codex conectado não oferece suporte a cartões de redefinição. Atualize o Codex ou o ChatGPT e tente novamente."
+    ],
+    "This version could not complete the reset. Update Codex or ChatGPT and try again.": [
+        .traditionalChinese: "目前版本無法完成這次重設，請更新 Codex 或 ChatGPT 後再試。",
+        .japanese: "このバージョンではリセットを完了できませんでした。Codex または ChatGPT を更新してください。",
+        .korean: "이 버전에서는 재설정을 완료할 수 없습니다. Codex 또는 ChatGPT를 업데이트하세요.",
+        .spanish: "Esta versión no pudo completar el reinicio. Actualiza Codex o ChatGPT y reinténtalo.",
+        .german: "Diese Version konnte das Zurücksetzen nicht abschließen. Aktualisieren Sie Codex oder ChatGPT.",
+        .french: "Cette version n’a pas pu terminer la réinitialisation. Mettez à jour Codex ou ChatGPT.",
+        .portuguese: "Esta versão não conseguiu concluir a reposição. Atualize o Codex ou o ChatGPT e tente novamente.",
+        .portugueseBrazil: "Esta versão não conseguiu concluir a redefinição. Atualize o Codex ou o ChatGPT e tente novamente."
+    ],
+    "The reset result could not be confirmed. Refresh your quota first; if you retry, use the same card, not another one.": [
+        .traditionalChinese: "暫時無法確認重設結果。請先重新整理額度；若需重試，請仍使用同一張卡，不要改用其他卡。",
+        .japanese: "リセット結果を確認できません。まず利用枠を更新し、再試行する場合は別のカードではなく同じカードを使ってください。",
+        .korean: "재설정 결과를 확인할 수 없습니다. 먼저 한도를 새로고침하고, 다시 시도할 때는 다른 카드가 아닌 같은 카드를 사용하세요.",
+        .spanish: "No se pudo confirmar el resultado. Actualiza primero tu cuota; si reintentas, usa la misma tarjeta, no otra.",
+        .german: "Das Ergebnis konnte nicht bestätigt werden. Aktualisieren Sie zuerst Ihr Kontingent. Verwenden Sie beim Wiederholen dieselbe Karte, keine andere.",
+        .french: "Le résultat n’a pas pu être confirmé. Actualisez d’abord votre quota ; pour réessayer, utilisez la même carte, pas une autre.",
+        .portuguese: "Não foi possível confirmar o resultado. Atualize primeiro a quota; se tentar novamente, use o mesmo cartão, não outro.",
+        .portugueseBrazil: "Não foi possível confirmar o resultado. Atualize primeiro a cota; se tentar novamente, use o mesmo cartão, não outro."
+    ],
+    "A reset is already in progress. Please wait.": [
+        .traditionalChinese: "正在處理一次重設，請稍候。",
+        .japanese: "リセット処理中です。お待ちください。",
+        .korean: "재설정이 진행 중입니다. 기다려 주세요.",
+        .spanish: "Ya hay un reinicio en curso. Espera.",
+        .german: "Ein Zurücksetzen läuft bereits. Bitte warten.",
+        .french: "Une réinitialisation est déjà en cours. Veuillez patienter.",
+        .portuguese: "Já está em curso uma reposição. Aguarde.",
+        .portugueseBrazil: "Já há uma redefinição em andamento. Aguarde."
+    ],
+    "Could not connect to Codex. Reconnect and try again.": [
+        .traditionalChinese: "無法連接 Codex，請恢復連線後再試。",
+        .japanese: "Codex に接続できません。再接続して再試行してください。",
+        .korean: "Codex에 연결할 수 없습니다. 다시 연결한 후 시도하세요.",
+        .spanish: "No se pudo conectar a Codex. Reconecta y reinténtalo.",
+        .german: "Verbindung zu Codex fehlgeschlagen. Verbinden Sie sich erneut.",
+        .french: "Connexion à Codex impossible. Reconnectez-vous puis réessayez.",
+        .portuguese: "Não foi possível ligar ao Codex. Volte a ligar e tente novamente.",
+        .portugueseBrazil: "Não foi possível conectar ao Codex. Reconecte e tente novamente."
+    ],
+    "Result Unconfirmed": [
+        .traditionalChinese: "結果待確認",
+        .japanese: "結果未確認",
+        .korean: "결과 미확인",
+        .spanish: "Resultado sin confirmar",
+        .german: "Ergebnis unbestätigt",
+        .french: "Résultat non confirmé",
+        .portuguese: "Resultado por confirmar",
+        .portugueseBrazil: "Resultado não confirmado"
+    ],
+    "Could Not Complete": [
+        .traditionalChinese: "未能完成",
+        .japanese: "完了できませんでした",
+        .korean: "완료할 수 없음",
+        .spanish: "No se pudo completar",
+        .german: "Nicht abgeschlossen",
+        .french: "Impossible de terminer",
+        .portuguese: "Não foi possível concluir",
+        .portugueseBrazil: "Não foi possível concluir"
+    ],
     "Model Price Catalog": [
         .traditionalChinese: "模型價格目錄",
         .japanese: "モデル料金一覧",

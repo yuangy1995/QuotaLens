@@ -54,6 +54,7 @@ public final class AppEnvironment: ObservableObject {
     private var systemAppearanceObserver: NSObjectProtocol?
     private var serverAccountDisplayNames: [String: String] = [:]
     private var resetCreditStatesByAccountKey: [String: AccountResetCreditState] = [:]
+    private var isConsumingResetCredit = false
     private var resetCreditIdempotencyKeys: [String: String] = {
         guard let data = UserDefaults.standard.data(forKey: "QuotaLens.resetCreditIdempotencyKeys"),
               let keys = try? JSONDecoder().decode([String: String].self, from: data) else {
@@ -379,41 +380,41 @@ public final class AppEnvironment: ObservableObject {
     }
 
     public func consumeResetCredit(_ credit: ResetCreditDisplay) async throws -> ConsumeRateLimitResetCreditOutcome {
-        guard credit.isValidAvailable() else {
-            throw NSError(
-                domain: "QuotaLens.ResetCredit",
-                code: -1,
-                userInfo: [NSLocalizedDescriptionKey: L10n.text("这张重置卡当前不可用。", "This reset card is not currently available.")]
-            )
+        guard !isConsumingResetCredit else { throw ResetCreditUseError.busy }
+        isConsumingResetCredit = true
+        defer { isConsumingResetCredit = false }
+        guard let accountKey = currentStateAccountKey(), credit.accountKey == accountKey else {
+            throw ResetCreditUseError.accountChanged
         }
-
-        let currentStatus = await processManager.getStatus()
-        let requestScopeKey = resetCreditRequestScopeKey(for: credit)
-        let request = ConsumeRateLimitResetCreditRequest(
-            creditId: credit.id,
-            idempotencyKey: resetCreditIdempotencyKey(for: requestScopeKey)
-        )
-        if !currentStatus.isConnected {
-            let started = await processManager.start()
-            state.connectionStatus = await processManager.getStatus()
-            guard started else {
-                throw NSError(
-                    domain: "QuotaLens.ResetCredit",
-                    code: -2,
-                    userInfo: [NSLocalizedDescriptionKey: L10n.text("无法连接 Codex，暂时不能使用重置卡。", "Codex is not connected, so the reset card cannot be used yet.")]
-                )
+        let scope = "\(accountKey)|\(credit.id)"
+        let existingKey = resetCreditIdempotencyKeys[scope]
+        let key = existingKey ?? UUID().uuidString
+        guard existingKey != nil || credit.isValidAvailable() else { throw ResetCreditUseError.unavailable }
+        let generation = accountDataGeneration
+        if !(await processManager.getStatus()).isConnected {
+            guard await processManager.start() else { throw ResetCreditUseError.disconnected }
+        }
+        guard (await processManager.getStatus()).isConnected,
+              let connectionID = await transport.connectionID() else { throw ResetCreditUseError.disconnected }
+        let outcome = try await ResetCreditRedemption.consume(
+            credit: credit, accountKey: accountKey,
+            accountEmailHash: state.account?.accountKey == accountKey ? state.account?.emailHash : nil,
+            idempotencyKey: key, isRetry: existingKey != nil,
+            isCurrentAccount: { self.currentStateAccountKey() == accountKey && self.accountDataGeneration == generation },
+            willSubmit: {
+                self.resetCreditIdempotencyKeys[scope] = key
+                self.persistResetCreditIdempotencyKeys()
+            },
+            send: { method, params in
+                try await self.transport.sendRequest(method: method, params: params,
+                    timeoutSeconds: 10, expectedConnectionID: connectionID)
             }
-        }
-
-        let payload = try await rpcPayload(
-            ConsumeRateLimitResetCreditResponse.self,
-            method: ConsumeRateLimitResetCreditRequest.method,
-            params: request.params,
-            timeoutSeconds: 10.0
         )
-        let outcome = payload.outcome
-        removeResetCreditIdempotencyKey(for: requestScopeKey)
-        await refreshData()
+        removeResetCreditIdempotencyKey(for: scope)
+        // Deliver the confirmed outcome immediately; synchronization must not hold up the notice.
+        Task { @MainActor [weak self] in
+            await self?.refreshData()
+        }
         return outcome
     }
 
@@ -1902,22 +1903,6 @@ public final class AppEnvironment: ObservableObject {
         state.lastSuccessfulRefreshAt = nil
         state.codexRefreshErrorText = nil
         return accountDataGeneration
-    }
-
-    private func resetCreditRequestScopeKey(for credit: ResetCreditDisplay) -> String {
-        let accountKey = currentStateAccountKey() ?? credit.accountKey ?? "acc_local"
-        return "\(accountKey)|\(credit.id)"
-    }
-
-    private func resetCreditIdempotencyKey(for scopeKey: String) -> String {
-        if let existing = resetCreditIdempotencyKeys[scopeKey] {
-            return existing
-        }
-
-        let generated = UUID().uuidString
-        resetCreditIdempotencyKeys[scopeKey] = generated
-        persistResetCreditIdempotencyKeys()
-        return generated
     }
 
     private func removeResetCreditIdempotencyKey(for scopeKey: String) {

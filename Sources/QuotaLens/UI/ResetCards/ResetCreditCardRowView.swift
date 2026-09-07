@@ -357,11 +357,12 @@ public struct ResetCreditUseAlertModifier: ViewModifier {
     }
 
     private func consume(_ credit: ResetCreditDisplay) {
-        pendingCredit = nil
+        guard consumingCreditId == nil else { return }
         consumingCreditId = credit.id
 
         Task { @MainActor in
             defer {
+                pendingCredit = nil
                 if consumingCreditId == credit.id {
                     consumingCreditId = nil
                 }
@@ -375,8 +376,9 @@ public struct ResetCreditUseAlertModifier: ViewModifier {
             } catch {
                 withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
                     notice = ResetCreditUseNotice(
-                        title: L10n.text("使用失败", "Use Failed"),
-                        message: L10n.text(
+                        title: (error as? ResetCreditUseError) == .uncertain
+                            ? L10n.text("结果待确认", "Result Unconfirmed") : L10n.text("未能完成", "Could Not Complete"),
+                        message: (error as? ResetCreditUseError)?.errorDescription ?? L10n.text(
                             "暂时无法使用这张重置卡，请稍后重试。",
                             "This reset card cannot be used right now. Try again later."
                         )

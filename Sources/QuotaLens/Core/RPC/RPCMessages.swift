@@ -32,6 +32,16 @@ public struct JSONRPCNotification: Codable, Sendable {
         self.method = method
         self.params = params
     }
+
+    enum CodingKeys: String, CodingKey { case jsonrpc, method, params }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        // Codex app-server omits the JSON-RPC version header on the wire.
+        jsonrpc = try container.decodeIfPresent(String.self, forKey: .jsonrpc) ?? "2.0"
+        method = try container.decode(String.self, forKey: .method)
+        params = try container.decodeIfPresent(AnyCodable.self, forKey: .params)
+    }
 }
 
 public struct JSONRPCError: Codable, Sendable {
