@@ -385,8 +385,8 @@ final class SessionDeletionAndQuotaStateTests: XCTestCase {
             }
         }
 
-        let chinese = "避免尚未写入完整身份的 Claude 子任务影响父会话层级"
-        let english = "Prevents Claude child tasks without a complete identity from changing the parent-session hierarchy"
+        let chinese = "加固重置卡兑换机制，支持连接账号锁定校验与幂等重试，防止网络抖动导致的重复提交"
+        let english = "Hardened reset credit redemption with pinned account connection checks and idempotent retries to prevent duplicate submissions"
         for mode in AppLanguageMode.allCases where mode != .system {
             defaults.set(mode.rawValue, forKey: L10n.languageModeDefaultsKey)
             let localized = L10n.text(chinese, english)
@@ -413,7 +413,7 @@ final class SessionDeletionAndQuotaStateTests: XCTestCase {
             }
         }
 
-        let chinese = "避免尚未写入完整身份的 Claude 子任务影响父会话层级"
+        let chinese = "加固重置卡兑换机制，支持连接账号锁定校验与幂等重试，防止网络抖动导致的重复提交"
         for mode in AppLanguageMode.allCases where mode != .system {
             defaults.set(mode.rawValue, forKey: L10n.languageModeDefaultsKey)
             let localized = L10n.localizeChangelogText(chinese)

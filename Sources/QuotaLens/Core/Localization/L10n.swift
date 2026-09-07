@@ -258,6 +258,10 @@ public enum L10n {
     }
 
     public static let changelogZhToEnMap: [String: String] = [
+        "加固重置卡兑换机制，支持连接账号锁定校验与幂等重试，防止网络抖动导致的重复提交": "Hardened reset credit redemption with pinned account connection checks and idempotent retries to prevent duplicate submissions",
+        "深度扩展 OpenAI、Claude 与 Gemini 历史定价目录，支持分段有效日期与长上下文阶梯费率": "Expanded historical pricing catalogs for OpenAI, Claude, and Gemini with dated tiers, context thresholds, and prompt cache discounts",
+        "设置中新增「模型价格参考」查阅界面，直观展示主流模型官方计费规则与缓存折扣": "Added Model Pricing Catalog in Settings with clear reference views for official model billing rates and cache savings",
+        "引入 Codex 多账号管理与总览视图，全面优化多账号切换与额度看板排版": "Introduced Codex multi-account management with an overview dashboard, seamless switching, and refined quota layouts",
         "新增多账号管理体系，支持按工具保存、切换、重命名与删除账号，并增强凭据隔离": "Introduced multi-account management with per-tool saved accounts, switching, renaming, deletion, and hardened credential isolation",
         "引入 Claude 累计用量快照与内容哈希校验，支持大数值溢出保护、陈旧事件去重与轮询并发防护": "Added Claude cumulative usage snapshots with content hashing, overflow protection, stale event deduplication, and poller concurrency guards",
         "升级窗口感知额度副标题与额度告急状态，完善 Claude 3.7 模型官方定价目录": "Upgraded window-aware quota subtitles with critical quota status and refined official pricing catalog for Claude 3.7 models",
@@ -882,6 +886,46 @@ private let multiToolTranslations: [AppLanguage: [String: String]] = [
 ]
 
 private let keyedTranslations: [String: [AppLanguage: String]] = [
+    "Hardened reset credit redemption with pinned account connection checks and idempotent retries to prevent duplicate submissions": [
+        .traditionalChinese: "加固重設卡兌換機制，支援連線帳號鎖定校驗與等冪重試，防止網路抖動導致的重複提交",
+        .japanese: "リセットカードの引き換え処理を強化し、接続アカウントの固定検証と冪等な再試行により、ネットワークの乱れによる二重送信を防止",
+        .korean: "리셋 카드 사용 메커니즘을 강화하여 연결 계정 고정 검증 및 멱등성 재시도를 지원하고 네트워크 불안정으로 인한 중복 제출 방지",
+        .spanish: "Canje de créditos de reinicio reforzado con verificación de cuenta vinculada y reintentos idempotentes para evitar envíos duplicados",
+        .german: "Einlösung von Reset-Guthaben mit Prüfung des verknüpften Kontos und idempotenten Wiederholungen gehärtet, um doppelte Übermittlungen zu verhindern",
+        .french: "Échange des crédits de réinitialisation renforcé avec vérification du compte lié et nouvelles tentatives idempotentes pour éviter les soumissions en double",
+        .portuguese: "Resgate de créditos de reposição reforçado com verificação de conta associada e tentativas idempotentes para evitar envios duplicados",
+        .portugueseBrazil: "Resgate de créditos de redefinição aprimorado com verificação de conta conectada e tentativas idempotentes para evitar envios duplicados"
+    ],
+    "Expanded historical pricing catalogs for OpenAI, Claude, and Gemini with dated tiers, context thresholds, and prompt cache discounts": [
+        .traditionalChinese: "深度擴展 OpenAI、Claude 與 Gemini 歷史定價目錄，支援分段有效日期與長上下文階梯費率",
+        .japanese: "OpenAI、Claude、Gemini の履歴価格カタログを大幅に拡張し、有効期間、長文コンテキストしきい値、プロンプトキャッシュ割引に対応",
+        .korean: "OpenAI, Claude, Gemini 과거 요금 카탈로그를 대폭 확장하여 적용 기간별 요율, 롱 컨텍스트 임계값 및 캐시 할인 지원",
+        .spanish: "Catálogos de precios históricos ampliados para OpenAI, Claude y Gemini con vigencias por fecha, umbrales de contexto y descuentos de caché",
+        .german: "Historische Preiskataloge für OpenAI, Claude und Gemini mit Datumsstaffelung, Kontext-Schwellenwerten und Cache-Rabatten erweitert",
+        .french: "Catalogues de prix historiques étendus pour OpenAI, Claude et Gemini avec dates d'effet, seuils de contexte et réductions de cache",
+        .portuguese: "Catálogos de preços históricos expandidos para OpenAI, Claude e Gemini com datas de vigência, limites de contexto e descontos de cache",
+        .portugueseBrazil: "Catálogos de preços históricos expandidos para OpenAI, Claude e Gemini com datas de vigência, limites de contexto e descontos de cache"
+    ],
+    "Added Model Pricing Catalog in Settings with clear reference views for official model billing rates and cache savings": [
+        .traditionalChinese: "設定中新增「模型價格參考」查閱介面，直觀展示主流模型官方計費規則與快取折扣",
+        .japanese: "設定に「モデル価格リファレンス」画面を追加し、主要モデルの公式課金ルールとキャッシュ割引を直感的に確認可能",
+        .korean: "설정에 「모델 가격 참고」 화면을 추가하여 주요 모델의 공식 과금 기준과 캐시 할인율을 직관적으로 확인",
+        .spanish: "Añadida vista de Referencia de Precios de Modelos en Ajustes con tarifas oficiales y ahorro por caché para los principales modelos",
+        .german: "Modellpreis-Referenzansicht in den Einstellungen hinzugefügt mit offiziellen Abrechnungssätzen und Cache-Ersparnissen",
+        .french: "Ajout du catalogue des tarifs des modèles dans les paramètres avec aperçu direct des tarifs officiels et économies de cache",
+        .portuguese: "Adicionada vista de Referência de Preços de Modelos nas Definições com taxas oficiais e poupança de cache",
+        .portugueseBrazil: "Adicionada visualização de Referência de Preços de Modelos nas Configurações com tarifas oficiais e economia de cache"
+    ],
+    "Introduced Codex multi-account management with an overview dashboard, seamless switching, and refined quota layouts": [
+        .traditionalChinese: "引入 Codex 多帳號管理與總覽視圖，全面優化多帳號切換與額度看板排版",
+        .japanese: "Codex マルチアカウント管理と概要ビューを導入し、アカウント切替とクォータダッシュボードのレイアウトを全面的に最適化",
+        .korean: "Codex 다중 계정 관리 및 개요 뷰를 도입하여 계정 전환 및 할당량 대시보드 배치를 전면 최적화",
+        .spanish: "Gestión multicuenta de Codex y vista general introducidas, optimizando el cambio de cuenta y el diseño del panel de cuotas",
+        .german: "Codex-Multi-Account-Verwaltung und Übersichts-Dashboard eingeführt mit nahtlosem Wechsel und optimiertem Kontingent-Layout",
+        .french: "Gestion multi-comptes Codex et vue d'ensemble introduites, optimisant le basculement de compte et la présentation du tableau de bord",
+        .portuguese: "Gestão multiconas do Codex e vista geral introduzidas, otimizando a alternância de contas e o layout do painel de quotas",
+        .portugueseBrazil: "Gerenciamento multicontas do Codex e visão geral introduzidos, otimizando a troca de contas e o layout do painel de cotas"
+    ],
     "Introduced multi-account management with per-tool saved accounts, switching, renaming, deletion, and hardened credential isolation": [
         .traditionalChinese: "新增多帳號管理體系，支援按工具儲存、切換、重新命名與刪除帳號，並增強憑證隔離",
         .japanese: "ツールごとのアカウント保存・切替・名前変更・削除に対応したマルチアカウント管理システムを導入し、認証情報の分離を強化",

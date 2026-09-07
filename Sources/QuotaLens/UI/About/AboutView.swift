@@ -53,6 +53,18 @@ public struct AboutView: View {
     private var defaultChangelogs: [ChangelogEntry] {
         [
             ChangelogEntry(
+                id: "v1.0.30",
+                version: "v1.0.30",
+                date: "2026-09-07",
+                changes: [
+                    L10n.text("加固重置卡兑换机制，支持连接账号锁定校验与幂等重试，防止网络抖动导致的重复提交", "Hardened reset credit redemption with pinned account connection checks and idempotent retries to prevent duplicate submissions"),
+                    L10n.text("深度扩展 OpenAI、Claude 与 Gemini 历史定价目录，支持分段有效日期与长上下文阶梯费率", "Expanded historical pricing catalogs for OpenAI, Claude, and Gemini with dated tiers, context thresholds, and prompt cache discounts"),
+                    L10n.text("设置中新增「模型价格参考」查阅界面，直观展示主流模型官方计费规则与缓存折扣", "Added Model Pricing Catalog in Settings with clear reference views for official model billing rates and cache savings"),
+                    L10n.text("引入 Codex 多账号管理与总览视图，全面优化多账号切换与额度看板排版", "Introduced Codex multi-account management with an overview dashboard, seamless switching, and refined quota layouts"),
+                    L10n.text("全面完善 10 种语言的多语言本地化翻译字典与更新日志多语言映射", "Comprehensive localization dictionary refinements and changelog translation mapping across 10 supported languages")
+                ]
+            ),
+            ChangelogEntry(
                 id: "v1.0.29",
                 version: "v1.0.29",
                 date: "2026-09-06",
