@@ -13,8 +13,17 @@ QuotaLens is a native macOS menu bar dashboard for Codex, Claude, and Antigravit
 - Identify the tightest quota pool, compare current burn rate with a sustainable pace, forecast runout or reset outcomes, and get practical recommendations.
 - Receive a floating alert when a weekly quota fully recovers. The Codex space also tracks ChatGPT subscription status and reset-card availability and expiry.
 
+### Independent Codex Accounts
+
+- Open the Codex quota overview and use **Authorize account** to connect another ChatGPT account in your browser. This uses a separate sign-in location and does not replace the login used by Codex.
+- Use **Viewing account** to inspect an authorized account or a saved historical snapshot. The menu bar continues to follow the account currently used by Codex. Authorized accounts refresh on demand and once per minute while selected in the quota overview.
+- Names and account notes are retained. Unidentified historical accounts remain separate until their identity can be verified; missing or expired quota data is not displayed as exhausted quota.
+- Managed sign-ins are stored in private account directories under `~/Library/Application Support/QuotaLens/CodexAccounts`. Account names and directory identifiers are stored separately from credentials. Reauthorizing an account replaces its previous managed sign-in.
+- Local token and cost statistics still cover this machine's records across accounts, not just the account being viewed. Cloud usage and forecasts remain associated with the current Codex account.
+
 ### Usage And Activity Analytics
 
+- Browse **Settings → Model Price Catalog** for searchable text-model estimation rules and separate image, audio, video, and embedding reference prices. Unverified prices remain visibly unpriced; see the [pricing audit and coverage gaps](docs/model-pricing-audit.md) for historical boundaries, sources, and exclusions.
 - Codex combines cloud account activity with local Sessions, History, and Dashboard views for tokens, model mix, reasoning effort, cache hit rate, trends, and API-equivalent value estimates.
 - Codex conversation playback and full-text search read the original rollout files only when requested. Deleting a session moves its source tree to the macOS Trash and clears the derived index.
 - Claude reads 5-hour, 7-day, and model-scoped weekly quotas and incrementally aggregates local sessions and usage from `~/.claude/projects` and `~/.config/claude/projects`.

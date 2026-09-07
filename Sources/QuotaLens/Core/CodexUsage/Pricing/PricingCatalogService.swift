@@ -1812,6 +1812,12 @@ public enum PricingEvaluator {
             )
         }
 
+        // 未公开缓存读取价格不能当作免费；新目录用 0 表示该计费维度不可用。
+        if tokens.cachedInputTokens > 0, rule.cachedNanoUsdPerToken == 0 {
+            return PricingEvaluationResult(estimatedCost: .zero, pricingStatus: .unpricedHistoricalRuleMissing,
+                                           pricingRuleId: rule.ruleId, catalogVersion: catalogVersion)
+        }
+
         let uncachedInput = tokens.uncachedInputTokens
         let cachedInput = tokens.cachedInputTokens
         let cacheWriteInput = tokens.cacheWriteInputTokens

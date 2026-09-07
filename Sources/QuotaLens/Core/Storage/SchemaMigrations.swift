@@ -45,7 +45,7 @@ private func addUnpricedReasonColumns(database: SQLiteDatabase, table: String) t
 }
 
 public struct SchemaMigrations {
-    public static let targetSchemaVersion = 19
+    public static let targetSchemaVersion = 20
 
     public static func migrate(database: SQLiteDatabase) throws {
         let currentVersion = try database.intScalar(sql: "PRAGMA user_version;")
@@ -83,7 +83,8 @@ public struct SchemaMigrations {
             V16ProviderAccountAliasesMigration(),
             V17ProviderSessionNamespaceMigration(),
             V18ClaudeSnapshotsMigration(),
-            V19PricingScanIndexMigration()
+            V19PricingScanIndexMigration(),
+            V20ExactModelIdentityMigration()
         ]
 
         for migration in migrations where migration.version > currentVersion {
@@ -1158,6 +1159,22 @@ private struct V5AggregateOnlyUsageMigration: DatabaseMigration {
 }
 
 // MARK: - V19: 扫描价格检查索引与模型归因修复
+private struct V20ExactModelIdentityMigration: DatabaseMigration {
+    let version = 20
+    let name = "V20ExactModelIdentity"
+
+    func apply(database: SQLiteDatabase) throws {
+        try database.execute(sql: """
+        UPDATE codex_import_sources SET status = 'stale'
+            WHERE status != 'tombstoned' AND parser_version < 9;
+        INSERT OR REPLACE INTO app_metadata (key, value, updated_at)
+            VALUES ('codex_parser_version', '9', unixepoch());
+        INSERT OR REPLACE INTO app_metadata (key, value, updated_at)
+            VALUES ('codex_parser_rebuild_status', 'pending', unixepoch());
+        """)
+    }
+}
+
 private struct V19PricingScanIndexMigration: DatabaseMigration {
     let version = 19
     let name = "V19PricingScanIndex"

@@ -89,6 +89,7 @@ public struct SettingsView: View {
     @Environment(\.colorScheme) var colorScheme
 
     @State private var selectedTab: SettingsTab
+    @State private var showingPriceCatalog = false
     private let scope: SettingsScope
     @State private var customPath: String = ""
     @State private var isCopiedDbPath: Bool = false
@@ -140,6 +141,11 @@ public struct SettingsView: View {
             // 分类内容区域
             ScrollView {
                 VStack(spacing: 18) {
+                    Button {
+                        showingPriceCatalog = true
+                    } label: {
+                        Label(L10n.text("模型价格目录", "Model Price Catalog"), systemImage: "list.bullet.rectangle")
+                    }
                     switch selectedTab {
                     case .general:
                         generalTabPane
@@ -161,6 +167,7 @@ public struct SettingsView: View {
             }
         }
         .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
+        .sheet(isPresented: $showingPriceCatalog) { ModelPricingCatalogView() }
         .task {
             if scope == .codex {
                 await refreshAutoDetectedBinaryPath()

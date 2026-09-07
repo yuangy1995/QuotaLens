@@ -3,7 +3,7 @@
 import Foundation
 
 public struct ModelAliasResolver: Sendable {
-    public static let aliasVersionId = "model-alias-2026-07-v1"
+    public static let aliasVersionId = "model-alias-2026-09-v2"
 
     private static let staticAliases: [String: String] = [
         "sol": "gpt-5.6-sol",
@@ -31,19 +31,7 @@ public struct ModelAliasResolver: Sendable {
             return canonical
         }
 
-        for alias in ["gpt-5.6-sol", "gpt-5-sol", "gpt-5.6-terra", "gpt-5-terra", "gpt-5.6-luna", "gpt-5-luna"] {
-            if normalized.contains(alias), let canonical = staticAliases[alias] {
-                return canonical
-            }
-        }
-
-        let tokens = normalized.split { !$0.isLetter && !$0.isNumber && $0 != "." }.map(String.init)
-        for shortAlias in ["sol", "terra", "luna"] {
-            if tokens.contains(shortAlias), let canonical = staticAliases[shortAlias] {
-                return canonical
-            }
-        }
-
+        // 模型名包含已知单词不构成价格依据，保留未登记的版本与私有模型 ID。
         return normalized
     }
 }

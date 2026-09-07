@@ -21,6 +21,7 @@ public final class AppEnvironment: ObservableObject {
     public let usageQueryFacade: UsageQueryFacade
     public let quotaInsightsService: ProviderQuotaInsightsService
     public let scanCoordinator: CodexUsageScanCoordinator
+    let codexAccounts: CodexAccountsStore
     public let claudeScanCoordinator: ClaudeUsageScanCoordinator
     public let antigravityActivityCoordinator: AntigravityActivityScanCoordinator
     public let enabledToolsStore: EnabledToolsStore
@@ -152,6 +153,7 @@ public final class AppEnvironment: ObservableObject {
         self.state.appInitializationWarningText = initializationWarning
 
         self.repositories = Repositories(database: database)
+        self.codexAccounts = CodexAccountsStore(database: database)
         self.quotaInsightsService = ProviderQuotaInsightsService(database: database)
         self.transport = JSONRPCTransport()
         self.processManager = CodexProcessManager(transport: transport)
@@ -200,8 +202,8 @@ public final class AppEnvironment: ObservableObject {
 
         // 2. 立即导入本地 ~/.codex 真实账号 (0.1ms 完成，首帧立即可见)
         if enabledToolsStore.isEnabled(.codex) {
-            _ = LocalAccountImporter.importLocalAccounts(into: repositories)
-            self.state.accountDisplayNames = LocalAccountImporter.displayNamesByAccountKey()
+            let localAccounts = LocalAccountImporter.importLocalAccounts(into: repositories)
+            self.state.accountDisplayNames.merge(LocalAccountImporter.displayNamesByAccountKey()) { saved, _ in saved }
             let loadedAccounts = (try? repositories.getAllAccounts()) ?? []
             for provider in [UsageProvider.codex, .claude, .antigravity] {
                 self.state.storedAccountKeysByProvider[provider] = (try? repositories.getStoredAccountKeys(provider: provider)) ?? []
@@ -217,9 +219,9 @@ public final class AppEnvironment: ObservableObject {
             for key in self.state.storedAccountKeys(for: .antigravity) {
                 if let snapshot = try? AntigravityQuotaRepository.hydrate(database: database, accountKey: key) { self.state.cachedAntigravityQuotaByAccount[key] = snapshot }
             }
-            if let firstAcc = loadedAccounts.first {
+            if let firstAcc = localAccounts.first {
+                self.state.selectedAccountKey = firstAcc.accountKey
                 self.state.account = firstAcc
-                if self.state.selectedAccountKey == nil { self.state.selectedAccountKey = firstAcc.accountKey }
                 self.state.allAccounts = loadedAccounts
             }
         }
@@ -694,6 +696,10 @@ public final class AppEnvironment: ObservableObject {
 
     /// 选择已保存的历史账号，仅加载 QuotaLens 缓存，不切换工具本地登录账号。
     public func selectStoredAccount(accountKey: String, provider: UsageProvider) {
+        if provider == .codex {
+            codexAccounts.select(accountKey)
+            return
+        }
         beginAccountScopeChange()
         switch provider {
         case .claude:
@@ -711,7 +717,7 @@ public final class AppEnvironment: ObservableObject {
     /// 导入本地 ~/.codex 账号
     public func importLocalAccount() {
         let list = LocalAccountImporter.importLocalAccounts(into: repositories)
-        state.accountDisplayNames = LocalAccountImporter.displayNamesByAccountKey()
+        state.accountDisplayNames.merge(LocalAccountImporter.displayNamesByAccountKey()) { saved, _ in saved }
         if let first = list.first {
             if state.selectedAccountKey != first.accountKey {
                 beginAccountScopeChange()
@@ -846,7 +852,8 @@ public final class AppEnvironment: ObservableObject {
             for (key, value) in serverAccountDisplayNames {
                 displayNames[key] = value
             }
-            state.accountDisplayNames = displayNames
+            state.accountDisplayNames.merge(displayNames) { saved, _ in saved }
+            UserDefaults.standard.set(state.accountDisplayNames, forKey: "QuotaLens.accountDisplayNames")
 
             let storedAccounts = try repositories.getAllAccounts()
             for provider in [UsageProvider.codex, .claude, .antigravity] {
@@ -2012,7 +2019,9 @@ public final class AppEnvironment: ObservableObject {
                 lastSeenAt: now
             )
             serverAccountDisplayNames[accountKey] = accountInfo.displayIdentifier
-            state.accountDisplayNames[accountKey] = accountInfo.displayIdentifier
+            if state.accountDisplayNames[accountKey] == nil {
+                state.setAccountDisplayName(accountInfo.displayIdentifier, for: accountKey)
+            }
             state.selectedAccountKey = accountKey
             state.account = record
             state.allAccounts = [record]

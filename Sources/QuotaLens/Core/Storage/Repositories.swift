@@ -275,7 +275,7 @@ public final class Repositories: @unchecked Sendable {
         return list.first
     }
 
-    public func getLatestRateLimitSnapshots(accountKey: String, limitId: String? = nil) throws -> [RateLimitSnapshotRecord] {
+    public func getLatestRateLimitSnapshots(accountKey: String, limitId: String? = nil, provider: UsageProvider? = nil) throws -> [RateLimitSnapshotRecord] {
         var bindings: [Any?] = [accountKey]
         let limitClause: String
         if let limitId {
@@ -285,6 +285,8 @@ public final class Repositories: @unchecked Sendable {
             limitClause = ""
         }
 
+        let providerClause = provider == nil ? "" : "AND provider = ?"
+        if let provider { bindings.append(provider.rawValue) }
         let sql = """
         WITH ranked AS (
             SELECT id,
@@ -293,7 +295,7 @@ public final class Repositories: @unchecked Sendable {
                        ORDER BY observed_at DESC, id DESC
                    ) AS row_number
             FROM rate_limit_snapshots
-            WHERE account_key = ? \(limitClause)
+            WHERE account_key = ? \(limitClause) \(providerClause)
         )
         SELECT s.id, s.account_key, s.observed_at, s.limit_id, s.slot, s.used_percent_milli,
                s.window_duration_mins, s.resets_at, s.plan_type, s.raw_json

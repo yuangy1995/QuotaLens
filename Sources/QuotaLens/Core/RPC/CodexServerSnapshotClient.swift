@@ -16,7 +16,7 @@ public struct CodexServerSnapshot: Sendable {
 }
 
 public struct CodexServerSnapshotClient: Sendable {
-    public static func fetch(customPath: String? = nil, timeoutSeconds: Double = 6.0) throws -> CodexServerSnapshot {
+    public static func fetch(customPath: String? = nil, timeoutSeconds: Double = 6.0, accountHomeURL: URL? = nil) throws -> CodexServerSnapshot {
         let lookup = CodexBinaryLocator.inspectBinary(customPath: customPath)
         guard let binaryPath = lookup.binaryPath else {
             throw NSError(
@@ -30,6 +30,10 @@ public struct CodexServerSnapshotClient: Sendable {
         process.executableURL = URL(fileURLWithPath: binaryPath)
         process.arguments = ["app-server", "--stdio"]
         process.environment = CodexBinaryLocator.augmentedEnvironment()
+        if let accountHomeURL {
+            process.environment = CodexAccountConnection.environment(homeURL: accountHomeURL)
+            process.arguments = CodexAccountConnection.arguments
+        }
 
         let stdin = Pipe()
         let stdout = Pipe()

@@ -910,7 +910,8 @@ actor ClaudeUsageImportActor {
             cachedInput: cached,
             cacheWrite5m: write5m,
             cacheWrite1h: write1h,
-            output: output
+            output: output,
+            timestampMs: Int64(event.timestamp.timeIntervalSince1970 * 1_000)
         )
         let grossInput = try claudeCheckedSum(uncached, cached, write5m, write1h)
         let eventID = "\(sessionID):\(providerMessageID)"
@@ -1274,7 +1275,7 @@ actor ClaudeUsageImportActor {
                 while true {
                     let rows = try database.executeQuery(sql: """
                     SELECT rowid, model_raw, uncached_input_tokens, cached_input_tokens,
-                           cache_write_5m_input_tokens, cache_write_1h_input_tokens, output_tokens
+                           cache_write_5m_input_tokens, cache_write_1h_input_tokens, output_tokens, timestamp_ms
                     FROM codex_usage_events
                     WHERE rowid > ? AND provider = 'claude' AND session_id = ?
                     ORDER BY rowid LIMIT 500;
@@ -1287,7 +1288,8 @@ actor ClaudeUsageImportActor {
                                 cachedInput: sqlite3_column_int64(statement, 3),
                                 cacheWrite5m: sqlite3_column_int64(statement, 4),
                                 cacheWrite1h: sqlite3_column_int64(statement, 5),
-                                output: sqlite3_column_int64(statement, 6)
+                                output: sqlite3_column_int64(statement, 6),
+                                timestampMs: sqlite3_column_int64(statement, 7)
                             )
                         )
                     }
@@ -1338,7 +1340,7 @@ actor ClaudeUsageImportActor {
                     reasoning: sqlite3_column_int64(statement, 6),
                     total: sqlite3_column_int64(statement, 7),
                     cost: sqlite3_column_int64(statement, 8),
-                    priced: String(cString: sqlite3_column_text(statement, 9)) == PricingStatus.priced.rawValue
+                    pricingStatus: PricingStatus(rawValue: String(cString: sqlite3_column_text(statement, 9))) ?? .unpricedInvalidTokenRecord
                 )
                 try byModel[event.model, default: .zero].add(event)
                 let date = Date(timeIntervalSince1970: Double(event.timestampMs) / 1_000)
@@ -1417,8 +1419,13 @@ actor ClaudeUsageImportActor {
                 output_tokens, reasoning_output_tokens, estimated_cost_usd_nano,
                 unpriced_event_count, unpriced_token_count,
                 unpriced_unknown_model_event_count, unpriced_unknown_model_token_count,
+                unpriced_unsupported_tier_event_count, unpriced_unsupported_tier_token_count,
+                unpriced_historical_rule_missing_event_count, unpriced_historical_rule_missing_token_count,
+                unpriced_unsupported_context_event_count, unpriced_unsupported_context_token_count,
+                unpriced_invalid_record_event_count, unpriced_invalid_record_token_count,
+                unpriced_overflow_event_count, unpriced_overflow_token_count,
                 summary_provenance, provider
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'eventLedger', 'claude');
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'eventLedger', 'claude');
             """,
             bindings: aggregate.bindings(prefix: [sessionID, model])
         )
@@ -1437,8 +1444,13 @@ actor ClaudeUsageImportActor {
                 cache_write_input_tokens, output_tokens, reasoning_output_tokens,
                 estimated_cost_usd_nano, unpriced_event_count, unpriced_token_count,
                 unpriced_unknown_model_event_count, unpriced_unknown_model_token_count,
+                unpriced_unsupported_tier_event_count, unpriced_unsupported_tier_token_count,
+                unpriced_historical_rule_missing_event_count, unpriced_historical_rule_missing_token_count,
+                unpriced_unsupported_context_event_count, unpriced_unsupported_context_token_count,
+                unpriced_invalid_record_event_count, unpriced_invalid_record_token_count,
+                unpriced_overflow_event_count, unpriced_overflow_token_count,
                 summary_provenance, provider
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'eventLedger', 'claude');
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'eventLedger', 'claude');
             """,
             bindings: aggregate.bindings(prefix: [sessionID, key.dayKey, key.dayStartMs, key.model])
         )
@@ -1673,7 +1685,8 @@ actor ClaudeUsageImportActor {
             }
             let price = ClaudePricingCatalogService.evaluate(
                 modelRaw: model, uncachedInput: uncached, cachedInput: cached,
-                cacheWrite5m: five, cacheWrite1h: oneHour, output: output
+                cacheWrite5m: five, cacheWrite1h: oneHour, output: output,
+                timestampMs: Int64(timestamp.timeIntervalSince1970 * 1_000)
             )
             guard price.status != .unpricedCalculationOverflow else {
                 health.incompatibleUsageLineCount += 1
@@ -1811,7 +1824,7 @@ private struct ClaudeAggregateEvent {
     let reasoning: Int64
     let total: Int64
     let cost: Int64
-    let priced: Bool
+    let pricingStatus: PricingStatus
 }
 
 private struct ClaudeAggregate {
@@ -1825,6 +1838,7 @@ private struct ClaudeAggregate {
     var cost: Int64 = 0
     var unpricedCount = 0
     var unpricedTokens: Int64 = 0
+    var reasons = UnpricedReasonCounts.zero
 
     static let zero = ClaudeAggregate()
 
@@ -1837,9 +1851,10 @@ private struct ClaudeAggregate {
         reasoning = try claudeCheckedSum(reasoning, event.reasoning)
         total = try claudeCheckedSum(total, event.total)
         cost = try claudeCheckedSum(cost, event.cost)
-        if !event.priced {
+        if !event.pricingStatus.isPriced {
             unpricedCount += 1
             unpricedTokens = try claudeCheckedSum(unpricedTokens, event.total)
+            reasons.add(status: event.pricingStatus, tokenCount: event.total)
         }
     }
 
@@ -1847,7 +1862,12 @@ private struct ClaudeAggregate {
         prefix + [
             eventCount, total, max(0, input - cached - cacheWrite), cached,
             cacheWrite, output, reasoning, cost, unpricedCount, unpricedTokens,
-            unpricedCount, unpricedTokens
+            reasons.unknownModelEvents, reasons.unknownModelTokens,
+            reasons.unsupportedTierEvents, reasons.unsupportedTierTokens,
+            reasons.historicalRuleMissingEvents, reasons.historicalRuleMissingTokens,
+            reasons.unsupportedContextEvents, reasons.unsupportedContextTokens,
+            reasons.invalidRecordEvents, reasons.invalidRecordTokens,
+            reasons.overflowEvents, reasons.overflowTokens
         ]
     }
 }

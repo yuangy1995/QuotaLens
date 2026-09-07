@@ -1,4 +1,374 @@
 let extendedTranslations: [String: [AppLanguage: String]] = [
+    "Model Price Catalog": [
+        .traditionalChinese: "模型價格目錄",
+        .japanese: "モデル料金一覧",
+        .korean: "모델 가격 목록",
+        .spanish: "Catálogo de precios de modelos",
+        .german: "Modellpreiskatalog",
+        .french: "Catalogue des prix des modèles",
+        .portuguese: "Catálogo de preços dos modelos",
+        .portugueseBrazil: "Catálogo de preços dos modelos"
+    ],
+    "Search models or aliases": [
+        .traditionalChinese: "搜尋模型或別名",
+        .japanese: "モデルまたは別名を検索",
+        .korean: "모델 또는 별칭 검색",
+        .spanish: "Buscar modelos o alias",
+        .german: "Modelle oder Aliasse suchen",
+        .french: "Rechercher des modèles ou alias",
+        .portuguese: "Pesquisar modelos ou aliases",
+        .portugueseBrazil: "Pesquisar modelos ou aliases"
+    ],
+    "Used for estimates": [
+        .traditionalChinese: "用於估算",
+        .japanese: "見積もりに使用",
+        .korean: "추정에 사용",
+        .spanish: "Usado para estimaciones",
+        .german: "Für Schätzungen verwendet",
+        .french: "Utilisé pour les estimations",
+        .portuguese: "Usado para estimativas",
+        .portugueseBrazil: "Usado para estimativas"
+    ],
+    "Unverified": [
+        .traditionalChinese: "待核實",
+        .japanese: "未確認",
+        .korean: "미확인",
+        .spanish: "Sin verificar",
+        .german: "Nicht verifiziert",
+        .french: "Non vérifié",
+        .portuguese: "Não verificado",
+        .portugueseBrazil: "Não verificado"
+    ],
+    "Reference only": [
+        .traditionalChinese: "僅供參考",
+        .japanese: "参考のみ",
+        .korean: "참고용",
+        .spanish: "Solo referencia",
+        .german: "Nur zur Orientierung",
+        .french: "À titre indicatif",
+        .portuguese: "Apenas para referência",
+        .portugueseBrazil: "Apenas para referência"
+    ],
+    "Approximate estimate": [
+        .traditionalChinese: "參考估算",
+        .japanese: "概算",
+        .korean: "대략적인 추정",
+        .spanish: "Estimación aproximada",
+        .german: "Ungefähre Schätzung",
+        .french: "Estimation approximative",
+        .portuguese: "Estimativa aproximada",
+        .portugueseBrazil: "Estimativa aproximada"
+    ],
+    "Provider": [
+        .traditionalChinese: "提供者",
+        .japanese: "プロバイダー",
+        .korean: "제공업체",
+        .spanish: "Proveedor",
+        .german: "Anbieter",
+        .french: "Fournisseur",
+        .portuguese: "Fornecedor",
+        .portugueseBrazil: "Provedor"
+    ],
+    "All": [
+        .traditionalChinese: "全部",
+        .japanese: "すべて",
+        .korean: "전체",
+        .spanish: "Todos",
+        .german: "Alle",
+        .french: "Tous",
+        .portuguese: "Todos",
+        .portugueseBrazil: "Todos"
+    ],
+    "Cache write": [
+        .traditionalChinese: "快取寫入",
+        .japanese: "キャッシュ書き込み",
+        .korean: "캐시 쓰기",
+        .spanish: "Escritura de caché",
+        .german: "Cache-Schreiben",
+        .french: "Écriture en cache",
+        .portuguese: "Escrita em cache",
+        .portugueseBrazil: "Gravação em cache"
+    ],
+    "Cache read": [
+        .traditionalChinese: "快取讀取",
+        .japanese: "キャッシュ読み取り",
+        .korean: "캐시 읽기",
+        .spanish: "Lectura de caché",
+        .german: "Cache-Lesen",
+        .french: "Lecture du cache",
+        .portuguese: "Leitura de cache",
+        .portugueseBrazil: "Leitura do cache"
+    ],
+    "Input": [
+        .traditionalChinese: "輸入",
+        .japanese: "入力",
+        .korean: "입력",
+        .spanish: "Entrada",
+        .german: "Eingabe",
+        .french: "Entrée",
+        .portuguese: "Entrada",
+        .portugueseBrazil: "Entrada"
+    ],
+    "Text": [
+        .traditionalChinese: "文字",
+        .japanese: "テキスト",
+        .korean: "텍스트",
+        .spanish: "Texto",
+        .german: "Text",
+        .french: "Texte",
+        .portuguese: "Texto",
+        .portugueseBrazil: "Texto"
+    ],
+    "Audio": [
+        .traditionalChinese: "音訊",
+        .japanese: "音声",
+        .korean: "오디오",
+        .spanish: "Audio",
+        .german: "Audio",
+        .french: "Audio",
+        .portuguese: "Áudio",
+        .portugueseBrazil: "Áudio"
+    ],
+    "Image": [
+        .traditionalChinese: "圖片",
+        .japanese: "画像",
+        .korean: "이미지",
+        .spanish: "Imagen",
+        .german: "Bild",
+        .french: "Image",
+        .portuguese: "Imagem",
+        .portugueseBrazil: "Imagem"
+    ],
+    "Video": [
+        .traditionalChinese: "影片",
+        .japanese: "動画",
+        .korean: "동영상",
+        .spanish: "Video",
+        .german: "Video",
+        .french: "Vidéo",
+        .portuguese: "Vídeo",
+        .portugueseBrazil: "Vídeo"
+    ],
+    "million characters": [
+        .traditionalChinese: "百萬字元",
+        .japanese: "100万文字",
+        .korean: "백만 문자",
+        .spanish: "millón de caracteres",
+        .german: "Million Zeichen",
+        .french: "million de caractères",
+        .portuguese: "milhão de caracteres",
+        .portugueseBrazil: "milhão de caracteres"
+    ],
+    "minute": [
+        .traditionalChinese: "分鐘",
+        .japanese: "分",
+        .korean: "분",
+        .spanish: "minuto",
+        .german: "Minute",
+        .french: "minute",
+        .portuguese: "minuto",
+        .portugueseBrazil: "minuto"
+    ],
+    "second": [
+        .traditionalChinese: "秒",
+        .japanese: "秒",
+        .korean: "초",
+        .spanish: "segundo",
+        .german: "Sekunde",
+        .french: "seconde",
+        .portuguese: "segundo",
+        .portugueseBrazil: "segundo"
+    ],
+    "image": [
+        .traditionalChinese: "張圖片",
+        .japanese: "画像",
+        .korean: "이미지",
+        .spanish: "imagen",
+        .german: "Bild",
+        .french: "image",
+        .portuguese: "imagem",
+        .portugueseBrazil: "imagem"
+    ],
+    "song": [
+        .traditionalChinese: "首歌曲",
+        .japanese: "曲",
+        .korean: "곡",
+        .spanish: "canción",
+        .german: "Lied",
+        .french: "chanson",
+        .portuguese: "canção",
+        .portugueseBrazil: "música"
+    ],
+    "Conversation costs use verified API-equivalent rates, not subscription charges. Non-conversation prices are reference only; unverified prices are not free.": [
+        .traditionalChinese: "對話按已核實規則估算 API 等價價值，不代表訂閱扣費。非對話價格僅供參考；待核實項不會計為免費。",
+        .japanese: "会話の費用は確認済みの API 相当料金による見積もりで、サブスクリプションの請求額ではありません。会話以外の料金は参考値です。未確認の料金は無料を意味しません。",
+        .korean: "대화 비용은 확인된 API 요금 기준 추정치이며 구독 청구액이 아닙니다. 비대화 가격은 참고용이며 미확인 가격은 무료를 의미하지 않습니다.",
+        .spanish: "Los costes de conversación usan tarifas API verificadas, no cargos de suscripción. Los demás precios son orientativos; un precio sin verificar no es gratuito.",
+        .german: "Gesprächskosten werden anhand verifizierter API-Preise geschätzt, nicht anhand von Abogebühren. Andere Preise dienen nur zur Orientierung; ungeprüfte Preise bedeuten nicht kostenlos.",
+        .french: "Les coûts de conversation sont estimés selon des tarifs API vérifiés, pas les frais d’abonnement. Les autres prix sont indicatifs ; un prix non vérifié ne signifie pas gratuit.",
+        .portuguese: "Os custos das conversas usam tarifas API verificadas, não encargos de subscrição. Os outros preços são indicativos; preços não verificados não significam gratuitidade.",
+        .portugueseBrazil: "Os custos das conversas usam tarifas API verificadas, não cobranças de assinatura. Os demais preços são indicativos; preços não verificados não significam gratuidade."
+    ],
+    "Catalog coverage does not imply complete historical pricing. Claude and Gemini estimates use standard global text rates, excluding audio input, Fast, regional uplifts, cache storage, and tool calls.": [
+        .traditionalChinese: "目錄涵蓋不代表全部歷史價格已核實。Claude 與 Gemini 估算採用標準全球文字費率，不含音訊輸入、Fast、地區加價、快取儲存或工具呼叫。",
+        .japanese: "一覧への収録は全期間の料金確認を意味しません。Claude と Gemini はグローバル標準テキスト料金で見積もり、音声入力、Fast、地域加算、キャッシュ保存、ツール呼び出しを含みません。",
+        .korean: "목록에 있다고 모든 과거 요금이 확인된 것은 아닙니다. Claude와 Gemini는 표준 글로벌 텍스트 요금으로 추정하며 오디오 입력, Fast, 지역 할증, 캐시 저장 및 도구 호출은 제외합니다.",
+        .spanish: "El catálogo no garantiza todo el historial de precios. Claude y Gemini usan tarifas globales estándar de texto, sin entrada de audio, Fast, recargos regionales, almacenamiento de caché ni herramientas.",
+        .german: "Der Katalog deckt nicht alle historischen Preise ab. Claude und Gemini nutzen globale Standard-Texttarife ohne Audioeingabe, Fast, regionale Aufschläge, Cache-Speicherung oder Werkzeugaufrufe.",
+        .french: "Le catalogue ne garantit pas un historique complet. Claude et Gemini utilisent les tarifs texte mondiaux standard, hors entrée audio, Fast, majorations régionales, stockage du cache et appels d’outils.",
+        .portuguese: "O catálogo não garante um histórico completo de preços. Claude e Gemini usam tarifas globais padrão de texto, excluindo entrada de áudio, Fast, sobretaxas regionais, armazenamento de cache e ferramentas.",
+        .portugueseBrazil: "O catálogo não garante um histórico completo de preços. Claude e Gemini usam tarifas globais padrão de texto, excluindo entrada de áudio, Fast, acréscimos regionais, armazenamento de cache e ferramentas."
+    ],
+    "Viewing account": [
+        .traditionalChinese: "查看帳號",
+        .japanese: "表示するアカウント",
+        .korean: "조회 계정",
+        .spanish: "Cuenta que se muestra",
+        .german: "Angezeigtes Konto",
+        .french: "Compte affiché",
+        .portuguese: "Conta apresentada",
+        .portugueseBrazil: "Conta exibida"
+    ],
+    "Current Codex account": [
+        .traditionalChinese: "Codex 目前帳號",
+        .japanese: "現在の Codex アカウント",
+        .korean: "현재 Codex 계정",
+        .spanish: "Cuenta actual de Codex",
+        .german: "Aktuelles Codex-Konto",
+        .french: "Compte Codex actuel",
+        .portuguese: "Conta atual do Codex",
+        .portugueseBrazil: "Conta atual do Codex"
+    ],
+    "Authorize account": [
+        .traditionalChinese: "授權帳號",
+        .japanese: "アカウントを認証",
+        .korean: "계정 인증",
+        .spanish: "Autorizar cuenta",
+        .german: "Konto autorisieren",
+        .french: "Autoriser un compte",
+        .portuguese: "Autorizar conta",
+        .portugueseBrazil: "Autorizar conta"
+    ],
+    "Independently authorized": [
+        .traditionalChinese: "已獨立授權",
+        .japanese: "個別に認証済み",
+        .korean: "독립 인증됨",
+        .spanish: "Autorizada por separado",
+        .german: "Separat autorisiert",
+        .french: "Autorisé séparément",
+        .portuguese: "Autorizada separadamente",
+        .portugueseBrazil: "Autorizada separadamente"
+    ],
+    "Historical snapshot · Authorize to refresh": [
+        .traditionalChinese: "歷史快照 · 授權後可重新整理",
+        .japanese: "過去の記録 · 更新には認証が必要",
+        .korean: "과거 기록 · 새로 고치려면 인증 필요",
+        .spanish: "Registro histórico · Autoriza para actualizar",
+        .german: "Historischer Stand · Zum Aktualisieren autorisieren",
+        .french: "Historique · Autorisez pour actualiser",
+        .portuguese: "Registo histórico · Autorize para atualizar",
+        .portugueseBrazil: "Registro histórico · Autorize para atualizar"
+    ],
+    "Viewing another account does not change the Codex login. The menu bar follows the active account.": [
+        .traditionalChinese: "查看其他帳號不會變更 Codex 登入，選單列仍顯示目前使用的帳號。",
+        .japanese: "別のアカウントを表示しても Codex のログインは変わりません。メニューバーは使用中のアカウントを表示します。",
+        .korean: "다른 계정을 조회해도 Codex 로그인은 바뀌지 않습니다. 메뉴 막대에는 현재 사용 중인 계정이 표시됩니다。",
+        .spanish: "Ver otra cuenta no cambia el inicio de sesión de Codex. La barra de menús muestra la cuenta activa.",
+        .german: "Das Anzeigen eines anderen Kontos ändert die Codex-Anmeldung nicht. Die Menüleiste zeigt das aktive Konto.",
+        .french: "Afficher un autre compte ne change pas la connexion Codex. La barre des menus suit le compte actif.",
+        .portuguese: "Ver outra conta não altera o início de sessão do Codex. A barra de menus mostra a conta ativa.",
+        .portugueseBrazil: "Ver outra conta não altera o login do Codex. A barra de menus mostra a conta ativa."
+    ],
+    "Complete account authorization in your browser.": [
+        .traditionalChinese: "請在瀏覽器中完成帳號授權。",
+        .japanese: "ブラウザでアカウント認証を完了してください。",
+        .korean: "브라우저에서 계정 인증을 완료하세요.",
+        .spanish: "Completa la autorización de la cuenta en el navegador.",
+        .german: "Schließen Sie die Kontoautorisierung im Browser ab.",
+        .french: "Terminez l’autorisation du compte dans votre navigateur.",
+        .portuguese: "Conclua a autorização da conta no navegador.",
+        .portugueseBrazil: "Conclua a autorização da conta no navegador."
+    ],
+    "Authorization did not complete. Try again.": [
+        .traditionalChinese: "授權未完成，請重試。",
+        .japanese: "認証が完了しませんでした。再試行してください。",
+        .korean: "인증을 완료하지 못했습니다. 다시 시도하세요.",
+        .spanish: "La autorización no se completó. Inténtalo de nuevo.",
+        .german: "Die Autorisierung wurde nicht abgeschlossen. Versuchen Sie es erneut.",
+        .french: "L’autorisation n’a pas abouti. Réessayez.",
+        .portuguese: "A autorização não foi concluída. Tente novamente.",
+        .portugueseBrazil: "A autorização não foi concluída. Tente novamente."
+    ],
+    "Unable to refresh this account. Authorize it again and retry.": [
+        .traditionalChinese: "無法重新整理此帳號，請重新授權後重試。",
+        .japanese: "このアカウントを更新できません。再認証してからお試しください。",
+        .korean: "이 계정을 새로 고칠 수 없습니다. 다시 인증한 후 재시도하세요.",
+        .spanish: "No se pudo actualizar esta cuenta. Autorízala de nuevo y reintenta.",
+        .german: "Dieses Konto konnte nicht aktualisiert werden. Autorisieren Sie es erneut.",
+        .french: "Impossible d’actualiser ce compte. Autorisez-le à nouveau puis réessayez.",
+        .portuguese: "Não foi possível atualizar esta conta. Autorize-a novamente e tente de novo.",
+        .portugueseBrazil: "Não foi possível atualizar esta conta. Autorize-a novamente e tente de novo."
+    ],
+    "No quota data": [
+        .traditionalChinese: "暫無額度資料",
+        .japanese: "利用枠データがありません",
+        .korean: "할당량 데이터 없음",
+        .spanish: "Sin datos de cuota",
+        .german: "Keine Kontingentdaten",
+        .french: "Aucune donnée de quota",
+        .portuguese: "Sem dados de quota",
+        .portugueseBrazil: "Sem dados de cota"
+    ],
+    "This snapshot has expired. Refresh to see the current quota.": [
+        .traditionalChinese: "快照已過期，請重新整理後查看目前額度。",
+        .japanese: "この記録は期限切れです。更新して現在の利用枠を確認してください。",
+        .korean: "이 기록은 만료되었습니다. 새로 고쳐 현재 할당량을 확인하세요.",
+        .spanish: "Este registro ha caducado. Actualiza para ver la cuota actual.",
+        .german: "Dieser Stand ist veraltet. Aktualisieren Sie das aktuelle Kontingent.",
+        .french: "Cet instantané a expiré. Actualisez pour voir le quota actuel.",
+        .portuguese: "Este registo expirou. Atualize para ver a quota atual.",
+        .portugueseBrazil: "Este registro expirou. Atualize para ver a cota atual."
+    ],
+    "Unidentified account %d": [
+        .traditionalChinese: "待識別帳號 %d",
+        .japanese: "未識別のアカウント %d",
+        .korean: "미확인 계정 %d",
+        .spanish: "Cuenta sin identificar %d",
+        .german: "Nicht identifiziertes Konto %d",
+        .french: "Compte non identifié %d",
+        .portuguese: "Conta não identificada %d",
+        .portugueseBrazil: "Conta não identificada %d"
+    ],
+    "Rename": [
+        .traditionalChinese: "備註",
+        .japanese: "名前を変更",
+        .korean: "이름 변경",
+        .spanish: "Renombrar",
+        .german: "Umbenennen",
+        .french: "Renommer",
+        .portuguese: "Renomear",
+        .portugueseBrazil: "Renomear"
+    ],
+    "Remaining: %.0f%%": [
+        .traditionalChinese: "剩餘可用：%.0f%%",
+        .japanese: "残り：%.0f%%",
+        .korean: "잔여: %.0f%%",
+        .spanish: "Disponible: %.0f%%",
+        .german: "Verfügbar: %.0f%%",
+        .french: "Disponible : %.0f%%",
+        .portuguese: "Disponível: %.0f%%",
+        .portugueseBrazil: "Disponível: %.0f%%"
+    ],
+    "Local usage includes all accounts; cloud quota belongs to the current Codex account.": [
+        .traditionalChinese: "本機用量包含所有帳號；雲端額度僅對應 Codex 目前帳號。",
+        .japanese: "ローカル使用量は全アカウントの合計です。クラウド利用枠は現在の Codex アカウントのものです。",
+        .korean: "로컬 사용량은 모든 계정을 포함하며 클라우드 할당량은 현재 Codex 계정의 것입니다.",
+        .spanish: "El uso local incluye todas las cuentas; la cuota en la nube corresponde a la cuenta actual de Codex.",
+        .german: "Die lokale Nutzung umfasst alle Konten; das Cloud-Kontingent gehört zum aktuellen Codex-Konto.",
+        .french: "L’utilisation locale inclut tous les comptes ; le quota cloud concerne le compte Codex actuel.",
+        .portuguese: "A utilização local inclui todas as contas; a quota na nuvem pertence à conta atual do Codex.",
+        .portugueseBrazil: "O uso local inclui todas as contas; a cota na nuvem pertence à conta atual do Codex."
+    ],
     "Prevents Claude child tasks without a complete identity from changing the parent-session hierarchy": [
         .traditionalChinese: "避免尚未寫入完整身分的 Claude 子任務影響父工作階段層級。",
         .japanese: "完全な識別情報がまだない Claude の子タスクが親セッション階層を変更しないようにします。",

@@ -28,7 +28,17 @@ public struct MainView: View {
         HStack(spacing: 0) {
             VStack(spacing: 0) {
                 // 顶部当前账户全息身份芯片（高度与右侧 topChromeBar 64pt 严格平齐）
-                sidebarIdentityCard
+                Group {
+                    if navigation.selectedContext == .tool(.codex) {
+                        Button {
+                            navigation.selectToolPage(.quota, for: .codex)
+                        } label: { sidebarIdentityCard }
+                        .buttonStyle(.plain)
+                        .help(L10n.text("查看账号", "Viewing account"))
+                    } else {
+                        sidebarIdentityCard
+                    }
+                }
                     .frame(height: 64)
 
                 CyberDivider(glowColor: isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.07))
@@ -190,7 +200,7 @@ public struct MainView: View {
     private func toolContent(_ toolID: MonitoringToolID) -> some View {
         switch (toolID, navigation.selectedPage(for: toolID)) {
         case (.codex, .quota):
-            CodexOverviewView(state: state)
+            CodexAccountsOverviewView(state: state, accounts: env.codexAccounts)
         case (.codex, .usage):
             CodexUsageDashboardView(facade: env.usageQueryFacade)
         case (.codex, .history):
@@ -295,6 +305,11 @@ public struct MainView: View {
         case .overview:
             await env.refreshAllData()
         case .tool(let tool):
+            if tool == .codex, navigation.selectedPage(for: tool) == .quota,
+               !env.codexAccounts.selectedKey.isEmpty {
+                await env.codexAccounts.loadSelection(refresh: true)
+                return
+            }
             await env.refreshMonitoringTool(tool)
         }
     }

@@ -1,7 +1,7 @@
 import Foundation
 
 enum AntigravityPricingCatalog {
-    static let version = "2026-08-antigravity-v1"
+    static let version = "2026-09-antigravity-v2"
 
     // 标准 API Token 列表价，不包含订阅费、搜索调用或缓存存储费用。
     // https://ai.google.dev/gemini-api/docs/pricing
@@ -11,7 +11,11 @@ enum AntigravityPricingCatalog {
     private static let promotionFromMs: Int64 = 1_786_579_200_000 // 2026-08-13 UTC
     private static let promotionToMs: Int64 = 1_798_761_600_000 // 2027-01-01 UTC
 
-    private static let geminiModels: [PricingModelEntry] = [
+    static let geminiModels: [PricingModelEntry] = [
+        PricingModelEntry(
+            modelKey: "gemini-3.8-flash",
+            rules: flashRules(model: "gemini-3.8-flash", releasedAtMs: HistoricalPricingCatalog.day("2026-09-02"))
+        ),
         PricingModelEntry(
             modelKey: "gemini-3.7-flash",
             rules: flashRules(model: "gemini-3.7-flash", releasedAtMs: promotionFromMs)
@@ -43,7 +47,7 @@ enum AntigravityPricingCatalog {
                 longContextOutputMultiplierPpm: 1_500_000
             )]
         )
-    ]
+    ] + HistoricalPricingCatalog.geminiModels
 
     private static let snapshot = PricingCatalogSnapshot(
         catalogVersion: version,
@@ -67,7 +71,7 @@ enum AntigravityPricingCatalog {
         }
         rules.append(PricingRuleEntry(
             ruleId: "\(model)-introductory-v1",
-            effectiveFromMs: promotionFromMs,
+            effectiveFromMs: max(promotionFromMs, releasedAtMs),
             effectiveToMs: promotionToMs,
             inputNanoUsdPerToken: 750,
             cachedNanoUsdPerToken: 75,
@@ -92,10 +96,8 @@ enum AntigravityPricingCatalog {
             if let canonical = snapshot.aliases[normalized] {
                 return canonical
             }
-            if let entry = ClaudeBundledPricingCatalog.entries.first(where: {
-                normalizedModel($0.modelKey) == normalized
-            }) {
-                return entry.modelKey
+            if let model = ClaudeBundledPricingCatalog.resolveModel(normalized) {
+                return model
             }
         }
         // 内部实验模型只有在记录同时提供可识别的显示名称时才计价。
@@ -113,7 +115,6 @@ enum AntigravityPricingCatalog {
         if normalized.hasPrefix("claude-") {
             normalized = normalized
                 .replacingOccurrences(of: ".", with: "-")
-                .replacingOccurrences(of: #"-\d{8}$"#, with: "", options: .regularExpression)
         }
         return normalized
     }
@@ -130,7 +131,8 @@ enum AntigravityPricingCatalog {
                 cachedInput: tokens.cachedInputTokens,
                 cacheWrite5m: tokens.cacheWriteInputTokens,
                 cacheWrite1h: 0,
-                output: tokens.outputTokens
+                output: tokens.outputTokens,
+                timestampMs: timestampMs
             )
             return PricingEvaluationResult(
                 estimatedCost: price.cost,

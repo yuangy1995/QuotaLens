@@ -450,6 +450,7 @@ struct ProviderUsageDashboardView: View {
             Spacer()
 
             if let provider = dashboardProvider,
+               provider != .codex,
                !env.state.storedAccountKeys(for: provider).isEmpty {
                 Picker(L10n.text("账号", "Account"), selection: Binding(
                     get: {
@@ -464,7 +465,7 @@ struct ProviderUsageDashboardView: View {
                     }
                 )) {
                     ForEach(env.state.storedAccountKeys(for: provider), id: \.self) { key in
-                        let title = env.state.accountDisplayNames[key] ?? String(key.prefix(12))
+                        let title = env.state.displayName(for: key)
                         Text(title)
                             .tag(key)
                     }
@@ -669,7 +670,9 @@ struct ProviderUsageDashboardView: View {
             return L10n.text("本地用量 · 活跃热力图 · 模型构成", "Local usage · Activity heatmap · Model breakdown")
         case .antigravity:
             return L10n.text("本地 Token 用量 · 活跃热力图 · 模型构成", "Local token usage · Activity heatmap · Model breakdown")
-        case .codex, .all:
+        case .codex:
+            return L10n.text("本机全部账号的用量；云端额度仅对应 Codex 当前账号。", "Local usage includes all accounts; cloud quota belongs to the current Codex account.")
+        case .all:
             return L10n.text("本地与云端活动 · 活跃热力图 · 模型构成", "Local and cloud activity · Activity heatmap · Model breakdown")
         }
     }

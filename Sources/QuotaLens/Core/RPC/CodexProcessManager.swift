@@ -25,6 +25,7 @@ public actor CodexProcessManager {
     private var status: ProcessStatus = .disconnected
     private var statusHandlers: [@Sendable (ProcessStatus) -> Void] = []
     private var customBinaryPath: String?
+    private let accountHomeURL: URL?
     private var autoReconnect = true
     private var reconnectAttempts = 0
     private var reconnectTask: Task<Void, Never>?
@@ -41,6 +42,7 @@ public actor CodexProcessManager {
 
     public init(
         transport: JSONRPCTransport,
+        accountHomeURL: URL? = nil,
         maximumReconnectAttempts: Int = 5,
         stableConnectionSeconds: Double = 30,
         reconnectDelayNanoseconds: @escaping @Sendable (Int) -> UInt64 = { attempt in
@@ -50,6 +52,7 @@ public actor CodexProcessManager {
         }
     ) {
         self.transport = transport
+        self.accountHomeURL = accountHomeURL
         self.maximumReconnectAttempts = max(0, maximumReconnectAttempts)
         self.stableConnectionNanoseconds = UInt64(
             max(0, stableConnectionSeconds) * 1_000_000_000
@@ -150,6 +153,10 @@ public actor CodexProcessManager {
         proc.executableURL = URL(fileURLWithPath: binaryPath)
         proc.arguments = ["app-server", "--stdio"]
         proc.environment = CodexBinaryLocator.augmentedEnvironment()
+        if let accountHomeURL {
+            proc.environment = CodexAccountConnection.environment(homeURL: accountHomeURL)
+            proc.arguments = CodexAccountConnection.arguments
+        }
 
         let inPipe = Pipe()
         let outPipe = Pipe()

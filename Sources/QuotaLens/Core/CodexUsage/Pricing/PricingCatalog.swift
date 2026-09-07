@@ -31,11 +31,13 @@ public struct PricingModelEntry: Codable, Sendable {
     public let modelKey: String
     public let aliases: [String]
     public let rules: [PricingRuleEntry]
+    public let sourceURLs: [String]?
 
-    public init(modelKey: String, aliases: [String] = [], rules: [PricingRuleEntry]) {
+    public init(modelKey: String, aliases: [String] = [], rules: [PricingRuleEntry], sourceURLs: [String]? = nil) {
         self.modelKey = modelKey
         self.aliases = aliases
         self.rules = rules
+        self.sourceURLs = sourceURLs
     }
 }
 
@@ -91,8 +93,8 @@ public struct PricingRuleEntry: Codable, Sendable {
 // MARK: - 内置官方 OpenAI 价格目录 (2026-09-06 官方列表价)
 public enum BundledPricingCatalog {
     // 保留历史规则，新增 Astra 上线后的标准、Flex 和 Fast 费率。
-    public static let currentVersion = "2026-09-v6"
-    public static let publishedAtMs: Int64 = 1788652800000 // 2026-09-06
+    public static let currentVersion = "2026-09-v7"
+    public static let publishedAtMs: Int64 = 1788739200000 // 2026-09-07
     private static let gpt56ReleaseMs: Int64 = 1783555200000 // 2026-07-09
     private static let gpt56TerraLunaCutoverMs: Int64 = 1785369600000 // 2026-07-30
     private static let gpt56FastLongContextFromMs: Int64 = 1785888000000 // 2026-08-05
@@ -386,7 +388,7 @@ public enum BundledPricingCatalog {
             // 2. GPT-5.5 系列
             PricingModelEntry(
                 modelKey: "gpt-5.5",
-                aliases: ["gpt-5.5", "gpt-5.5-codex", "gpt-5.5-preview"],
+                aliases: ["gpt-5.5", "gpt-5.5-2026-04-23"],
                 rules: Self.publishedTierRules(
                     modelKey: "gpt-5.5",
                     effectiveFromMs: gpt55ReleaseMs,
@@ -402,7 +404,7 @@ public enum BundledPricingCatalog {
             // 3. GPT-5.4 系列
             PricingModelEntry(
                 modelKey: "gpt-5.4",
-                aliases: ["gpt-5.4", "gpt-5.4-codex"],
+                aliases: ["gpt-5.4", "gpt-5.4-2026-03-05"],
                 rules: Self.publishedTierRules(
                     modelKey: "gpt-5.4",
                     effectiveFromMs: gpt54ReleaseMs,
@@ -416,7 +418,7 @@ public enum BundledPricingCatalog {
             ),
             PricingModelEntry(
                 modelKey: "gpt-5.4-mini",
-                aliases: ["gpt-5.4-mini"],
+                aliases: ["gpt-5.4-mini", "gpt-5.4-mini-2026-03-17"],
                 rules: Self.publishedTierRules(
                     modelKey: "gpt-5.4-mini",
                     effectiveFromMs: gpt54MiniNanoReleaseMs,
@@ -430,7 +432,7 @@ public enum BundledPricingCatalog {
             ),
             PricingModelEntry(
                 modelKey: "gpt-5.4-nano",
-                aliases: ["gpt-5.4-nano"],
+                aliases: ["gpt-5.4-nano", "gpt-5.4-nano-2026-03-17"],
                 rules: Self.publishedTierRules(
                     modelKey: "gpt-5.4-nano",
                     effectiveFromMs: gpt54MiniNanoReleaseMs,
@@ -462,7 +464,7 @@ public enum BundledPricingCatalog {
             // 5. GPT-5.2 / GPT-5.1 历史模型
             PricingModelEntry(
                 modelKey: "gpt-5.2",
-                aliases: ["gpt-5.2"],
+                aliases: ["gpt-5.2", "gpt-5.2-2025-12-11"],
                 rules: Self.publishedTierRules(
                     modelKey: "gpt-5.2",
                     effectiveFromMs: gpt52ReleaseMs,
@@ -490,7 +492,7 @@ public enum BundledPricingCatalog {
             ),
             PricingModelEntry(
                 modelKey: "gpt-5.1-codex",
-                aliases: ["gpt-5.1-codex", "gpt-5.1"],
+                aliases: ["gpt-5.1-codex"],
                 rules: Self.publishedTierRules(
                     modelKey: "gpt-5.1-codex",
                     effectiveFromMs: gpt51ReleaseMs,
@@ -534,7 +536,7 @@ public enum BundledPricingCatalog {
             // 6. 标准 GPT-5 / GPT-5-Codex。只接受明确模型 ID，generic default 仍保持未知。
             PricingModelEntry(
                 modelKey: "gpt-5",
-                aliases: ["gpt-5"],
+                aliases: ["gpt-5", "gpt-5-2025-08-07"],
                 rules: Self.publishedTierRules(
                     modelKey: "gpt-5",
                     effectiveFromMs: gpt5APIReleaseMs,
@@ -560,6 +562,6 @@ public enum BundledPricingCatalog {
                     fastMultiplierPpm: 2_000_000
                 )
             )
-        ]
+        ] + HistoricalPricingCatalog.openAIModels
     )
 }
