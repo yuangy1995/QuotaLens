@@ -258,6 +258,7 @@ public enum L10n {
     }
 
     public static let changelogZhToEnMap: [String: String] = [
+        "修复 Codex 画中画出现时额度悬浮条跳位的问题，保持主窗口中的原有位置": "Fixed the quota overlay jumping when Codex picture-in-picture appears, keeping its position in the main window",
         "优化重置卡兑换连接生命周期，采用独立的专用通道并解耦后台轮询重连": "Optimized reset credit redemption lifecycle with an independent dedicated channel decoupled from background polling reconnects",
         "增强额度重置未确认状态的安全阻断与错误提示，避免并发请求与重复消耗": "Hardened safety guards and error feedback for unconfirmed reset states to prevent concurrent requests and duplicate consumption",
         "加固重置卡兑换机制，支持连接账号锁定校验与幂等重试，防止网络抖动导致的重复提交": "Hardened reset credit redemption with pinned account connection checks and idempotent retries to prevent duplicate submissions",
@@ -888,6 +889,16 @@ private let multiToolTranslations: [AppLanguage: [String: String]] = [
 ]
 
 private let keyedTranslations: [String: [AppLanguage: String]] = [
+    "Fixed the quota overlay jumping when Codex picture-in-picture appears, keeping its position in the main window": [
+        .traditionalChinese: "修復 Codex 子母畫面出現時額度懸浮條跳位的問題，保持主視窗中的原有位置",
+        .japanese: "Codex のピクチャーインピクチャー表示時に使用枠ウィジェットが移動する問題を修正し、メインウィンドウ内の元の位置を維持",
+        .korean: "Codex 화면 속 화면이 나타날 때 사용량 위젯의 위치가 바뀌는 문제를 수정하여 기본 창의 원래 위치 유지",
+        .spanish: "Se corrigió el salto del widget de cuota al aparecer la imagen en imagen de Codex, manteniendo su posición en la ventana principal",
+        .german: "Das Springen des Kontingent-Widgets beim Einblenden von Codex Bild-in-Bild wurde behoben; seine Position im Hauptfenster bleibt erhalten",
+        .french: "Correction du déplacement du widget de quota à l’apparition de l’image dans l’image de Codex, en conservant sa position dans la fenêtre principale",
+        .portuguese: "Corrigido o salto do widget de quota quando surge a imagem na imagem do Codex, mantendo a posição na janela principal",
+        .portugueseBrazil: "Corrigido o deslocamento do widget de cota quando a imagem em imagem do Codex aparece, mantendo sua posição na janela principal"
+    ],
     "Optimized reset credit redemption lifecycle with an independent dedicated channel decoupled from background polling reconnects": [
         .traditionalChinese: "優化重置卡兌換連線生命週期，採用獨立的專用通道並解耦後台輪詢重連",
         .japanese: "リセット クレジット引き換えの接続ライフサイクルを最適化し、バックグラウンド ポーリングの再接続から分離された独立専用チャネルを採用",

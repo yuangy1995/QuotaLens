@@ -477,7 +477,8 @@ public final class CodexUsageOverlayController: NSObject, ObservableObject, @unc
             processIDs: runningProcessIDs,
             focusedProcessID: focusedProcessID,
             previousWindowID: trackedWindowID,
-            windows: windows
+            windows: windows,
+            excludingComputerUseWindows: true
         ), let appKitFrame = CodexOverlayWindowLocator.appKitFrame(
             from: target.quartzFrame,
             displays: CodexOverlayWindowLocator.displaySpaces()

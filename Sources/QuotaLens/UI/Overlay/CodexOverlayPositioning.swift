@@ -7,6 +7,7 @@ struct CodexOverlayWindow: Equatable, Sendable {
     let layer: Int
     let alpha: CGFloat
     let quartzFrame: CGRect
+    var title: String? = nil
 }
 
 struct CodexOverlayDisplay: Equatable, Sendable {
@@ -71,7 +72,8 @@ enum CodexOverlayWindowLocator {
                 processID: pid_t(owner.int32Value),
                 layer: layer.intValue,
                 alpha: alpha,
-                quartzFrame: frame
+                quartzFrame: frame,
+                title: row[kCGWindowName as String] as? String
             )
         }
     }
@@ -80,14 +82,32 @@ enum CodexOverlayWindowLocator {
         processIDs: Set<pid_t>,
         focusedProcessID: pid_t?,
         previousWindowID: CGWindowID?,
-        windows: [CodexOverlayWindow]
+        windows: [CodexOverlayWindow],
+        excludingComputerUseWindows: Bool = false
     ) -> CodexOverlayWindow? {
-        let eligible = windows.filter { window in
+        let candidates = windows.filter { window in
             processIDs.contains(window.processID)
                 && window.layer == 0
                 && window.alpha > 0.01
                 && window.quartzFrame.width >= minimumWindowSize.width
                 && window.quartzFrame.height >= minimumWindowSize.height
+        }
+        let eligible = candidates.filter { window in
+            guard excludingComputerUseWindows else { return true }
+            // 画中画及其控制层也是普通层级窗口，但不能作为额度挂件的宿主。
+            if let title = window.title, !title.isEmpty {
+                return !["Computer Use", "Computer Use Controls"].contains(title)
+            }
+            // 无屏幕录制权限时系统可能隐藏标题；小型附属窗口允许少量越出主窗口。
+            let area = window.quartzFrame.width * window.quartzFrame.height
+            return !candidates.contains { other in
+                other.processID == window.processID
+                    && other.windowID != window.windowID
+                    && other.quartzFrame.width > window.quartzFrame.width
+                    && other.quartzFrame.height > window.quartzFrame.height
+                    && other.quartzFrame.width * other.quartzFrame.height >= area * 2
+                    && overlapArea(window.quartzFrame, other.quartzFrame) >= area * 0.9
+            }
         }
 
         if let focusedProcessID,

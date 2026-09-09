@@ -53,6 +53,14 @@ public struct AboutView: View {
     private var defaultChangelogs: [ChangelogEntry] {
         [
             ChangelogEntry(
+                id: "v1.0.32",
+                version: "v1.0.32",
+                date: "2026-09-09",
+                changes: [
+                    L10n.text("修复 Codex 画中画出现时额度悬浮条跳位的问题，保持主窗口中的原有位置", "Fixed the quota overlay jumping when Codex picture-in-picture appears, keeping its position in the main window")
+                ]
+            ),
+            ChangelogEntry(
                 id: "v1.0.31",
                 version: "v1.0.31",
                 date: "2026-09-09",
