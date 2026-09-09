@@ -13,6 +13,26 @@ final class ResetCreditRedemptionTests: XCTestCase {
     private var account: String { #"{"id":1,"result":{"account":{"type":"chatgpt","accountId":"account-test","email":"secret@example.com"}}}"# }
     private var limits: String { #"{"id":2,"result":{"rateLimits":{"primary":{"usedPercent":100,"windowDurationMins":300}},"rateLimitResetCredits":{"availableCount":1,"credits":[{"id":"card-test","status":"available"}]}}}"# }
 
+    func testSubmissionFailureAlwaysReturnsRecognizedError() async throws {
+        for body in [#"{"result":{}}"#, #"{"result":{"outcome":"unknown"}}"#, #"{"error":{"code":-32000,"message":"failed"}}"#] {
+            var persisted = false
+            do {
+                _ = try await ResetCreditRedemption.consume(credit: card(), accountKey: key, accountEmailHash: nil,
+                    idempotencyKey: "attempt", isCurrentAccount: { true }, willSubmit: { persisted = true },
+                    send: { method, _ in
+                        if method == "account/read" { return try self.response(self.account) }
+                        if method == "account/rateLimits/read" { return try self.response(self.limits) }
+                        XCTAssertTrue(persisted)
+                        return try self.response(body)
+                    })
+                XCTFail("Expected unconfirmed result")
+            } catch {
+                XCTAssertEqual(error as? ResetCreditUseError, .uncertain)
+                XCTAssertNotNil((error as? ResetCreditUseError)?.errorDescription)
+            }
+        }
+    }
+
     func testAllOutcomesReturnWithoutWaitingForRefresh() async throws {
         for outcome in ["reset", "alreadyRedeemed", "noCredit", "nothingToReset"] {
             var methods: [String] = []

@@ -258,6 +258,8 @@ public enum L10n {
     }
 
     public static let changelogZhToEnMap: [String: String] = [
+        "优化重置卡兑换连接生命周期，采用独立的专用通道并解耦后台轮询重连": "Optimized reset credit redemption lifecycle with an independent dedicated channel decoupled from background polling reconnects",
+        "增强额度重置未确认状态的安全阻断与错误提示，避免并发请求与重复消耗": "Hardened safety guards and error feedback for unconfirmed reset states to prevent concurrent requests and duplicate consumption",
         "加固重置卡兑换机制，支持连接账号锁定校验与幂等重试，防止网络抖动导致的重复提交": "Hardened reset credit redemption with pinned account connection checks and idempotent retries to prevent duplicate submissions",
         "深度扩展 OpenAI、Claude 与 Gemini 历史定价目录，支持分段有效日期与长上下文阶梯费率": "Expanded historical pricing catalogs for OpenAI, Claude, and Gemini with dated tiers, context thresholds, and prompt cache discounts",
         "设置中新增「模型价格参考」查阅界面，直观展示主流模型官方计费规则与缓存折扣": "Added Model Pricing Catalog in Settings with clear reference views for official model billing rates and cache savings",
@@ -886,6 +888,26 @@ private let multiToolTranslations: [AppLanguage: [String: String]] = [
 ]
 
 private let keyedTranslations: [String: [AppLanguage: String]] = [
+    "Optimized reset credit redemption lifecycle with an independent dedicated channel decoupled from background polling reconnects": [
+        .traditionalChinese: "優化重置卡兌換連線生命週期，採用獨立的專用通道並解耦後台輪詢重連",
+        .japanese: "リセット クレジット引き換えの接続ライフサイクルを最適化し、バックグラウンド ポーリングの再接続から分離された独立専用チャネルを採用",
+        .korean: "백그라운드 폴링 재연결과 분리된 독립 전용 채널을 적용하여 리셋 크레딧 교환 연결 수명 주기 최적화",
+        .spanish: "Ciclo de vida de canje de crédito de reinicio optimizado con un canal dedicado independiente desacoplado de las reconexiones en segundo plano",
+        .german: "Lebenszyklus der Einlösung von Reset-Guthaben optimiert mit einem unabhängigen dedizierten Kanal, entkoppelt von Hintergrund-Polling-Wiederverbindungen",
+        .french: "Cycle de vie d'utilisation des crédits de réinitialisation optimisé avec un canal dédié indépendant découplé des reconnexions en arrière-plan",
+        .portuguese: "Ciclo de vida de resgate de crédito de reinício otimizado com um canal dedicado independente desacoplado de reconexões em segundo plano",
+        .portugueseBrazil: "Ciclo de vida de resgate de crédito de redefinição otimizado com um canal dedicado independente desacoplado de reconexões em segundo plano"
+    ],
+    "Hardened safety guards and error feedback for unconfirmed reset states to prevent concurrent requests and duplicate consumption": [
+        .traditionalChinese: "增強額度重置未確認狀態的安全阻斷與錯誤提示，避免並行請求與重複消耗",
+        .japanese: "未確認のリセット状態に対する安全ガードとエラーフィードバックを強化し、並行リクエストや重複消費を防止",
+        .korean: "확인되지 않은 리셋 상태에 대한 안전 보호 및 오류 피드백을 강화하여 동시 요청 및 중복 소진 방지",
+        .spanish: "Protecciones de seguridad y comentarios de error reforzados para estados de reinicio no confirmados, evitando solicitudes simultáneas y consumo duplicado",
+        .german: "Sicherheitsvorkehrungen und Fehlerrückmeldungen für unbestätigte Reset-Status verstärkt, um gleichzeitige Anfragen und doppelten Verbrauch zu verhindern",
+        .french: "Protections de sécurité et retours d'erreur renforcés pour les états de réinitialisation non confirmés, évitant les requêtes simultanées et la double consommation",
+        .portuguese: "Proteções de segurança e mensagens de erro reforçadas para estados de reinício não confirmados, evitando pedidos simultâneos e consumo duplicado",
+        .portugueseBrazil: "Proteções de segurança e mensagens de erro reforçadas para estados de redefinição não confirmados, evitando solicitações simultâneas e consumo duplicado"
+    ],
     "Hardened reset credit redemption with pinned account connection checks and idempotent retries to prevent duplicate submissions": [
         .traditionalChinese: "加固重設卡兌換機制，支援連線帳號鎖定校驗與等冪重試，防止網路抖動導致的重複提交",
         .japanese: "リセットカードの引き換え処理を強化し、接続アカウントの固定検証と冪等な再試行により、ネットワークの乱れによる二重送信を防止",

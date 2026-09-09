@@ -53,6 +53,16 @@ public struct AboutView: View {
     private var defaultChangelogs: [ChangelogEntry] {
         [
             ChangelogEntry(
+                id: "v1.0.31",
+                version: "v1.0.31",
+                date: "2026-09-09",
+                changes: [
+                    L10n.text("优化重置卡兑换连接生命周期，采用独立的专用通道并解耦后台轮询重连", "Optimized reset credit redemption lifecycle with an independent dedicated channel decoupled from background polling reconnects"),
+                    L10n.text("增强额度重置未确认状态的安全阻断与错误提示，避免并发请求与重复消耗", "Hardened safety guards and error feedback for unconfirmed reset states to prevent concurrent requests and duplicate consumption"),
+                    L10n.text("全面完善 10 种语言的多语言本地化翻译字典与更新日志多语言映射", "Comprehensive localization dictionary refinements and changelog translation mapping across 10 supported languages")
+                ]
+            ),
+            ChangelogEntry(
                 id: "v1.0.30",
                 version: "v1.0.30",
                 date: "2026-09-07",

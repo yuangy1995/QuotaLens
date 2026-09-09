@@ -391,25 +391,35 @@ public final class AppEnvironment: ObservableObject {
         let key = existingKey ?? UUID().uuidString
         guard existingKey != nil || credit.isValidAvailable() else { throw ResetCreditUseError.unavailable }
         let generation = accountDataGeneration
-        if !(await processManager.getStatus()).isConnected {
-            guard await processManager.start() else { throw ResetCreditUseError.disconnected }
-        }
-        guard (await processManager.getStatus()).isConnected,
-              let connectionID = await transport.connectionID() else { throw ResetCreditUseError.disconnected }
-        let outcome = try await ResetCreditRedemption.consume(
-            credit: credit, accountKey: accountKey,
-            accountEmailHash: state.account?.accountKey == accountKey ? state.account?.emailHash : nil,
-            idempotencyKey: key, isRetry: existingKey != nil,
-            isCurrentAccount: { self.currentStateAccountKey() == accountKey && self.accountDataGeneration == generation },
-            willSubmit: {
-                self.resetCreditIdempotencyKeys[scope] = key
-                self.persistResetCreditIdempotencyKeys()
-            },
-            send: { method, params in
-                try await self.transport.sendRequest(method: method, params: params,
-                    timeoutSeconds: 10, expectedConnectionID: connectionID)
+        // Redemption owns a fresh connection, independent of monitoring and its reconnects.
+        // Do not reconnect automatically while a mutation's outcome is still unknown.
+        let resetTransport = JSONRPCTransport()
+        let resetManager = CodexProcessManager(transport: resetTransport, maximumReconnectAttempts: 0)
+        let outcome: ConsumeRateLimitResetCreditOutcome
+        do {
+            guard await resetManager.start(),
+                  let connectionID = await resetTransport.connectionID() else {
+                throw ResetCreditUseError.disconnected
             }
-        )
+            outcome = try await ResetCreditRedemption.consume(
+                credit: credit, accountKey: accountKey,
+                accountEmailHash: state.account?.accountKey == accountKey ? state.account?.emailHash : nil,
+                idempotencyKey: key, isRetry: existingKey != nil,
+                isCurrentAccount: { self.currentStateAccountKey() == accountKey && self.accountDataGeneration == generation },
+                willSubmit: {
+                    self.resetCreditIdempotencyKeys[scope] = key
+                    self.persistResetCreditIdempotencyKeys()
+                },
+                send: { method, params in
+                    try await resetTransport.sendRequest(method: method, params: params,
+                        timeoutSeconds: 10, expectedConnectionID: connectionID)
+                }
+            )
+        } catch {
+            await resetManager.stop()
+            throw error
+        }
+        await resetManager.stop()
         removeResetCreditIdempotencyKey(for: scope)
         // Deliver the confirmed outcome immediately; synchronization must not hold up the notice.
         Task { @MainActor [weak self] in
