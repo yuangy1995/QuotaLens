@@ -627,7 +627,7 @@ public final class AppEnvironment: ObservableObject {
         }
 
         do {
-            let snapshot = try await ChatGPTSubscriptionClient.fetch()
+            let snapshot = try await ChatGPTSubscriptionClient.fetch(expectedAccountKey: accountKeyAtStart)
             guard isSubscriptionRequestCurrent(requestGeneration, accountKey: accountKeyAtStart) else {
                 return false
             }
@@ -1910,6 +1910,8 @@ public final class AppEnvironment: ObservableObject {
         resetCreditReminderTask?.cancel()
         resetCreditReminderTask = nil
         state.codexAccountUsage = nil
+        state.codexCapacitySubscriptionPlan = nil
+        state.codexCapacitySubscriptionPlanType = nil
         state.lastSuccessfulRefreshAt = nil
         state.codexRefreshErrorText = nil
         return accountDataGeneration
@@ -1972,7 +1974,9 @@ public final class AppEnvironment: ObservableObject {
             let generatedAccountKey = AccountIdentity.stableAccountKey(from: identifier)
             let emailHash = AccountIdentity.emailHash(from: accountInfo.email ?? identifier)
             if accountInfo.accountId == nil, accountInfo.id == nil {
-                accountKey = ((try? repositories.getAllAccounts()) ?? [])
+                let verifiedLocalKey = LocalAccountImporter.discoverLocalIdentities()
+                    .first(where: { $0.emailHash == emailHash })?.accountKey
+                accountKey = verifiedLocalKey ?? ((try? repositories.getAllAccounts()) ?? [])
                     .filter { $0.emailHash == emailHash }
                     .min { $0.firstSeenAt < $1.firstSeenAt }?
                     .accountKey ?? generatedAccountKey
@@ -2047,6 +2051,28 @@ public final class AppEnvironment: ObservableObject {
                 rawJson: snapshot.rateLimitsRawJson
             )
             let currentLiveSnapshots = liveSnapshots.filter { $0.isCurrentQuotaWindow(at: now) }
+            // 不使用回退账号身份或本机会话总量来填补云端配对观测。
+            let confirmedIdentity = snapshot.account?.account.map { identity in
+                if identity.accountId != nil || identity.id != nil { return true }
+                guard let email = identity.email else { return false }
+                return LocalAccountImporter.discoverLocalIdentities().contains {
+                    $0.accountKey == accountKey && $0.emailHash == AccountIdentity.emailHash(from: email)
+                }
+            } ?? false
+            if confirmedIdentity {
+                do {
+                    let detailIsFresh = (state.subscriptionEntitlementFetchedAt.map { now - $0 < 900 } ?? false)
+                        && state.codexCapacitySubscriptionPlanType == liveSnapshots.first?.planType
+                    try CodexCapacityStore(database: database).record(.make(
+                        accountKey: accountKey, observedAt: now, usage: snapshot.accountUsage,
+                        snapshots: liveSnapshots,
+                        subscriptionPlan: detailIsFresh ? state.codexCapacitySubscriptionPlan : nil
+                    ))
+                    state.codexCapacityRevision += 1
+                } catch {
+                    storageFailed = true
+                }
+            }
             state.processWeeklyQuotaRecovery(
                 tool: .codex,
                 samples: weeklyQuotaSamples(from: currentLiveSnapshots),

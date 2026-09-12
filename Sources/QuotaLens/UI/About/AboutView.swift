@@ -53,6 +53,18 @@ public struct AboutView: View {
     private var defaultChangelogs: [ChangelogEntry] {
         [
             ChangelogEntry(
+                id: "v1.0.33",
+                version: "v1.0.33",
+                date: "2026-09-12",
+                changes: [
+                    L10n.text("全新推出 Codex 额度容量估算（测试版）：将已确认账号的云端累计 Tokens 与 5 小时及周度窗口智能关联，推算当前等效容量与剩余 Tokens", "Introduced Codex Quota Capacity Forecast (Beta): correlates cloud cumulative tokens with 5-hour and weekly windows to estimate equivalent capacity and remaining tokens"),
+                    L10n.text("智能感知周期切分与异常过滤：支持自然重置、提前恢复与套餐变更切分，过滤迟到 Token 与跨周期污染", "Intelligent cycle segmentation and anomaly filtering: isolates natural resets, early top-ups, plan changes, and prevents delayed token cross-period pollution"),
+                    L10n.text("新增额度预测页面：展示历史周期变化、下一周期预估，并提供独立示例预览", "Added quota forecasts with cycle history, next-cycle estimates, and a separate example preview"),
+                    L10n.text("支持在本地保存额度观测记录，更新后可继续使用已有历史", "Quota observations are saved locally and existing history remains available after updating"),
+                    L10n.text("全面完善 10 种语言的多语言本地化翻译字典与更新日志多语言映射", "Comprehensive localization dictionary refinements and changelog translation mapping across 10 supported languages")
+                ]
+            ),
+            ChangelogEntry(
                 id: "v1.0.32",
                 version: "v1.0.32",
                 date: "2026-09-09",

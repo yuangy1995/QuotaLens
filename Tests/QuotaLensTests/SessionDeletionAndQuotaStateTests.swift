@@ -385,8 +385,8 @@ final class SessionDeletionAndQuotaStateTests: XCTestCase {
             }
         }
 
-        let chinese = "加固重置卡兑换机制，支持连接账号锁定校验与幂等重试，防止网络抖动导致的重复提交"
-        let english = "Hardened reset credit redemption with pinned account connection checks and idempotent retries to prevent duplicate submissions"
+        let chinese = "全新推出 Codex 额度容量估算（测试版）：将已确认账号的云端累计 Tokens 与 5 小时及周度窗口智能关联，推算当前等效容量与剩余 Tokens"
+        let english = "Introduced Codex Quota Capacity Forecast (Beta): correlates cloud cumulative tokens with 5-hour and weekly windows to estimate equivalent capacity and remaining tokens"
         for mode in AppLanguageMode.allCases where mode != .system {
             defaults.set(mode.rawValue, forKey: L10n.languageModeDefaultsKey)
             let localized = L10n.text(chinese, english)
@@ -413,7 +413,7 @@ final class SessionDeletionAndQuotaStateTests: XCTestCase {
             }
         }
 
-        let chinese = "加固重置卡兑换机制，支持连接账号锁定校验与幂等重试，防止网络抖动导致的重复提交"
+        let chinese = "全新推出 Codex 额度容量估算（测试版）：将已确认账号的云端累计 Tokens 与 5 小时及周度窗口智能关联，推算当前等效容量与剩余 Tokens"
         for mode in AppLanguageMode.allCases where mode != .system {
             defaults.set(mode.rawValue, forKey: L10n.languageModeDefaultsKey)
             let localized = L10n.localizeChangelogText(chinese)

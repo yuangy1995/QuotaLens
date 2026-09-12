@@ -201,6 +201,8 @@ public struct MainView: View {
         switch (toolID, navigation.selectedPage(for: toolID)) {
         case (.codex, .quota):
             CodexAccountsOverviewView(state: state, accounts: env.codexAccounts)
+        case (.codex, .capacityForecast):
+            CodexCapacityForecastView(state: state, accounts: env.codexAccounts, database: env.database)
         case (.codex, .usage):
             CodexUsageDashboardView(facade: env.usageQueryFacade)
         case (.codex, .history):
@@ -305,7 +307,7 @@ public struct MainView: View {
         case .overview:
             await env.refreshAllData()
         case .tool(let tool):
-            if tool == .codex, navigation.selectedPage(for: tool) == .quota,
+            if tool == .codex, [.quota, .capacityForecast].contains(navigation.selectedPage(for: tool)),
                !env.codexAccounts.selectedKey.isEmpty {
                 await env.codexAccounts.loadSelection(refresh: true)
                 return

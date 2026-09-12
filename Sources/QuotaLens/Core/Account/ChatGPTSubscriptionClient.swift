@@ -25,8 +25,9 @@ public struct SubscriptionEntitlementSnapshot: Sendable {
 public struct ChatGPTSubscriptionClient: Sendable {
     private static let authEndpoint = URL(string: "https://chatgpt.com/backend-api/accounts/check/v4-2023-04-27")!
 
-    public static func fetch(timeoutSeconds: Double = 10.0) async throws -> SubscriptionEntitlementSnapshot {
-        let auth = try loadLocalAuth()
+    public static func fetch(timeoutSeconds: Double = 10.0, accountHomeURL: URL? = nil,
+                             expectedAccountKey: String? = nil) async throws -> SubscriptionEntitlementSnapshot {
+        let auth = try loadLocalAuth(accountHomeURL: accountHomeURL)
         var request = URLRequest(url: authEndpoint)
         request.httpMethod = "GET"
         request.timeoutInterval = timeoutSeconds
@@ -42,7 +43,7 @@ public struct ChatGPTSubscriptionClient: Sendable {
 
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let accounts = root["accounts"] as? [String: Any],
-              let defaultAccount = accounts["default"] as? [String: Any] else {
+              let defaultAccount = matchingAccount(in: accounts, expectedAccountKey: expectedAccountKey) else {
             throw NSError(domain: "QuotaLens.Subscription", code: -3, userInfo: [NSLocalizedDescriptionKey: L10n.text("无法读取订阅信息", "Subscription details could not be read")])
         }
 
@@ -88,10 +89,9 @@ public struct ChatGPTSubscriptionClient: Sendable {
         let subscriptionActiveUntil: Int64?
     }
 
-    private static func loadLocalAuth() throws -> LocalAuth {
-        let authFile = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".codex", isDirectory: true)
-            .appendingPathComponent("auth.json")
+    private static func loadLocalAuth(accountHomeURL: URL? = nil) throws -> LocalAuth {
+        let authFile = (accountHomeURL ?? FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".codex", isDirectory: true)).appendingPathComponent("auth.json")
         let data = try Data(contentsOf: authFile)
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let tokens = root["tokens"] as? [String: Any],
@@ -108,6 +108,17 @@ public struct ChatGPTSubscriptionClient: Sendable {
             subscriptionActiveStart: epochSeconds(authClaims?["chatgpt_subscription_active_start"]),
             subscriptionActiveUntil: epochSeconds(authClaims?["chatgpt_subscription_active_until"])
         )
+    }
+
+    static func matchingAccount(in accounts: [String: Any], expectedAccountKey: String?) -> [String: Any]? {
+        guard let expectedAccountKey else { return accounts["default"] as? [String: Any] }
+        for key in accounts.keys.sorted() {
+            guard let entry = accounts[key] as? [String: Any] else { continue }
+            let account = entry["account"] as? [String: Any]
+            let id = account?["account_id"] as? String ?? account?["id"] as? String ?? (key == "default" ? nil : key)
+            if let id, AccountIdentity.stableAccountKey(from: id) == expectedAccountKey { return entry }
+        }
+        return nil
     }
 
     private static func jwtClaims(_ jwt: String) -> [String: Any]? {

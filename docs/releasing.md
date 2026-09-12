@@ -33,6 +33,8 @@ The script reads `VERSION` and detects the current Mac architecture automaticall
 Packages use ad-hoc signing.
 Local ad-hoc packaging keeps an architecture-specific Swift build cache and uses incremental optimized compilation by default. Pass `--clean` to rebuild that cache, or `--full-optimization` to use the whole-module release compilation used by CI and the release workflow.
 
+A successful local fast build does not establish whole-module Release compatibility, especially when the local Swift version differs from the GitHub runner. Before tagging, run `swift build -c release` and `swift test -c release --filter CodexCapacityForecastTests`; the release quality gate also runs both. Keep compiler compatibility changes covered by the same behavioral tests instead of disabling optimization or ownership verification.
+
 ## Publishing A GitHub Release
 
 Before publishing an update-capable build, configure the Sparkle update-signing secrets in the GitHub repository:

@@ -45,7 +45,7 @@ private func addUnpricedReasonColumns(database: SQLiteDatabase, table: String) t
 }
 
 public struct SchemaMigrations {
-    public static let targetSchemaVersion = 20
+    public static let targetSchemaVersion = 21
 
     public static func migrate(database: SQLiteDatabase) throws {
         let currentVersion = try database.intScalar(sql: "PRAGMA user_version;")
@@ -84,7 +84,8 @@ public struct SchemaMigrations {
             V17ProviderSessionNamespaceMigration(),
             V18ClaudeSnapshotsMigration(),
             V19PricingScanIndexMigration(),
-            V20ExactModelIdentityMigration()
+            V20ExactModelIdentityMigration(),
+            V21CodexCapacityMigration()
         ]
 
         for migration in migrations where migration.version > currentVersion {

@@ -284,6 +284,9 @@ public final class AppState: ObservableObject {
     @Published public var claudeUsageCooldownUntil: Date?
     @Published public var isRefreshingClaudeUsage: Bool = false
     @Published public var codexAccountUsage: CodexAccountUsageSnapshot?
+    @Published var codexCapacityRevision = 0
+    var codexCapacitySubscriptionPlan: String?
+    var codexCapacitySubscriptionPlanType: String?
     @Published public var latestAntigravityQuota: AntigravityQuotaSnapshot?
     @Published public var antigravityQuotaStatus: AntigravityQuotaStatus = .disabled
     @Published public var antigravityQuotaErrorText: String?
@@ -1243,6 +1246,8 @@ public final class AppState: ObservableObject {
             subscriptionEndsAt = endsAt
         }
         subscriptionPlanDisplayName = snapshot.planDisplayName
+        codexCapacitySubscriptionPlan = snapshot.subscriptionPlan
+        codexCapacitySubscriptionPlanType = snapshot.planType
         subscriptionRenewalState = snapshot.renewalState
         subscriptionTargetPlanDisplayName = snapshot.targetPlanDisplayName
         subscriptionEntitlementFetchedAt = snapshot.fetchedAt
@@ -1702,6 +1707,8 @@ public final class AppState: ObservableObject {
         subscriptionStartsAt = nil
         subscriptionEndsAt = nil
         subscriptionPlanDisplayName = nil
+        codexCapacitySubscriptionPlan = nil
+        codexCapacitySubscriptionPlanType = nil
         subscriptionRenewalState = .unknown
         subscriptionTargetPlanDisplayName = nil
         subscriptionEntitlementFetchedAt = nil

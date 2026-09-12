@@ -15,6 +15,7 @@ public struct MonitoringToolID: RawRepresentable, Codable, Hashable, Identifiabl
 }
 
 public enum ToolCapability: String, Codable, Hashable, Sendable {
+    case capacityForecast
     case quota
     case usage
     case history
@@ -86,7 +87,7 @@ public struct ToolRegistry: Sendable {
             systemImage: "terminal.fill",
             accent: .cyan,
             usageProvider: .codex,
-            capabilities: [.quota, .usage, .history, .sessions, .resetCards, .overlay, .settings],
+            capabilities: [.quota, .capacityForecast, .usage, .history, .sessions, .resetCards, .overlay, .settings],
             bundleIdentifiers: ["com.openai.chat", "com.openai.codex"]
         ),
         MonitoringToolDescriptor(

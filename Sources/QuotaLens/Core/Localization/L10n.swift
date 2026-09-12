@@ -194,7 +194,8 @@ public enum L10n {
         case .simplifiedChinese:
             return zhHans ?? translations[.simplifiedChinese]?[english] ?? english
         default:
-            return multiToolTranslations[language]?[english]
+            return capacityForecastTranslations[english]?[language]
+                ?? multiToolTranslations[language]?[english]
                 ?? extendedTranslations[english]?[language]
                 ?? keyedTranslations[english]?[language]
                 ?? translations[language]?[english]
@@ -258,6 +259,10 @@ public enum L10n {
     }
 
     public static let changelogZhToEnMap: [String: String] = [
+        "全新推出 Codex 额度容量估算（测试版）：将已确认账号的云端累计 Tokens 与 5 小时及周度窗口智能关联，推算当前等效容量与剩余 Tokens": "Introduced Codex Quota Capacity Forecast (Beta): correlates cloud cumulative tokens with 5-hour and weekly windows to estimate equivalent capacity and remaining tokens",
+        "智能感知周期切分与异常过滤：支持自然重置、提前恢复与套餐变更切分，过滤迟到 Token 与跨周期污染": "Intelligent cycle segmentation and anomaly filtering: isolates natural resets, early top-ups, plan changes, and prevents delayed token cross-period pollution",
+        "新增额度预测页面：展示历史周期变化、下一周期预估，并提供独立示例预览": "Added quota forecasts with cycle history, next-cycle estimates, and a separate example preview",
+        "支持在本地保存额度观测记录，更新后可继续使用已有历史": "Quota observations are saved locally and existing history remains available after updating",
         "修复 Codex 画中画出现时额度悬浮条跳位的问题，保持主窗口中的原有位置": "Fixed the quota overlay jumping when Codex picture-in-picture appears, keeping its position in the main window",
         "优化重置卡兑换连接生命周期，采用独立的专用通道并解耦后台轮询重连": "Optimized reset credit redemption lifecycle with an independent dedicated channel decoupled from background polling reconnects",
         "增强额度重置未确认状态的安全阻断与错误提示，避免并发请求与重复消耗": "Hardened safety guards and error feedback for unconfirmed reset states to prevent concurrent requests and duplicate consumption",
@@ -889,6 +894,46 @@ private let multiToolTranslations: [AppLanguage: [String: String]] = [
 ]
 
 private let keyedTranslations: [String: [AppLanguage: String]] = [
+    "Introduced Codex Quota Capacity Forecast (Beta): correlates cloud cumulative tokens with 5-hour and weekly windows to estimate equivalent capacity and remaining tokens": [
+        .traditionalChinese: "全新推出 Codex 額度容量估算（測試版）：將已確認帳號的雲端累計 Tokens 與 5 小時及週度視窗智慧關聯，推算目前等效容量與剩餘 Tokens",
+        .japanese: "Codex クォータ容量予測（ベータ版）を新設：確認済みアカウントのクラウド累積トークンを5時間および週間枠と連携させ、等価容量と残トークン数を推計",
+        .korean: "Codex 할당량 용량 추정(베타) 도입: 확인된 계정의 클라우드 누적 토큰을 5시간 및 주간 창과 연계하여 등가 용량 및 잔여 토큰 추산",
+        .spanish: "Nuevo Pronóstico de Capacidad de Cuota de Codex (Beta): vincula tokens acumulados en la nube con ventanas de 5 horas y semanales para estimar capacidad y tokens restantes",
+        .german: "Codex-Kontingent-Kapazitätsprognose (Beta) eingeführt: verknüpft Cloud-Tokens mit 5-Stunden- und Wochenfenstern zur Schätzung von Kapazität und Rest-Tokens",
+        .french: "Introduction de l'estimation de capacité de quota Codex (bêta) : associe les tokens cumulés dans le cloud aux fenêtres de 5 heures et hebdomadaires pour estimer la capacité",
+        .portuguese: "Introduzida previsão de capacidade de quota do Codex (Beta): correlaciona tokens acumulados na nuvem com janelas de 5 horas e semanais para estimar capacidade e tokens restantes",
+        .portugueseBrazil: "Introduzida previsão de capacidade de cota do Codex (Beta): correlaciona tokens acumulados na nuvem com janelas de 5 horas e semanais para estimar capacidade e tokens restantes"
+    ],
+    "Intelligent cycle segmentation and anomaly filtering: isolates natural resets, early top-ups, plan changes, and prevents delayed token cross-period pollution": [
+        .traditionalChinese: "智慧感知週期切分與異常過濾：支援自然重設、提前恢復與方案變更切分，過濾遲到 Token 與跨週期污染",
+        .japanese: "周期の自動分割と異常フィルタリング：自然リセット、早期回復、プラン変更を分離し、遅延トークンによる周期またぎの汚染を防止",
+        .korean: "지능형 주기 분할 및 이상 필터링: 자연 리셋, 조기 복구, 플랜 변경을 분리하고 지연된 토큰의 주기 간 오염 방지",
+        .spanish: "Segmentación inteligente de ciclos y filtrado de anomalías: aísla reinicios naturales, recargas anticipadas y cambios de plan evitando la contaminación entre ciclos",
+        .german: "Intelligente Zyklussegmentierung und Anomaliefilterung: isoliert natürliche Resets, vorzeitige Aufladungen und Planwechsel und verhindert fehlerhafte Tokenzuordnung",
+        .french: "Segmentation intelligente des cycles et filtrage des anomalies : isole les réinitialisations naturelles, recharges anticipées et changements de forfait",
+        .portuguese: "Segmentação inteligente de ciclos e filtragem de anomalias: isola reposições naturais, recuperações antecipadas e alterações de plano, evitando poluição entre ciclos",
+        .portugueseBrazil: "Segmentação inteligente de ciclos e filtragem de anomalias: isola redefinições naturais, recuperações antecipadas e alterações de plano, evitando poluição entre ciclos"
+    ],
+    "Added quota forecasts with cycle history, next-cycle estimates, and a separate example preview": [
+        .traditionalChinese: "新增額度預測頁面：展示歷史週期變化、下一週期預估，並提供獨立範例預覽",
+        .japanese: "利用枠予測を追加：期間ごとの履歴、次の期間の推定、独立したサンプル表示に対応",
+        .korean: "주기별 기록, 다음 주기 추정 및 별도 예시 미리보기를 제공하는 한도 예측 추가",
+        .spanish: "Previsiones de cuota con historial por ciclo, estimaciones del próximo ciclo y vista previa de ejemplo independiente",
+        .german: "Kontingentprognosen mit Zyklusverlauf, Schätzungen für den nächsten Zyklus und separater Beispielvorschau hinzugefügt",
+        .french: "Prévisions de quota avec historique des cycles, estimation du prochain cycle et aperçu d’exemple distinct",
+        .portuguese: "Previsões de quota com histórico de ciclos, estimativas do próximo ciclo e pré-visualização de exemplo separada",
+        .portugueseBrazil: "Previsões de cota com histórico de ciclos, estimativas do próximo ciclo e prévia de exemplo separada"
+    ],
+    "Quota observations are saved locally and existing history remains available after updating": [
+        .traditionalChinese: "支援在本機儲存額度觀測記錄，更新後可繼續使用既有歷史",
+        .japanese: "利用枠の記録をローカルに保存し、更新後も既存の履歴を利用可能",
+        .korean: "한도 관측 기록을 로컬에 저장하고 업데이트 후에도 기존 기록을 유지",
+        .spanish: "Las observaciones de cuota se guardan localmente y el historial sigue disponible tras actualizar",
+        .german: "Kontingentdaten werden lokal gespeichert; der bestehende Verlauf bleibt nach Updates verfügbar",
+        .french: "Les observations de quota sont enregistrées localement et l’historique reste disponible après mise à jour",
+        .portuguese: "As observações de quota são guardadas localmente e o histórico continua disponível após a atualização",
+        .portugueseBrazil: "As observações de cota são salvas localmente e o histórico continua disponível após a atualização"
+    ],
     "Fixed the quota overlay jumping when Codex picture-in-picture appears, keeping its position in the main window": [
         .traditionalChinese: "修復 Codex 子母畫面出現時額度懸浮條跳位的問題，保持主視窗中的原有位置",
         .japanese: "Codex のピクチャーインピクチャー表示時に使用枠ウィジェットが移動する問題を修正し、メインウィンドウ内の元の位置を維持",

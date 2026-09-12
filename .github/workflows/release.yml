@@ -42,11 +42,13 @@ jobs:
           set -euo pipefail
           swift test --filter 'StorageResilienceTests|ParserRecoveryTests|PricingTruthTests|ImporterRecoveryTests|CodexRolloutScannerTests'
 
-      - name: Release build
+      - name: Release build and capacity regression tests
         shell: bash
         run: |
           set -euo pipefail
+          swift --version
           swift build -c release
+          swift test -c release --filter CodexCapacityForecastTests
 
       - name: Git whitespace check
         shell: bash

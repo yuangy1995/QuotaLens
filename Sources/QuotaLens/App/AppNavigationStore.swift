@@ -2,6 +2,7 @@ import Foundation
 
 public enum ToolPage: String, CaseIterable, Identifiable, Sendable {
     case quota
+    case capacityForecast
     case usage
     case history
     case sessions
@@ -13,6 +14,7 @@ public enum ToolPage: String, CaseIterable, Identifiable, Sendable {
     public var capability: ToolCapability {
         switch self {
         case .quota: return .quota
+        case .capacityForecast: return .capacityForecast
         case .usage: return .usage
         case .history: return .history
         case .sessions: return .sessions
@@ -24,6 +26,7 @@ public enum ToolPage: String, CaseIterable, Identifiable, Sendable {
     public var title: String {
         switch self {
         case .quota: return L10n.text("额度概览", "Quota Overview")
+        case .capacityForecast: return L10n.text("额度预测", "Quota Forecast")
         case .usage: return L10n.text("用量分析", "Usage Analytics")
         case .history: return L10n.text("历史记录", "History")
         case .sessions: return L10n.text("会话明细", "Sessions")
@@ -35,6 +38,7 @@ public enum ToolPage: String, CaseIterable, Identifiable, Sendable {
     public var icon: String {
         switch self {
         case .quota: return "gauge.with.needle.fill"
+        case .capacityForecast: return "chart.xyaxis.line"
         case .usage: return "chart.bar.xaxis"
         case .history: return "calendar.badge.clock"
         case .sessions: return "bubble.left.and.bubble.right.fill"

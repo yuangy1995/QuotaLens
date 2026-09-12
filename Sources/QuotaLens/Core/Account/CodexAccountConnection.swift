@@ -38,18 +38,22 @@ struct ManagedCodexAccount: Codable, Identifiable, Sendable {
 actor CodexAccountQuotaReader {
     private let repositories: Repositories
     private let fetch: @Sendable (URL) throws -> CodexServerSnapshot
+    private let fetchSubscription: @Sendable (URL, String) async -> String?
     init(database: SQLiteDatabase, fetch: @escaping @Sendable (URL) throws -> CodexServerSnapshot = {
         try CodexServerSnapshotClient.fetch(timeoutSeconds: 15, accountHomeURL: $0)
+    }, fetchSubscription: @escaping @Sendable (URL, String) async -> String? = { home, key in
+        try? await ChatGPTSubscriptionClient.fetch(timeoutSeconds: 3, accountHomeURL: home, expectedAccountKey: key).subscriptionPlan
     }) {
         repositories = Repositories(database: database)
         self.fetch = fetch
+        self.fetchSubscription = fetchSubscription
     }
 
     func cached(accountKey: String) throws -> [RateLimitSnapshotRecord] {
         try repositories.getLatestRateLimitSnapshots(accountKey: accountKey, provider: .codex)
     }
 
-    func refresh(homeURL: URL, expectedAccountKey: String?) throws -> (String, String, [RateLimitSnapshotRecord]) {
+    func refresh(homeURL: URL, expectedAccountKey: String?) async throws -> (String, String, [RateLimitSnapshotRecord]) {
         let snapshot = try fetch(homeURL)
         guard let account = snapshot.account?.account, account.type?.lowercased() == "chatgpt",
               let limits = snapshot.rateLimits else { throw RPCPayloadError.missingResult(method: "account") }
@@ -63,6 +67,7 @@ actor CodexAccountQuotaReader {
         guard expectedAccountKey == nil || expectedAccountKey == key else {
             throw RPCPayloadError.invalidPayload(method: "account")
         }
+        let subscriptionPlan = await fetchSubscription(homeURL, key)
         let name = account.email ?? local?.displayName ?? account.displayIdentifier
         let now = Int64(snapshot.capturedAt.timeIntervalSince1970)
         var rows: [RateLimitSnapshotRecord] = []
@@ -85,6 +90,9 @@ actor CodexAccountQuotaReader {
                 emailHash: AccountIdentity.emailHash(from: account.email ?? account.stableIdentifier),
                 planType: account.planType, firstSeenAt: now, lastSeenAt: now))
             for row in rows { try repositories.insertRateLimitSnapshot(row) }
+            try CodexCapacityStore(database: repositories.db).record(.make(
+                accountKey: key, observedAt: now, usage: snapshot.accountUsage, snapshots: rows, subscriptionPlan: subscriptionPlan
+            ))
         }
         return (key, name, rows)
     }
