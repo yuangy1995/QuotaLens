@@ -331,7 +331,10 @@ final class CodexCapacityForecastTests: XCTestCase {
         }
         for scheme in [ColorScheme.light, .dark] {
             let content = VStack(spacing: 24) {
-                CapacityForecastToolbar(selection: .constant(""), showingExample: .constant(true), accountNames: [])
+                HStack {
+                    ViewingAccountPicker(selection: .constant(""), accountNames: [("", L10n.text("Codex 当前账号", "Current Codex account"))])
+                    Spacer()
+                }
                 ForEach(windows) { CapacityWindowCard(window: $0) }
             }.padding(28).frame(width: 1000).background(AppTheme.canvasGradient(for: scheme))
                 .environment(\.colorScheme, scheme)
@@ -359,7 +362,10 @@ final class CodexCapacityForecastTests: XCTestCase {
         UserDefaults.standard.set(AppLanguageMode.simplifiedChinese.rawValue, forKey: L10n.languageModeDefaultsKey)
         for scheme in [ColorScheme.light, .dark] {
             let content = VStack(spacing: 20) {
-                CapacityForecastToolbar(selection: .constant(""), showingExample: .constant(false), accountNames: [])
+                HStack {
+                    ViewingAccountPicker(selection: .constant(""), accountNames: [("", L10n.text("Codex 当前账号", "Current Codex account"))])
+                    Spacer()
+                }
                 CapacityWindowCard(window: window)
             }.padding(24).frame(width: 710).background(AppTheme.canvasGradient(for: scheme))
                 .environment(\.colorScheme, scheme)

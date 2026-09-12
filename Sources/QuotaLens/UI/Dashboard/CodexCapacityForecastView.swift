@@ -6,29 +6,27 @@ struct CodexCapacityForecastView: View {
     @ObservedObject var accounts: CodexAccountsStore
     let database: SQLiteDatabase
     @State private var windows: [CodexCapacityWindow] = []
-    @State private var showingExample = false
     @State private var loadFailed = false
     @State private var loading = false
     @State private var displayedScope = ""
 
     private var accountKey: String { accounts.selectedKey.isEmpty ? state.account?.accountKey ?? "" : accounts.selectedKey }
     private var loadKey: String {
-        "\(accountKey)|\(state.codexCapacityRevision)|\(accounts.snapshots.first?.observedAt ?? 0)|\(showingExample)|\(state.lastRefreshAttemptAt?.timeIntervalSince1970 ?? 0)|\(accounts.isRefreshing)"
+        "\(accountKey)|\(state.codexCapacityRevision)|\(accounts.snapshots.first?.observedAt ?? 0)|\(state.lastRefreshAttemptAt?.timeIntervalSince1970 ?? 0)|\(accounts.isRefreshing)"
     }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                CapacityForecastToolbar(
-                    selection: Binding(get: { accounts.selectedKey }, set: { accounts.select($0) }),
-                    showingExample: $showingExample,
-                    accountNames: accounts.keys(state: state).map { ($0, accounts.name(for: $0, state: state)) },
-                    isLoading: loading
-                )
-                if !showingExample, accounts.selectedKey.isEmpty, let warning = state.codexStorageErrorText {
+                HStack(spacing: 12) {
+                    CodexViewingAccountPicker(state: state, accounts: accounts)
+                    if loading { ProgressView().controlSize(.small) }
+                    Spacer()
+                }
+                if accounts.selectedKey.isEmpty, let warning = state.codexStorageErrorText {
                     Text(warning).font(.callout).foregroundStyle(.orange)
                 }
-                if !showingExample, let error = accounts.error, !accounts.selectedKey.isEmpty {
+                if let error = accounts.error, !accounts.selectedKey.isEmpty {
                     Text(error).font(.callout).foregroundStyle(.orange)
                 }
                 if loadFailed {
@@ -45,8 +43,8 @@ struct CodexCapacityForecastView: View {
             }.frame(maxWidth: 1200).padding(24)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
         }
-        .task(id: "\(accounts.selectedKey)|\(showingExample)") {
-            guard !accounts.selectedKey.isEmpty, !showingExample else { return }
+        .task(id: accounts.selectedKey) {
+            guard !accounts.selectedKey.isEmpty else { return }
             await accounts.loadSelection(refresh: true)
             while !Task.isCancelled {
                 do { try await Task.sleep(for: .seconds(60)) } catch { return }
@@ -54,7 +52,7 @@ struct CodexCapacityForecastView: View {
             }
         }
         .task(id: loadKey) {
-            let scope = "\(accountKey)|\(showingExample)"
+            let scope = accountKey
             if displayedScope != scope {
                 windows = []
                 displayedScope = scope
@@ -62,16 +60,10 @@ struct CodexCapacityForecastView: View {
             loadFailed = false
             loading = true
             let key = accountKey
-            let example = showingExample
             let store = CodexCapacityStore(database: database)
             let now = Int64(Date().timeIntervalSince1970)
             let result = await Task.detached(priority: .utility) {
                 Result { () throws -> [CodexCapacityWindow] in
-                    if example {
-                        return [300, 10080].flatMap { minutes in
-                            CodexCapacityForecast.analyze(CodexCapacityExamples.observations(now: now, minutes: minutes), accountKey: "example", now: now)
-                        }
-                    }
                     return CodexCapacityForecast.analyze(try store.observations(accountKey: key), accountKey: key, now: now)
                 }
             }.value
@@ -81,46 +73,6 @@ struct CodexCapacityForecastView: View {
             case .success(let value): windows = value
             case .failure: loadFailed = true
             }
-        }
-    }
-}
-
-struct CapacityForecastToolbar: View {
-    @Binding var selection: String
-    @Binding var showingExample: Bool
-    let accountNames: [(String, String)]
-    var isLoading = false
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Menu {
-                Picker(L10n.text("查看账号", "Viewing account"), selection: $selection) {
-                    Text(L10n.text("Codex 当前账号", "Current Codex account")).tag("")
-                    ForEach(accountNames, id: \.0) { key, name in Text(name).tag(key) }
-                }
-            } label: {
-                Label(accountNames.first { $0.0 == selection }?.1 ?? L10n.text("Codex 当前账号", "Current Codex account"),
-                      systemImage: "person.crop.circle")
-                    .lineLimit(1).truncationMode(.middle)
-            }
-            .menuStyle(.borderlessButton).menuIndicator(.visible)
-            .font(.system(size: 13, weight: .semibold))
-            .padding(.horizontal, 12).frame(height: 40)
-            .background(.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.5))
-            .fixedSize(horizontal: true, vertical: false)
-            .frame(maxWidth: 360, alignment: .leading)
-            .accessibilityLabel(L10n.text("查看账号", "Viewing account"))
-            if isLoading { ProgressView().controlSize(.small) }
-            Spacer(minLength: 12)
-            if showingExample {
-                Text(L10n.text("示例数据", "Example data")).font(.system(size: 12, weight: .medium)).foregroundStyle(.orange)
-            }
-            Toggle(isOn: $showingExample) {
-                Label(L10n.text("示例预览", "Example preview"), systemImage: "eye")
-                    .font(.system(size: 12, weight: .medium))
-            }.toggleStyle(.button).buttonStyle(.bordered).controlSize(.large).fixedSize()
         }
     }
 }
@@ -346,29 +298,5 @@ struct CapacityWindowCard: View {
     }
     private func date(_ time: Int64) -> String {
         Date(timeIntervalSince1970: Double(time)).formatted(.dateTime.locale(L10n.locale).month(.twoDigits).day(.twoDigits).hour().minute())
-    }
-}
-
-/// 界面预览使用同一个计算器，但数据完全在内存中，与账号历史隔离。
-enum CodexCapacityExamples {
-    static func observations(now: Int64, minutes: Int) -> [CodexCapacityObservation] {
-        var result: [CodexCapacityObservation] = []
-            let duration = Int64(minutes * 60)
-            let capacities: [Int64] = minutes == 300 ? [1000000, 920000, 1050000, 840000, 700000, 620000]
-                : [10000000, 5000000, 6200000, 5600000, 4900000, 4200000]
-            let lengths = capacities.indices.map { $0 == 1 ? duration / 3 : duration }
-            var start = now - lengths.reduce(0, +) + 600
-            var total: Int64 = 0
-            for (index, capacity) in capacities.enumerated() {
-                let end = start + duration
-                for (offset, percent) in [(Int64(0), 0.0), (lengths[index] / 2, 50.0)] where start + offset <= now {
-                    result.append(CodexCapacityObservation(accountKey: "example", observedAt: start + offset,
-                        lifetimeTokens: total + Int64(Double(capacity) * percent / 100), planType: "plus", subscriptionPlan: nil,
-                        windows: [.init(minutes: minutes, usedPercent: percent, resetsAt: end)]))
-                }
-                total += capacity / 2
-                start += lengths[index]
-            }
-        return result
     }
 }

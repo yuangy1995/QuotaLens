@@ -9,15 +9,7 @@ struct CodexAccountsOverviewView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Picker(L10n.text("查看账号", "Viewing account"), selection: Binding(
-                    get: { accounts.selectedKey }, set: { accounts.select($0) }
-                )) {
-                    Text(L10n.text("Codex 当前账号", "Current Codex account")).tag("")
-                    ForEach(accounts.keys(state: state), id: \.self) { key in
-                        Text(accounts.name(for: key, state: state)).tag(key)
-                    }
-                }
-                .frame(maxWidth: 330)
+                CodexViewingAccountPicker(state: state, accounts: accounts)
                 if !accounts.selectedKey.isEmpty {
                     Button(L10n.text("备注", "Rename")) {
                         name = accounts.name(for: accounts.selectedKey, state: state)

@@ -452,7 +452,7 @@ struct ProviderUsageDashboardView: View {
             if let provider = dashboardProvider,
                provider != .codex,
                !env.state.storedAccountKeys(for: provider).isEmpty {
-                Picker(L10n.text("账号", "Account"), selection: Binding(
+                ViewingAccountPicker(selection: Binding(
                     get: {
                         switch provider {
                         case .codex: return env.state.selectedAccountKey ?? env.state.storedAccountKeys(for: provider).first ?? ""
@@ -463,15 +463,9 @@ struct ProviderUsageDashboardView: View {
                     set: { key in
                         env.selectStoredAccount(accountKey: key, provider: provider)
                     }
-                )) {
-                    ForEach(env.state.storedAccountKeys(for: provider), id: \.self) { key in
-                        let title = env.state.displayName(for: key)
-                        Text(title)
-                            .tag(key)
-                    }
-                }
-                .pickerStyle(.menu)
-                .frame(maxWidth: 180)
+                ), accountNames: env.state.storedAccountKeys(for: provider).map {
+                    ($0, env.state.displayName(for: $0))
+                })
             }
 
             // 时间跨度芯片选择器
