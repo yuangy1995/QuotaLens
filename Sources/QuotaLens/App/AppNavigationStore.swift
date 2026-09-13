@@ -1,5 +1,24 @@
 import Foundation
 
+public enum OverviewPage: String, CaseIterable, Identifiable, Sendable {
+    case summary, resources, distribution
+    public var id: String { rawValue }
+    public var title: String {
+        switch self {
+        case .summary: return L10n.text("概况", "At a glance")
+        case .resources: return L10n.text("账号资源", "Account resources")
+        case .distribution: return L10n.text("使用分布", "Usage distribution")
+        }
+    }
+    public var icon: String {
+        switch self {
+        case .summary: return "square.grid.2x2"
+        case .resources: return "person.2"
+        case .distribution: return "chart.bar.xaxis"
+        }
+    }
+}
+
 public enum ToolPage: String, CaseIterable, Identifiable, Sendable {
     case quota
     case capacityForecast
@@ -69,6 +88,7 @@ public enum FixedNavigationDestination: String, Sendable {
 
 @MainActor
 public final class AppNavigationStore: ObservableObject {
+    private let defaults: UserDefaults
     private static let contextDefaultsKey = "QuotaLens.Navigation.Context.v1"
     private static let fixedDestinationDefaultsKey = "QuotaLens.Navigation.FixedDestination.v1"
     private static let routeDefaultsPrefix = "QuotaLens.Navigation.ToolPage.v1"
@@ -76,8 +96,11 @@ public final class AppNavigationStore: ObservableObject {
     @Published public private(set) var selectedContext: AppContext
     @Published public private(set) var fixedDestination: FixedNavigationDestination?
     @Published private var toolPages: [MonitoringToolID: ToolPage]
+    @Published public private(set) var overviewPage: OverviewPage = .summary
 
     public init(enabledTools: EnabledToolsStore, activeTool: MonitoringToolID?, defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        overviewPage = defaults.string(forKey: "QuotaLens.Navigation.OverviewPage").flatMap(OverviewPage.init(rawValue:)) ?? .summary
         let enabled = enabledTools.enabledToolIDs
         if let stored = defaults.string(forKey: Self.contextDefaultsKey),
            let context = AppContext(storageValue: stored),
@@ -106,24 +129,30 @@ public final class AppNavigationStore: ObservableObject {
         toolPages[tool] ?? .quota
     }
 
+    public func selectOverviewPage(_ page: OverviewPage) {
+        overviewPage = page
+        defaults.set(page.rawValue, forKey: "QuotaLens.Navigation.OverviewPage")
+        selectContext(.overview)
+    }
+
     public func selectContext(_ context: AppContext) {
         selectedContext = context
         fixedDestination = nil
-        UserDefaults.standard.set(context.storageValue, forKey: Self.contextDefaultsKey)
-        UserDefaults.standard.removeObject(forKey: Self.fixedDestinationDefaultsKey)
+        defaults.set(context.storageValue, forKey: Self.contextDefaultsKey)
+        defaults.removeObject(forKey: Self.fixedDestinationDefaultsKey)
     }
 
     public func selectToolPage(_ page: ToolPage, for tool: MonitoringToolID) {
         guard ToolRegistry.shared.descriptor(for: tool)?.capabilities.contains(page.capability) == true else { return }
         toolPages[tool] = page
         fixedDestination = nil
-        UserDefaults.standard.set(page.rawValue, forKey: Self.routeDefaultsPrefix + "." + tool.rawValue)
-        UserDefaults.standard.removeObject(forKey: Self.fixedDestinationDefaultsKey)
+        defaults.set(page.rawValue, forKey: Self.routeDefaultsPrefix + "." + tool.rawValue)
+        defaults.removeObject(forKey: Self.fixedDestinationDefaultsKey)
     }
 
     public func showFixedDestination(_ destination: FixedNavigationDestination) {
         fixedDestination = destination
-        UserDefaults.standard.set(destination.rawValue, forKey: Self.fixedDestinationDefaultsKey)
+        defaults.set(destination.rawValue, forKey: Self.fixedDestinationDefaultsKey)
     }
 
     public func normalize(enabledTools: Set<MonitoringToolID>, activeTool: MonitoringToolID?) {
@@ -135,10 +164,6 @@ public final class AppNavigationStore: ObservableObject {
             } else {
                 selectContext(.overview)
             }
-        } else if enabledTools.count == 1,
-                  selectedContext == .overview,
-                  let only = enabledTools.first {
-            selectContext(.tool(only))
         }
         if enabledTools.isEmpty {
             selectedContext = .overview
@@ -148,7 +173,7 @@ public final class AppNavigationStore: ObservableObject {
     private static func isValid(_ context: AppContext, enabled: Set<MonitoringToolID>) -> Bool {
         switch context {
         case .overview:
-            return enabled.count != 1
+            return true
         case .tool(let id):
             return enabled.contains(id)
         }

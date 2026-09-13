@@ -22,6 +22,9 @@ public final class AppEnvironment: ObservableObject {
     public let quotaInsightsService: ProviderQuotaInsightsService
     public let scanCoordinator: CodexUsageScanCoordinator
     let codexAccounts: CodexAccountsStore
+    let claudeAccounts: CodexAccountsStore
+    let antigravityAccounts: CodexAccountsStore
+    private var queryAccountDiscoveryTask: Task<Void, Never>?
     public let claudeScanCoordinator: ClaudeUsageScanCoordinator
     public let antigravityActivityCoordinator: AntigravityActivityScanCoordinator
     public let enabledToolsStore: EnabledToolsStore
@@ -155,6 +158,8 @@ public final class AppEnvironment: ObservableObject {
 
         self.repositories = Repositories(database: database)
         self.codexAccounts = CodexAccountsStore(database: database)
+        self.claudeAccounts = CodexAccountsStore(database: database, provider: .claude)
+        self.antigravityAccounts = CodexAccountsStore(database: database, provider: .antigravity)
         self.quotaInsightsService = ProviderQuotaInsightsService(database: database)
         self.transport = JSONRPCTransport()
         self.processManager = CodexProcessManager(transport: transport)
@@ -273,11 +278,29 @@ public final class AppEnvironment: ObservableObject {
 
         // 6. 启动可配置的周期性状态刷新，默认 1 分钟。
         self.scheduleRefreshTimer()
+        self.startQueryAccountDiscovery()
 
         // 7. 用 Web entitlement 后台补齐订阅周期、续费/降级状态。
         if enabledToolsStore.isEnabled(.codex) {
             Task { @MainActor [weak self] in
                 _ = await self?.refreshSubscriptionEntitlementIfPossible()
+            }
+        }
+    }
+
+    private func startQueryAccountDiscovery() {
+        queryAccountDiscoveryTask?.cancel()
+        queryAccountDiscoveryTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                if let self {
+                    for store in [codexAccounts, claudeAccounts, antigravityAccounts]
+                    where enabledToolsStore.isEnabled(MonitoringToolID(rawValue: store.provider.rawValue)) {
+                        await store.prepare()
+                        await store.discoverLocal()
+                        await store.renewDueAccounts()
+                    }
+                } else { return }
+                do { try await Task.sleep(for: .seconds(60)) } catch { return }
             }
         }
     }
@@ -707,22 +730,8 @@ public final class AppEnvironment: ObservableObject {
 
     /// 选择已保存的历史账号，仅加载 QuotaLens 缓存，不切换工具本地登录账号。
     public func selectStoredAccount(accountKey: String, provider: UsageProvider) {
-        if provider == .codex {
-            codexAccounts.select(accountKey)
-            return
-        }
-        beginAccountScopeChange()
-        switch provider {
-        case .claude:
-            state.selectedClaudeAccountKey = accountKey
-            state.latestClaudeUsage = try? ClaudeQuotaRepository.hydrate(accountKey: accountKey, database: repositories.db)
-        case .antigravity:
-            state.selectedAntigravityAccountKey = accountKey
-            state.latestAntigravityQuota = try? AntigravityQuotaRepository.hydrate(database: repositories.db, accountKey: accountKey)
-        case .codex:
-            state.selectedAccountKey = accountKey
-            _ = applyCachedQuotaSnapshotIfAvailable(for: accountKey)
-        }
+        let store = provider == .codex ? codexAccounts : provider == .claude ? claudeAccounts : antigravityAccounts
+        store.select(accountKey)
     }
 
     /// 导入本地 ~/.codex 账号

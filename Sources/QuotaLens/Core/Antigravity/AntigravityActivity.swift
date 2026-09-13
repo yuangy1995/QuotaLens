@@ -88,6 +88,8 @@ public struct AntigravityActivityScanSummary: Sendable, Equatable {
     public let snapshotsByProfile: [AntigravityStateProfile: AntigravityActivitySnapshot]
     public let isComplete: Bool
     public let hasIncompatibleUsage: Bool
+    public var issues: [LocalScanIssue] = []
+    public var sourcesFound = true
 }
 
 public struct AntigravityConversationScanResult: Sendable {
@@ -743,6 +745,11 @@ public actor AntigravityActivityStore {
         )
         let rawValues = stateScan.values
         var stateReadFailed = !stateScan.failedSources.isEmpty
+        var issues = stateScan.failedSources.map { source, error in
+            LocalScanIssue(source: source,
+                kind: [.unsupportedSchema, .malformedPayload, .databaseCorrupt].contains(error) ? .format : .read,
+                reason: error.localizedDescription)
+        }
         var recordsByProfile: [String: [AntigravityActivityRecord]] = Dictionary(
             uniqueKeysWithValues: stateScan.successfulProfiles.map { ($0.rawValue, []) }
         )
@@ -752,13 +759,32 @@ public actor AntigravityActivityStore {
                 recordsByProfile[raw.source.profile.rawValue, default: []].append(contentsOf: records)
             } catch {
                 stateReadFailed = true
+                issues.append(LocalScanIssue(source: raw.source.databaseURL, kind: .format,
+                    reason: L10n.text("活动索引格式无法识别，已保留上次记录。", "Activity index format could not be recognized. Previous records were retained.")))
             }
         }
         let conversationScan = conversationReader.readConversations()
-        let isComplete = conversationScan.isComplete && !stateReadFailed
-        recordsByProfile[AntigravityStateProfile.legacy.rawValue, default: []]
-            .append(contentsOf: conversationScan.conversations.map(\.activityRecord))
-        try AntigravityUsageImporter.importScan(conversationScan, database: database)
+        let incompatible = Dictionary(uniqueKeysWithValues: conversationScan.conversations
+            .filter { !$0.usageParseReport.isComplete }.map { (URL(fileURLWithPath: $0.sourcePath), $0.usageParseReport) })
+        for (source, reason) in conversationScan.failedSources {
+            if let report = incompatible[source] {
+                issues.append(LocalScanIssue(source: source, kind: .format, reason: L10n.format(
+                    "%d of %d usage metadata records could not be recognized. Cached usage was retained.",
+                    zhHans: "%d / %d 条用量元数据无法识别，已保留之前的统计。",
+                    report.incompatibleCount, report.metadataRowCount)))
+            } else { issues.append(LocalScanIssue(source: source, kind: .read, reason: reason)) }
+        }
+        let conversationSourcesFound = conversationReader.isAvailable || !conversationScan.discoveredSources.isEmpty
+            || !conversationScan.failedSources.isEmpty
+        if conversationSourcesFound {
+            recordsByProfile[AntigravityStateProfile.legacy.rawValue, default: []]
+                .append(contentsOf: conversationScan.conversations.map(\.activityRecord))
+            try AntigravityUsageImporter.importScan(conversationScan, database: database)
+        } else if try !loadRecords(sourceProfile: AntigravityStateProfile.legacy.rawValue).isEmpty {
+            issues.append(LocalScanIssue(source: conversationReader.directoryURL, kind: .read,
+                reason: L10n.text("本次未找到可读取来源，已有缓存未重新验证。", "No readable sources were found; existing cached data was not revalidated.")))
+        }
+        let isComplete = conversationScan.isComplete && !stateReadFailed && issues.isEmpty
         for (sourceProfile, records) in recordsByProfile {
             try replace(Self.deduplicated(records), sourceProfile: sourceProfile, removeMissing: isComplete)
         }
@@ -777,14 +803,21 @@ public actor AntigravityActivityStore {
         })
         let snapshot = try makeSnapshot(sourceProfile: nil, now: now)
         let recordsRead = Self.deduplicated(try loadRecords(sourceProfile: nil)).count
+        let sourcesFound = !stateScan.successfulProfiles.isEmpty || conversationSourcesFound
+        if !sourcesFound, recordsRead > 0 {
+            issues.append(LocalScanIssue(source: nil, kind: .incomplete,
+                reason: L10n.text("本次未找到可读取来源，已有缓存未重新验证。", "No readable sources were found; existing cached data was not revalidated.")))
+        }
         return AntigravityActivityScanSummary(
             recordsRead: recordsRead,
             sourceProfile: sourceProfiles.count == 1 ? sourceProfiles[0].rawValue : nil,
             sourceProfiles: sourceProfiles,
             snapshot: snapshot,
             snapshotsByProfile: snapshotsByProfile,
-            isComplete: isComplete,
-            hasIncompatibleUsage: conversationScan.conversations.contains { !$0.usageParseReport.isComplete }
+            isComplete: isComplete && issues.isEmpty,
+            hasIncompatibleUsage: conversationScan.conversations.contains { !$0.usageParseReport.isComplete },
+            issues: issues.sorted { $0.id < $1.id },
+            sourcesFound: sourcesFound
         )
     }
 
@@ -1084,10 +1117,11 @@ public final class AntigravityActivityScanCoordinator: ObservableObject {
     @Published public private(set) var statusText = ""
     @Published public private(set) var latestSnapshot: AntigravityActivitySnapshot?
     @Published public private(set) var snapshotsByProfile: [AntigravityStateProfile: AntigravityActivitySnapshot] = [:]
+    @Published public private(set) var diagnostics: LocalScanDiagnostics = .unchecked
 
     private var store: AntigravityActivityStore?
 
-    public init() {}
+    public init(store: AntigravityActivityStore? = nil) { self.store = store }
 
     public func configure(database: SQLiteDatabase) {
         store = AntigravityActivityStore(database: database)
@@ -1102,7 +1136,12 @@ public final class AntigravityActivityScanCoordinator: ObservableObject {
             let result = try await store.scan(preferredProfile: preferredProfile)
             latestSnapshot = result.snapshot
             snapshotsByProfile = result.snapshotsByProfile
-            isPartial = !result.isComplete
+            let issues = !result.isComplete && result.issues.isEmpty
+                ? [LocalScanIssue(source: nil, kind: .incomplete,
+                    reason: L10n.text("扫描未完成，无法确认受影响来源数量。", "Scan did not complete; the number of affected sources is unknown."))]
+                : result.issues
+            diagnostics = LocalScanDiagnostics(checkedAt: Date(), issues: issues, sourcesFound: result.sourcesFound)
+            isPartial = diagnostics.isPartial
             if result.isComplete {
                 lastScanTime = Date()
                 statusText = L10n.format(
@@ -1123,6 +1162,9 @@ public final class AntigravityActivityScanCoordinator: ObservableObject {
                 )
             }
         } catch {
+            diagnostics = LocalScanDiagnostics(checkedAt: Date(), issues: [
+                LocalScanIssue(source: nil, kind: .incomplete, reason: error.localizedDescription)
+            ])
             isPartial = true
             statusText = L10n.text(
                 "暂时无法读取 Antigravity 本地活动",

@@ -195,6 +195,8 @@ struct ProviderUsageDashboardView: View {
             LazyVStack(spacing: 20) {
                 // 1. 顶部控制栏与时间范围选择
                 headerControlBar
+                Text(L10n.text("本页统计本机记录；实时账号额度请在额度概览查看。", "This page summarizes local records. View live account quota in Quota Overview."))
+                    .font(.callout).foregroundStyle(.secondary)
 
                 if store.isLoading && store.metrics == nil {
                     VStack(spacing: 8) {
@@ -449,24 +451,7 @@ struct ProviderUsageDashboardView: View {
 
             Spacer()
 
-            if let provider = dashboardProvider,
-               provider != .codex,
-               !env.state.storedAccountKeys(for: provider).isEmpty {
-                ViewingAccountPicker(selection: Binding(
-                    get: {
-                        switch provider {
-                        case .codex: return env.state.selectedAccountKey ?? env.state.storedAccountKeys(for: provider).first ?? ""
-                        case .claude: return env.state.selectedClaudeAccountKey ?? env.state.storedAccountKeys(for: provider).first ?? ""
-                        case .antigravity: return env.state.selectedAntigravityAccountKey ?? env.state.storedAccountKeys(for: provider).first ?? ""
-                        }
-                    },
-                    set: { key in
-                        env.selectStoredAccount(accountKey: key, provider: provider)
-                    }
-                ), accountNames: env.state.storedAccountKeys(for: provider).map {
-                    ($0, env.state.displayName(for: $0))
-                })
-            }
+            // Local usage spans this machine; account selection belongs to the live quota workspace.
 
             // 时间跨度芯片选择器
             HStack(spacing: 6) {

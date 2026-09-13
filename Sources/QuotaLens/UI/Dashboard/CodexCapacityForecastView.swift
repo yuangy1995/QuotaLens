@@ -10,7 +10,7 @@ struct CodexCapacityForecastView: View {
     @State private var loading = false
     @State private var displayedScope = ""
 
-    private var accountKey: String { accounts.selectedKey.isEmpty ? state.account?.accountKey ?? "" : accounts.selectedKey }
+    private var accountKey: String { accounts.selectedKey }
     private var loadKey: String {
         "\(accountKey)|\(state.codexCapacityRevision)|\(accounts.snapshots.first?.observedAt ?? 0)|\(state.lastRefreshAttemptAt?.timeIntervalSince1970 ?? 0)|\(accounts.isRefreshing)"
     }

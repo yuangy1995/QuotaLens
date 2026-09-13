@@ -76,8 +76,8 @@ public struct ProviderQuotaRefreshResult<Snapshot: Sendable>: Sendable {
         }
         if credentialPersistenceWarning {
             warnings.append(L10n.text(
-                "Claude 登录信息已临时刷新，但未能保存到系统钥匙串；重启后可能需要重新登录。",
-                "Claude sign-in was refreshed temporarily but could not be saved to the system keychain. You may need to sign in again after restarting."
+                "Claude 登录信息已临时刷新，但未能保存到本地加密存储；重启后可能需要重新登录。",
+                "Claude sign-in was refreshed but could not be saved to local encrypted storage. You may need to sign in again after restarting."
             ))
         }
         return warnings.isEmpty ? nil : warnings.joined(separator: " ")

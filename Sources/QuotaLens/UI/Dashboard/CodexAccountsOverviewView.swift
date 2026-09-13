@@ -20,24 +20,22 @@ struct CodexAccountsOverviewView: View {
                 if accounts.isAuthorizing {
                     ProgressView().controlSize(.small)
                     Button(L10n.text("取消", "Cancel")) { Task { await accounts.cancelAuthorization() } }
-                } else {
-                    Button(L10n.text("授权账号", "Authorize account")) { accounts.authorize() }
-                        .disabled(accounts.isRefreshing)
                 }
             }
             .padding(.horizontal, 24).padding(.vertical, 12)
             if accounts.selectedKey.isEmpty {
                 if accounts.isAuthorizing || accounts.error != nil { authorizationStatus.padding(.horizontal, 24) }
-                CodexOverviewView(state: state)
+                ContentUnavailableView(L10n.text("添加并验证账号后查看实时额度", "Add and verify an account to view live quota"),
+                                       systemImage: "person.crop.circle.badge.plus")
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
                         HStack {
                             VStack(alignment: .leading, spacing: 6) {
                                 Text(accounts.name(for: accounts.selectedKey, state: state)).font(.title2.bold())
-                                Text(isAuthorized
+                                Text(accounts.accounts.first { $0.accountKey == accounts.selectedKey }?.source == .independent
                                     ? L10n.text("已独立授权", "Independently authorized")
-                                    : L10n.text("历史快照 · 授权后可刷新", "Historical snapshot · Authorize to refresh"))
+                                    : L10n.text("已验证的导入凭据", "Verified imported credentials"))
                                     .foregroundStyle(.secondary)
                             }
                             Spacer()
@@ -48,8 +46,7 @@ struct CodexAccountsOverviewView: View {
                             .disabled(!isAuthorized || accounts.isRefreshing)
                             if accounts.isRefreshing { ProgressView().controlSize(.small) }
                         }
-                        Text(L10n.text("这里只切换查看账号，不会更改 Codex 登录；菜单栏仍显示当前使用的账号。",
-                                       "Viewing another account does not change the Codex login. The menu bar follows the active account."))
+                        Text(L10n.text("仅切换查询身份，不改变工具登录。", "Only the query identity changes, not the tool login."))
                             .font(.callout).foregroundStyle(.secondary)
                         authorizationStatus
                         if accounts.snapshots.isEmpty {
@@ -63,10 +60,6 @@ struct CodexAccountsOverviewView: View {
             }
         }
         .task(id: accounts.selectedKey) {
-            if accounts.selectedKey == state.account?.accountKey {
-                accounts.select("")
-                return
-            }
             await accounts.loadSelection(refresh: true)
             while !Task.isCancelled, !accounts.selectedKey.isEmpty {
                 do { try await Task.sleep(for: .seconds(60)) } catch { return }
@@ -80,7 +73,7 @@ struct CodexAccountsOverviewView: View {
         }
     }
 
-    private var isAuthorized: Bool { accounts.accounts.contains { $0.accountKey == accounts.selectedKey } }
+    private var isAuthorized: Bool { accounts.accounts.contains { $0.accountKey == accounts.selectedKey && $0.status == .available } }
 
     @ViewBuilder private var authorizationStatus: some View {
         if accounts.isAuthorizing {

@@ -355,13 +355,13 @@ struct AntigravityAccountIdentity: Sendable {
 public struct AntigravityQuotaClient: Sendable {
     private static let tokenEndpoint = URL(string: "https://oauth2.googleapis.com/token")!
     private static let userInfoEndpoint = URL(string: "https://www.googleapis.com/oauth2/v2/userinfo")!
-    private static var clientID: String {
+    static var clientID: String {
         let p1 = "1071006060591"
         let p2 = "tmhssin2h21lcre235vtolojh4g403ep"
         let domain = "apps.googleusercontent.com"
         return "\(p1)-\(p2).\(domain)"
     }
-    private static var clientSecret: String {
+    static var clientSecret: String {
         let prefix = "GOCSPX"
         let body = "K58FWR486LdLJ1mLB8sXC4z6qDAf"
         return "\(prefix)-\(body)"
@@ -388,8 +388,15 @@ public struct AntigravityQuotaClient: Sendable {
         try reader.read(preferredProfile: preferredProfile)
     }
 
-    func fetch(credentials: AntigravityLocalCredentials) async throws -> AntigravityQuotaSnapshot {
-        let token = try await freshAccessToken(for: credentials)
+    func fetch(credentials: AntigravityLocalCredentials, allowRefresh: Bool = true) async throws -> AntigravityQuotaSnapshot {
+        if !allowRefresh {
+            guard credentials.accessToken?.isEmpty == false,
+                  credentials.expiresAt.map({ $0 > Date() }) ?? true else {
+                throw AntigravityFetchError.unauthorized
+            }
+        }
+        let token = allowRefresh ? try await freshAccessToken(for: credentials)
+            : (accessToken: credentials.accessToken!, expiresAt: credentials.expiresAt)
         let identity = try await fetchIdentity(token: token.accessToken)
         let baseURL = credentials.isGCPToS
             ? "https://cloudcode-pa.googleapis.com"

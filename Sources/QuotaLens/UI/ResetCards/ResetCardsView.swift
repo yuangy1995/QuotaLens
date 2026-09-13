@@ -5,6 +5,9 @@ public struct ResetCardsView: View {
     @Environment(\.colorScheme) var colorScheme
     @State private var pendingCredit: ResetCreditDisplay?
     @State private var consumingCreditId: String?
+    @EnvironmentObject private var env: AppEnvironment
+    @StateObject private var history = ResetCreditHistoryStore()
+    @State private var lastHistoryAttempt: Date?
 
     public init(state: AppState) {
         self.state = state
@@ -15,6 +18,8 @@ public struct ResetCardsView: View {
             VStack(spacing: 20) {
                 summaryCards
                 resetCardsList
+                ResetCreditHistoryPanel(store: history, refresh: { Task { await loadHistory(force: true) } },
+                    loadMore: { Task { await loadHistory(append: true) } })
             }
             .padding(24)
         }
@@ -24,6 +29,21 @@ public struct ResetCardsView: View {
             pendingCredit: $pendingCredit,
             consumingCreditId: $consumingCreditId
         )
+        .task(id: state.account?.accountKey) { await loadHistory(force: true) }
+        .onChange(of: state.lastRefreshAttemptAt) { _, _ in Task { await loadHistory() } }
+        .onChange(of: consumingCreditId) { old, new in
+            if old != nil, new == nil { Task { await loadHistory(force: true) } }
+        }
+    }
+
+    private func loadHistory(append: Bool = false, force: Bool = false) async {
+        let key = state.account?.accountKey ?? ""
+        if !force, !append, history.accountKey == key,
+           let lastHistoryAttempt, Date().timeIntervalSince(lastHistoryAttempt) < 60 { return }
+        lastHistoryAttempt = Date()
+        await history.load(accountKey: key, append: append) { cursor in
+            try await env.codexAccounts.resetCreditHistory(accountKey: key, cursor: cursor)
+        }
     }
 
     private var summaryCards: some View {

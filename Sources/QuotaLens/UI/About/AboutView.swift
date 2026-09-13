@@ -53,6 +53,16 @@ public struct AboutView: View {
     private var defaultChangelogs: [ChangelogEntry] {
         [
             ChangelogEntry(
+                id: "v1.1.0",
+                version: "v1.1.0",
+                date: "2026-09-14",
+                changes: [
+                    L10n.text("独立查询账号、本地加密凭据与自动令牌续期。", "Query accounts, encrypted local credentials, and automatic token renewal."),
+                    L10n.text("分类总览、页内详情与重置卡历史。", "Organized overview pages, inline details, and reset card history."),
+                    L10n.text("扫描警告显示来源详情与重试操作；未知数量不再显示为 0。", "Scan warnings now show source details and retry actions; unknown counts are not shown as zero.")
+                ]
+            ),
+            ChangelogEntry(
                 id: "v1.0.33",
                 version: "v1.0.33",
                 date: "2026-09-12",

@@ -73,8 +73,8 @@ public enum SettingsScope: String, Sendable {
         switch self {
         case .global: return [.general, .storage]
         case .codex: return [.account, .overlay, .codex]
-        case .claude: return [.claude]
-        case .antigravity: return [.antigravity]
+        case .claude: return [.account, .claude]
+        case .antigravity: return [.account, .antigravity]
         }
     }
 
@@ -140,12 +140,7 @@ public struct SettingsView: View {
 
             // 分类内容区域
             ScrollView {
-                VStack(spacing: 18) {
-                    Button {
-                        showingPriceCatalog = true
-                    } label: {
-                        Label(L10n.text("模型价格目录", "Model Price Catalog"), systemImage: "list.bullet.rectangle")
-                    }
+                VStack(spacing: 14) {
                     switch selectedTab {
                     case .general:
                         generalTabPane
@@ -163,9 +158,12 @@ public struct SettingsView: View {
                         storageTabPane
                     }
                 }
-                .padding(24)
+                .padding(20)
+                .frame(maxWidth: 1060)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
         }
+        .background(colorScheme == .dark ? Color(white: 0.075) : Color(white: 0.965))
         .foregroundStyle(AppTheme.textPrimary(for: colorScheme))
         .sheet(isPresented: $showingPriceCatalog) { ModelPricingCatalogView() }
         .task {
@@ -280,6 +278,16 @@ public struct SettingsView: View {
         VStack(spacing: 18) {
             monitoringToolsHUDCard
             appearanceHUDCard
+            HStack {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(L10n.text("API 等价费用估算", "API-equivalent cost estimate")).font(.headline)
+                    Text(L10n.text("非实际账单", "Not an actual bill")).font(.callout).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button { showingPriceCatalog = true } label: {
+                    Label(L10n.text("模型价格目录", "Model Price Catalog"), systemImage: "list.bullet.rectangle")
+                }
+            }.modifier(OverviewSurface())
             launchBehaviorHUDCard
         }
     }
@@ -335,7 +343,7 @@ public struct SettingsView: View {
             .font(.system(size: 10.5, weight: .medium))
             .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
         }
-        .cyberCard(cornerRadius: 16, padding: 18)
+        .modifier(OverviewSurface())
     }
 
     private func monitoringToolDescription(_ tool: MonitoringToolID) -> String {
@@ -354,58 +362,14 @@ public struct SettingsView: View {
     // MARK: - Tab 2 · 账号与同步
     private var accountTabPane: some View {
         VStack(spacing: 18) {
-            accountIdentityHUDCard
             savedAccountsHUDCard
-            syncPolicyHUDCard
+            if scope == .codex { syncPolicyHUDCard }
         }
     }
 
     private var savedAccountsHUDCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            CyberSectionHeader(title: L10n.text("已保存的账号", "Saved Accounts"), icon: "person.2.fill")
-            CyberDivider()
-            if [UsageProvider.codex, .claude, .antigravity].allSatisfy({ state.storedAccountKeys(for: $0).isEmpty }) {
-                Text(L10n.text("还没有保存过账号数据。", "No saved account data yet."))
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-            } else {
-                ForEach([UsageProvider.codex, .claude, .antigravity], id: \.self) { provider in
-                    Text(provider.localizedName)
-                        .font(.system(size: 10, weight: .black, design: .rounded))
-                        .foregroundStyle(AppTheme.accentCyan(for: colorScheme))
-                    ForEach(state.storedAccountKeys(for: provider), id: \.self) { key in
-                    let account = state.allAccounts.first { $0.accountKey == key } ?? AccountRecord(accountKey: key, emailHash: nil, planType: nil, firstSeenAt: 0, lastSeenAt: 0)
-                    HStack(spacing: 10) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            TextField(L10n.text("账号名称", "Account name"), text: Binding(
-                                get: { state.accountDisplayNames[account.accountKey] ?? String(account.accountKey.prefix(16)) },
-                                set: { state.setAccountDisplayName($0, for: account.accountKey) }
-                            ))
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 11, weight: .semibold, design: .rounded))
-                        Text(account.lastSeenAt > 0 ? L10n.format("Last read %@", zhHans: "最近读取 %@", UsageNumberFormatter.relativeTimeString(from: Date(timeIntervalSince1970: Double(account.lastSeenAt)))) : L10n.text("有已保存额度", "Saved quota available"))
-                                .font(.system(size: 9, weight: .medium, design: .monospaced))
-                                .foregroundStyle(AppTheme.textSecondary(for: colorScheme))
-                        }
-                        Spacer()
-                        if (provider == .codex ? state.selectedAccountKey : provider == .claude ? state.selectedClaudeAccountKey : state.selectedAntigravityAccountKey) == account.accountKey {
-                            Text(L10n.text("当前", "Current"))
-                                .font(.system(size: 9, weight: .bold))
-                                .foregroundStyle(AppTheme.accentCyan(for: colorScheme))
-                        }
-                        Button(role: .destructive) {
-                            env.deleteAccount(accountKey: account.accountKey)
-                        } label: {
-                            Image(systemName: "trash")
-                        }
-                        .buttonStyle(.borderless)
-                    }
-                    .padding(.vertical, 4)
-                    }
-                }
-            }
-        }
-        .cyberCard(cornerRadius: 16, padding: 18)
+        QueryAccountSettingsEntry(state: state,
+            accounts: scope == .claude ? env.claudeAccounts : scope == .antigravity ? env.antigravityAccounts : env.codexAccounts)
     }
 
     // MARK: - Tab 3 · 悬浮窗与挂件
@@ -441,6 +405,11 @@ public struct SettingsView: View {
     private var storageTabPane: some View {
         VStack(spacing: 18) {
             storageCoreHUDCard
+            if env.enabledToolsStore.isEnabled(.antigravity) {
+                AntigravityScanProblems(coordinator: env.antigravityActivityCoordinator) {
+                    await env.scanAntigravityActivity()
+                }.modifier(OverviewSurface())
+            }
             if let diagnostics = usageDiagnostics {
                 diagnosticsGridHUDCard(diagnostics)
             }
@@ -599,7 +568,7 @@ public struct SettingsView: View {
                 }
             }
         }
-        .cyberCard(cornerRadius: 16, padding: 18)
+        .modifier(OverviewSurface())
     }
 
     private var antigravityTrackingHUDCard: some View {
@@ -704,7 +673,7 @@ public struct SettingsView: View {
             .padding(12)
             .background(isDark ? Color.white.opacity(0.04) : Color.black.opacity(0.03), in: RoundedRectangle(cornerRadius: 10))
         }
-        .cyberCard(cornerRadius: 16, padding: 18)
+        .modifier(OverviewSurface())
     }
 
     private var antigravityStatusText: String {
@@ -877,7 +846,7 @@ public struct SettingsView: View {
                 .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))
             }
         }
-        .cyberCard(cornerRadius: 16, padding: 18)
+        .modifier(OverviewSurface())
     }
 
     // MARK: - 诊断表格卡片
@@ -904,7 +873,7 @@ public struct SettingsView: View {
         return VStack(alignment: .leading, spacing: 14) {
             HStack {
                 CyberSectionHeader(
-                    title: L10n.text("本地记录与问题报告", "Local Records & Reports"),
+                    title: L10n.text("已索引记录诊断", "Indexed record diagnostics"),
                     icon: "stethoscope"
                 )
 
@@ -966,6 +935,14 @@ public struct SettingsView: View {
             CyberDivider()
 
             LazyVGrid(columns: columns, spacing: 10) {
+                DiagnosticMetricTile(
+                    title: L10n.text("索引来源访问异常", "Indexed source access errors"),
+                    value: "\(diagnostics.inaccessibleSourceCount)",
+                    icon: "lock.doc",
+                    accentColor: diagnostics.inaccessibleSourceCount > 0 ? amber : cyan,
+                    isWarning: diagnostics.inaccessibleSourceCount > 0,
+                    colorScheme: colorScheme
+                )
                 // Row 1: 用户可理解的读取与费用状态
                 DiagnosticMetricTile(
                     title: L10n.text("本地记录", "Local Records"),
@@ -1082,7 +1059,7 @@ public struct SettingsView: View {
                 )
 
                 DiagnosticMetricTile(
-                    title: L10n.text("暂不可读记录", "Unreadable Records"),
+                    title: L10n.text("来源文件缺失", "Missing source files"),
                     value: "\(diagnostics.missingSourceCount)",
                     icon: "externaldrive.badge.questionmark",
                     accentColor: diagnostics.missingSourceCount == 0 ? emerald : amber,
@@ -1124,7 +1101,7 @@ public struct SettingsView: View {
                 )
 
                 DiagnosticMetricTile(
-                    title: L10n.text("无法读取的记录", "Unreadable Entries"),
+                    title: L10n.text("解析失败行数", "Malformed record lines"),
                     value: "\(diagnostics.malformedLineCount)",
                     icon: "exclamationmark.triangle.fill",
                     accentColor: diagnostics.malformedLineCount == 0 ? emerald : amber,
@@ -1172,8 +1149,8 @@ public struct SettingsView: View {
                     .foregroundStyle(diagnostics.missingSourceCount == 0 ? emerald : amber)
                 Text(diagnostics.missingSourceCount == 0
                     ? L10n.text(
-                        "未发现需要清理的本地记录。",
-                        "No local records need cleanup."
+                        "未发现已确认缺失的索引文件；扫描读取问题见上方。",
+                        "No indexed files are confirmed missing. See scan issues above for reading failures."
                     )
                     : L10n.format(
                 "%d records cannot be read right now. QuotaLens will keep the existing usage. Cleanup is available only after records are confirmed missing and reviewed in the preview.",
@@ -1225,7 +1202,7 @@ public struct SettingsView: View {
                 .padding(.top, 2)
             }
         }
-        .cyberCard(cornerRadius: 16, padding: 18)
+        .modifier(OverviewSurface())
     }
 
     // MARK: - 模块 01 · 外观与语言
@@ -1311,7 +1288,7 @@ public struct SettingsView: View {
                     .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
             )
         }
-        .cyberCard(cornerRadius: 16, padding: 18)
+        .modifier(OverviewSurface())
     }
 
     // MARK: - 模块 02 · 账号
@@ -1418,7 +1395,7 @@ public struct SettingsView: View {
                     .strokeBorder(AppTheme.insetBorder(for: colorScheme), lineWidth: 0.8)
             )
         }
-        .cyberCard(cornerRadius: 16, padding: 18)
+        .modifier(OverviewSurface())
     }
 
     // MARK: - 系统启动与常驻行为
@@ -1491,7 +1468,7 @@ public struct SettingsView: View {
                 )
             }
         }
-        .cyberCard(cornerRadius: 16, padding: 18)
+        .modifier(OverviewSurface())
     }
 
     // MARK: - 额度同步与提醒策略
@@ -1653,7 +1630,7 @@ public struct SettingsView: View {
                     .strokeBorder((state.hasUnreadWeeklyQuotaRecovery ? AppTheme.accentEmerald(for: colorScheme) : (isDark ? Color.white : Color.black)).opacity(state.hasUnreadWeeklyQuotaRecovery ? 0.34 : 0.10), lineWidth: 0.8)
             )
         }
-        .cyberCard(cornerRadius: 16, padding: 18)
+        .modifier(OverviewSurface())
     }
 
     // MARK: - Codex 路径探测与连接
@@ -1784,7 +1761,7 @@ public struct SettingsView: View {
                 Text(binaryTargetAlertMessage ?? "")
             }
         }
-        .cyberCard(cornerRadius: 16, padding: 18)
+        .modifier(OverviewSurface())
     }
 
     // MARK: - Codex 扫描与记录控制
@@ -1906,7 +1883,7 @@ public struct SettingsView: View {
             .padding(12)
             .background(AppTheme.insetSurface(for: colorScheme), in: RoundedRectangle(cornerRadius: 10))
         }
-        .cyberCard(cornerRadius: 16, padding: 18)
+        .modifier(OverviewSurface())
     }
 
     // MARK: - 模块 05 · 本地数据
@@ -2047,7 +2024,7 @@ public struct SettingsView: View {
                     .strokeBorder(Color.red.opacity(0.20), lineWidth: 0.8)
             )
         }
-        .cyberCard(cornerRadius: 16, padding: 18)
+        .modifier(OverviewSurface())
     }
 
     private func displayPreset(_ seconds: Int) -> String {

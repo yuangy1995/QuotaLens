@@ -33,6 +33,36 @@ struct ManagedCodexAccount: Codable, Identifiable, Sendable {
     let accountKey: String
     let directoryID: UUID
     var name: String
+    var source: QueryCredentialSource?
+    var status: QueryCredentialStatus?
+    var verifiedAt: Date?
+    var accessExpiresAt: Date?
+    var hasRefreshToken: Bool?
+
+    var canQuery: Bool {
+        guard status == .available else { return false }
+        if source == .local || source == .imported, let expiry = accessExpiresAt {
+            return expiry > Date() || hasRefreshToken == true
+        }
+        return true
+    }
+    var statusMessage: String {
+        switch status {
+        case .available: return canQuery ? L10n.text("已验证", "Verified") : QueryAccountError.expired.userMessage
+        case .missingCredentials: return QueryAccountError.credentialMissing.userMessage
+        case .accessExpired: return QueryAccountError.expired.userMessage
+        case .needsAuthorization: return QueryAccountError.authorization.userMessage
+        default: return L10n.text("待验证", "Not verified")
+        }
+    }
+}
+
+enum QueryCredentialSource: String, Codable, Sendable {
+    case independent, imported, local
+}
+
+enum QueryCredentialStatus: String, Codable, Sendable {
+    case available, unverified, needsAuthorization, missingCredentials, accessExpired
 }
 
 actor CodexAccountQuotaReader {
@@ -55,17 +85,18 @@ actor CodexAccountQuotaReader {
 
     func refresh(homeURL: URL, expectedAccountKey: String?) async throws -> (String, String, [RateLimitSnapshotRecord]) {
         let snapshot = try fetch(homeURL)
-        guard let account = snapshot.account?.account, account.type?.lowercased() == "chatgpt",
-              let limits = snapshot.rateLimits else { throw RPCPayloadError.missingResult(method: "account") }
+        guard let read = snapshot.account else { throw QueryAccountError.unavailable }
+        guard let account = read.account, account.type?.lowercased() == "chatgpt" else { throw QueryAccountError.authorization }
+        guard let limits = snapshot.rateLimits else { throw QueryAccountError.unavailable }
         let local = LocalAccountImporter.discoverLocalIdentities(authFile: homeURL.appendingPathComponent("auth.json")).first
         // 服务端有明确账号 ID 时必须与本地授权身份一致，不能只相信文件中的 ID。
         if let identifier = account.accountId ?? account.id, let local,
            AccountIdentity.stableAccountKey(from: identifier) != local.accountKey {
-            throw RPCPayloadError.invalidPayload(method: "account")
+            throw QueryAccountError.identity
         }
         let key = local?.accountKey ?? AccountIdentity.stableAccountKey(from: account.stableIdentifier)
         guard expectedAccountKey == nil || expectedAccountKey == key else {
-            throw RPCPayloadError.invalidPayload(method: "account")
+            throw QueryAccountError.identity
         }
         let subscriptionPlan = await fetchSubscription(homeURL, key)
         let name = account.email ?? local?.displayName ?? account.displayIdentifier
@@ -85,6 +116,7 @@ actor CodexAccountQuotaReader {
                     planType: group.planType ?? account.planType, rawJson: snapshot.rateLimitsRawJson))
             }
         }
+        guard !rows.isEmpty else { throw QueryAccountError.unavailable }
         try repositories.db.transaction {
             try repositories.upsertAccount(AccountRecord(accountKey: key,
                 emailHash: AccountIdentity.emailHash(from: account.email ?? account.stableIdentifier),

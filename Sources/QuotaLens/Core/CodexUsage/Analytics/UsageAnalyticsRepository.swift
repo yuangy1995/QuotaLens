@@ -1171,12 +1171,15 @@ public final class UsageAnalyticsRepository: Sendable {
         calendar: Calendar = UsageDayBucketer.calendar(),
         eventLimit: Int = 500,
         eventCursor: String? = nil,
-        providerFilter: UsageProviderFilter = .all
+        providerFilter: UsageProviderFilter = .all,
+        endExclusive: Date? = nil
     ) throws -> DayDetailDTO {
         let startDate = dayKey.date(calendar: calendar)
-        guard let endDate = calendar.date(byAdding: .day, value: 1, to: startDate) else {
+        guard let calendarEnd = calendar.date(byAdding: .day, value: 1, to: startDate) else {
             return DayDetailDTO(summary: DayUsageSummaryDTO(dayKey: dayKey, date: startDate))
         }
+        let endDate = min(calendarEnd, endExclusive ?? calendarEnd)
+        guard endDate > startDate else { return DayDetailDTO(summary: DayUsageSummaryDTO(dayKey: dayKey, date: startDate)) }
         let startMs = Int64(startDate.timeIntervalSince1970 * 1_000)
         let endMs = Int64(endDate.timeIntervalSince1970 * 1_000)
 
@@ -1859,12 +1862,13 @@ public final class UsageAnalyticsRepository: Sendable {
                 : ""
             return (sourcePath, relativePath)
         }
-        let missingSourceCount = sourcePresenceRows.filter { sourcePath, relativePath in
+        let presence = sourcePresenceRows.map { sourcePath, relativePath in
             let primary = Self.absoluteSourcePath(sourcePath)
             let fallback = Self.absoluteSourcePath(relativePath)
-            return !FileManager.default.fileExists(atPath: primary)
-                && (fallback.isEmpty || !FileManager.default.fileExists(atPath: fallback))
-        }.count
+            return IndexedSourcePresence.inspect([primary, fallback])
+        }
+        let missingSourceCount = presence.filter { $0 == .missing }.count
+        let inaccessibleSourceCount = presence.filter { $0 == .unknown }.count
         let legacyAggregateSessionCount = try database.intScalar(
             sql: "SELECT COUNT(*) FROM codex_sessions WHERE summary_provenance = 'legacyAggregate' AND event_count > 0;"
         )
@@ -1939,6 +1943,7 @@ public final class UsageAnalyticsRepository: Sendable {
             skippedNonRolloutJSONLCount: skippedNonRolloutJSONLCount,
             pendingSourceCount: pendingSourceCount,
             missingSourceCount: missingSourceCount,
+            inaccessibleSourceCount: inaccessibleSourceCount,
             legacyAggregateSessionCount: legacyAggregateSessionCount,
             legacyAggregateEventCount: legacyAggregateRow.0,
             legacyAggregateTokens: legacyAggregateRow.1,

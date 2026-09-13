@@ -534,6 +534,7 @@ public struct UsageDiagnosticsDTO: Codable, Sendable {
     public let skippedNonRolloutJSONLCount: Int
     public let pendingSourceCount: Int
     public let missingSourceCount: Int
+    public let inaccessibleSourceCount: Int
     public let legacyAggregateSessionCount: Int
     public let legacyAggregateEventCount: Int
     public let legacyAggregateTokens: Int64
@@ -578,6 +579,7 @@ public struct UsageDiagnosticsDTO: Codable, Sendable {
         skippedNonRolloutJSONLCount: Int = 0,
         pendingSourceCount: Int = 0,
         missingSourceCount: Int = 0,
+        inaccessibleSourceCount: Int = 0,
         legacyAggregateSessionCount: Int = 0,
         legacyAggregateEventCount: Int = 0,
         legacyAggregateTokens: Int64 = 0,
@@ -621,6 +623,7 @@ public struct UsageDiagnosticsDTO: Codable, Sendable {
         self.skippedNonRolloutJSONLCount = skippedNonRolloutJSONLCount
         self.pendingSourceCount = pendingSourceCount
         self.missingSourceCount = missingSourceCount
+        self.inaccessibleSourceCount = inaccessibleSourceCount
         self.legacyAggregateSessionCount = legacyAggregateSessionCount
         self.legacyAggregateEventCount = legacyAggregateEventCount
         self.legacyAggregateTokens = legacyAggregateTokens

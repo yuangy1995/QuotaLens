@@ -41,21 +41,22 @@ struct ViewingAccountPicker: View {
 struct CodexViewingAccountPicker: View {
     @ObservedObject var state: AppState
     @ObservedObject var accounts: CodexAccountsStore
+    @State private var showingManager = false
 
     var body: some View {
-        ViewingAccountPicker(
-            selection: Binding(
-                get: { accounts.selectedKey == state.account?.accountKey ? "" : accounts.selectedKey },
-                set: { accounts.select($0) }
-            ),
-            accountNames: [("", L10n.text("Codex 当前账号", "Current Codex account"))]
-                + accounts.keys(state: state).filter { $0 != state.account?.accountKey }
-                    .map { ($0, accounts.name(for: $0, state: state)) }
-        )
-        .help(L10n.text("这里只切换查看账号，不会更改 Codex 登录；菜单栏仍显示当前使用的账号。",
-                       "Viewing another account does not change the Codex login. The menu bar follows the active account."))
-        .onChange(of: state.account?.accountKey, initial: true) { _, key in
-            if let key, accounts.selectedKey == key { accounts.select("") }
+        HStack {
+            ViewingAccountPicker(
+                selection: Binding(get: { accounts.selectedKey }, set: { accounts.select($0) }),
+                accountNames: accounts.keys(state: state).map { ($0, accounts.name(for: $0, state: state)) }
+            )
+            Button { showingManager = true } label: {
+                Image(systemName: "person.2.badge.gearshape")
+            }
+            .help(L10n.text("账号管理", "Account management"))
+            .accessibilityLabel(L10n.text("账号管理", "Account management"))
+        }
+        .sheet(isPresented: $showingManager) {
+            QueryAccountsManagerView(state: state, accounts: accounts)
         }
     }
 }

@@ -10,6 +10,7 @@ public struct MainView: View {
     @EnvironmentObject var env: AppEnvironment
     @Environment(\.colorScheme) var colorScheme
     @State private var isContextSwitcherPresented = false
+    @State private var diagnosticIssue: DiagnosticIssueTarget?
 
     public init(
         state: AppState,
@@ -43,7 +44,7 @@ public struct MainView: View {
 
                 CyberDivider(glowColor: isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.07))
 
-                if enabledTools.enabledToolIDs.count >= 2 {
+                if !enabledTools.enabledToolIDs.isEmpty {
                     contextSwitcher
                         .padding(.horizontal, 14)
                         .padding(.top, 12)
@@ -59,13 +60,11 @@ public struct MainView: View {
                             onSelect: { navigation.selectContext(.overview) }
                         )
                     } else if navigation.selectedContext == .overview {
-                        SidebarNavigationRow(
-                            title: L10n.text("运营总览", "Operations Overview"),
-                            icon: "square.grid.2x2.fill",
-                            isSelected: navigation.fixedDestination == nil,
-                            colorScheme: colorScheme,
-                            onSelect: { navigation.selectContext(.overview) }
-                        )
+                        ForEach(OverviewPage.allCases) { page in
+                            SidebarNavigationRow(title: page.title, icon: page.icon,
+                                isSelected: navigation.fixedDestination == nil && navigation.overviewPage == page,
+                                colorScheme: colorScheme, onSelect: { navigation.selectOverviewPage(page) })
+                        }
                     } else if case .tool(let toolID) = navigation.selectedContext {
                         ForEach(availablePages(for: toolID)) { page in
                             SidebarNavigationRow(
@@ -124,13 +123,13 @@ public struct MainView: View {
 
                 if let warning = state.antigravityActivityWarningText,
                    navigation.selectedContext == .overview || navigation.selectedContext == .tool(.antigravity) {
-                    storageInitializationWarningStrip(warning)
+                    storageInitializationWarningStrip(warning, kind: .antigravity)
                 }
 
                 ForEach(state.providerHistoryWarnings.sorted { $0.rawValue < $1.rawValue }) { provider in
                     if let warning = state.historyWarningText(for: provider),
                        navigation.selectedContext == .overview || navigation.selectedContext == .tool(MonitoringToolID(rawValue: provider.rawValue)) {
-                        storageInitializationWarningStrip(warning)
+                        storageInitializationWarningStrip(warning, kind: .history(provider))
                     }
                 }
 
@@ -155,6 +154,15 @@ public struct MainView: View {
         .tint(cyan)
         .preferredColorScheme(state.colorScheme)
         .environment(\.controlActiveState, .key)
+        .sheet(item: $diagnosticIssue) { issue in
+            ScanProblemDetailsView(state: state, coordinator: env.antigravityActivityCoordinator, target: issue) {
+                switch issue.kind {
+                case .antigravity: await env.scanAntigravityActivity()
+                case .history: await env.refreshProviderQuotaInsights()
+                case .storage: break
+                }
+            }
+        }
         .background(StableWindowConfigurator())
         .overlay {
             UpdateCheckOverlay(updateManager: env.updateManager)
@@ -187,8 +195,9 @@ public struct MainView: View {
         } else {
             switch navigation.selectedContext {
             case .overview:
-                OverviewDashboardView(state: state, facade: env.usageQueryFacade) { tool in
+                OverviewDashboardView(state: state, facade: env.usageQueryFacade, page: navigation.overviewPage) { tool, page in
                     navigation.selectContext(.tool(tool))
+                    navigation.selectToolPage(page, for: tool)
                 }
             case .tool(let toolID):
                 toolContent(toolID)
@@ -214,7 +223,7 @@ public struct MainView: View {
         case (.codex, .settings):
             CodexSettingsView(state: state)
         case (.claude, .quota):
-            ClaudeOverviewView(state: state, facade: env.usageQueryFacade)
+            CodexAccountsOverviewView(state: state, accounts: env.claudeAccounts)
         case (.claude, .usage):
             ClaudeUsageDashboardView(facade: env.usageQueryFacade)
         case (.claude, .history):
@@ -224,7 +233,7 @@ public struct MainView: View {
         case (.claude, .settings):
             ClaudeSettingsView(state: state)
         case (.antigravity, .quota):
-            AntigravityOverviewView(state: state)
+            CodexAccountsOverviewView(state: state, accounts: env.antigravityAccounts)
         case (.antigravity, .usage):
             AntigravityUsageDashboardView(facade: env.usageQueryFacade)
         case (.antigravity, .sessions):
@@ -244,7 +253,7 @@ public struct MainView: View {
         case .overview:
             return enabledTools.enabledToolIDs.isEmpty
                 ? L10n.text("设置监控工具", "Set Up Monitoring")
-                : L10n.text("运营总览", "Operations Overview")
+                : navigation.overviewPage.title
         case .tool(let tool):
             return navigation.selectedPage(for: tool).title
         }
@@ -307,9 +316,9 @@ public struct MainView: View {
         case .overview:
             await env.refreshAllData()
         case .tool(let tool):
-            if tool == .codex, [.quota, .capacityForecast].contains(navigation.selectedPage(for: tool)),
-               !env.codexAccounts.selectedKey.isEmpty {
-                await env.codexAccounts.loadSelection(refresh: true)
+            if navigation.selectedPage(for: tool) == .quota || navigation.selectedPage(for: tool) == .capacityForecast {
+                let store = tool == .claude ? env.claudeAccounts : tool == .antigravity ? env.antigravityAccounts : env.codexAccounts
+                await store.loadSelection(refresh: true)
                 return
             }
             await env.refreshMonitoringTool(tool)
@@ -476,7 +485,7 @@ public struct MainView: View {
         }
     }
 
-    private func storageInitializationWarningStrip(_ warning: String) -> some View {
+    private func storageInitializationWarningStrip(_ warning: String, kind: DiagnosticIssueTarget.Kind = .storage) -> some View {
         let amber = AppTheme.accentAmber(for: colorScheme)
         let isDark = colorScheme == .dark
 
@@ -492,8 +501,8 @@ public struct MainView: View {
 
             Spacer(minLength: 8)
 
-            Button(L10n.text("查看设置", "Open Settings")) {
-                navigation.showFixedDestination(.appSettings)
+            Button(L10n.text("查看问题", "View issues")) {
+                diagnosticIssue = DiagnosticIssueTarget(kind: kind, message: warning)
             }
             .buttonStyle(.plain)
             .font(.system(size: 10.5, weight: .bold, design: .rounded))

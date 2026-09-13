@@ -72,7 +72,7 @@ final class CodexMultiAccountTests: XCTestCase {
     }
 
     @MainActor
-    func testBrowsingHistoricalAccountDoesNotClearActiveAccount() async throws {
+    func testHistoricalAccountIsNotSelectableAndDoesNotClearActiveAccount() async throws {
         let root = try makeTemporaryDirectory()
         let database = try makeMigratedDatabase(in: root)
         let defaults = UserDefaults(suiteName: UUID().uuidString)!
@@ -85,7 +85,8 @@ final class CodexMultiAccountTests: XCTestCase {
         let store = CodexAccountsStore(database: database, defaults: defaults, root: root)
         store.select("historical")
         await store.loadSelection(refresh: false)
-        XCTAssertEqual(store.selectedKey, "historical")
+        XCTAssertEqual(store.selectedKey, "")
+        XCTAssertTrue(store.keys(state: state).isEmpty)
         XCTAssertEqual(state.account?.accountKey, "active")
         XCTAssertEqual(state.selectedAccountKey, "active")
         XCTAssertTrue(store.snapshots.isEmpty)

@@ -12,7 +12,13 @@ public enum AppVersion {
     }
 
     public static var displayString: String {
-        "v\(marketingVersion)"
+        "v\(shortVersion(marketingVersion))"
+    }
+
+    static func shortVersion(_ version: String) -> String {
+        // Build/prerelease identifiers remain in bundle metadata for updating, not in the UI.
+        version.split(separator: "-", maxSplits: 1).first.map(String.init)?
+            .split(separator: "+", maxSplits: 1).first.map(String.init) ?? version
     }
 
     private static func bundleString(forKey key: String) -> String? {
