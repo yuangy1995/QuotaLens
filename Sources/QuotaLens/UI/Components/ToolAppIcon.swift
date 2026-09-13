@@ -83,8 +83,9 @@ public struct ToolAppIcon: View {
             let lengths: [CGFloat] = [43, 40, 45, 39, 44, 41, 45, 40, 44, 42, 40, 45]
             for index in 0..<12 {
                 let angle = CGFloat(index) * .pi / 6
-                for (offset, radius) in [(-0.22, CGFloat(13)), (-0.075, lengths[index]),
-                                         (0.075, lengths[index] - 1), (0.22, CGFloat(13))] {
+                let vertices: [(CGFloat, CGFloat)] = [(-0.22, 13), (-0.075, lengths[index]),
+                                                     (0.075, lengths[index] - 1), (0.22, 13)]
+                for (offset, radius) in vertices {
                     let point = NSPoint(x: 64 + cos(angle + offset) * radius,
                                         y: 64 + sin(angle + offset) * radius)
                     if index == 0 && offset == -0.22 { mark.move(to: point) }

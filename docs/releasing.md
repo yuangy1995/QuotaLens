@@ -35,7 +35,7 @@ Local ad-hoc packaging keeps an architecture-specific Swift build cache and uses
 
 A successful local fast build does not establish whole-module Release compatibility, especially when the local Swift version differs from the GitHub runner. Before tagging, run `swift build -c release` and `swift test -c release --filter CodexCapacityForecastTests`; the release quality gate also runs both. Keep compiler compatibility changes covered by the same behavioral tests instead of disabling optimization or ownership verification.
 
-Keep the legacy localization tables initialized separately per language. Swift 6.3's `COWArrayOpts` pass spends excessive time optimizing a single nested initializer containing all 1,051 legacy entries. The split preserves every key/value pair and bounds each initializer without disabling Release optimization; `ScanDiagnosticsTests` covers language lookup through the shared localization entry point.
+Keep the legacy localization tables initialized separately per language and the keyed/extended tables in bounded static groups. Swift 6.3's `COWArrayOpts` pass spends excessive time optimizing the original nested initializers (1,051 legacy entries, 674 keyed entries and 400 extended keys). The split preserves every key/value pair and bounds each initializer without disabling Release optimization; `ScanDiagnosticsTests` covers language lookup through the shared localization entry point and extended-table coverage. Keep fallback lookups sequential rather than using a long nil-coalescing expression that exceeds older Swift type-checker limits.
 
 ## Publishing A GitHub Release
 

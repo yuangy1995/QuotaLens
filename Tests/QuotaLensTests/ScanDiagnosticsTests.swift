@@ -25,6 +25,11 @@ final class ScanDiagnosticsTests: XCTestCase {
     }
 
     func testDiagnosticsTranslationsCoverAllSecondaryLanguages() {
+        XCTAssertEqual(extendedTranslations.count, 400)
+        let languages = Set(AppLanguage.allCases).subtracting([.english, .simplifiedChinese])
+        for (key, translations) in extendedTranslations {
+            XCTAssertEqual(Set(translations.keys), languages, key)
+        }
         XCTAssertFalse(diagnosticsTranslations.isEmpty)
         for (key, translations) in diagnosticsTranslations {
             XCTAssertEqual(translations.count, 8, key)

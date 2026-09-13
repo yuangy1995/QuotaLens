@@ -1,4 +1,13 @@
-let extendedTranslations: [String: [AppLanguage: String]] = [
+// Bounded static tables avoid excessive COWArrayOpts work in Swift Release builds.
+let extendedTranslations: [String: [AppLanguage: String]] = {
+    var result: [String: [AppLanguage: String]] = [:]
+    for part in [extendedTranslationsPart0, extendedTranslationsPart1, extendedTranslationsPart2, extendedTranslationsPart3, extendedTranslationsPart4, extendedTranslationsPart5, extendedTranslationsPart6, extendedTranslationsPart7, extendedTranslationsPart8, extendedTranslationsPart9, extendedTranslationsPart10, extendedTranslationsPart11, extendedTranslationsPart12, extendedTranslationsPart13, extendedTranslationsPart14, extendedTranslationsPart15] {
+        result.merge(part) { _, new in new }
+    }
+    return result
+}()
+
+private let extendedTranslationsPart0: [String: [AppLanguage: String]] = [
     "This reset card could not be verified as available. Refresh and try again.": [
         .traditionalChinese: "無法確認這張重設卡仍可使用，請重新整理後再試。",
         .japanese: "このリセットカードが利用可能か確認できません。更新して再試行してください。",
@@ -249,6 +258,9 @@ let extendedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "milhão de caracteres",
         .portugueseBrazil: "milhão de caracteres"
     ],
+]
+
+private let extendedTranslationsPart1: [String: [AppLanguage: String]] = [
     "minute": [
         .traditionalChinese: "分鐘",
         .japanese: "分",
@@ -499,6 +511,9 @@ let extendedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Reforça as provas exigidas para migrar aliases de conta e remove caminhos de análise duplicados.",
         .portugueseBrazil: "Reforça as evidências exigidas para migrar aliases de conta e remove caminhos de análise duplicados."
     ],
+]
+
+private let extendedTranslationsPart2: [String: [AppLanguage: String]] = [
     "A Claude child-task relationship is invalid. Existing statistics were kept.": [
         .traditionalChinese: "Claude 子任務的工作階段關係無效，已保留原有統計。",
         .japanese: "Claude の子タスクのセッション関係が無効なため、既存の統計を保持しました。",
@@ -749,6 +764,9 @@ let extendedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "A atualização da quota não terminou. São mantidos os últimos dados válidos.",
         .portugueseBrazil: "A atualização da cota não foi concluída. Os últimos dados válidos serão mantidos."
     ],
+]
+
+private let extendedTranslationsPart3: [String: [AppLanguage: String]] = [
     "Cached: %@": [
         .traditionalChinese: "快取：%@",
         .japanese: "キャッシュ: %@",
@@ -999,6 +1017,9 @@ let extendedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "%@ restante",
         .portugueseBrazil: "%@ restante"
     ],
+]
+
+private let extendedTranslationsPart4: [String: [AppLanguage: String]] = [
     "%@ read · %@ write": [
         .traditionalChinese: "%@ 讀取 · %@ 寫入",
         .japanese: "%@ 読み取り · %@ 書き込み",
@@ -1249,6 +1270,9 @@ let extendedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Adicionado reposição de fábrica e leitura novamente com um clique no painel de armazenamento Definições com diálogo de confirmação de segurança",
         .portugueseBrazil: "Adicionada redefinição de fábrica e leitura novamente com um clique no painel de armazenamento Configurações com caixa de diálogo de confirmação de segurança"
     ],
+]
+
+private let extendedTranslationsPart5: [String: [AppLanguage: String]] = [
     "Added project-based session grouping, filtering chips, and expand/collapse support with project usage totals": [
         .traditionalChinese: "新增了基於專案的會話分組、過濾晶片以及對專案使用總量的展開/折疊支援",
         .japanese: "プロジェクトベースのセッショングループ化、フィルタリングチップ、およびプロジェクト使用量の合計による展開/折りたたみのサポートを追加しました。",
@@ -1499,6 +1523,9 @@ let extendedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Limpar",
         .portugueseBrazil: "Limpar"
     ],
+]
+
+private let extendedTranslationsPart6: [String: [AppLanguage: String]] = [
     "Clears local usage records, resets preferences, and reads local data again": [
         .traditionalChinese: "清除本地使用記錄，重置偏好設置，並再次讀取本地數據",
         .japanese: "ローカル使用記録をクリアし、設定をリセットし、ローカル データを再度読み取ります",
@@ -1749,6 +1776,9 @@ let extendedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Concebido para macOS",
         .portugueseBrazil: "Projetado para macOS"
     ],
+]
+
+private let extendedTranslationsPart7: [String: [AppLanguage: String]] = [
     "Desktop Floating Overlay & Forecast": [
         .traditionalChinese: "桌面浮動疊加和預測",
         .japanese: "デスクトップフローティングオーバーレイと予測",
@@ -1999,6 +2029,9 @@ let extendedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Registo incompleto, não é possível estimar",
         .portugueseBrazil: "Registro incompleto, não é possível estimar"
     ],
+]
+
+private let extendedTranslationsPart8: [String: [AppLanguage: String]] = [
     "Initial usage record": [
         .traditionalChinese: "初次使用记录",
         .japanese: "初期使用実績",
@@ -2249,6 +2282,9 @@ let extendedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Requer atenção",
         .portugueseBrazil: "Requer atenção"
     ],
+]
+
+private let extendedTranslationsPart9: [String: [AppLanguage: String]] = [
     "Medium confidence": [
         .traditionalChinese: "中等置信度",
         .japanese: "中程度の信頼度",
@@ -2499,6 +2535,9 @@ let extendedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "No caminho certo",
         .portugueseBrazil: "No caminho certo"
     ],
+]
+
+private let extendedTranslationsPart10: [String: [AppLanguage: String]] = [
     "Online updates could not start right now. Try again later.": [
         .traditionalChinese: "現在無法開始線上更新。稍後再試。",
         .japanese: "現在、オンライン更新を開始できません。後でもう一度試してください。",
@@ -2749,6 +2788,9 @@ let extendedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "A ler %d/%d registos locais",
         .portugueseBrazil: "Lendo %d/%d registros locais"
     ],
+]
+
+private let extendedTranslationsPart11: [String: [AppLanguage: String]] = [
     "Reading Antigravity local activity...": [
         .traditionalChinese: "正在讀取 Antigravity 本機活動……",
         .japanese: "Antigravity のローカルアクティビティを読み取り中...",
@@ -2999,6 +3041,9 @@ let extendedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Mostra um lembrete quando a quota semanal volta a 100%. Não são enviadas notificações do sistema.",
         .portugueseBrazil: "Mostra um lembrete quando a cota semanal volta a 100%. Não são enviadas notificações do sistema."
     ],
+]
+
+private let extendedTranslationsPart12: [String: [AppLanguage: String]] = [
     "Show or hide quota details": [
         .traditionalChinese: "顯示或隱藏配額詳細資料",
         .japanese: "クォータの詳細を表示または非表示",
@@ -3249,6 +3294,9 @@ let extendedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "A shell de início de sessão devolveu um caminho do Codex em falta: %@",
         .portugueseBrazil: "O shell de login retornou um caminho do Codex ausente: %@"
     ],
+]
+
+private let extendedTranslationsPart13: [String: [AppLanguage: String]] = [
     "The login shell returned a non-executable Codex path: %@": [
         .traditionalChinese: "登入 shell 回傳的 Codex 路徑不可執行：%@",
         .japanese: "ログインシェルが返した Codex のパスは実行できません: %@",
@@ -3499,6 +3547,9 @@ let extendedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Registos ilegíveis",
         .portugueseBrazil: "Registros ilegíveis"
     ],
+]
+
+private let extendedTranslationsPart14: [String: [AppLanguage: String]] = [
     "Until reset": [
         .traditionalChinese: "直到重設",
         .japanese: "リセットまで",
@@ -3749,6 +3800,9 @@ let extendedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Não é possível estimar o modo de serviço",
         .portugueseBrazil: "Não é possível estimar o modo de serviço"
     ],
+]
+
+private let extendedTranslationsPart15: [String: [AppLanguage: String]] = [
     "unusual value": [
         .traditionalChinese: "異常值",
         .japanese: "異常な値",

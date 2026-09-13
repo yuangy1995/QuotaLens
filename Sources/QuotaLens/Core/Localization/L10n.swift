@@ -188,23 +188,23 @@ public enum L10n {
     }
 
     public static func localized(_ english: String, zhHans: String? = nil) -> String {
+        let language = L10n.language
         switch language {
         case .english:
             return english
         case .simplifiedChinese:
             return zhHans ?? translations[.simplifiedChinese]?[english] ?? english
         default:
-            return diagnosticsTranslations[english]?[language]
-                ?? resetHistoryTranslations[english]?[language]
-                ?? accountTransferTranslations[english]?[language]
-                ?? overviewTranslations[english]?[language]
-                ?? queryAccountTranslations[english]?[language]
-                ?? capacityForecastTranslations[english]?[language]
-                ?? multiToolTranslations[language]?[english]
-                ?? extendedTranslations[english]?[language]
-                ?? keyedTranslations[english]?[language]
-                ?? translations[language]?[english]
-                ?? english
+            if let value = diagnosticsTranslations[english]?[language] { return value }
+            if let value = resetHistoryTranslations[english]?[language] { return value }
+            if let value = accountTransferTranslations[english]?[language] { return value }
+            if let value = overviewTranslations[english]?[language] { return value }
+            if let value = queryAccountTranslations[english]?[language] { return value }
+            if let value = capacityForecastTranslations[english]?[language] { return value }
+            if let value = multiToolTranslations[language]?[english] { return value }
+            if let value = extendedTranslations[english]?[language] { return value }
+            if let value = keyedTranslations[english]?[language] { return value }
+            return translations[language]?[english] ?? english
         }
     }
 
@@ -898,7 +898,15 @@ private let multiToolTranslations: [AppLanguage: [String: String]] = [
     ]
 ]
 
-private let keyedTranslations: [String: [AppLanguage: String]] = [
+private let keyedTranslations: [String: [AppLanguage: String]] = {
+    var result: [String: [AppLanguage: String]] = [:]
+    for part in [keyedTranslationsPart0, keyedTranslationsPart1, keyedTranslationsPart2, keyedTranslationsPart3, keyedTranslationsPart4, keyedTranslationsPart5, keyedTranslationsPart6, keyedTranslationsPart7, keyedTranslationsPart8, keyedTranslationsPart9, keyedTranslationsPart10, keyedTranslationsPart11, keyedTranslationsPart12, keyedTranslationsPart13, keyedTranslationsPart14, keyedTranslationsPart15, keyedTranslationsPart16, keyedTranslationsPart17, keyedTranslationsPart18, keyedTranslationsPart19, keyedTranslationsPart20, keyedTranslationsPart21, keyedTranslationsPart22, keyedTranslationsPart23, keyedTranslationsPart24, keyedTranslationsPart25, keyedTranslationsPart26] {
+        result.merge(part) { _, new in new }
+    }
+    return result
+}()
+
+private let keyedTranslationsPart0: [String: [AppLanguage: String]] = [
     "Introduced Codex Quota Capacity Forecast (Beta): correlates cloud cumulative tokens with 5-hour and weekly windows to estimate equivalent capacity and remaining tokens": [
         .traditionalChinese: "全新推出 Codex 額度容量估算（測試版）：將已確認帳號的雲端累計 Tokens 與 5 小時及週度視窗智慧關聯，推算目前等效容量與剩餘 Tokens",
         .japanese: "Codex クォータ容量予測（ベータ版）を新設：確認済みアカウントのクラウド累積トークンを5時間および週間枠と連携させ、等価容量と残トークン数を推計",
@@ -1149,6 +1157,9 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "O início de sessão do Claude foi atualizado temporariamente, mas não pôde ser guardado no porta-chaves do sistema. Poderá ter de iniciar sessão novamente após reiniciar.",
         .portugueseBrazil: "O login do Claude foi atualizado temporariamente, mas não pôde ser salvo nas chaves do sistema. Pode ser necessário fazer login novamente após reiniciar."
     ],
+]
+
+private let keyedTranslationsPart1: [String: [AppLanguage: String]] = [
     "Check Sign-in Again": [
         .traditionalChinese: "重新檢測登入",
         .japanese: "ログイン状態を再確認",
@@ -1309,6 +1320,9 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .spanish: "Quedará %@ al restablecer", .german: "%@ beim Zurücksetzen übrig", .french: "%@ restant à la réinitialisation",
         .portuguese: "%@ restante na reposição", .portugueseBrazil: "%@ restante na redefinição"
     ],
+]
+
+private let keyedTranslationsPart2: [String: [AppLanguage: String]] = [
     "%@ needs attention": [
         .traditionalChinese: "%@ 需要處理", .japanese: "%@ は確認が必要です", .korean: "%@에 주의가 필요합니다",
         .spanish: "%@ requiere atención", .german: "%@ erfordert Aufmerksamkeit", .french: "%@ nécessite votre attention",
@@ -1454,6 +1468,9 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .spanish: "Gráfico de tendencia de cuota de Antigravity", .german: "Diagramm des Antigravity-Kontingenttrends", .french: "Graphique de tendance du quota Antigravity",
         .portuguese: "Gráfico da tendência da quota do Antigravity", .portugueseBrazil: "Gráfico de tendência da cota do Antigravity"
     ],
+]
+
+private let keyedTranslationsPart3: [String: [AppLanguage: String]] = [
     "Antigravity tasks are down %.0f%% from the previous 7 days.": [
         .traditionalChinese: "Antigravity 任務數比前 7 天減少 %.0f%%。", .japanese: "Antigravity のタスク数は前の7日間から %.0f%% 減少しています。", .korean: "Antigravity 작업 수가 이전 7일보다 %.0f%% 감소했습니다.",
         .spanish: "Las tareas de Antigravity bajaron un %.0f%% respecto a los 7 días anteriores.", .german: "Antigravity-Aufgaben sind gegenüber den vorherigen 7 Tagen um %.0f%% gesunken.", .french: "Les tâches Antigravity ont diminué de %.0f%% par rapport aux 7 jours précédents.",
@@ -1594,6 +1611,9 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .spanish: "Cuota de mayor riesgo", .german: "Kontingent mit höchstem Risiko", .french: "Quota le plus à risque",
         .portuguese: "Quota de maior risco", .portugueseBrazil: "Cota de maior risco"
     ],
+]
+
+private let keyedTranslationsPart4: [String: [AppLanguage: String]] = [
     "Last %@": [
         .traditionalChinese: "上次 %@", .japanese: "前回 %@", .korean: "마지막 %@",
         .spanish: "Último %@", .german: "Zuletzt %@", .french: "Dernière %@",
@@ -1719,6 +1739,9 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .spanish: "Los grupos de cuota están desequilibrados", .german: "Die Kontingentpools sind unausgewogen", .french: "Les réserves de quota sont déséquilibrées",
         .portuguese: "Os grupos de quota estão desequilibrados", .portugueseBrazil: "Os grupos de cota estão desequilibrados"
     ],
+]
+
+private let keyedTranslationsPart5: [String: [AppLanguage: String]] = [
     "Quota risk needs attention": [
         .traditionalChinese: "有額度風險需要處理", .japanese: "クォータのリスクに対応が必要です", .korean: "할당량 위험에 주의가 필요합니다",
         .spanish: "Un riesgo de cuota requiere atención", .german: "Ein Kontingentrisiko erfordert Aufmerksamkeit", .french: "Un risque de quota nécessite votre attention",
@@ -1849,6 +1872,9 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .spanish: "Sincronizando la cuota de Antigravity...", .german: "Antigravity-Kontingent wird synchronisiert...", .french: "Synchronisation du quota Antigravity...",
         .portuguese: "A sincronizar a quota do Antigravity...", .portugueseBrazil: "Sincronizando a cota do Antigravity..."
     ],
+]
+
+private let keyedTranslationsPart6: [String: [AppLanguage: String]] = [
     "Tasks": [
         .traditionalChinese: "任務數", .japanese: "タスク", .korean: "작업",
         .spanish: "Tareas", .german: "Aufgaben", .french: "Tâches",
@@ -2009,6 +2035,9 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Período reposto; a aguardar atualização",
         .portugueseBrazil: "Período redefinido; aguardando atualização"
     ],
+]
+
+private let keyedTranslationsPart7: [String: [AppLanguage: String]] = [
     "Resets %@": [
         .traditionalChinese: "%@重設",
         .japanese: "%@にリセット",
@@ -2259,6 +2288,9 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Totais da conta",
         .portugueseBrazil: "Totais da conta"
     ],
+]
+
+private let keyedTranslationsPart8: [String: [AppLanguage: String]] = [
     "Lifetime Tokens": [
         .traditionalChinese: "累計 Token",
         .japanese: "累計トークン",
@@ -2509,6 +2541,9 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Barras de progresso lineares de estilo cibernético e indicadores de radar dinâmicos para uma experiência visual aperfeiçoada durante a análise e atualização",
         .portugueseBrazil: "Barras de progresso lineares de estilo cibernético e indicadores de radar dinâmicos para uma experiência visual aprimorada durante o escaneamento e atualização"
     ],
+]
+
+private let keyedTranslationsPart9: [String: [AppLanguage: String]] = [
     "Optimized Codex App Server connection recovery and reconnection lifecycle to prevent redundant retries and enable instant manual reconnect": [
         .traditionalChinese: "優化 Codex App Server 連線恢復與自動重連排程生命週期，防止無效重試並支援即時強制重連",
         .japanese: "Codex App Server の接続復旧と自動再接続ライフサイクルを最適化し、無駄な再試行を抑制して即時手動再接続に対応",
@@ -2759,6 +2794,9 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Interações de fixação e reposição aperfeiçoadas com restauro num clique para a posição predefinida inteligente dentro da janela do Codex",
         .portugueseBrazil: "Interações de fixação e redefinição aprimoradas com restauração em um clique para a posição padrão inteligente dentro da janela do Codex"
     ],
+]
+
+private let keyedTranslationsPart10: [String: [AppLanguage: String]] = [
     "Introduced on-demand Codex conversation parsing and message history viewer in session details for user prompts and assistant replies": [
         .traditionalChinese: "新增 Codex 會話正文按需解析與對話記錄回放，支援在會話詳情中直接瀏覽使用者提示詞與助理完整回覆",
         .japanese: "Codex 会話本文のオンデマンド解析と履歴閲覧機能を追加し、セッション詳細画面でユーザーの指示とアシスタントの返答を直接確認可能に",
@@ -3009,6 +3047,9 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Aperfeiçoamento abrangente dos dicionários de localização e mapeamento de traduções do registo de alterações para os 10 idiomas",
         .portugueseBrazil: "Aprimoramento abrangente dos dicionários de localização e mapeamento de traduções do registro de alterações para os 10 idiomas"
     ],
+]
+
+private let keyedTranslationsPart11: [String: [AppLanguage: String]] = [
     "Upgraded Codex pricing and catalog engine with historical tiered pricing, prompt cache savings, and multi-cycle cost auditing": [
         .traditionalChinese: "全新升級 Codex 計費與定價目錄引擎，支援模型歷史分段價格、快取命中折算與多週期計費回溯",
         .japanese: "Codex の価格・料金カタログエンジンを刷新し、履歴価格（段階料金）、キャッシュ節約計算、複数サイクルのコスト監査に対応",
@@ -3259,6 +3300,9 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Agrupamento de sessões por projeto, filtros e suporte a recolher/expandir com análises agregadas de tokens e custos",
         .portugueseBrazil: "Agrupamento de sessões por projeto, filtros e suporte a recolher/expandir com análises agregadas de tokens e custos"
     ],
+]
+
+private let keyedTranslationsPart12: [String: [AppLanguage: String]] = [
     "Added prompt cache hit rate efficiency analysis and smart suggestion banners for quota exhaustion and reset cards": [
         .traditionalChinese: "新增 Prompt 快取命中率與節約效益分析，並在主看板增加配額耗盡與重置卡智慧建議橫幅",
         .japanese: "Prompt キャッシュヒット率の効率分析と、クォータ枯渇・リセットカードに関するスマート提案バナーを追加",
@@ -3509,6 +3553,9 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "A origem da sessão não é um ficheiro normal: %@",
         .portugueseBrazil: "A origem da sessão não é um arquivo comum: %@"
     ],
+]
+
+private let keyedTranslationsPart13: [String: [AppLanguage: String]] = [
     "The Codex source files for this session and its subagents will be moved to the macOS Trash, where they can be restored.": [
         .traditionalChinese: "此會話及其子代理的 Codex 來源檔案將移至 macOS 垃圾桶，可從垃圾桶還原。",
         .japanese: "このセッションとサブエージェントの Codex ソースファイルを macOS のゴミ箱に移動します。ゴミ箱から復元できます。",
@@ -3759,6 +3806,9 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Filtro de projeto",
         .portugueseBrazil: "Filtro de projeto"
     ],
+]
+
+private let keyedTranslationsPart14: [String: [AppLanguage: String]] = [
     "All Projects": [
         .traditionalChinese: "全部專案",
         .japanese: "すべてのプロジェクト",
@@ -4009,6 +4059,9 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Contagem decrescente e ritmo diário da quota atualizados em tempo real ao segundo",
         .portugueseBrazil: "Contagem regressiva e ritmo diário da cota atualizados em tempo real por segundo"
     ],
+]
+
+private let keyedTranslationsPart15: [String: [AppLanguage: String]] = [
     "Complete localized translations for 10 supported languages": [
         .traditionalChinese: "完整支援 10 種語言的本地化翻譯",
         .japanese: "対応する10言語のローカライズを完備",
@@ -4259,6 +4312,9 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Utilização e custos por modelo",
         .portugueseBrazil: "Uso e custos por modelo"
     ],
+]
+
+private let keyedTranslationsPart16: [String: [AppLanguage: String]] = [
     "Limited pricing data; showing token trend only": [
         .traditionalChinese: "計價資料不足，僅顯示 Token 趨勢",
         .japanese: "価格データ不足のため、Token の傾向のみ表示",
@@ -4509,6 +4565,9 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Análise local desativada",
         .portugueseBrazil: "Análise local desativada"
     ],
+]
+
+private let keyedTranslationsPart17: [String: [AppLanguage: String]] = [
     "Preparing scan...": [
         .traditionalChinese: "準備掃描…",
         .japanese: "スキャンを準備中...",
@@ -4759,6 +4818,9 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Cerca de %d d %d h",
         .portugueseBrazil: "Cerca de %d d %d h"
     ],
+]
+
+private let keyedTranslationsPart18: [String: [AppLanguage: String]] = [
     "About %d h %d min": [
         .traditionalChinese: "約 %d 小時 %d 分鐘",
         .japanese: "約%d時間%d分",
@@ -5009,6 +5071,9 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Entrada sem cache",
         .portugueseBrazil: "Entrada sem cache"
     ],
+]
+
+private let keyedTranslationsPart19: [String: [AppLanguage: String]] = [
     "Cached Input": [
         .traditionalChinese: "快取命中輸入",
         .japanese: "キャッシュ入力",
@@ -5259,6 +5324,9 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Consumo do cartão de reinício e atualização de quota",
         .portugueseBrazil: "Consumo do cartão de reinício e atualização de cota"
     ],
+]
+
+private let keyedTranslationsPart20: [String: [AppLanguage: String]] = [
     "Quota is Still Sufficient": [
         .traditionalChinese: "目前額度仍較充足",
         .japanese: "クォータにはまだ十分な余裕があります",
@@ -5509,6 +5577,9 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Fechar",
         .portugueseBrazil: "Fechar"
     ],
+]
+
+private let keyedTranslationsPart21: [String: [AppLanguage: String]] = [
     "Copy License": [
         .traditionalChinese: "複製協議",
         .japanese: "ライセンスをコピー",
@@ -5759,6 +5830,9 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Sobreposições sensíveis ao contexto",
         .portugueseBrazil: "Sobreposições sensíveis ao contexto"
     ],
+]
+
+private let keyedTranslationsPart22: [String: [AppLanguage: String]] = [
     "Follow the foreground Codex, Claude, or Antigravity window automatically.": [
         .traditionalChinese: "隨前台 Codex、Claude 或 Antigravity 自動切換並貼靠視窗",
         .japanese: "前面にある Codex、Claude、Antigravity のウインドウへ自動的に追従。",
@@ -6009,6 +6083,9 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Escolher Codex",
         .portugueseBrazil: "Escolher Codex"
     ],
+]
+
+private let keyedTranslationsPart23: [String: [AppLanguage: String]] = [
     "Choose Codex Path": [
         .traditionalChinese: "選擇 Codex 路徑",
         .japanese: "Codex のパスを選択",
@@ -6259,6 +6336,9 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Atualizações dentro da app",
         .portugueseBrazil: "Atualizações dentro do app"
     ],
+]
+
+private let keyedTranslationsPart24: [String: [AppLanguage: String]] = [
     "Install and Relaunch": [
         .traditionalChinese: "安裝並重新啟動",
         .japanese: "インストールして再起動",
@@ -6509,6 +6589,9 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "Utilização e quota restante",
         .portugueseBrazil: "Uso e cota restante"
     ],
+]
+
+private let keyedTranslationsPart25: [String: [AppLanguage: String]] = [
     "QuotaLens can automatically check for and download future updates.": [
         .traditionalChinese: "QuotaLens 可以自動檢查並下載後續更新。",
         .japanese: "QuotaLens は今後のアップデートを自動で確認してダウンロードできます。",
@@ -6759,6 +6842,9 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .portuguese: "A utilizar a conta com sessão iniciada",
         .portugueseBrazil: "Usando a conta conectada atual"
     ],
+]
+
+private let keyedTranslationsPart26: [String: [AppLanguage: String]] = [
     "Version": [
         .traditionalChinese: "版本",
         .japanese: "バージョン",
@@ -6998,7 +7084,7 @@ private let keyedTranslations: [String: [AppLanguage: String]] = [
         .french: "Cliquer pour basculer la vue utilisé/disponible",
         .portuguese: "Clique para alternar entre usado e disponível",
         .portugueseBrazil: "Clique para alternar entre usado e disponível"
-    ]
+    ],
 ]
 
 // Keep each language's static table separate to bound Swift Release optimizer work.
