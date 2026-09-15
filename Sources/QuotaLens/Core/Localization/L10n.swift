@@ -264,6 +264,7 @@ public enum L10n {
     }
 
     public static let changelogZhToEnMap: [String: String] = [
+        "恢复当前 Codex 账号的完整额度首页，保留账号切换、账号管理和备注。": "Restored the full quota dashboard for the current Codex account, keeping account switching, management, and nicknames.",
         "全新推出 Codex 额度容量估算（测试版）：将已确认账号的云端累计 Tokens 与 5 小时及周度窗口智能关联，推算当前等效容量与剩余 Tokens": "Introduced Codex Quota Capacity Forecast (Beta): correlates cloud cumulative tokens with 5-hour and weekly windows to estimate equivalent capacity and remaining tokens",
         "智能感知周期切分与异常过滤：支持自然重置、提前恢复与套餐变更切分，过滤迟到 Token 与跨周期污染": "Intelligent cycle segmentation and anomaly filtering: isolates natural resets, early top-ups, plan changes, and prevents delayed token cross-period pollution",
         "新增额度预测页面：展示历史周期变化、下一周期预估，并提供独立示例预览": "Added quota forecasts with cycle history, next-cycle estimates, and a separate example preview",

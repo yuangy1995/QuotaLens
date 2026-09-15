@@ -53,6 +53,14 @@ public struct AboutView: View {
     private var defaultChangelogs: [ChangelogEntry] {
         [
             ChangelogEntry(
+                id: "v1.1.1",
+                version: "v1.1.1",
+                date: "2026-09-15",
+                changes: [
+                    L10n.text("恢复当前 Codex 账号的完整额度首页，保留账号切换、账号管理和备注。", "Restored the full quota dashboard for the current Codex account, keeping account switching, management, and nicknames.")
+                ]
+            ),
+            ChangelogEntry(
                 id: "v1.1.0",
                 version: "v1.1.0",
                 date: "2026-09-14",

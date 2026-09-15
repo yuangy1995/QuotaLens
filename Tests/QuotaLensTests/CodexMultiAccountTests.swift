@@ -1,8 +1,95 @@
+import AppKit
 import Foundation
+import SwiftUI
 import XCTest
 @testable import QuotaLens
 
 final class CodexMultiAccountTests: XCTestCase {
+    @MainActor
+    func testCurrentAccountKeepsOriginalOverviewWithoutChangingQuerySelection() throws {
+        let root = try makeTemporaryDirectory()
+        let database = try makeMigratedDatabase(in: root)
+        let suite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let records = ["active", "other"].map {
+            ManagedCodexAccount(accountKey: $0, directoryID: UUID(), name: $0,
+                                source: .imported, status: .available)
+        }
+        defaults.set(try JSONEncoder().encode(records), forKey: "QuotaLens.managedCodexAccounts")
+        let store = CodexAccountsStore(database: database, defaults: defaults, root: root)
+        let state = AppState()
+        let originalSelection = state.selectedAccountKey
+        state.account = AccountRecord(accountKey: "active", emailHash: nil, planType: "pro", firstSeenAt: 1, lastSeenAt: 1)
+
+        XCTAssertTrue(store.showsCurrentCodexOverview(state: state))
+        store.select("active")
+        XCTAssertTrue(store.showsCurrentCodexOverview(state: state))
+        XCTAssertEqual(store.selectedKey, "active")
+        store.select("other")
+        XCTAssertFalse(store.showsCurrentCodexOverview(state: state))
+        XCTAssertEqual(state.account?.accountKey, "active")
+        XCTAssertEqual(state.selectedAccountKey, originalSelection)
+        store.select("active")
+        XCTAssertTrue(store.showsCurrentCodexOverview(state: state))
+
+        state.account = nil
+        XCTAssertFalse(store.showsCurrentCodexOverview(state: state))
+        store.select("")
+        XCTAssertTrue(store.showsCurrentCodexOverview(state: state))
+        for provider in [UsageProvider.claude, .antigravity] {
+            let otherStore = CodexAccountsStore(database: database, defaults: defaults, root: root, provider: provider)
+            XCTAssertFalse(otherStore.showsCurrentCodexOverview(state: state))
+        }
+    }
+
+    @MainActor
+    func testRestoredOverviewRendersWithAccountPickerInBothThemes() throws {
+        let root = try makeTemporaryDirectory()
+        let database = try makeMigratedDatabase(in: root)
+        let suite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let record = ManagedCodexAccount(accountKey: "active", directoryID: UUID(), name: "Work · fixture@example.test",
+                                        source: .imported, status: .available)
+        defaults.set(try JSONEncoder().encode([record]), forKey: "QuotaLens.managedCodexAccounts")
+        defaults.set("active", forKey: "QuotaLens.managedCodexAccounts.selection")
+        let store = CodexAccountsStore(database: database, defaults: defaults, root: root)
+        let state = AppState()
+        let now = Int64(Date().timeIntervalSince1970)
+        state.account = AccountRecord(accountKey: "active", emailHash: nil, planType: "pro", firstSeenAt: now, lastSeenAt: now)
+        state.currentQuotaSnapshots = [
+            .init(accountKey: "active", observedAt: now, limitId: "codex", slot: "primary",
+                  usedPercentMilli: 25000, windowDurationMins: 300, resetsAt: now + 10800, planType: "pro", rawJson: "{}"),
+            .init(accountKey: "active", observedAt: now, limitId: "codex", slot: "secondary",
+                  usedPercentMilli: 33000, windowDurationMins: 10080, resetsAt: now + 259200, planType: "pro", rawJson: "{}")
+        ]
+        state.hasCurrentServerQuota = true
+        state.lastSuccessfulRefreshAt = Date()
+        for width in [CGFloat(900), 1100] {
+            for scheme in [ColorScheme.light, .dark] {
+                let content = CodexAccountsOverviewView(state: state, accounts: store, automaticallyRefresh: false)
+                    .frame(width: width, height: 800)
+                    .background(AppTheme.canvasGradient(for: scheme))
+                    .environment(\.colorScheme, scheme)
+                    .environment(\.locale, Locale(identifier: "zh_CN"))
+                let host = NSHostingView(rootView: content)
+                host.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
+                host.setFrameSize(host.fittingSize)
+                host.layoutSubtreeIfNeeded()
+                XCTAssertEqual(host.bounds.width, width)
+                let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+                host.cacheDisplay(in: host.bounds, to: bitmap)
+                if let output = ProcessInfo.processInfo.environment["QUOTALENS_OVERVIEW_SCREENSHOT_DIR"] {
+                    let url = URL(fileURLWithPath: output)
+                    try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+                    try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+                        .write(to: url.appendingPathComponent("codex-home-\(Int(width))-\(scheme == .dark ? "dark" : "light").png"))
+                }
+            }
+        }
+    }
+
     func testIndependentEnvironmentDoesNotInheritActiveCredentials() {
         let base = ["CODEX_HOME": "/active", "OPENAI_API_KEY": "fixture", "CODEX_ACCESS_TOKEN": "fixture",
                     "CODEX_AUTH_JSON": "fixture", "CODEX_REMOTE_TOKEN": "fixture", "PATH": "/usr/bin"]
@@ -115,6 +202,11 @@ final class CodexMultiAccountTests: XCTestCase {
     }
 
     func testNewAccountStringsCoverSupportedLanguages() {
+        let releaseNote = "Restored the full quota dashboard for the current Codex account, keeping account switching, management, and nicknames."
+        XCTAssertEqual(L10n.changelogZhToEnMap["恢复当前 Codex 账号的完整额度首页，保留账号切换、账号管理和备注。"], releaseNote)
+        for language in AppLanguage.allCases where language != .english && language != .simplifiedChinese {
+            XCTAssertFalse(queryAccountTranslations[releaseNote]?[language]?.isEmpty ?? true, "\(language): \(releaseNote)")
+        }
         let keys = ["Viewing account", "Current Codex account", "Authorize account", "Independently authorized",
                     "Historical snapshot · Authorize to refresh", "No quota data", "Unidentified account %d", "Rename",
                     "Authorization did not complete. Try again.", "Remaining: %.0f%%"]

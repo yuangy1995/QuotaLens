@@ -100,6 +100,10 @@ final class CodexAccountsStore: ObservableObject {
         accounts.filter(\.canQuery).map(\.accountKey).sorted()
     }
 
+    func showsCurrentCodexOverview(state: AppState) -> Bool {
+        provider == .codex && (selectedKey.isEmpty || selectedKey == state.account?.accountKey)
+    }
+
     func select(_ key: String) {
         guard key.isEmpty || accounts.contains(where: { $0.accountKey == key && $0.canQuery }) else { return }
         guard selectedKey != key else { return }

@@ -3,6 +3,7 @@ import SwiftUI
 struct CodexAccountsOverviewView: View {
     @ObservedObject var state: AppState
     @ObservedObject var accounts: CodexAccountsStore
+    var automaticallyRefresh = true
     @State private var editingName = false
     @State private var name = ""
 
@@ -23,7 +24,12 @@ struct CodexAccountsOverviewView: View {
                 }
             }
             .padding(.horizontal, 24).padding(.vertical, 12)
-            if accounts.selectedKey.isEmpty {
+            if accounts.showsCurrentCodexOverview(state: state) {
+                if accounts.isAuthorizing || accounts.error != nil {
+                    authorizationStatus.padding(.horizontal, 24)
+                }
+                CodexOverviewView(state: state)
+            } else if accounts.selectedKey.isEmpty {
                 if accounts.isAuthorizing || accounts.error != nil { authorizationStatus.padding(.horizontal, 24) }
                 ContentUnavailableView(L10n.text("添加并验证账号后查看实时额度", "Add and verify an account to view live quota"),
                                        systemImage: "person.crop.circle.badge.plus")
@@ -60,6 +66,7 @@ struct CodexAccountsOverviewView: View {
             }
         }
         .task(id: accounts.selectedKey) {
+            guard automaticallyRefresh else { return }
             await accounts.loadSelection(refresh: true)
             while !Task.isCancelled, !accounts.selectedKey.isEmpty {
                 do { try await Task.sleep(for: .seconds(60)) } catch { return }

@@ -3,6 +3,16 @@ import Foundation
 let queryAccountTranslations: [String: [AppLanguage: String]] = {
     let languages: [AppLanguage] = [.traditionalChinese, .japanese, .korean, .spanish, .german, .french, .portuguese, .portugueseBrazil]
     let rows: [String: [String]] = [
+        "Restored the full quota dashboard for the current Codex account, keeping account switching, management, and nicknames.": [
+            "恢復目前 Codex 帳號的完整額度首頁，保留帳號切換、帳號管理和備註。",
+            "現在の Codex アカウントの利用枠ダッシュボードを復元しました。アカウントの切り替え、管理、ニックネームは引き続き利用できます。",
+            "현재 Codex 계정의 전체 한도 대시보드를 복원하고 계정 전환, 관리 및 별명 기능을 유지했습니다.",
+            "Se ha restaurado el panel completo de cuota de la cuenta actual de Codex, manteniendo el cambio de cuentas, la gestión y los alias.",
+            "Das vollständige Kontingent-Dashboard für das aktuelle Codex-Konto wurde wiederhergestellt. Kontowechsel, Verwaltung und Spitznamen bleiben erhalten.",
+            "Le tableau de bord complet du quota du compte Codex actuel a été rétabli, avec le changement de compte, la gestion et les surnoms.",
+            "Foi restaurado o painel completo de quota da conta Codex atual, mantendo a troca de contas, a gestão e as alcunhas.",
+            "O painel completo de cota da conta atual do Codex foi restaurado, mantendo a troca de contas, o gerenciamento e os apelidos."
+        ],
         "Paste the authorization code from your browser": ["貼上瀏覽器回傳的授權碼", "ブラウザに表示された認証コードを貼り付け", "브라우저의 인증 코드를 붙여넣으세요", "Pega el código de autorización del navegador", "Autorisierungscode aus dem Browser einfügen", "Collez le code d’autorisation du navigateur", "Cole o código de autorização do navegador", "Cole o código de autorização do navegador"],
         "Complete authorization": ["完成授權", "認証を完了", "인증 완료", "Completar autorización", "Autorisierung abschließen", "Terminer l’autorisation", "Concluir autorização", "Concluir autorização"],
         "Account management": ["帳號管理", "アカウント管理", "계정 관리", "Gestión de cuentas", "Kontoverwaltung", "Gestion des comptes", "Gestão de contas", "Gerenciamento de contas"],
