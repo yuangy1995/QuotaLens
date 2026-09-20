@@ -1,0 +1,36 @@
+name: Windows port bootstrap
+on:
+  push:
+    branches: [work/windows-native]
+    paths: [.github/workflows/windows-bootstrap.yml]
+permissions:
+  contents: read
+jobs:
+  workspace:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Prepare source and offline regression dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/port-artifacts" "$RUNNER_TEMP/port-deps"
+          tar --exclude=.git -czf "$RUNNER_TEMP/port-artifacts/source.tar.gz" .
+          cat > "$RUNNER_TEMP/port-deps/Dependencies.csproj" <<'EOF'
+          <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup><ItemGroup><PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" /></ItemGroup></Project>
+          EOF
+          dotnet restore "$RUNNER_TEMP/port-deps/Dependencies.csproj" --packages "$RUNNER_TEMP/port-packages"
+          tar -C "$RUNNER_TEMP/port-packages" -czf "$RUNNER_TEMP/port-artifacts/packages.tar.gz" .
+          curl --fail --location --retry 2 https://builds.dotnet.microsoft.com/dotnet/Sdk/10.0.401/dotnet-sdk-10.0.401-linux-x64.tar.gz -o "$RUNNER_TEMP/port-artifacts/dotnet-sdk.tar.gz"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-port-workspace
+          path: ${{ runner.temp }}/port-artifacts/*
+          retention-days: 1
+          compression-level: 0
