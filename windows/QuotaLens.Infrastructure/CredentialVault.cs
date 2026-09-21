@@ -1,0 +1,118 @@
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using QuotaLens.Core;
+
+namespace QuotaLens.Infrastructure;
+
+public interface ICredentialVault
+{
+    Task SaveAsync<T>(string id, T value, CancellationToken ct = default);
+    Task<T?> LoadAsync<T>(string id, CancellationToken ct = default) where T : class;
+    Task RemoveAsync(string id, CancellationToken ct = default);
+}
+
+/// <summary>AES-256-GCM with an authenticated record ID and a DPAPI CurrentUser protected master key.
+/// Same-user processes are not an isolation boundary. Missing/mismatched keys never replace existing ciphertext.</summary>
+public sealed class CredentialVault(string root) : ICredentialVault, IDisposable
+{
+    private readonly SemaphoreSlim gate = new(1, 1);
+    private static readonly byte[] Entropy = Encoding.ASCII.GetBytes("QuotaLens.Windows.MasterKey.v1");
+    private const int Maximum = 8 * 1024 * 1024;
+    public string Root { get; } = SecureFiles.LocalPath(root);
+    private string RecordPath(string id)
+    {
+        if (id.Length is 0 or > 180 || id.Any(c => !char.IsAsciiLetterOrDigit(c) && c != '-' && c != '_'))
+            throw new QuotaException(FailureKind.Storage, "Invalid credential record identifier.");
+        return Path.Combine(Root, id + ".qcred");
+    }
+    private async Task<T> LockedAsync<T>(Func<T> action, CancellationToken ct)
+    {
+        await gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            return await Task.Run(() => {
+                ct.ThrowIfCancellationRequested(); SecureFiles.CreateDirectory(Root);
+                var lockPath = Path.Combine(Root, ".lock");
+                FileStream? fileLock = null;
+                for (int attempt = 0; attempt < 100; attempt++)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    try { fileLock = new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); break; }
+                    catch (IOException) when (attempt < 99) { Thread.Sleep(50); }
+                }
+                using (fileLock) { ct.ThrowIfCancellationRequested(); return action(); }
+            }, ct).ConfigureAwait(false);
+        }
+        finally { gate.Release(); }
+    }
+    private byte[] MasterKey(bool create)
+    {
+        var path = Path.Combine(Root, "master.key.dpapi");
+        if (File.Exists(path))
+        {
+            SecureFiles.RequireRegularFile(path);
+            if (new FileInfo(path).Length > 65536) throw new CryptographicException("Invalid protected master key.");
+            var key = ProtectedData.Unprotect(File.ReadAllBytes(path), Entropy, DataProtectionScope.CurrentUser);
+            if (key.Length != 32) { CryptographicOperations.ZeroMemory(key); throw new CryptographicException("Invalid master key length."); }
+            return key;
+        }
+        if (!create || Directory.EnumerateFiles(Root, "*.qcred").Any())
+            throw new QuotaException(FailureKind.Storage, "The credential master key is missing. Existing encrypted records were not modified.");
+        var generated = RandomNumberGenerator.GetBytes(32);
+        try
+        {
+            var protectedKey = ProtectedData.Protect(generated, Entropy, DataProtectionScope.CurrentUser);
+            using var stream = SecureFiles.CreateRestricted(path);
+            stream.Write(protectedKey); stream.Flush(flushToDisk: true);
+            return generated;
+        }
+        catch { CryptographicOperations.ZeroMemory(generated); throw; }
+    }
+    public Task SaveAsync<T>(string id, T value, CancellationToken ct = default)
+    {
+        var path = RecordPath(id);
+        return LockedAsync(() => {
+            var plain = JsonSerializer.SerializeToUtf8Bytes(value, JsonTools.Options);
+            if (plain.Length > Maximum) { CryptographicOperations.ZeroMemory(plain); throw new InvalidDataException("Credential record exceeds limit."); }
+            byte[] key = MasterKey(create: true);
+            try
+            {
+                byte[] envelope = new byte[4 + 12 + 16 + plain.Length];
+                Encoding.ASCII.GetBytes("QLW1").CopyTo(envelope, 0);
+                RandomNumberGenerator.Fill(envelope.AsSpan(4, 12));
+                using var aes = new AesGcm(key, 16);
+                aes.Encrypt(envelope.AsSpan(4, 12), plain, envelope.AsSpan(32), envelope.AsSpan(16, 16), Encoding.UTF8.GetBytes(id));
+                SecureFiles.AtomicWrite(path, envelope);
+                return true;
+            }
+            finally { CryptographicOperations.ZeroMemory(key); CryptographicOperations.ZeroMemory(plain); }
+        }, ct);
+    }
+    public Task<T?> LoadAsync<T>(string id, CancellationToken ct = default) where T : class
+    {
+        var path = RecordPath(id);
+        return LockedAsync<T?>(() => {
+            if (!File.Exists(path)) return null;
+            SecureFiles.RequireRegularFile(path);
+            var size = new FileInfo(path).Length;
+            if (size is < 32 or > Maximum + 32) throw new CryptographicException("Invalid credential envelope.");
+            byte[] envelope = File.ReadAllBytes(path);
+            if (!envelope.AsSpan(0, 4).SequenceEqual("QLW1"u8)) throw new CryptographicException("Unsupported credential format.");
+            byte[] key = MasterKey(create: false); byte[] plain = new byte[envelope.Length - 32];
+            try
+            {
+                using var aes = new AesGcm(key, 16);
+                aes.Decrypt(envelope.AsSpan(4, 12), envelope.AsSpan(32), envelope.AsSpan(16, 16), plain, Encoding.UTF8.GetBytes(id));
+                return JsonSerializer.Deserialize<T>(plain, JsonTools.Options) ?? throw new CryptographicException("Empty credential record.");
+            }
+            finally { CryptographicOperations.ZeroMemory(key); CryptographicOperations.ZeroMemory(plain); }
+        }, ct);
+    }
+    public Task RemoveAsync(string id, CancellationToken ct = default)
+    {
+        var path = RecordPath(id);
+        return LockedAsync(() => { if (File.Exists(path)) { SecureFiles.RequireRegularFile(path); File.Delete(path); } return true; }, ct);
+    }
+    public void Dispose() => gate.Dispose();
+}
