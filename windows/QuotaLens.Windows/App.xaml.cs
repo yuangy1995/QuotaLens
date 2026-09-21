@@ -1,6 +1,5 @@
 using System.Security.Principal;
 using Microsoft.UI.Xaml;
-using QuotaLens.Windows.UI;
 
 namespace QuotaLens.Windows;
 
@@ -19,12 +18,10 @@ public partial class App : Application
         }
         try {
             StartupDiagnostics.Trace("app constructor");
+            // App.xaml owns the merged WinUI resources and theme dictionaries.
+            // Do not replace that dictionary during XAML application construction.
             InitializeComponent();
             StartupDiagnostics.Trace("XAML initialized");
-            // Assign the complete dictionary before any code-created visual requests it.
-            // Reading Resources to log its count here can itself fail during startup.
-            Resources = ThemeResources.Create();
-            StartupDiagnostics.Trace("native palettes installed");
         } catch (Exception error) { StartupDiagnostics.Failure(error); throw; }
     }
     protected override void OnLaunched(LaunchActivatedEventArgs args)
