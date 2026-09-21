@@ -10,15 +10,21 @@ namespace QuotaLens.Windows.UI;
 
 internal static class Ui
 {
+    private static readonly global::Windows.UI.ViewManagement.AccessibilitySettings Accessibility = new();
     public static bool Chinese { get; set; } = CultureInfo.CurrentUICulture.Name.StartsWith("zh", StringComparison.OrdinalIgnoreCase);
     public static string T(string zh, string en) => Chinese ? zh : en;
-    public static Brush Brush(string key) => (Brush)Application.Current.Resources[key];
+    public static Brush Brush(string key) {
+        var theme = (App.CurrentWindow?.Content as FrameworkElement)?.ActualTheme ??
+            (Application.Current.RequestedTheme == ApplicationTheme.Dark ? ElementTheme.Dark : ElementTheme.Light);
+        string palette = Accessibility.HighContrast ? "HighContrast" : theme == ElementTheme.Dark ? "Default" : "Light";
+        return (Brush)((ResourceDictionary)Application.Current.Resources.ThemeDictionaries[palette])[key];
+    }
     public static TextBlock Text(string value, double size = 14, bool muted = false) => new() {
         Text = value, FontSize = size, TextWrapping = TextWrapping.Wrap,
         Foreground = Brush(muted ? "MutedBrush" : "TextBrush"), IsTextSelectionEnabled = true
     };
     public static TextBlock Heading(string value, double size = 22) {
-        var text = Text(value, size); text.FontWeight = global::Windows.UI.Text.FontWeights.SemiBold; return text;
+        var text = Text(value, size); text.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold; return text;
     }
     public static StackPanel Stack(params UIElement[] children) {
         var panel = new StackPanel { Spacing = 14 }; foreach (var child in children) panel.Children.Add(child); return panel;
@@ -41,11 +47,10 @@ internal static class Ui
     public static string Date(DateTimeOffset? value) => value?.ToLocalTime().ToString("g", CultureInfo.CurrentCulture) ?? T("未提供", "Not supplied");
     public static string Reset(DateTimeOffset? value) {
         if (value is null) return T("重置时间未提供", "Reset time not supplied");
-        var span = value.Value - DateTimeOffset.UtcNow;
-        if (span <= TimeSpan.Zero) return T("快照窗口已过期，请刷新", "Snapshot window expired; refresh");
+        if (value <= DateTimeOffset.UtcNow) return T("快照窗口已过期，请刷新", "Snapshot window expired; refresh");
         return T("重置于 ", "Resets ") + Date(value);
     }
-    public static Brush ProviderBrush(Provider provider) => new SolidColorBrush(provider switch {
+    public static Brush ProviderBrush(Provider provider) => Accessibility.HighContrast ? Brush("AccentBrush") : new SolidColorBrush(provider switch {
         Provider.Claude => ColorHelper.FromArgb(255, 185, 119, 80),
         Provider.Antigravity => ColorHelper.FromArgb(255, 133, 111, 215),
         _ => ColorHelper.FromArgb(255, 17, 149, 172)

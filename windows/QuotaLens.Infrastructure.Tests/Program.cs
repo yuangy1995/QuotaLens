@@ -9,7 +9,6 @@ int passed = 0;
 void Check(bool value, string name) { if (!value) throw new Exception("FAILED: " + name); passed++; Console.WriteLine("PASS " + name); }
 async Task Reject(Func<Task> action, string name) { bool failed = false; try { await action(); } catch { failed = true; } Check(failed, name); }
 byte[] ReadShared(string path) {
-    // SQLite's connection pool retains WAL handles on Windows. Inspection must share writes and deletion.
     using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
     using var content = new MemoryStream(); stream.CopyTo(content); return content.ToArray();
 }
@@ -94,7 +93,8 @@ try {
     await Reject(() => indexer.ScanAsync(Provider.Codex, [sessions], true, cancelled.Token), "scan cancellation is observed");
     Check(AntigravityActivityReader.Parse("").Count == 0, "empty aggregate activity is valid");
     await Reject(() => Task.Run(() => AntigravityActivityReader.Parse("not-base64")), "malformed activity is rejected without a zero fallback");
-    await Reject(() => Task.Run(() => AntigravityActivityReader.Parse(Convert.ToBase64String(new byte[] { 10, 255 })))), "truncated protobuf is rejected");
+    string truncated = Convert.ToBase64String(new byte[] { 10, 255 });
+    await Reject(() => Task.Run(() => AntigravityActivityReader.Parse(truncated)), "truncated protobuf is rejected");
     Console.WriteLine($"{passed} Windows infrastructure checks passed using isolated synthetic data only.");
 } finally {
     Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools(); if (Directory.Exists(root)) Directory.Delete(root, true);

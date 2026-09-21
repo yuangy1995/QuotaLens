@@ -5,6 +5,7 @@ namespace QuotaLens.Windows;
 
 public partial class App : Application
 {
+    internal static Window? CurrentWindow { get; private set; }
     private MainWindow? window;
     private Mutex? singleton;
     private EventWaitHandle? activation;
@@ -21,20 +22,19 @@ public partial class App : Application
             try { acquired = singleton.WaitOne(0); } catch (AbandonedMutexException) { acquired = true; }
             if (!acquired) {
                 try { using var wake = EventWaitHandle.OpenExisting(name + ".Activate"); wake.Set(); } catch (WaitHandleCannotBeOpenedException) { }
-                singleton.Dispose(); Exit(); return;
+                singleton.Dispose(); singleton = null; Exit(); return;
             }
             activation = new EventWaitHandle(false, EventResetMode.AutoReset, name + ".Activate");
-        }
-        else {
+        } else {
             Directory.CreateDirectory(smoke);
             UnhandledException += (_, e) => { File.WriteAllText(Path.Combine(smoke, "failure.txt"), e.Exception.ToString()); Environment.Exit(1); };
         }
-        // CI always uses a new private temporary data directory and never starts scanners or network tasks.
         window = new MainWindow(smoke is null ? null : Path.Combine(Path.GetTempPath(), "QuotaLens-ui-test-" + Guid.NewGuid().ToString("N")), smoke);
+        CurrentWindow = window;
         if (activation is not null) activationWait = ThreadPool.RegisterWaitForSingleObject(activation,
             (_, _) => window.DispatcherQueue.TryEnqueue(window.ShowMain), null, Timeout.Infinite, false);
         window.Closed += (_, _) => {
-            activationWait?.Unregister(null); activation?.Dispose();
+            activationWait?.Unregister(null); activation?.Dispose(); CurrentWindow = null;
             if (singleton is not null) { singleton.ReleaseMutex(); singleton.Dispose(); singleton = null; }
         };
         window.Activate();
