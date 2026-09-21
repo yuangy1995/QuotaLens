@@ -19,8 +19,12 @@ public partial class App : Application
         }
         try {
             StartupDiagnostics.Trace("app constructor");
-            InitializeComponent(); StartupDiagnostics.Trace("XAML initialized; theme count=" + Resources.ThemeDictionaries.Count);
-            Resources = ThemeResources.Create(); StartupDiagnostics.Trace("native palettes installed");
+            InitializeComponent();
+            StartupDiagnostics.Trace("XAML initialized");
+            // Assign the complete dictionary before any code-created visual requests it.
+            // Reading Resources to log its count here can itself fail during startup.
+            Resources = ThemeResources.Create();
+            StartupDiagnostics.Trace("native palettes installed");
         } catch (Exception error) { StartupDiagnostics.Failure(error); throw; }
     }
     protected override void OnLaunched(LaunchActivatedEventArgs args)
