@@ -25,6 +25,7 @@ jobs:
         run: dotnet run --project windows/QuotaLens.Providers.Tests -c Release
   windows:
     runs-on: windows-2025
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -36,15 +37,21 @@ jobs:
         run: dotnet run --project windows/QuotaLens.Providers.Tests -c Release
       - name: Storage security and indexing tests
         run: dotnet run --project windows/QuotaLens.Infrastructure.Tests -c Release
-      - name: Native build
+      - name: Native build and isolated UI smoke test
         run: ./windows/scripts/build.ps1
       - name: Native artifacts
-        if: ${{ hashFiles('windows/artifacts/*.zip') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: QuotaLens-Windows-x64
           path: windows/artifacts/*
           if-no-files-found: error
+      - name: Native UI validation
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuotaLens-native-validation
+          path: windows/validation/*
+          if-no-files-found: ignore
       - name: Source inspection artifact
         if: always()
         uses: actions/upload-artifact@v4
@@ -64,4 +71,5 @@ jobs:
             !windows/**/bin/**
             !windows/**/obj/**
             !windows/artifacts/**
+            !windows/validation/**
           retention-days: 2
