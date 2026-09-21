@@ -2,9 +2,9 @@ name: Windows
 on:
   push:
     branches: [main, 'windows/**']
-    paths: ['windows/**', 'shared/**', 'VERSION', 'Sources/QuotaLens/Core/**', 'Tests/QuotaLensTests/SharedCapacityContractTests.swift', '.github/workflows/windows-ci.yml']
+    paths: ['windows/**', 'shared/**', 'VERSION', 'Sources/QuotaLens/Core/**', 'Tests/QuotaLensTests/SharedCapacityContractTests.swift', 'docs/windows*', 'THIRD_PARTY_NOTICES.md', '.github/workflows/windows-ci.yml']
   pull_request:
-    paths: ['windows/**', 'shared/**', 'VERSION', 'Sources/QuotaLens/Core/**', 'Tests/QuotaLensTests/SharedCapacityContractTests.swift', '.github/workflows/windows-ci.yml']
+    paths: ['windows/**', 'shared/**', 'VERSION', 'Sources/QuotaLens/Core/**', 'Tests/QuotaLensTests/SharedCapacityContractTests.swift', 'docs/windows*', 'THIRD_PARTY_NOTICES.md', '.github/workflows/windows-ci.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -12,13 +12,15 @@ concurrency:
   group: windows-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  catalog-parity:
+  mac-parity:
     runs-on: macos-15
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - name: Verify reference rates against the actual Swift catalogs
         run: python3 windows/scripts/export-price-catalog.py --check
+      - name: Shared prediction contract and macOS regression suite
+        run: swift test
   core:
     runs-on: ubuntu-latest
     timeout-minutes: 10

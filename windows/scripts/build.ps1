@@ -12,10 +12,12 @@ New-Item -ItemType Directory -Force $artifacts, $validation | Out-Null
 $output = Join-Path $artifacts ('publish-' + [guid]::NewGuid().ToString('N'))
 $project = Join-Path $windowsRoot 'QuotaLens.Windows/QuotaLens.Windows.csproj'
 try {
+    & (Join-Path $PSScriptRoot 'export-icon.ps1')
     & dotnet publish $project -c Release -r "win-$Architecture" --self-contained true -p:Platform=x64 -p:ContinuousIntegrationBuild=true -o $output
     if ($LASTEXITCODE -ne 0) { throw 'Windows native build failed.' }
     $executable = Join-Path $output 'QuotaLens.exe'
     if (!(Test-Path $executable) -or (Get-Item $executable).Length -lt 1024) { throw 'Native executable was not published.' }
+    if (!(Test-Path (Join-Path $output 'Assets/AppIcon.ico'))) { throw 'Application artwork was not published.' }
     if (!$SkipSmoke) {
         Get-ChildItem $validation -File | Remove-Item -Force
         $started = Get-Date
@@ -37,6 +39,16 @@ try {
     }
     Copy-Item (Join-Path $repoRoot 'LICENSE') $output
     Copy-Item (Join-Path $repoRoot 'THIRD_PARTY_NOTICES.md') $output
+    Copy-Item (Join-Path $repoRoot 'docs/windows.md') (Join-Path $output 'WINDOWS-GUIDE.md')
+    Copy-Item (Join-Path $repoRoot 'docs/windows.zh-CN.md') (Join-Path $output 'WINDOWS-GUIDE.zh-CN.md')
+    & (Join-Path $PSScriptRoot 'collect-notices.ps1') -PublishDirectory $output
+    $sourceCommit = (& git -C $repoRoot rev-parse HEAD 2>$null)
+    if ($LASTEXITCODE -ne 0) { $sourceCommit = 'unknown-source-archive' }
+    $checks = if ($SkipSmoke) { 0 } else { $result.passed }
+    [ordered]@{version=$version; architecture=$Architecture; sourceCommit=$sourceCommit;
+        builtAtUtc=[DateTimeOffset]::UtcNow.ToString('O'); signed=$false;
+        isolatedUiChecks=$checks; liveProviderValidation=$false} | ConvertTo-Json |
+        Set-Content -Encoding utf8 (Join-Path $output 'BUILD-INFO.json')
     $zip = Join-Path $artifacts "QuotaLens-Windows-$Architecture-v$version.zip"
     Compress-Archive -Path (Join-Path $output '*') -DestinationPath $zip -Force
     $hash = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLowerInvariant()

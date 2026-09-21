@@ -23,12 +23,9 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.5.1" />
     <ProjectReference Include="../QuotaLens.Infrastructure/QuotaLens.Infrastructure.csproj" />
-    <Content Include="Assets/AppIcon.ico" Condition="Exists('Assets/AppIcon.ico')" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets/AppIcon.ico" Condition="Exists('Assets/AppIcon.ico')" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
-  <!-- The unpackaged MRT pipeline generates resources but does not consistently
-       add them to ResolvedFileToPublish (WindowsAppSDK issues #6394 and #6720).
-       Ship the actual build's app and runtime resources, retaining relative paths.
-       Never source resources from another configuration or an installed machine. -->
+  <!-- Ship this build's compiled app/runtime resources with the unpackaged app. -->
   <Target Name="PublishQuotaLensXamlResources" AfterTargets="Publish"
           Condition="'$(WindowsPackageType)' == 'None'">
     <ItemGroup>

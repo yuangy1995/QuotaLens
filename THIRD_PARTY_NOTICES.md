@@ -4,6 +4,21 @@ QuotaLens includes adapted portions of quota-monitor for Claude usage tracking,
 Codex account usage, rate-limit compatibility, process discovery, and overlay
 behavior.
 
+## Windows binary dependencies
+
+The Windows client references Microsoft.WindowsAppSDK and Microsoft.Data.Sqlite
+and publishes their resolved runtime dependencies together with .NET. These
+components retain their respective upstream licenses; the QuotaLens Apache
+license does not replace them. The build collects available upstream license,
+notice, copyright and NuGet package metadata files into `ThirdParty/` inside
+each Windows ZIP. `ThirdParty/packages.json` records the resolved package names,
+versions, package hashes and copied documents. Preserve these files and runtime
+notices when redistributing the application. Build-only package metadata may
+also appear in this inventory; it is not a list of only the shipped DLLs.
+
+The original QuotaLens app artwork is reused for Windows, not replaced by an
+unlicensed third-party icon. No font files are added to the repository.
+
 ## quota-monitor
 
 Copyright (c) 2026 tjzhou

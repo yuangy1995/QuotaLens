@@ -1,101 +1,74 @@
 # Release Process
 
-QuotaLens uses a single source of truth for versioning:
+QuotaLens uses `VERSION` as the marketing-version source and matching `vX.Y.Z` Git tags. The `Release macOS and Windows` workflow builds both platforms from the exact tagged commit. Ordinary pushes to main build/test only and do not publish a release. Existing tags must not be moved to add Windows.
 
-- `VERSION` stores the marketing version, such as `1.0.0`.
-- Git tags use the same version with a leading `v`, such as `v1.0.0`.
-- `CFBundleShortVersionString` is written from `VERSION` during packaging.
-- `CFBundleVersion` is the build number. In GitHub Actions it uses `GITHUB_RUN_NUMBER`; locally it defaults to the git commit count.
+## Version and build identity
 
-## Version Rules
+Use patch versions for fixes, minor versions for compatible features and major versions for incompatible behavior. `CFBundleShortVersionString` and Windows assembly/package marketing versions come from `VERSION`. macOS `CFBundleVersion` uses the Actions run number (or local git commit count). Windows archives include `BUILD-INFO.json` with the exact source SHA; a development archive sharing a marketing version with an old tag is not a new stable release.
 
-Use semantic versioning:
+Before tagging, confirm both CI workflows for the intended commit, review [Windows acceptance](windows.md#manual-acceptance-still-required), and update the changelog. A native smoke test does not substitute for real account or hardware acceptance.
 
-- Patch release: `1.0.1` for bug fixes.
-- Minor release: `1.1.0` for compatible new features.
-- Major release: `2.0.0` for breaking behavior or identity changes.
-- Prerelease: `1.1.0-beta.1` for testing builds.
-
-## Local Packaging
-
-Build one locally signed downloadable package:
+## Local macOS packaging
 
 ```bash
+swift test
+swift build -c release
+swift test -c release --filter CodexCapacityForecastTests
 ./scripts/build_and_package.sh
+./scripts/build_and_package.sh --arch apple-silicon --version 1.2.0 --build-number 42
 ```
 
-The script reads `VERSION` and detects the current Mac architecture automatically, producing only the matching Apple Silicon or Intel package. You can override the architecture or version explicitly:
+The script detects the current Mac architecture unless `--arch apple-silicon`, `--arch intel` or `--arch universal` is supplied. Local packages use ad-hoc signing. Architecture-specific incremental optimized caches are retained; `--clean` discards them and `--full-optimization` matches whole-module release optimization.
 
-```bash
-./scripts/build_and_package.sh --arch apple-silicon --version 1.0.1 --build-number 42
+A successful incremental local build does not establish whole-module Release compatibility. Keep compiler-compatibility changes covered by behavior tests rather than disabling optimization or ownership checks. Keep legacy localization initializers split per language and extended tables in bounded static groups; preserve sequential fallback lookups for older Swift type-checkers. The existing localization regression tests cover those boundaries.
+
+## Local Windows packaging
+
+On Windows, from the repository root:
+
+```powershell
+dotnet run --project windows/QuotaLens.Core.Tests -c Release
+dotnet run --project windows/QuotaLens.Providers.Tests -c Release
+dotnet run --project windows/QuotaLens.Infrastructure.Tests -c Release
+./windows/scripts/build.ps1
 ```
 
-Packages use ad-hoc signing.
-Local ad-hoc packaging keeps an architecture-specific Swift build cache and uses incremental optimized compilation by default. Pass `--clean` to rebuild that cache, or `--full-optimization` to use the whole-module release compilation used by CI and the release workflow.
+The script generates Windows artwork from the original ICNS, publishes a self-contained native x64 directory, launches that published executable in isolated test mode and creates `windows/artifacts/QuotaLens-Windows-x64-vX.Y.Z.zip` plus a checksum. The ZIP includes guides, original project license, available package notices, dependency metadata and build provenance. Native screenshots/test results remain separate validation artifacts, not demo accounts in production.
 
-A successful local fast build does not establish whole-module Release compatibility, especially when the local Swift version differs from the GitHub runner. Before tagging, run `swift build -c release` and `swift test -c release --filter CodexCapacityForecastTests`; the release quality gate also runs both. Keep compiler compatibility changes covered by the same behavioral tests instead of disabling optimization or ownership verification.
+Do not remove DLLs, XAML/PRI resources or bundled runtime files. `-SkipSmoke` is for local diagnostics only; release/CI does not use it. Windows packages currently remain unsigned directory archives, not signed installers or automatic verified upgrades. See [the Windows guide](windows.md#packaging-and-updates).
 
-Keep the legacy localization tables initialized separately per language and the keyed/extended tables in bounded static groups. Swift 6.3's `COWArrayOpts` pass spends excessive time optimizing the original nested initializers (1,051 legacy entries, 674 keyed entries and 400 extended keys). The split preserves every key/value pair and bounds each initializer without disabling Release optimization; `ScanDiagnosticsTests` covers language lookup through the shared localization entry point and extended-table coverage. Keep fallback lookups sequential rather than using a long nil-coalescing expression that exceeds older Swift type-checker limits.
+## Signing and publishing
 
-## Publishing A GitHub Release
+macOS update-capable builds require repository secrets `SPARKLE_PUBLIC_ED_KEY` and `SPARKLE_PRIVATE_ED_KEY`. The public key is embedded in the Mac app; the private EdDSA key signs Mac update archives/appcasts only. No private key is committed to Git. Existing macOS release behavior remains ad-hoc code signing without Apple notarization; Sparkle signing does not mean Apple notarization.
 
-Before publishing an update-capable build, configure the Sparkle update-signing secrets in the GitHub repository:
-
-- `SPARKLE_PUBLIC_ED_KEY`: public EdDSA key embedded into the app bundle.
-- `SPARKLE_PRIVATE_ED_KEY`: private EdDSA key used only by GitHub Actions to sign update archives and appcasts.
-
-Official tag releases use ad-hoc signing and are not submitted for Apple notarization. The release workflow only requires the two Sparkle keys and fails if either one is missing. Because these packages are not notarized, macOS may ask users to approve the first launch in System Settings.
-
-Generate the key pair once with Sparkle's tools, then keep the private key out of git:
+To generate/reuse the Sparkle update key pair on the maintainer's Mac:
 
 ```bash
 swift package resolve
-
-# After SwiftPM has resolved Sparkle, the tool is usually under:
 SPARKLE_KEYS_TOOL="./.build/artifacts/sparkle/Sparkle/bin/generate_keys"
-
-# Generate or reuse the keychain-stored key pair for this app.
 "${SPARKLE_KEYS_TOOL}" --account yuangy1995.QuotaLens
-
-# Print the public key for SPARKLE_PUBLIC_ED_KEY.
 "${SPARKLE_KEYS_TOOL}" --account yuangy1995.QuotaLens -p
-
-# Export the private key for SPARKLE_PRIVATE_ED_KEY.
 "${SPARKLE_KEYS_TOOL}" --account yuangy1995.QuotaLens -x sparkle_private_key
 ```
 
-Put the printed public key into `SPARKLE_PUBLIC_ED_KEY`, and put the private key file contents into `SPARKLE_PRIVATE_ED_KEY`.
+This Sparkle maintainer key management is separate from application account credentials. macOS application credentials remain in QuotaLens's local encrypted-file store, not Keychain.
 
-1. Update `VERSION`.
-   The version must be newer than the latest published `vX.Y.Z` tag; ordinary CI verifies this automatically.
-2. Commit the version change.
-3. Create and push a matching tag:
+Windows does not reuse Sparkle keys, embed an Authenticode certificate, create signing credentials in CI or claim SmartScreen reputation. Add a separate reviewed signing process before advertising signed Windows installation.
+
+After choosing a **new** version and committing it, create the matching tag (the following version is only an example):
 
 ```bash
-git tag -a v1.0.0 -m "QuotaLens v1.0.0"
+git tag -a v1.2.0 -m "QuotaLens v1.2.0"
 git push origin main
-git push origin v1.0.0
+git push origin v1.2.0
 ```
 
-The `Release macOS` workflow builds and uploads:
+The release workflow validates tag syntax, `VERSION` and the exact checked-out commit on both platforms. It runs the macOS test/Release quality gate and catalog parity, builds Apple Silicon/Intel/Universal packages, and separately runs Windows Core/Providers/Infrastructure tests and the published native UI smoke check. GitHub publication requires both platform build jobs to succeed.
 
-- Apple Silicon: `QuotaLens-vX.Y.Z-macOS-apple-silicon.dmg` and `.zip`
-- Intel: `QuotaLens-vX.Y.Z-macOS-intel.dmg` and `.zip`
-- Universal: `QuotaLens-vX.Y.Z-macOS-universal.dmg` and `.zip`
-- In-app update feeds: `appcast-apple-silicon.xml` and `appcast-intel.xml`
-- Legacy in-app update feed: `appcast.xml` with both architecture items for older clients
-- `SHA256SUMS.txt`
+Assets include the three macOS `.dmg`/`.zip` variants, `QuotaLens-Windows-x64-vX.Y.Z.zip`, architecture-specific Mac appcasts, the legacy combined `appcast.xml`, and `SHA256SUMS.txt`. Only package artifacts are merged into the release; native validation evidence is not mistaken for a downloadable app. `gh release create` does not overwrite a pre-existing release automatically. A newly edited workflow is not evidence that a release was actually published.
 
-The workflow validates that the pushed tag resolves to the checked-out commit and matches `VERSION`, runs the quality gate (`swift test`, focused migration/parser/pricing tests, `swift build -c release`, and `git diff --check`), verifies every packaged Mach-O architecture and required Sparkle helper, launches the app on the matching runner, and then publishes the ad-hoc-signed packages. Pull requests and pushes to `main` also run the test suite and a release build through the separate CI workflow.
+## Updates
 
-## In-App Updates
+Mac uses separate `appcast-apple-silicon.xml` and `appcast-intel.xml` feeds; the combined `appcast.xml` remains available for legacy clients. The Universal Mac package is a direct-download option. The first v1.0.0 release did not contain Sparkle and needs a manual upgrade to an update-capable build.
 
-QuotaLens uses Sparkle for macOS self-updates. The release workflow publishes separate appcast feeds for the app's internal update checks:
-
-- `appcast-apple-silicon.xml`
-- `appcast-intel.xml`
-- `appcast.xml` remains published so older clients that still read the static `SUFeedURL` can update.
-
-The Universal package remains available on the GitHub Release page for direct downloads.
-
-The first public `v1.0.0` build did not include Sparkle. Users must manually install the first Sparkle-enabled version once; versions after that can update in-app.
+Windows checks the official repository's latest release for a Windows archive before offering a browser link. It does not execute an unsigned updater. Quit before replacing the complete app directory; user data remains in a separate directory. Moving the executable may require re-registering its startup entry. Do not claim auto-update or signing acceptance from a successful compilation alone.
