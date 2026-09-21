@@ -34,8 +34,9 @@ jobs:
         run: dotnet run --project windows/QuotaLens.Core.Tests -c Release
       - name: Provider tests on Windows
         run: dotnet run --project windows/QuotaLens.Providers.Tests -c Release
+      - name: Storage security and indexing tests
+        run: dotnet run --project windows/QuotaLens.Infrastructure.Tests -c Release
       - name: Native build
-        if: ${{ hashFiles('windows/QuotaLens.Windows/QuotaLens.Windows.csproj') != '' }}
         run: ./windows/scripts/build.ps1
       - name: Native artifacts
         if: ${{ hashFiles('windows/artifacts/*.zip') != '' }}
