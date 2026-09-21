@@ -25,4 +25,19 @@
     <ProjectReference Include="../QuotaLens.Infrastructure/QuotaLens.Infrastructure.csproj" />
     <Content Include="Assets/AppIcon.ico" Condition="Exists('Assets/AppIcon.ico')" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+  <!-- The unpackaged MRT pipeline generates resources but does not consistently
+       add them to ResolvedFileToPublish (WindowsAppSDK issues #6394 and #6720).
+       Ship the actual build's app and runtime resources, retaining relative paths.
+       Never source resources from another configuration or an installed machine. -->
+  <Target Name="PublishQuotaLensXamlResources" AfterTargets="Publish"
+          Condition="'$(WindowsPackageType)' == 'None'">
+    <ItemGroup>
+      <QuotaLensXamlResource Include="$(OutputPath)**\*.xbf" />
+      <QuotaLensXamlResource Include="$(OutputPath)**\*.pri" />
+    </ItemGroup>
+    <Error Condition="'@(QuotaLensXamlResource)' == ''" Text="No compiled WinUI resources were generated; refusing an incomplete publish." />
+    <Copy SourceFiles="@(QuotaLensXamlResource)"
+          DestinationFiles="@(QuotaLensXamlResource->'$(PublishDir)%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
 </Project>
