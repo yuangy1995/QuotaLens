@@ -1,0 +1,11 @@
+[
+  {"name":"decreasing","capacities":[100,80,64],"expected":57.6},
+  {"name":"increasing","capacities":[100,120,144],"expected":158.4},
+  {"name":"two cycles use last level","capacities":[100,50],"expected":50},
+  {"name":"one cycle","capacities":[100],"expected":100},
+  {"name":"reversal","capacities":[100,80,100],"expected":100},
+  {"name":"flat","capacities":[100,100,100],"expected":100},
+  {"name":"empty","capacities":[],"expected":null},
+  {"name":"zero is invalid","capacities":[100,0],"expected":null},
+  {"name":"negative is invalid","capacities":[100,-1],"expected":null}
+]

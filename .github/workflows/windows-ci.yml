@@ -1,0 +1,40 @@
+name: Windows
+on:
+  push:
+    branches: [main]
+    paths: ['windows/**', 'shared/**', '.github/workflows/windows-ci.yml']
+  pull_request:
+    paths: ['windows/**', 'shared/**', '.github/workflows/windows-ci.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  core-tests:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Run deterministic domain and shared-contract tests
+        working-directory: windows
+        run: dotnet run --project QuotaLens.Tests -c Release
+      - name: Build Windows application when present
+        shell: pwsh
+        working-directory: windows
+        run: |
+          if (Test-Path 'QuotaLens.Windows/QuotaLens.Windows.csproj') {
+            dotnet publish QuotaLens.Windows/QuotaLens.Windows.csproj -c Release -r win-x64 --self-contained true -o ../artifacts/windows-x64
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+      - uses: actions/upload-artifact@v4
+        if: hashFiles('windows/QuotaLens.Windows/QuotaLens.Windows.csproj') != ''
+        with:
+          name: QuotaLens-Windows-x64-${{ github.sha }}
+          path: artifacts/windows-x64
+          if-no-files-found: error
+          retention-days: 7
