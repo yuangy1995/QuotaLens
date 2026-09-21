@@ -18,9 +18,17 @@ try {
     if (!(Test-Path $executable) -or (Get-Item $executable).Length -lt 1024) { throw 'Native executable was not published.' }
     if (!$SkipSmoke) {
         Get-ChildItem $validation -File | Remove-Item -Force
+        $started = Get-Date
         $process = Start-Process -FilePath $executable -ArgumentList @('--smoke-test', ('"' + $validation + '"')) -PassThru
         if (!$process.WaitForExit(120000)) { Stop-Process -Id $process.Id -Force; throw 'Native UI smoke test timed out.' }
         $process.Refresh()
+        if (Test-Path (Join-Path $validation 'startup.log')) { Get-Content (Join-Path $validation 'startup.log') }
+        if ($process.ExitCode -ne 0) {
+            Get-ChildItem (Join-Path $windowsRoot 'QuotaLens.Windows/obj') -Recurse -Filter 'App.g*.cs' | ForEach-Object { Get-Content $_.FullName } | Out-File (Join-Path $validation 'generated-app.txt')
+            Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=$started; Id=1000,1026} -ErrorAction SilentlyContinue |
+                Where-Object { $_.Message -match 'QuotaLens' } | Format-List TimeCreated,Id,Message | Out-File (Join-Path $validation 'native-launch-events.txt')
+            Get-Content (Join-Path $validation 'native-launch-events.txt') -ErrorAction SilentlyContinue
+        }
         if (Test-Path (Join-Path $validation 'failure.txt')) { Get-Content (Join-Path $validation 'failure.txt'); throw 'Native UI smoke test reported a failure.' }
         if ($process.ExitCode -ne 0 -or !(Test-Path (Join-Path $validation 'smoke.json'))) { throw "Native UI launch failed: $($process.ExitCode)" }
         $result = Get-Content -Raw (Join-Path $validation 'smoke.json') | ConvertFrom-Json

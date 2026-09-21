@@ -2,116 +2,86 @@
 
 [简体中文](README.zh-CN.md)
 
-QuotaLens is a native macOS menu bar dashboard for Codex, Claude, and Antigravity. It brings cross-tool quotas, usage analytics, reset forecasts, recovery alerts, and foreground-aware overlays into one place, while also surfacing ChatGPT subscription and reset-card status for Codex accounts.
+**Native macOS and Windows dashboards for Codex, Claude, and Antigravity quota tracking, local usage analytics, forecasts, and desktop overlays.**
+
+QuotaLens separates cloud quota, the account selected for a query, the identity currently used by a local tool, and local session history. Selecting another account does not switch the tool's login or reassign local history.
+
+## Platforms
+
+| | macOS | Windows |
+|---|---|---|
+| Interface | SwiftUI / AppKit | C# / WinUI 3, not a browser wrapper |
+| Target | macOS 14+, Apple Silicon and Intel | Windows 11 x64 |
+| Distribution | `.app`, `.dmg`, `.zip` | Self-contained folder `.zip` from Windows CI |
+| Status | Existing macOS release line | Initial native client; live-account and hardware acceptance remains separate from CI |
+| Desktop | Menu bar and tool-following overlays | Notification-area icon, quick panel and optional non-activating overlay |
+
+The Windows implementation lives under [`windows/`](windows/). Existing macOS source layout, local credential design and Sparkle updates are retained. Windows 10, ARM64, WSL and network-share data sources are outside the initial support claim.
 
 ## Features
 
-### Cross-Tool Quotas And Forecasts
+- Enable Codex, Claude and Antigravity independently. Inspect actual quota windows, reset times, verified accounts and cache freshness. Missing data is not zero quota; unrelated percentages are never summed.
+- Manage multiple query accounts with verified imports and explicit browser authorization. Imported refresh tokens can share a renewal chain with another client; renewal may affect that client even though QuotaLens never rewrites its files.
+- Persist local quota history. Codex capacity forecasts use verified cloud cumulative counters and matched quota observations, not local-session totals or a guessed subscription allowance.
+- Incrementally analyze Codex and Claude local sessions. Codex replay and full-text search read source files only on demand; conversation bodies are not copied into the analytics database.
+- Keep Antigravity quota groups separate from individual model allowances, and supported local task/step aggregates separate from token usage.
+- Show Codex subscription/reset-credit details when returned upstream. Redemption requires confirmation and a real credit identifier; uncertain retries retain a durable idempotency key.
+- Use system/light/dark themes, privacy-safe diagnostics, background refresh and pause. Initial Windows localization is English and Simplified Chinese; macOS retains its ten languages.
 
-- Monitor Codex, Claude, and Antigravity independently, then switch between a unified overview and each tool's dedicated space.
-- See every quota window exposed by a tool, including 5-hour, 7-day, weekly, and model pools, with used/available views, reset timing, and data freshness.
-- Identify the tightest quota pool, compare current burn rate with a sustainable pace, forecast runout or reset outcomes, and get practical recommendations.
-- Receive a floating alert when a weekly quota fully recovers. The Codex space also tracks ChatGPT subscription status and reset-card availability and expiry.
+See the [Windows guide](docs/windows.md), [macOS account design](docs/query-accounts.md), [forecast rules](docs/quota-capacity-forecast.md), and [pricing audit](docs/model-pricing-audit.md).
 
-### Independent Codex Accounts
+## Windows: run and build
 
-- Open the Codex quota overview and use **Authorize account** to connect another ChatGPT account in your browser. This uses a separate sign-in location and does not replace the login used by Codex.
-- Use **Viewing account** to inspect an authorized account or a saved historical snapshot. The menu bar continues to follow the account currently used by Codex. Authorized accounts refresh on demand and once per minute while selected in the quota overview.
-- Names and account notes are retained. Unidentified historical accounts remain separate until their identity can be verified; missing or expired quota data is not displayed as exhausted quota.
-- Managed sign-ins are stored in private account directories under `~/Library/Application Support/QuotaLens/CodexAccounts`. Account names and directory identifiers are stored separately from credentials. Reauthorizing an account replaces its previous managed sign-in.
-- Local token and cost statistics still cover this machine's records across accounts, not just the account being viewed. Cloud usage and forecasts remain associated with the current Codex account.
+Download `QuotaLens-Windows-x64` from a successful **Windows** Actions run. Extract the inner `QuotaLens-Windows-x64-vX.Y.Z.zip` to a stable local directory and run **`QuotaLens.exe`**. Keep every extracted file together; the EXE alone is not a single-file portable application. CI archives are unsigned; no signing certificate or SmartScreen reputation is implied.
 
-### Usage And Activity Analytics
+First launch has monitoring disabled. Enable tools in **App settings**, then import or authorize in **Accounts**. Local-login discovery is a separate opt-in. A queried account does not automatically become the tool identity used by the tray and overlay.
 
-- Browse **Settings → Model Price Catalog** for searchable text-model estimation rules and separate image, audio, video, and embedding reference prices. Unverified prices remain visibly unpriced; see the [pricing audit and coverage gaps](docs/model-pricing-audit.md) for historical boundaries, sources, and exclusions.
-- Codex combines cloud account activity with local Sessions, History, and Dashboard views for tokens, model mix, reasoning effort, cache hit rate, trends, and API-equivalent value estimates.
-- Codex conversation playback and full-text search read the original rollout files only when requested. Deleting a session moves its source tree to the macOS Trash and clears the derived index.
-- Claude reads 5-hour, 7-day, and model-scoped weekly quotas and incrementally aggregates local sessions and usage from `~/.claude/projects` and `~/.config/claude/projects`.
-- Antigravity shows quota-pool trends, model availability, pace forecasts, and local task, step, active-day, and project activity across available local profiles.
-- Local records, quota snapshots, trend history, and diagnostics are stored in `~/Library/Application Support/QuotaLens/quotalens.sqlite`.
+Build on Windows with a compatible .NET 10 SDK and Windows SDK:
 
-### Menu Bar And Window Overlays
+```powershell
+dotnet run --project windows/QuotaLens.Core.Tests -c Release
+dotnet run --project windows/QuotaLens.Providers.Tests -c Release
+dotnet run --project windows/QuotaLens.Infrastructure.Tests -c Release
+./windows/scripts/build.ps1
+```
 
-- The menu bar and floating overlays follow the foreground Codex, Claude, or Antigravity app and switch to the matching quota and activity view automatically.
-- Each tool has an independently configurable, draggable window overlay. Claude is also detected while running in Terminal, iTerm, or VS Code; Codex precise snapping is an optional Accessibility-assisted mode.
-- Choose used or available quota, adjust refresh intervals, launch at login, hide the Dock icon, and use light, dark, or system appearance.
-- Built-in localization covers English, Simplified Chinese, Traditional Chinese, Japanese, Korean, Spanish, German, French, Portuguese, and Brazilian Portuguese. In-app updates and localized release notes are included.
+The script builds the native app, launches an isolated UI smoke test, and creates the ZIP and SHA-256 sidecar under `windows/artifacts/`. Tests use an isolated temporary database, synthetic identities and no provider requests. Native light/dark renderings are written to `windows/validation/`. These checks do not replace real-account OAuth verification or Windows 11 multi-monitor hardware testing.
 
-## Requirements
+## macOS: run and build
 
-- macOS 14 or later.
-- Building from source requires a Swift 6 toolchain or Xcode with Swift 6 support.
-- Codex monitoring requires a working `codex` CLI and a signed-in local Codex/ChatGPT session, usually stored in `~/.codex/auth.json`.
-- Claude monitoring requires a signed-in Claude Code installation.
-- Antigravity monitoring requires a signed-in local Antigravity installation.
-
-Codex, Claude, and Antigravity can be enabled or disabled independently.
-
-Antigravity quota monitoring depends on its internal sign-in and quota interfaces, which may change without notice. If compatibility changes, QuotaLens keeps the last successful quota data and reports that an update is needed. If some local records cannot be read, their saved history is kept until a complete scan succeeds.
-
-## Build And Run
-
-Pull request and main-branch CI runs the test suite and builds an ad-hoc-signed Universal package, checking both architectures, Sparkle helper signatures, Downloader permissions, and the DMG. It does not publish a release or require notarization.
-
-Run from the project root:
+Requires Swift 6 or an Xcode version providing that toolchain:
 
 ```bash
 swift run QuotaLens
-```
-
-Build a release binary:
-
-```bash
+swift test
 swift build -c release
-```
-
-Create an `.app`, `.zip`, and `.dmg` package:
-
-```bash
 ./scripts/build_and_package.sh
 ```
 
-The packaging script detects whether the current Mac uses Apple Silicon or Intel, produces only the matching single-architecture package, and uses ad-hoc signing.
-Local ad-hoc packaging reuses its architecture-specific Swift build cache and uses incremental optimized compilation. The first build can still take longer, while unchanged or small follow-up builds are much faster. Use `--clean` to discard the cache or `--full-optimization` to reproduce the whole-module release compilation used for formal releases.
+Local packaging detects the current architecture and creates an ad-hoc-signed package. Override with `--arch apple-silicon`, `--arch intel` or `--arch universal`. Incremental caches are retained; `--clean` discards them and `--full-optimization` uses the whole-module release configuration.
 
-Override the build architecture manually:
+Codex requires an available CLI and usable subscription login, typically `~/.codex/auth.json`. Claude and Antigravity require supported authorization for the enabled tool. Optional precise macOS Codex anchoring reads window/control geometry, not conversation text.
 
-```bash
-./scripts/build_and_package.sh --arch apple-silicon
-./scripts/build_and_package.sh --arch intel
-./scripts/build_and_package.sh --arch universal
-```
+## Data and privacy
 
-## Versioning And Releases
+| Data | macOS | Windows |
+|---|---|---|
+| Analytics | `~/Library/Application Support/QuotaLens/quotalens.sqlite` | `%LOCALAPPDATA%\QuotaLens\quotalens.sqlite` |
+| Credentials | Local AES-256-GCM, private master-key file and POSIX permissions; **no Keychain migration** | Local AES-256-GCM, current-user DPAPI-protected master key and user-specific ACLs |
+| Recoverable source removal | macOS Trash | QuotaLens private **Recovery center**, not Windows Recycle Bin |
 
-The initial version is `v1.0.0`. The source of truth is the root [`VERSION`](VERSION) file. To publish a release:
+Possession of the macOS master key and ciphertext permits decryption. DPAPI is not absolute isolation from malicious software running as the same user. Key loss/mismatch never silently regenerates a key over old ciphertext. Interrupted private Codex runtime directories may retain authorization when cleanup would risk losing a rotated credential.
 
-```bash
-git tag -a v1.0.0 -m "QuotaLens v1.0.0"
-git push origin main
-git push origin v1.0.0
-```
+Diagnostic exports contain aggregate counts, not authorization tokens, source paths or conversation text. Explicit credential exports are different: they contain plaintext authorization and must not be uploaded to a repository or shared as diagnostics. Removing credentials preserves historical analytics.
 
-Pushing a matching `vX.Y.Z` tag starts the GitHub Actions release workflow. It uploads Apple Silicon, Intel, and Universal macOS downloads to GitHub Releases. Update-capable builds can check for and install new versions in the app. See [docs/releasing.md](docs/releasing.md) for the full process.
+API-equivalent values and capacity forecasts are estimates, not invoices, subscription charges or official quota limits. Unknown models and insufficient observations remain unpriced/unavailable. Internal upstream interfaces can change; failed refreshes retain the last valid snapshot and display an error rather than fabricating data.
 
-## How It Works
+## Versioning and release
 
-QuotaLens reads only the tools you enable. For Codex, it locates the CLI, starts `codex app-server --stdio`, and reads account, quota, activity, local session, and ChatGPT entitlement data. For Claude, it uses the existing Claude Code sign-in state and local project records. For Antigravity, it reads the available local sign-in profiles, model quota groups, and aggregate task activity.
+[`VERSION`](VERSION) is the marketing-version source. Existing tags are not rewritten to add Windows. A Windows CI artifact from a newer commit is not automatically a new stable release, even with the same marketing version.
 
-Quota snapshots and their local history feed the unified pace, runout, reset, and recovery insights. Refreshed sign-in data stays in QuotaLens private storage and never modifies third-party sign-in files.
-
-The app keeps its own local SQLite database for state, quota snapshots, local usage summaries, minimal usage event facts, pricing catalog metadata, and reconciliation metadata. Build outputs, packaged apps, temporary files, credentials, and local machine artifacts are intentionally excluded from the repository.
-
-Each tool can be enabled or disabled independently in Settings. Codex and Claude local records can be rescanned, and Antigravity activity can be refreshed separately. Re-indexing Codex clears only its derived usage aggregates and rebuilds them from the current local rollout files; it does not delete account, subscription, or quota snapshots. A privacy-safe aggregate diagnostics JSON export is also available.
-
-## Privacy Notes
-
-QuotaLens is a local desktop utility. It reads configuration and local records only for enabled tools and stores derived app data locally in SQLite. Usage analytics keep token counts, model identifiers, timestamps, pricing status, source paths, byte offsets, and aggregate Antigravity task metadata rather than conversation bodies.
-
-Codex conversation content is read directly from the original rollout file only when you open a conversation or run a full-text search; it is not copied into the QuotaLens analytics database. Claude and Antigravity views do not provide conversation playback. Exported diagnostics contain aggregate counters only and omit source paths. Window overlays use app and window geometry; optional Codex precise snapping uses only window and control metadata to locate the Help control, not conversation content. Quota and entitlement refreshes use the existing local sign-in state for each enabled tool.
-
-API equivalent value is a diagnostic comparison against API list prices. It is not a subscription bill, invoice, or actual amount charged. Unknown models remain unpriced and are surfaced in diagnostics instead of being silently mapped to a default model.
+See [macOS release instructions](docs/releasing.md) and [Windows packaging and update policy](docs/windows.md#packaging-and-updates). Windows does not use Sparkle or execute an unsigned silent updater; update checks open a validated release page in the browser.
 
 ## License
 
-Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE); third-party notices are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Apache License 2.0. See [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
