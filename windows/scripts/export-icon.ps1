@@ -19,10 +19,10 @@ while ($offset -lt $bytes.Length) {
     if ($length -lt 8 -or $length -gt $bytes.Length - $offset) { throw 'Invalid ICNS chunk.' }
     if ($kind -in @('ic07', 'ic08')) {
         if ($length -lt 16) { throw 'Truncated PNG icon.' }
-        [byte[]]$image = $bytes[($offset + 8)..($offset + $length - 1)]
-        if ([Convert]::ToHexString([byte[]]($image[0..7])) -ne '89504E470D0A1A0A') { throw 'Expected PNG icon data.' }
+        [byte[]]$pngBytes = $bytes[($offset + 8)..($offset + $length - 1)]
+        if ([Convert]::ToHexString([byte[]]($pngBytes[0..7])) -ne '89504E470D0A1A0A') { throw 'Expected PNG icon data.' }
         $size = if ($kind -eq 'ic07') { 128 } else { 256 }
-        $images.Add(@{Size=$size; Bytes=$image})
+        $images.Add(@{Size=$size; Bytes=$pngBytes})
     }
     $offset += $length
 }
@@ -34,14 +34,15 @@ $writer = [IO.BinaryWriter]::new($stream)
 try {
     $writer.Write([uint16]0); $writer.Write([uint16]1); $writer.Write([uint16]$images.Count)
     $dataOffset = 6 + 16 * $images.Count
-    foreach ($image in $images) {
-        $dimension = if ($image.Size -eq 256) { 0 } else { $image.Size }
+    # Do not reuse the typed byte-array variable for a hashtable loop element.
+    foreach ($iconEntry in $images) {
+        $dimension = if ($iconEntry.Size -eq 256) { 0 } else { $iconEntry.Size }
         $writer.Write([byte]$dimension); $writer.Write([byte]$dimension)
         $writer.Write([byte]0); $writer.Write([byte]0); $writer.Write([uint16]1); $writer.Write([uint16]32)
-        $writer.Write([uint32]$image.Bytes.Length); $writer.Write([uint32]$dataOffset)
-        $dataOffset += $image.Bytes.Length
+        $writer.Write([uint32]$iconEntry.Bytes.Length); $writer.Write([uint32]$dataOffset)
+        $dataOffset += $iconEntry.Bytes.Length
     }
-    foreach ($image in $images) { $writer.Write([byte[]]$image.Bytes) }
+    foreach ($iconEntry in $images) { $writer.Write([byte[]]$iconEntry.Bytes) }
     $writer.Flush(); [IO.File]::WriteAllBytes($destination, $stream.ToArray())
 } finally { $writer.Dispose(); $stream.Dispose() }
 Write-Host 'Reused the original QuotaLens artwork for the Windows executable.'
