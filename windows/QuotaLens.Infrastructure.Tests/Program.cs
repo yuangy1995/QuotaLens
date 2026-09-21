@@ -95,6 +95,7 @@ try {
     await Reject(() => Task.Run(() => AntigravityActivityReader.Parse("not-base64")), "malformed activity is rejected without a zero fallback");
     string truncated = Convert.ToBase64String(new byte[] { 10, 255 });
     await Reject(() => Task.Run(() => AntigravityActivityReader.Parse(truncated)), "truncated protobuf is rejected");
+    await AdditionalChecks.RunAsync(root, Check, Reject);
     Console.WriteLine($"{passed} Windows infrastructure checks passed using isolated synthetic data only.");
 } finally {
     Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools(); if (Directory.Exists(root)) Directory.Delete(root, true);

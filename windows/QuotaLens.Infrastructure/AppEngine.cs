@@ -7,7 +7,7 @@ namespace QuotaLens.Infrastructure;
 
 /// <summary>Application lifetime and scheduling, separate from the UI and account lifecycle.
 /// Disk scans and network queries run independently; neither blocks first paint.</summary>
-public sealed class AppEngine : IAsyncDisposable
+public sealed partial class AppEngine : IAsyncDisposable
 {
     private AppSettings currentSettings = new();
     private readonly CancellationTokenSource lifetime = new();
@@ -73,22 +73,24 @@ public sealed class AppEngine : IAsyncDisposable
         networkTask = Task.Run(NetworkLoopAsync);
         scanTask = Task.Run(ScanLoopAsync);
     }
-    public async Task SaveSettingsAsync(AppSettings value, CancellationToken ct = default)
+    public Task SaveSettingsAsync(AppSettings value, CancellationToken ct = default) => UpdateSettingsAsync(_ => value, ct);
+    public async Task UpdateSettingsAsync(Func<AppSettings, AppSettings> change, CancellationToken ct = default)
     {
-        value = value.Normalize();
+        ArgumentNullException.ThrowIfNull(change);
         await settingsGate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
+            // Apply the callback inside the gate, so navigation and settings never lose a concurrent update.
+            var value = change(Settings).Normalize();
             await Database.PutMetadataAsync("settings", value, ct).ConfigureAwait(false);
             var old = Settings; Volatile.Write(ref currentSettings, value);
             bool monitoringChanged = old.Paused != value.Paused || !old.EnabledTools.SequenceEqual(value.EnabledTools) ||
-                !old.DiscoverLocalTools.SequenceEqual(value.DiscoverLocalTools) || old.CodexHome != value.CodexHome || old.ClaudeHome != value.ClaudeHome;
+                !old.DiscoverLocalTools.SequenceEqual(value.DiscoverLocalTools) || old.CodexHome != value.CodexHome || old.ClaudeHome != value.ClaudeHome || old.AntigravityStateFile != value.AntigravityStateFile;
             if (monitoringChanged)
             {
                 var replacement = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
                 var cancelled = Interlocked.Exchange(ref background, replacement); cancelled.Cancel();
-                // The cancelled source is disposed at shutdown, after operations using its token have completed.
-                retiredSources.Add(cancelled); lastDiscovery.Clear(); lastRefresh.Clear();
+                retiredSources.Add(cancelled); lastDiscovery.Clear(); lastRefresh.Clear(); lastScan.Clear();
                 ConfigureWatchers();
             }
             Changed?.Invoke();
@@ -96,7 +98,6 @@ public sealed class AppEngine : IAsyncDisposable
         finally { settingsGate.Release(); }
     }
     private readonly List<CancellationTokenSource> retiredSources = [];
-    public Task UpdateSettingsAsync(Func<AppSettings, AppSettings> change, CancellationToken ct = default) => SaveSettingsAsync(change(Settings), ct);
     public string? ViewingKey(Provider provider)
     {
         var selected = Settings.ViewingAccounts.GetValueOrDefault(provider.ToString());
@@ -106,8 +107,9 @@ public sealed class AppEngine : IAsyncDisposable
     public async Task SelectAccountAsync(Provider provider, string key, CancellationToken ct = default)
     {
         if (Accounts.View(key)?.Account.Provider != provider) return;
-        var choices = new Dictionary<string, string>(Settings.ViewingAccounts) { [provider.ToString()] = key };
-        await SaveSettingsAsync(Settings with { ViewingAccounts = choices }, ct).ConfigureAwait(false);
+        await UpdateSettingsAsync(s => s with {
+            ViewingAccounts = new Dictionary<string, string>(s.ViewingAccounts) { [provider.ToString()] = key }
+        }, ct).ConfigureAwait(false);
     }
     public async Task RefreshAsync(Provider? provider = null, CancellationToken ct = default)
     {
@@ -119,7 +121,7 @@ public sealed class AppEngine : IAsyncDisposable
     public async Task<ScanReport> ScanAsync(Provider provider, bool rebuild = false, CancellationToken ct = default)
     {
         if (!Settings.EnabledTools.Contains(provider)) throw new QuotaException(FailureKind.NotConnected, "Enable the tool before scanning its local records.");
-        if (provider == Provider.Antigravity) throw new QuotaException(FailureKind.NotConnected, "Antigravity quota queries are available. Local activity import requires a supported activity adapter.");
+        if (provider == Provider.Antigravity) return await ScanAntigravityAsync(ct).ConfigureAwait(false);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, lifetime.Token);
         var result = await Indexer.ScanAsync(provider, LocalSources.UsageRoots(provider, Settings), rebuild, linked.Token).ConfigureAwait(false);
         lastScan[provider] = DateTimeOffset.UtcNow; dirty.TryRemove(provider, out _); Changed?.Invoke(); return result;
@@ -169,7 +171,7 @@ public sealed class AppEngine : IAsyncDisposable
             {
                 if (Settings.Paused) continue;
                 var ct = background.Token;
-                foreach (var provider in Settings.EnabledTools.Where(x => x != Provider.Antigravity))
+                foreach (var provider in Settings.EnabledTools)
                 {
                     ct.ThrowIfCancellationRequested();
                     bool changed = dirty.TryGetValue(provider, out var changedAt) && DateTimeOffset.UtcNow - changedAt >= TimeSpan.FromSeconds(2);
@@ -177,6 +179,9 @@ public sealed class AppEngine : IAsyncDisposable
                     if (elapsed >= TimeSpan.FromMinutes(5) || changed && elapsed >= TimeSpan.FromSeconds(15))
                     {
                         try { await ScanAsync(provider, ct: ct).ConfigureAwait(false); }
+                        catch (Exception error) when (error is not OperationCanceledException) {
+                            Warning = provider + ": " + SafeErrors.Describe(error).Message; Changed?.Invoke();
+                        }
                         finally { lastScan[provider] = DateTimeOffset.UtcNow; }
                     }
                 }
@@ -196,14 +201,17 @@ public sealed class AppEngine : IAsyncDisposable
         {
             foreach (var watcher in watchers) watcher.Dispose(); watchers.Clear();
             if (Settings.Paused || started == 0) return;
-            foreach (var provider in Settings.EnabledTools.Where(x => x != Provider.Antigravity))
+            foreach (var provider in Settings.EnabledTools)
             {
-                foreach (var root in LocalSources.UsageRoots(provider, Settings))
+                var sources = provider == Provider.Antigravity ? ActivitySources.Candidates(Settings) : LocalSources.UsageRoots(provider, Settings);
+                foreach (var source in sources)
                 {
                     try
                     {
+                        string? root = provider == Provider.Antigravity ? Path.GetDirectoryName(source) : source;
+                        if (root is null) continue;
                         SecureFiles.RejectReparseChain(root); if (!Directory.Exists(root)) continue;
-                        var watcher = new FileSystemWatcher(root, "*.jsonl") { IncludeSubdirectories = true,
+                        var watcher = new FileSystemWatcher(root, provider == Provider.Antigravity ? Path.GetFileName(source) + "*" : "*.jsonl") { IncludeSubdirectories = provider != Provider.Antigravity,
                             NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.FileName | NotifyFilters.DirectoryName };
                         watcher.Changed += (_, _) => dirty[provider] = DateTimeOffset.UtcNow;
                         watcher.Created += (_, _) => dirty[provider] = DateTimeOffset.UtcNow;
@@ -251,6 +259,6 @@ public sealed class AppEngine : IAsyncDisposable
         catch (OperationCanceledException) { }
         Accounts.Changed -= OnAccountChanged;
         Client.Dispose(); Vault.Dispose(); Database.Dispose();
-        background.Dispose(); foreach (var source in retiredSources) source.Dispose(); lifetime.Dispose(); settingsGate.Dispose();
+        activityGate.Dispose(); background.Dispose(); foreach (var source in retiredSources) source.Dispose(); lifetime.Dispose(); settingsGate.Dispose();
     }
 }
