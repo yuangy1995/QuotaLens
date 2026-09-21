@@ -1,0 +1,13 @@
+<Project>
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <Deterministic>true</Deterministic>
+    <Version>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)..\VERSION').Trim())</Version>
+    <Company>QuotaLens</Company>
+    <Authors>QuotaLens contributors</Authors>
+    <Copyright>Copyright QuotaLens contributors</Copyright>
+    <RepositoryUrl>https://github.com/yuangy1995/QuotaLens</RepositoryUrl>
+  </PropertyGroup>
+</Project>
