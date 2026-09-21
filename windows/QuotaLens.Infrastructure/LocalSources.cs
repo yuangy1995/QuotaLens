@@ -25,11 +25,10 @@ public static class LocalSources
             .Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
         _ => [] };
 
-    /// <summary>Only call after the user enables local discovery for this tool.
-    /// These are the tool's own documented files, never browser cookies or OS credential stores.</summary>
-    public static Task<LocalImport> ReadCredentialAsync(Provider provider, AppSettings settings, CancellationToken ct) => Task.Run(() => {
-        if (provider == Provider.Antigravity) throw new QuotaException(FailureKind.NotConnected,
-            "Use explicit JSON/token import or independent Google authorization for Antigravity in this build.");
+    /// <summary>Only call after explicit import or consent to local discovery for this tool.
+    /// Never scans browser cookies or OS credential stores.</summary>
+    public static Task<LocalImport> ReadCredentialAsync(Provider provider, AppSettings settings, CancellationToken ct) =>
+        provider == Provider.Antigravity ? AntigravityLoginReader.ReadAsync(settings, ct) : Task.Run(() => {
         foreach (var path in CredentialCandidates(provider, settings))
         {
             ct.ThrowIfCancellationRequested(); if (!File.Exists(path)) continue;

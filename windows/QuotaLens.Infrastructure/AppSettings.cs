@@ -31,7 +31,7 @@ public sealed record AppSettings
         Language = Language is "system" or "zh-CN" or "en" ? Language : "system",
         RefreshSeconds = Math.Clamp(RefreshSeconds, 60, 3600),
         EnabledTools = (EnabledTools ?? []).Where(Enum.IsDefined).Distinct().ToArray(),
-        DiscoverLocalTools = (DiscoverLocalTools ?? []).Where(x => Enum.IsDefined(x) && x != Provider.Antigravity).Distinct().ToArray(),
+        DiscoverLocalTools = (DiscoverLocalTools ?? []).Where(x => Enum.IsDefined(x)).Distinct().ToArray(),
         ViewingAccounts = ViewingAccounts is null ? new() : new(ViewingAccounts),
         OverlayX = OverlayX is { } x && double.IsFinite(x) ? x : null,
         OverlayY = OverlayY is { } y && double.IsFinite(y) ? y : null,

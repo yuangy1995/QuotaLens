@@ -11,6 +11,9 @@ namespace QuotaLens.Windows;
 
 public sealed partial class MainWindow
 {
+    private string LocalImportNotice(Provider provider) => provider == Provider.Antigravity
+        ? T("仅读取已选 Antigravity 配置的访问令牌，不解码、保存或轮换其刷新令牌。访问令牌到期后由原工具续期；多个配置并存时请指定状态文件。", "Reads only the selected Antigravity profile's access token; does not decode, save or rotate its refresh token. The original tool renews access. Select a state file when multiple profiles exist.")
+        : T("仅读取此工具的登录文件并保存私有加密副本。续期可能轮换与原客户端共享的刷新令牌，但不会改写原工具文件。", "Reads this tool's login file and stores an encrypted private copy. Renewal may rotate a token shared with the original client, but never rewrites its files.");
     private UIElement AccountsPage(Provider? selectedProvider)
     {
         var content = Ui.Stack(Ui.Heading(T("账号管理", "Account management"), 28),
@@ -21,10 +24,11 @@ public sealed partial class MainWindow
                 Ui.Button(T("浏览器授权", "Browser sign-in"), () => StartAction(ct => AuthorizeAsync(provider, ct))),
                 Ui.Button(T("导入文件", "Import file"), () => StartAction(ct => ImportFileAsync(provider, ct))),
                 Ui.Button(T("粘贴 JSON / Token", "Paste JSON / token"), () => StartAction(ct => ImportTextAsync(provider, ct)))));
-            if (provider != Provider.Antigravity) card.Children.Add(Ui.Button(T("从本机工具导入", "Import from local tool"), () => StartAction(async ct => {
-                if (!await ConfirmAsync(T("导入本机登录状态", "Import local authorization"), T("仅读取此工具的登录文件并保存私有加密副本。续期可能轮换与原客户端共享的刷新令牌，但不会改写原工具文件。", "Reads this tool's login file and stores an encrypted private copy. Renewal may rotate a token shared with the original client, but never rewrites its files."), ct)) return;
+            card.Children.Add(Ui.Button(T("从本机工具导入", "Import from local tool"), () => StartAction(async ct => {
+                if (!await ConfirmAsync(T("导入本机登录状态", "Import local authorization"), LocalImportNotice(provider), ct)) return;
                 var result = await engine.Accounts.ImportLocalAsync(provider, true, ct); ShowNotice(result.Message ?? T("导入已完成", "Import completed"));
             })));
+            card.Children.Add(Ui.Text(LocalImportNotice(provider), 12, true));
             foreach (var view in engine.Accounts.Views.Where(x => x.Account.Provider == provider)) {
                 var account = view.Account;
                 var row = Ui.Stack(Ui.Heading(account.DisplayName, 16),
@@ -53,10 +57,7 @@ public sealed partial class MainWindow
             var use = new CheckBox { Content = T("启用 ", "Enable ") + provider, IsChecked = saved.EnabledTools.Contains(provider) }; enabled[provider] = use;
             var local = new CheckBox { Content = T("自动发现本机登录文件（仅限此工具）", "Discover this tool's local login file automatically"), IsChecked = saved.DiscoverLocalTools.Contains(provider) };
             discovery[provider] = local;
-            var group = Ui.Stack(use);
-            if (provider != Provider.Antigravity) group.Children.Add(local);
-            group.Children.Add(Ui.Text(T("只有启用的工具才会被查询和扫描。本机导入凭据可能与原客户端共享刷新链，续期可能影响原客户端后续刷新。", "Only enabled tools are queried and scanned. Imported credentials can share a refresh chain with the original client; renewal may affect its later refresh."), 12, true));
-            content.Children.Add(Ui.Card(group));
+            content.Children.Add(Ui.Card(Ui.Stack(use, local, Ui.Text(LocalImportNotice(provider), 12, true))));
         }
         var theme = Choice(T("外观", "Appearance"), [("system", T("跟随系统", "System")), ("light", T("浅色", "Light")), ("dark", T("深色", "Dark"))], saved.Theme);
         var language = Choice(T("语言", "Language"), [("system", T("跟随系统", "System")), ("zh-CN", "简体中文"), ("en", "English")], saved.Language);
@@ -83,14 +84,17 @@ public sealed partial class MainWindow
         content.Children.Add(Ui.Button(T("保存设置", "Save settings"), () => StartAction(async ct => {
             var tools = engine.Settings.EnabledTools.ToHashSet(); var discovered = engine.Settings.DiscoverLocalTools.ToHashSet();
             foreach (var pair in enabled) { if (pair.Value.IsChecked == true) tools.Add(pair.Key); else tools.Remove(pair.Key); }
-            foreach (var pair in discovery) { if (pair.Value.IsChecked == true && pair.Key != Provider.Antigravity) discovered.Add(pair.Key); else discovered.Remove(pair.Key); }
+            foreach (var pair in discovery) { if (pair.Value.IsChecked == true) discovered.Add(pair.Key); else discovered.Remove(pair.Key); }
             await engine.UpdateSettingsAsync(s => s with { EnabledTools = tools.Order().ToArray(), DiscoverLocalTools = discovered.Order().ToArray(),
                 Theme = tool is null ? (string)((ComboBoxItem)theme.SelectedItem).Tag : s.Theme,
                 Language = tool is null ? (string)((ComboBoxItem)language.SelectedItem).Tag : s.Language,
                 RefreshSeconds = tool is null && double.IsFinite(interval.Value) ? (int)interval.Value : s.RefreshSeconds,
                 Notifications = tool is null ? notifications.IsChecked == true : s.Notifications,
-                CodexBinary = Optional(binary.Text), CodexHome = Optional(codexHome.Text), ClaudeHome = Optional(claudeHome.Text),
-                AntigravityStateFile = Optional(gravity.Text), CollectCodexCloudUsage = cloud.IsChecked == true }, ct);
+                CodexBinary = tool is null or Provider.Codex ? Optional(binary.Text) : s.CodexBinary,
+                CodexHome = tool is null or Provider.Codex ? Optional(codexHome.Text) : s.CodexHome,
+                ClaudeHome = tool is null or Provider.Claude ? Optional(claudeHome.Text) : s.ClaudeHome,
+                AntigravityStateFile = tool is null or Provider.Antigravity ? Optional(gravity.Text) : s.AntigravityStateFile,
+                CollectCodexCloudUsage = tool is null or Provider.Codex ? cloud.IsChecked == true : s.CollectCodexCloudUsage }, ct);
             ShowNotice(T("设置已保存", "Settings saved"));
         })));
         if (tool is { } scanTool) content.Children.Add(Ui.Button(T("重新扫描本机记录", "Rescan local records"), () => StartAction(async ct => {
@@ -137,7 +141,9 @@ public sealed partial class MainWindow
         using var response = await client.GetAsync("https://api.github.com/repos/yuangy1995/QuotaLens/releases/latest", ct); response.EnsureSuccessStatusCode();
         var json = JsonTools.Parse(await response.Content.ReadAsStringAsync(ct)); var tag = json.At("tag_name").Text() ?? "";
         if (!Version.TryParse(tag.TrimStart('v'), out var latest) || !Version.TryParse(engine.Version, out var current)) throw new InvalidDataException("Unrecognized release version.");
-        if (latest <= current) { ShowNotice(T("当前已是最新正式版本", "You have the latest stable version")); return; }
+        bool hasWindows = json.At("assets").Items().Any(x => (x.At("name").Text() ?? "").StartsWith("QuotaLens-Windows-x64-", StringComparison.Ordinal));
+        if (!hasWindows) { ShowNotice(T("最新 Release 尚无 Windows 下载包；当前为源码构建预览版。", "The latest release has no Windows package; this is a source-built preview.")); return; }
+        if (latest <= current) { ShowNotice(T("没有更新的正式 Windows 版本", "No newer stable Windows version is available")); return; }
         var address = json.At("html_url").Text();
         if (!Uri.TryCreate(address, UriKind.Absolute, out var uri) || uri.Scheme != "https" || uri.Host != "github.com" || !uri.AbsolutePath.StartsWith("/yuangy1995/QuotaLens/releases/tag/", StringComparison.Ordinal)) throw new InvalidDataException("Unexpected release destination.");
         if (await ConfirmAsync(T("发现新版本 ", "New release ") + tag, T("在浏览器打开项目 Release，查看版本说明与对应 Windows 下载包。", "Open the project release in your browser to review notes and Windows downloads."), ct)) await DesktopActions.OpenBrowserAsync(uri);

@@ -21,12 +21,23 @@ internal static class AdditionalChecks
             command.CommandText = "CREATE TABLE ItemTable(key TEXT PRIMARY KEY,value TEXT); INSERT INTO ItemTable VALUES($key,$value)";
             command.Parameters.AddWithValue("$key", "antigravityUnifiedStateSync.trajectorySummaries");
             command.Parameters.AddWithValue("$value", summary); await command.ExecuteNonQueryAsync();
+            command.Parameters.Clear(); command.CommandText = "INSERT INTO ItemTable VALUES($key,$value)";
+            command.Parameters.AddWithValue("$key", "antigravityUnifiedStateSync.oauthToken");
+            // Invalid UTF-8 in field 3 proves it is never decoded as a refresh token.
+            command.Parameters.AddWithValue("$value", Map("oauthTokenInfoSentinelKey", Join(Text(1, "synthetic-access"),
+                Field(3, new byte[] { 255, 255 }), Field(4, Integer(1, (ulong)expiry.ToUnixTimeSeconds())), Integer(6, 1))));
+            await command.ExecuteNonQueryAsync();
         }
         byte[] originalDatabase = await File.ReadAllBytesAsync(path);
+        var local = await LocalSources.ReadCredentialAsync(Provider.Antigravity, new AppSettings { AntigravityStateFile = path }, CancellationToken.None);
+        check(local.Credential.AccessToken == "synthetic-access" && local.Credential.RefreshToken is null, "local Antigravity import excludes refresh tokens");
+        check(local.Credential.ExpiresAt == expiry && local.Credential.IsGcpTos, "local access metadata is preserved");
+        check(local.Fingerprint.Length == 64 && !local.Fingerprint.Contains("synthetic"), "local authorization fingerprint contains no plaintext token");
+        await reject(() => Task.Run(() => AntigravityLoginReader.Parse("malformed")), "malformed local authorization is rejected");
+        await reject(() => Task.Run(() => AntigravityLoginReader.Parse(Map("oauthTokenInfoSentinelKey", Join(Text(1, "one"), Text(1, "two"))))), "duplicate access-token fields are rejected");
         var records = await AntigravityActivityReader.ReadAsync(path, CancellationToken.None);
         check(records.Count == 1 && records[0].Steps == 7 && !System.Text.Json.JsonSerializer.Serialize(records).Contains("PRIVATE-SUMMARY"), "task aggregation excludes summary text");
-        // C# 14 may select the span overload of SequenceEqual. Complete asynchronous
-        // IO first so a ref struct never has to survive the await boundary.
+        // Complete asynchronous IO before span comparison; no ref struct crosses await.
         byte[] databaseAfterRead = await File.ReadAllBytesAsync(path);
         check(originalDatabase.AsSpan().SequenceEqual(databaseAfterRead), "activity reader does not modify the source database");
         await using var engine = new AppEngine(Path.Combine(root, "engine-tests")); await engine.InitializeAsync(false);
@@ -34,6 +45,8 @@ internal static class AdditionalChecks
         check(unsafePreferences.EnabledTools.Length == 0 && unsafePreferences.ViewingAccounts.Count == 0 && unsafePreferences.OverlayX is null && unsafePreferences.OverlayY is null,
             "malformed optional preferences normalize safely");
         await Task.WhenAll(Enumerable.Range(0, 40).Select(_ => engine.UpdateSettingsAsync(s => s with { OverlayX = (s.OverlayX ?? 0) + 1 })));
+        check(engine.Prices.Count > 0, "application initializes with bundled reference prices");
+        check(new AppSettings { DiscoverLocalTools = [Provider.Antigravity] }.Normalize().DiscoverLocalTools.Contains(Provider.Antigravity), "explicit Antigravity discovery preference is retained");
         check(engine.Settings.OverlayX == 40, "concurrent settings callbacks are atomic");
         check((await engine.Database.GetMetadataAsync<AppSettings>("settings"))?.OverlayX == 40, "atomic preferences are persisted");
         await engine.UpdateSettingsAsync(s => s with { EnabledTools = [Provider.Antigravity], AntigravityStateFile = path });

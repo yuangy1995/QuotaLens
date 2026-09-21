@@ -17,7 +17,6 @@ public sealed class QuotaException(FailureKind kind, string message, DateTimeOff
 public sealed record Credential(Provider Provider, string AccessToken, string? RefreshToken = null,
     DateTimeOffset? ExpiresAt = null, string? IdToken = null, string? ClientId = null, bool IsGcpTos = false)
 {
-    // Never print a credential through record-generated diagnostic formatting.
     public override string ToString() => $"Credential({Provider}, [REDACTED])";
     public DateTimeOffset? EffectiveExpiry
     {
@@ -27,7 +26,8 @@ public sealed record Credential(Provider Provider, string AccessToken, string? R
             return ExpiresAt is { } expiry && jwt is { } j ? (expiry < j ? expiry : j) : ExpiresAt ?? jwt;
         }
     }
-    public bool NeedsRefresh(DateTimeOffset now) => string.IsNullOrWhiteSpace(AccessToken) || EffectiveExpiry <= now.AddMinutes(5);
+    public bool NeedsRefresh(DateTimeOffset now) => string.IsNullOrWhiteSpace(AccessToken) ||
+        EffectiveExpiry <= now.AddMinutes(string.IsNullOrWhiteSpace(RefreshToken) ? 0 : 5);
 }
 
 public sealed record Account(string Key, Provider Provider, string ProviderId, string Name, string Source,
@@ -90,13 +90,12 @@ public sealed record ActivitySummary(string Id, string Profile, string Project, 
 public sealed record Price(string Model, decimal InputPerMillion, decimal CachedInputPerMillion, decimal OutputPerMillion, decimal CacheWritePerMillion = 0);
 public static class Pricing
 {
-    // An exact catalog match is required. Never silently map an unknown model to a default price.
     public static decimal? Estimate(UsageEvent value, IEnumerable<Price> catalog)
     {
         var price = catalog.FirstOrDefault(x => string.Equals(x.Model, value.Model, StringComparison.OrdinalIgnoreCase));
         if (price is null) return null;
         value.Tokens.Validate();
-        // Zero in a bundled catalog can mean an unsupported token class, not free usage.
+        // A zero rate can mean unsupported, not free. Unknown models never inherit a price.
         if (price.InputPerMillion <= 0 || price.OutputPerMillion <= 0 || price.CachedInputPerMillion < 0 || price.CacheWritePerMillion < 0 ||
             value.Tokens.CachedInput > 0 && price.CachedInputPerMillion == 0 ||
             value.Tokens.CacheWrite > 0 && price.CacheWritePerMillion == 0) return null;

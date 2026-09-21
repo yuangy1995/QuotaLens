@@ -45,7 +45,7 @@ public static class AntigravityActivityReader
             int? steps = null; DateTimeOffset? at = null; string project = ""; bool recognized = false;
             foreach (var value in Fields(summary)) {
                 switch (value.Number) {
-                    case 1: break; // User summary text is deliberately discarded, not decoded.
+                    case 1: break;
                     case 2 when value.Wire == 0:
                         if (value.Scalar > int.MaxValue) throw Invalid(); steps = (int)value.Scalar; recognized = true; break;
                     case 3 or 7 or 10 when value.Wire == 2:
@@ -62,8 +62,8 @@ public static class AntigravityActivityReader
         if (data.Length != 0 && result.Count == 0) throw Invalid();
         return result;
     }
-    private readonly record struct Field(int Number, int Wire, ulong Scalar, ReadOnlyMemory<byte> Bytes);
-    private static IEnumerable<Field> Fields(ReadOnlyMemory<byte> data)
+    internal readonly record struct Field(int Number, int Wire, ulong Scalar, ReadOnlyMemory<byte> Bytes);
+    internal static IEnumerable<Field> Fields(ReadOnlyMemory<byte> data)
     {
         int offset = 0;
         while (offset < data.Length) {
@@ -85,8 +85,8 @@ public static class AntigravityActivityReader
         }
         throw Invalid();
     }
-    private static string StrictText(ReadOnlyMemory<byte> value) => new UTF8Encoding(false, true).GetString(value.Span);
-    private static DateTimeOffset? Timestamp(ReadOnlyMemory<byte> data)
+    internal static string StrictText(ReadOnlyMemory<byte> value) => new UTF8Encoding(false, true).GetString(value.Span);
+    internal static DateTimeOffset? Timestamp(ReadOnlyMemory<byte> data)
     {
         var fields = Fields(data).ToArray(); var seconds = fields.FirstOrDefault(x => x.Number == 1 && x.Wire == 0);
         if (seconds.Number == 0) return null;
@@ -96,7 +96,6 @@ public static class AntigravityActivityReader
     }
     private static string WorkspaceBasename(ReadOnlyMemory<byte> data)
     {
-        // Match the macOS reader: inspect printable strings in field 9 only, accepting file URIs.
         var value = new StringBuilder();
         string Candidate() {
             if (!Uri.TryCreate(value.ToString(), UriKind.Absolute, out var uri) || !uri.IsFile) return "";

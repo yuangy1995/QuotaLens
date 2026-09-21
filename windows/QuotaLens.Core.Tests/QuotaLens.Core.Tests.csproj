@@ -1,5 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework></PropertyGroup>
   <ItemGroup><ProjectReference Include="../QuotaLens.Core/QuotaLens.Core.csproj" /></ItemGroup>
-  <ItemGroup><None Include="../../shared/fixtures/capacity-predictions.json" Link="capacity-predictions.json" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
+  <ItemGroup>
+    <None Include="../../shared/fixtures/capacity-predictions.json" Link="capacity-predictions.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../shared/fixtures/capacity-prediction.json" Link="capacity-prediction.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

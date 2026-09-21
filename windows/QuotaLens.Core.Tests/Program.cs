@@ -10,6 +10,12 @@ foreach (var f in fixtures.Items())
     var result = CapacityForecast.Predict(f.At("values").Items().Select(x => x.GetDouble()));
     Check(result is not null && Math.Abs(result.Tokens - f.At("expected").GetDouble()) < 0.0001, f.At("name").GetString()!);
 }
+var shared = JsonTools.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "capacity-prediction.json")));
+foreach (var f in shared.Items()) {
+    var result = CapacityForecast.Predict(f.At("capacities").Items().Select(x => x.GetDouble()));
+    var expected = f.At("expected").Number();
+    Check(expected is null ? result is null : result is not null && Math.Abs(result.Tokens - expected.Value) < 0.000001, "shared Swift contract: " + f.At("name").Text());
+}
 Check(CapacityForecast.Predict([double.NaN]) is null, "invalid forecasts rejected");
 Check(Account.KeyFor(Provider.Codex, "a") != Account.KeyFor(Provider.Claude, "a"), "provider identity isolation");
 Reject(() => new QuotaPool("x", "x", double.NaN, 300, null).Validate(), "NaN quota rejected");
@@ -41,4 +47,7 @@ Check(Pricing.Estimate(e with { Model = "unrecognized-model" }, StandardPriceCat
 Check(Pricing.Estimate(e with { Model = "test" }, [new("test", 2, 0, 4)]) is null, "unsupported cache input is not priced as free");
 Check(Pricing.Estimate(e with { Model = "test", Tokens = new(100, 0, 20, 5) }, [new("test", 2, 1, 4)]) is null, "unsupported cache write is not priced as free");
 Check(Pricing.Estimate(e with { Model = "test" }, [new("test", -2, 1, 4)]) is null, "invalid reference price rejected");
+Check(!new Credential(Provider.Antigravity, "synthetic", ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(2)).NeedsRefresh(DateTimeOffset.UtcNow), "read-only access remains usable until expiry");
+Check(new Credential(Provider.Antigravity, "synthetic", "synthetic-renewal", DateTimeOffset.UtcNow.AddMinutes(2)).NeedsRefresh(DateTimeOffset.UtcNow), "renewable credentials retain early renewal");
+Check(new Credential(Provider.Antigravity, "synthetic", ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(-1)).NeedsRefresh(DateTimeOffset.UtcNow), "expired read-only access is rejected");
 Console.WriteLine($"{passed} core checks passed.");
