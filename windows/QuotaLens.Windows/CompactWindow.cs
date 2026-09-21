@@ -17,7 +17,7 @@ internal sealed class CompactWindow : Window
     private NativeMethods.Point dragOrigin;
     private NativeMethods.Rect windowOrigin;
     private readonly IntPtr handle;
-    public bool Visible { get; private set; }
+    public new bool Visible { get; private set; }
     public event Action<int, int>? PositionChanged;
     public CompactWindow(bool overlay, Action openMain)
     {
@@ -64,7 +64,6 @@ internal sealed class CompactWindow : Window
         var work = NativeMethods.WorkArea(new(x, y)); height = Math.Min(height, work.Height); width = Math.Min(width, work.Width);
         var location = NativeMethods.Clamp(new(x, y), width, height);
         NativeMethods.SetWindowPos(handle, NativeMethods.HwndTopMost, location.X, location.Y, width, height, NativeMethods.SwpNoActivate);
-        // SW_SHOWNOACTIVATE keeps the user's editor/terminal focused.
         NativeMethods.ShowWindow(handle, overlay ? 4 : 5); Visible = true;
         if (!overlay) { Activate(); NativeMethods.SetForegroundWindow(handle); }
     }
@@ -95,7 +94,7 @@ public sealed partial class MainWindow
         trayPanel ??= new CompactWindow(false, ShowMain);
         if (trayPanel.Visible) { trayPanel.Hide(); return; }
         var panel = Ui.Stack();
-        foreach (var tool in engine.Settings.EnabledTools) panel.Children.Add(Ui.Card(CompactContent(tool)));
+        foreach (var trayTool in engine.Settings.EnabledTools) panel.Children.Add(Ui.Card(CompactContent(trayTool)));
         if (engine.Settings.EnabledTools.Length == 0) panel.Children.Add(Ui.Text(T("请先启用监控工具", "Enable a monitoring tool first")));
         trayPanel.Update(panel, root.RequestedTheme);
         NativeMethods.GetCursorPos(out var cursor); trayPanel.ShowAt(cursor.X - 390, cursor.Y - 550);
@@ -104,7 +103,7 @@ public sealed partial class MainWindow
     {
         if (!ready || closing) return;
         if (trayPanel?.Visible == true) {
-            var panel = Ui.Stack(); foreach (var tool in engine.Settings.EnabledTools) panel.Children.Add(Ui.Card(CompactContent(tool)));
+            var panel = Ui.Stack(); foreach (var trayTool in engine.Settings.EnabledTools) panel.Children.Add(Ui.Card(CompactContent(trayTool)));
             trayPanel.Update(panel, root.RequestedTheme);
         }
         if (!engine.Settings.OverlayEnabled || foreground is null) { overlay?.Hide(); return; }

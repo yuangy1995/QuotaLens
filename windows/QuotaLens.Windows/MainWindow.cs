@@ -67,7 +67,6 @@ public sealed partial class MainWindow : Window
         repaint.Tick += async (_, _) => {
             if (!ready || closing) return;
             UpdateStatus();
-            // Preserve typing, selection, scroll position and an open dialog while background work finishes.
             if (page is "summary" or "quota" or "forecast" or "distribution") await RenderPageAsync();
         };
         contextPicker.SelectionChanged += (_, _) => {
@@ -77,9 +76,9 @@ public sealed partial class MainWindow : Window
         };
         navigation.ItemClick += (_, e) => { if (e.ClickedItem is ListViewItem item) Navigate((string)item.Tag); };
         root.Loaded += async (_, _) => { if (!ready) await InitializeAsync(); };
-        root.ActualThemeChanged += (_, _) => { if (ready) { ApplyPalette(); _ = RenderPageAsync(); } };
+        root.ActualThemeChanged += (_, _) => { if (ready && smokeDirectory is null) { ApplyPalette(); _ = RenderPageAsync(); } };
         root.SizeChanged += (_, e) => root.ColumnDefinitions[0].Width = new GridLength(e.NewSize.Width < 950 ? 196 : 238);
-        AppWindow.Closing += (_, args) => {
+        AppWindow.Closing += (sender, args) => {
             if (closing) return;
             args.Cancel = true;
             if (ready && engine.Settings.CloseToTray && tray?.IsAdded == true && actionCancellation is null) HideMain();
@@ -151,12 +150,11 @@ public sealed partial class MainWindow : Window
     private void ApplySettings() {
         Ui.Chinese = engine.Settings.Language == "zh-CN" || engine.Settings.Language == "system" && System.Globalization.CultureInfo.CurrentUICulture.Name.StartsWith("zh", StringComparison.OrdinalIgnoreCase);
         root.RequestedTheme = engine.Settings.Theme switch { "light" => ElementTheme.Light, "dark" => ElementTheme.Dark, _ => ElementTheme.Default };
-        // Avoid re-entering the settings action through the toggle event.
         bool old = ready; ready = false; displaySwitch.IsOn = engine.Settings.ShowRemaining; ready = old;
         ApplyPalette();
     }
     private void ApplyPalette() { root.Background = Ui.Brush("CanvasBrush"); sidebar.Background = Ui.Brush("SidebarBrush"); footer.Foreground = Ui.Brush("MutedBrush"); }
-    private void OnDataChanged() => DispatcherQueue.TryEnqueue(() => { if (!closing && ready) { repaint.Stop(); repaint.Start(); } });
+    private void OnDataChanged() => DispatcherQueue.TryEnqueue(() => { if (!closing && ready && smokeDirectory is null) { repaint.Stop(); repaint.Start(); } });
     private void UpdateStatus() {
         footer.Text = (engine.Settings.Paused ? T("自动刷新已暂停", "Automatic refresh paused") : T("云端额度与本机记录分开统计", "Cloud quota and local usage are separate")) + "  ·  " + engine.ScanProgress;
         if (!string.IsNullOrEmpty(engine.Warning) && actionCancellation is null) { message.Title = T("需要关注", "Attention"); message.Message = engine.Warning; message.Severity = InfoBarSeverity.Warning; message.IsOpen = true; }
@@ -175,7 +173,10 @@ public sealed partial class MainWindow : Window
         catch (Exception error) { if (!closing) ShowError(error); }
         finally { actionCancellation = null; refreshButton.IsEnabled = true; cancelButton.Visibility = Visibility.Collapsed; }
     }
-    private void ShowError(Exception error) { message.Title = T("操作未完成", "Operation did not complete"); message.Message = SafeErrors.Describe(error).Message; message.Severity = InfoBarSeverity.Warning; message.IsOpen = true; }
+    private void ShowError(Exception error) {
+        if (smokeDirectory is not null) { Directory.CreateDirectory(smokeDirectory); File.WriteAllText(Path.Combine(smokeDirectory, "failure.txt"), error.ToString()); }
+        message.Title = T("操作未完成", "Operation did not complete"); message.Message = SafeErrors.Describe(error).Message; message.Severity = InfoBarSeverity.Warning; message.IsOpen = true;
+    }
     public void ShowMain() { if (closing) return; AppWindow.Show(); Activate(); NativeMethods.SetForegroundWindow(Handle); }
     private void HideMain() { trayPanel?.Hide(); AppWindow.Hide(); }
     private void OnNotification(string title, string text) => DispatcherQueue.TryEnqueue(() => tray?.Notify(title, text));
@@ -184,7 +185,7 @@ public sealed partial class MainWindow : Window
         if (closing) return; closing = true; lifetime.Cancel(); pageCancellation.Cancel(); actionCancellation?.Cancel(); repaint.Stop();
         engine.Changed -= OnDataChanged; engine.NotificationRequested -= OnNotification;
         foreground?.Dispose(); tray?.Dispose(); trayPanel?.Close(); overlay?.Close();
-        try { await activeAction; await engine.DisposeAsync(); } catch (Exception) { /* Credentials are retained by their recovery service on save failure. */ }
+        try { await activeAction; await engine.DisposeAsync(); } catch (Exception) { }
         pageCancellation.Dispose(); lifetime.Dispose(); Close(); Application.Current.Exit();
     }
 }

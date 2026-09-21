@@ -74,7 +74,9 @@ internal static class Ui
             grid.ColumnDefinitions.Clear(); grid.RowDefinitions.Clear();
             for (int i = 0; i < columns; i++) grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             for (int i = 0; i < rows; i++) grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            for (int i = 0; i < grid.Children.Count; i++) { Grid.SetColumn(grid.Children[i], i % columns); Grid.SetRow(grid.Children[i], i / columns); }
+            for (int i = 0; i < grid.Children.Count; i++) {
+                if (grid.Children[i] is FrameworkElement child) { Grid.SetColumn(child, i % columns); Grid.SetRow(child, i / columns); }
+            }
         }
         Arrange(1000); grid.SizeChanged += (_, e) => { if (Math.Abs(e.NewSize.Width - e.PreviousSize.Width) > 1) Arrange(e.NewSize.Width); };
         return grid;
