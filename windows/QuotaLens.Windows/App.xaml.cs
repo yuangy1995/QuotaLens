@@ -1,5 +1,6 @@
 using System.Security.Principal;
 using Microsoft.UI.Xaml;
+using QuotaLens.Windows.UI;
 
 namespace QuotaLens.Windows;
 
@@ -10,7 +11,7 @@ public partial class App : Application
     private Mutex? singleton;
     private EventWaitHandle? activation;
     private RegisteredWaitHandle? activationWait;
-    public App() { InitializeComponent(); }
+    public App() { InitializeComponent(); Resources = ThemeResources.Create(); }
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
         var arguments = Environment.GetCommandLineArgs();
