@@ -100,10 +100,7 @@ public sealed partial class MainWindow
     }
     private async Task RefreshActivitiesAsync(CancellationToken ct)
     {
-        if (!engine.Settings.EnabledTools.Contains(Provider.Antigravity)) return;
-        string? path = engine.Settings.AntigravityStateFile;
-        if (string.IsNullOrEmpty(path)) throw new QuotaException(FailureKind.NotConnected, T("请先在工具设置选择 Antigravity 状态数据库。", "Select the Antigravity state database in Tool settings first."));
-        var records = await AntigravityActivityReader.ReadAsync(path, ct);
-        await engine.Database.SaveActivitiesAsync("windows-local", records, ct);
+        // Manual and background refresh must share profile identity and transactional replacement.
+        await engine.ScanAsync(Provider.Antigravity, ct: ct);
     }
 }

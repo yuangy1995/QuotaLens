@@ -118,9 +118,7 @@ public sealed partial class MainWindow : Window
         rebuildingNavigation = true;
         try {
             sidebar.Children.Clear(); sidebar.Children.Add(Ui.Heading("◉  QuotaLens", 25));
-            sidebar.Children.Add(Ui.Text("YOUR QUOTA, IN FOCUS", 10, true));
-            contextPicker.Items.Clear();
-            contextPicker.Items.Add(new ComboBoxItem { Content = T("总览 · 全部工具", "Overview · All tools"), Tag = "overview" });
+            contextPicker.Items.Clear(); contextPicker.Items.Add(new ComboBoxItem { Content = T("统一总览", "All tools"), Tag = "overview" });
             foreach (var tool in engine.Settings.EnabledTools) contextPicker.Items.Add(new ComboBoxItem { Content = tool.ToString(), Tag = tool.ToString() });
             var selected = contextPicker.Items.OfType<ComboBoxItem>().FirstOrDefault(x => (string)x.Tag == context);
             if (selected is null) { context = "overview"; page = "summary"; selected = (ComboBoxItem)contextPicker.Items[0]; }
@@ -150,6 +148,10 @@ public sealed partial class MainWindow : Window
     private void ApplySettings() {
         Ui.Chinese = engine.Settings.Language == "zh-CN" || engine.Settings.Language == "system" && System.Globalization.CultureInfo.CurrentUICulture.Name.StartsWith("zh", StringComparison.OrdinalIgnoreCase);
         root.RequestedTheme = engine.Settings.Theme switch { "light" => ElementTheme.Light, "dark" => ElementTheme.Dark, _ => ElementTheme.Default };
+        refreshButton.Content = T("↻ 刷新", "↻ Refresh");
+        cancelButton.Content = T("取消操作", "Cancel operation");
+        displaySwitch.Header = T("额度视角", "Quota display");
+        displaySwitch.OnContent = T("可用", "Remaining"); displaySwitch.OffContent = T("已用", "Used");
         bool old = ready; ready = false; displaySwitch.IsOn = engine.Settings.ShowRemaining; ready = old;
         ApplyPalette();
     }
@@ -167,11 +169,11 @@ public sealed partial class MainWindow : Window
     }
     private async Task ExecuteActionAsync(Func<CancellationToken, Task> action, bool render) {
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token); actionCancellation = cancellation;
-        refreshButton.IsEnabled = false; cancelButton.Visibility = Visibility.Visible;
+        refreshButton.IsEnabled = false; displaySwitch.IsEnabled = false; cancelButton.Visibility = Visibility.Visible;
         try { await action(cancellation.Token); if (!closing) { ApplySettings(); if (render) { BuildNavigation(); await RenderPageAsync(); } UpdateStatus(); } }
         catch (OperationCanceledException) { }
         catch (Exception error) { if (!closing) ShowError(error); }
-        finally { actionCancellation = null; refreshButton.IsEnabled = true; cancelButton.Visibility = Visibility.Collapsed; }
+        finally { actionCancellation = null; refreshButton.IsEnabled = true; displaySwitch.IsEnabled = true; cancelButton.Visibility = Visibility.Collapsed; }
     }
     private void ShowError(Exception error) {
         if (smokeDirectory is not null) { Directory.CreateDirectory(smokeDirectory); File.WriteAllText(Path.Combine(smokeDirectory, "failure.txt"), error.ToString()); }

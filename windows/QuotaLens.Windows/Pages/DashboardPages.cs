@@ -99,8 +99,8 @@ public sealed partial class MainWindow
     private UIElement Metrics(UsageReport report, string prefix) => Ui.Columns(new UIElement[] {
         Ui.Card(Ui.Stack(Ui.Text(prefix + " Token", 12, true), Ui.Heading(Ui.Number(report.Tokens), 28))),
         Ui.Card(Ui.Stack(Ui.Text(T("本机会话", "Local sessions"), 12, true), Ui.Heading(report.Sessions.ToString("N0"), 28))),
-        Ui.Card(Ui.Stack(Ui.Text(T("API 等价价值 · 估算", "API equivalent value · estimate"), 12, true), Ui.Heading(report.ApiValue is { } price ? "$" + price.ToString("N2") : "—", 28),
-            Ui.Text(T("非账单；未计价记录 ", "Not a bill; unpriced events: ") + report.UnpricedEvents, 11, true)))
+        Ui.Card(Ui.Stack(Ui.Text(T("API 参考价值 · 估算", "API reference value · estimate"), 12, true), Ui.Heading(report.ApiValue is { } price ? "$" + price.ToString("N2") : "—", 28),
+            Ui.Text(T("标准参考价，非账单；未计价记录 ", "Standard reference, not a bill; unpriced: ") + report.UnpricedEvents, 11, true)))
     });
     private UIElement QuotaPage(Provider provider, string? key)
     {
@@ -135,7 +135,7 @@ public sealed partial class MainWindow
                 Ui.Text(T("输出：", "Output: ") + Ui.Number(report.Output)), Ui.Text(T("缓存写入：", "Cache writes: ") + Ui.Number(report.CacheWrite)))),
             Ui.Buckets(T("推理级别", "Reasoning effort"), report.Efforts)
         }, 2));
-        content.Children.Add(Ui.Text(T("API 等价价值按明确匹配的价格估算，不是订阅账单或扣费；未知模型和不明确的缓存写入保持未计价。", "API value uses exact catalog matches, not subscription charges. Unknown models and ambiguous cache writes remain unpriced."), 12, true));
+        content.Children.Add(Ui.Text(T("API 参考价值使用内置目录的标准短上下文参考价，不是历史账单、Fast/Flex 价格或订阅扣费；未知模型和不明确的缓存写入保持未计价。", "API reference value uses bundled standard short-context rates, not historical bills, Fast/Flex rates or subscription charges. Unknown models and ambiguous cache writes remain unpriced.") + " · " + StandardPriceCatalog.Version, 12, true));
         return Ui.Scroll(content);
     }
     private async Task<UIElement> ForecastPageAsync(string key, CancellationToken ct)
@@ -199,7 +199,7 @@ public sealed partial class MainWindow
             Ui.Button(T("刷新本机活动", "Refresh local activity"), () => StartAction(ct2 => RefreshActivitiesAsync(ct2))));
         foreach (var item in values.Take(300)) content.Children.Add(Ui.Card(Ui.Stack(Ui.Heading(item.Project.Length == 0 ? item.Id : item.Project, 16),
             Ui.Text(item.Profile + " · " + Ui.Date(item.At) + " · " + T("步骤：", "Steps: ") + (item.Steps?.ToString() ?? "—"), 12, true))));
-        if (values.Count == 0) content.Children.Add(Ui.Empty(T("暂无已解析的活动记录", "No parsed activity records"), T("在工具设置中选择 Antigravity 状态文件；遇到未知格式时会保留历史并明确提示。", "Select the Antigravity state file in Tool settings. Unrecognized formats retain history and report an error.")));
+        if (values.Count == 0) content.Children.Add(Ui.Empty(T("暂无已解析的活动记录", "No parsed activity records"), T("自动检查本机 Antigravity 配置，也可在工具设置指定状态文件；未知格式不会覆盖已有历史。", "Local Antigravity profiles are discovered automatically; Tool settings can override the state file. Unrecognized formats retain existing history.")));
         return Ui.Scroll(content);
     }
 }

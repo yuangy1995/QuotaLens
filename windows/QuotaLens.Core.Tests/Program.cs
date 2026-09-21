@@ -34,4 +34,11 @@ Check(CapacityForecast.Analyze([O(1, 1000, 10, key: "b")], "a", 2).Count == 0, "
 Check(CapacityForecast.Analyze([O(1, 1000, 10), O(2, 2000, 20)], "a", 18001).Single().Current is null, "expired cycle has no remaining prediction");
 window = CapacityForecast.Analyze([O(1, 1000, 10), O(2, 2000, 20), O(3, 2000, 0)], "a", 4).Single();
 Check(window.Cycles.Count == 2 && window.Cycles[0].EndReason == "restored", "same-deadline restoration splits cycles");
+Check(StandardPriceCatalog.Entries.Count > 0, "standard reference catalog is bundled");
+Check(StandardPriceCatalog.Entries.Select(x => x.Model).Distinct(StringComparer.OrdinalIgnoreCase).Count() == StandardPriceCatalog.Entries.Count, "reference aliases are unique");
+Check(Pricing.Estimate(e with { Model = "gpt-5.4" }, StandardPriceCatalog.Entries) == 0.0004375m, "bundled standard reference rates are used");
+Check(Pricing.Estimate(e with { Model = "unrecognized-model" }, StandardPriceCatalog.Entries) is null, "unknown models never inherit a reference price");
+Check(Pricing.Estimate(e with { Model = "test" }, [new("test", 2, 0, 4)]) is null, "unsupported cache input is not priced as free");
+Check(Pricing.Estimate(e with { Model = "test", Tokens = new(100, 0, 20, 5) }, [new("test", 2, 1, 4)]) is null, "unsupported cache write is not priced as free");
+Check(Pricing.Estimate(e with { Model = "test" }, [new("test", -2, 1, 4)]) is null, "invalid reference price rejected");
 Console.WriteLine($"{passed} core checks passed.");

@@ -33,7 +33,7 @@ public sealed partial class AppEngine : IAsyncDisposable
     public string Version { get; }
     public string? Warning { get; private set; }
     public string ScanProgress { get; private set; } = "";
-    public IReadOnlyList<Price> Prices { get; private set; } = [];
+    public IReadOnlyList<Price> Prices { get; } = StandardPriceCatalog.Entries;
     public event Action? Changed;
     public event Action<string, string>? NotificationRequested;
 
@@ -57,12 +57,6 @@ public sealed partial class AppEngine : IAsyncDisposable
         int retained = await PrivateCodexHome.RecoverAsync(Database.Root, Accounts.Views.Select(x => x.Account).ToArray(), Vault, ct).ConfigureAwait(false);
         if (retained > 0) Warning = "Some private Codex runtime files require recovery. They were retained to avoid losing rotated authorization.";
         await Recovery.RecoverAsync(ct).ConfigureAwait(false);
-        var pricesPath = Path.Combine(AppContext.BaseDirectory, "Assets", "pricing.json");
-        if (File.Exists(pricesPath))
-        {
-            try { Prices = System.Text.Json.JsonSerializer.Deserialize<Price[]>(await File.ReadAllTextAsync(pricesPath, ct).ConfigureAwait(false), JsonTools.Options) ?? []; }
-            catch (Exception error) when (error is not OperationCanceledException) { Warning = "The pricing catalog could not be read. Token counts remain available; values are unpriced."; }
-        }
         Changed?.Invoke();
         if (startBackground) Start();
     }

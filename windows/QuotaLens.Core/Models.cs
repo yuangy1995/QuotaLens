@@ -96,6 +96,10 @@ public static class Pricing
         var price = catalog.FirstOrDefault(x => string.Equals(x.Model, value.Model, StringComparison.OrdinalIgnoreCase));
         if (price is null) return null;
         value.Tokens.Validate();
+        // Zero in a bundled catalog can mean an unsupported token class, not free usage.
+        if (price.InputPerMillion <= 0 || price.OutputPerMillion <= 0 || price.CachedInputPerMillion < 0 || price.CacheWritePerMillion < 0 ||
+            value.Tokens.CachedInput > 0 && price.CachedInputPerMillion == 0 ||
+            value.Tokens.CacheWrite > 0 && price.CacheWritePerMillion == 0) return null;
         return ((value.Tokens.Input - value.Tokens.CachedInput) * price.InputPerMillion
             + value.Tokens.CachedInput * price.CachedInputPerMillion + value.Tokens.Output * price.OutputPerMillion
             + value.Tokens.CacheWrite * price.CacheWritePerMillion) / 1_000_000m;

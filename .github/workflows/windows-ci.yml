@@ -2,9 +2,9 @@ name: Windows
 on:
   push:
     branches: [main, 'windows/**']
-    paths: ['windows/**', 'shared/**', 'VERSION', '.github/workflows/windows-ci.yml']
+    paths: ['windows/**', 'shared/**', 'VERSION', 'Sources/QuotaLens/Core/**', 'Tests/QuotaLensTests/SharedCapacityContractTests.swift', '.github/workflows/windows-ci.yml']
   pull_request:
-    paths: ['windows/**', 'shared/**', 'VERSION', '.github/workflows/windows-ci.yml']
+    paths: ['windows/**', 'shared/**', 'VERSION', 'Sources/QuotaLens/Core/**', 'Tests/QuotaLensTests/SharedCapacityContractTests.swift', '.github/workflows/windows-ci.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -12,8 +12,16 @@ concurrency:
   group: windows-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  catalog-parity:
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify reference rates against the actual Swift catalogs
+        run: python3 windows/scripts/export-price-catalog.py --check
   core:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -63,13 +71,21 @@ jobs:
             docs
             windows
             shared
+            scripts
+            Resources
+            .github
+            .gitignore
+            Package.swift
+            Package.resolved
             README.md
             README.zh-CN.md
             VERSION
+            LICENSE
             CHANGELOG.md
             THIRD_PARTY_NOTICES.md
             !windows/**/bin/**
             !windows/**/obj/**
             !windows/artifacts/**
             !windows/validation/**
+          include-hidden-files: true
           retention-days: 2
