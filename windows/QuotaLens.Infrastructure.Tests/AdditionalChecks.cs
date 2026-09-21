@@ -25,7 +25,10 @@ internal static class AdditionalChecks
         byte[] originalDatabase = await File.ReadAllBytesAsync(path);
         var records = await AntigravityActivityReader.ReadAsync(path, CancellationToken.None);
         check(records.Count == 1 && records[0].Steps == 7 && !System.Text.Json.JsonSerializer.Serialize(records).Contains("PRIVATE-SUMMARY"), "task aggregation excludes summary text");
-        check(originalDatabase.SequenceEqual(await File.ReadAllBytesAsync(path)), "activity reader does not modify the source database");
+        // C# 14 may select the span overload of SequenceEqual. Complete asynchronous
+        // IO first so a ref struct never has to survive the await boundary.
+        byte[] databaseAfterRead = await File.ReadAllBytesAsync(path);
+        check(originalDatabase.AsSpan().SequenceEqual(databaseAfterRead), "activity reader does not modify the source database");
         await using var engine = new AppEngine(Path.Combine(root, "engine-tests")); await engine.InitializeAsync(false);
         var unsafePreferences = new AppSettings { EnabledTools = null!, DiscoverLocalTools = null!, ViewingAccounts = null!, OverlayX = double.NaN, OverlayY = double.PositiveInfinity }.Normalize();
         check(unsafePreferences.EnabledTools.Length == 0 && unsafePreferences.ViewingAccounts.Count == 0 && unsafePreferences.OverlayX is null && unsafePreferences.OverlayY is null,
