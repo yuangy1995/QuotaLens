@@ -23,7 +23,10 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.5.1" />
     <ProjectReference Include="../QuotaLens.Infrastructure/QuotaLens.Infrastructure.csproj" />
-    <Content Include="Assets/AppIcon.ico" Condition="Exists('Assets/AppIcon.ico')" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <!-- The executable icon is a Win32 resource. Keep its loose tray copy out
+         of the PRI content item graph so it cannot be registered twice. -->
+    <None Remove="Assets/AppIcon.ico" />
+    <Content Remove="Assets/AppIcon.ico" />
   </ItemGroup>
   <!-- Ship this build's compiled app/runtime resources with the unpackaged app. -->
   <Target Name="PublishQuotaLensXamlResources" AfterTargets="Publish"
@@ -35,6 +38,10 @@
     <Error Condition="'@(QuotaLensXamlResource)' == ''" Text="No compiled WinUI resources were generated; refusing an incomplete publish." />
     <Copy SourceFiles="@(QuotaLensXamlResource)"
           DestinationFiles="@(QuotaLensXamlResource->'$(PublishDir)%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(MSBuildProjectDirectory)/Assets/AppIcon.ico"
+          DestinationFolder="$(PublishDir)Assets"
+          Condition="Exists('$(MSBuildProjectDirectory)/Assets/AppIcon.ico')"
           SkipUnchangedFiles="true" />
   </Target>
 </Project>
