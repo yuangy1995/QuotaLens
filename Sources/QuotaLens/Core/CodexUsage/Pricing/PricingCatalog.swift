@@ -90,11 +90,11 @@ public struct PricingRuleEntry: Codable, Sendable {
     }
 }
 
-// MARK: - 内置官方 OpenAI 价格目录 (2026-09-06 官方列表价)
+// MARK: - 内置官方 OpenAI 价格目录 (2026-09-23 官方列表价)
 public enum BundledPricingCatalog {
-    // 保留历史规则，新增 Astra 上线后的标准、Flex 和 Fast 费率。
-    public static let currentVersion = "2026-09-v7"
-    public static let publishedAtMs: Int64 = 1788739200000 // 2026-09-07
+    // 保留历史规则，并按官方发布日期记录 GPT-6 系列和后续价格档位。
+    public static let currentVersion = "2026-09-v8"
+    public static let publishedAtMs: Int64 = 1790121600000 // 2026-09-23
     private static let gpt56ReleaseMs: Int64 = 1783555200000 // 2026-07-09
     private static let gpt56TerraLunaCutoverMs: Int64 = 1785369600000 // 2026-07-30
     private static let gpt56FastLongContextFromMs: Int64 = 1785888000000 // 2026-08-05
@@ -111,6 +111,7 @@ public enum BundledPricingCatalog {
     private static let gpt54ReleaseMs: Int64 = 1772668800000 // 2026-03-05
     private static let gpt54MiniNanoReleaseMs: Int64 = 1773705600000 // 2026-03-17
     private static let gpt55ReleaseMs: Int64 = 1776988800000 // 2026-04-24
+    private static let gpt6SolLunaReleaseMs: Int64 = 1790035200000 // 2026-09-22
 
     private struct GPT56Rate: Sendable {
         let input: Int64
@@ -213,6 +214,24 @@ public enum BundledPricingCatalog {
         }
     }
 
+    private static func gpt6Rules(modelKey: String, standard: GPT56Rate) -> [PricingRuleEntry] {
+        let half = scaledGPT56Rate(standard, multiplierPpm: 500_000)
+        let fast = scaledGPT56Rate(standard, multiplierPpm: 2_000_000)
+        let tiers: [(String?, GPT56Rate)] = [
+            (nil, standard), ("batch", half), ("flex", half), ("fast", fast)
+        ]
+        return tiers.map { serviceTier, rate in
+            gpt56Rule(
+                modelKey: modelKey,
+                suffix: "release-v1",
+                serviceTier: serviceTier,
+                effectiveFromMs: gpt6SolLunaReleaseMs,
+                effectiveToMs: nil,
+                rate: rate
+            )
+        }
+    }
+
     private static func greatestCommonDivisor(_ lhs: Int64, _ rhs: Int64) -> Int64 {
         var a = lhs
         var b = rhs
@@ -307,6 +326,8 @@ public enum BundledPricingCatalog {
         catalogSha256: "",
         sourceURLs: [
             "https://developers.openai.com/api/docs/models/gpt-6-astra",
+            "https://developers.openai.com/api/docs/models/gpt-6-sol",
+            "https://developers.openai.com/api/docs/models/gpt-6-luna",
             "https://developers.openai.com/api/docs/pricing",
             "https://developers.openai.com/api/docs/changelog",
             "https://developers.openai.com/api/docs/guides/deployment-checklist",
@@ -350,6 +371,22 @@ public enum BundledPricingCatalog {
                         )
                     )
                 }
+            ),
+            PricingModelEntry(
+                modelKey: "gpt-6-sol",
+                aliases: ["gpt-6-sol"],
+                rules: Self.gpt6Rules(
+                    modelKey: "gpt-6-sol",
+                    standard: GPT56Rate(input: 2_000, cached: 200, cacheWrite: 2_500, output: 10_000)
+                )
+            ),
+            PricingModelEntry(
+                modelKey: "gpt-6-luna",
+                aliases: ["gpt-6-luna"],
+                rules: Self.gpt6Rules(
+                    modelKey: "gpt-6-luna",
+                    standard: GPT56Rate(input: 100, cached: 10, cacheWrite: 125, output: 500)
+                )
             ),
             // 1. GPT-5.6 系列 (旗舰推理模型)
             PricingModelEntry(

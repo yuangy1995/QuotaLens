@@ -1,12 +1,12 @@
 # Model pricing audit — 2025 through 2026
 
-Verified on: **2026-09-07**. Currency: USD.
+Verified on: **2026-09-23**. Currency: USD.
 
 ## Scope and coverage
 
 The target inventory is public OpenAI/Codex, Anthropic/Claude, and Google/Gemini model IDs released since 2025-01-01. A few older still-documented audio and embedding endpoints are retained as supplemental references. This is a source-backed coverage expansion, **not a claim that every historical price or every experimental endpoint has been recovered**.
 
-- 46 OpenAI, 17 Claude, and 16 Gemini model entries have automatic text-token estimation rules; exact aliases and dated snapshots are additional identifiers, not additional models.
+- 48 OpenAI, 18 Claude, and 16 Gemini model entries have automatic text-token estimation rules; exact aliases and dated snapshots are additional identifiers, not additional models.
 - 60 entries have reference prices only. These rates never enter the conversation cost evaluator.
 - 50 inventoried entries remain explicitly unverified. An empty price list is not a zero-dollar price.
 - Rules are bundled and offline. Neither importing logs nor opening the catalog downloads a remote price list.
@@ -18,6 +18,8 @@ Use **Settings → Model Price Catalog** to search IDs and aliases, inspect rule
 Automatic estimates represent list-price **API-equivalent token value**, not subscription charges or an actual invoice. Claude and Gemini automatic estimates use standard global text rates. Audio input, special service modes, regional premiums, negotiated prices, grounding, cache storage, and other tool charges are not included. Missing usage dimensions cannot be reconstructed from a total token count.
 
 OpenAI special service tiers are accepted only when a rule exists for the event timestamp. Newly added current Batch/Flex/Fast rows start on the verification date where their earlier start dates have not been verified. Older existing tier timelines remain intact. A cached-token count with no published cache rate is unpriced, not free.
+
+GPT-6 Sol and Luna use the official September 22, 2026 release date, standard short/long-context rates, and published Batch/Flex/Fast multipliers. Claude Opus 5.5 uses its September 22 release date, including its distinct cache-read price.
 
 Image/audio/video/embedding references preserve their own units (million tokens, million characters, seconds, minutes, images, songs). Approximate per-minute figures are estimates, not conversions used for conversation totals. Imagen rows sourced from **Google Cloud Agent Platform** are labeled accordingly and must not be treated as Gemini Developer API rates. Other reference prices describe the fetched source's current list prices; no historical range is asserted.
 
@@ -36,8 +38,9 @@ Image/audio/video/embedding references preserve their own units (million tokens,
 ## Sources
 
 - [OpenAI current prices](https://developers.openai.com/api/docs/pricing) and its markdown representation expose full tables, including rows collapsed in the HTML page.
-- [OpenAI API changelog](https://developers.openai.com/api/docs/changelog) and individual model pages establish release dates, snapshots, and specialized model prices.
+- [OpenAI API changelog](https://developers.openai.com/api/docs/changelog), [GPT-6 Sol](https://developers.openai.com/api/docs/models/gpt-6-sol), [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna), and [current prices](https://developers.openai.com/api/docs/pricing) establish release dates and model rates.
 - [Claude prices](https://platform.claude.com/docs/en/about-claude/pricing) and [release notes](https://platform.claude.com/docs/en/release-notes/overview) establish base/cache rates and lifecycle changes.
+- [Claude Opus 5.5 launch](https://www.anthropic.com/claude-opus-5-5) establishes its release date, API model ID, and standard/cache-read prices.
 - [Claude Opus 4.6 launch](https://www.anthropic.com/news/claude-opus-4-6) documents its original long-context premium.
 - [Historical Claude long-context documentation](https://docs.anthropic.com/en/docs/about-claude/pricing?4810b549_page=3&73cdfb14_page=2&939688b5_page=1&e768fcd2_page=2) documents the Sonnet input/output premiums and stacking with cache multipliers. The canonical page changes over time.
 - [Project Glasswing](https://www.anthropic.com/glasswing) documents Mythos Preview participant list pricing; it is not general public availability.
