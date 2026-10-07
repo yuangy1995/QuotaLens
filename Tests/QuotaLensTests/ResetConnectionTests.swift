@@ -2,6 +2,27 @@ import XCTest
 @testable import QuotaLens
 
 final class ResetConnectionTests: XCTestCase {
+    func testBundledCodexDiscoveryWithoutShellInstallation() throws {
+        let root = try makeTemporaryDirectory()
+        for app in ["ChatGPT.app", "Codex.app"] {
+            for prefix in ["/Applications/", "~/Applications/"] {
+                let paths = CodexBinaryLocator.standardSearchPaths
+                    .filter { $0.hasPrefix(prefix + app + "/") }
+                    .map { root.path + "/" + $0.replacingOccurrences(of: "~", with: "user") }
+                for suffix in ["codex-cli/CodexCLI.app/Contents/MacOS/codex", "codex"] {
+                    let binary = root.appendingPathComponent(prefix.replacingOccurrences(of: "~", with: "user")
+                        + app + "/Contents/Resources/" + suffix)
+                    try overwriteFile(binary, with: "#!/bin/sh\nexit 0\n")
+                    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: binary.path)
+                    let result = CodexBinaryLocator.inspectBinary(customPath: nil, searchPaths: paths)
+                    XCTAssertEqual(result.binaryPath.map { URL(fileURLWithPath: $0).standardizedFileURL },
+                                   binary.standardizedFileURL)
+                    try FileManager.default.removeItem(at: binary)
+                }
+            }
+        }
+    }
+
     func testIndependentConnectionSurvivesMonitoringStop() async throws {
         let monitoring = JSONRPCTransport()
         let redemption = JSONRPCTransport()

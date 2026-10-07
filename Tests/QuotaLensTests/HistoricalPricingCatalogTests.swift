@@ -2,6 +2,85 @@ import XCTest
 @testable import QuotaLens
 
 final class HistoricalPricingCatalogTests: XCTestCase {
+    func testGPT61SolReleaseTiersAndLongContext() {
+        let release = HistoricalPricingCatalog.day("2026-09-29")
+        for (tier, shortCost, longCost) in [(nil as String?, Int64(5_770_000), Int64(990_000_000)),
+                                          ("batch", 2_885_000, 495_000_000),
+                                          ("flex", 2_885_000, 495_000_000),
+                                          ("fast", 11_540_000, 1_980_000_000)] {
+            let short = TokenBreakdown(inputTokens: 1_000, cachedInputTokens: 200,
+                                       cacheWriteInputTokens: 300, outputTokens: 400)
+            let before = PricingEvaluator.evaluate(modelCanonical: "gpt-6.1-sol", serviceTier: tier,
+                timestampMs: release - 1, tokens: short)
+            XCTAssertEqual(before.pricingStatus, .unpricedHistoricalRuleMissing)
+            let current = PricingEvaluator.evaluate(modelCanonical: "gpt-6.1-sol", serviceTier: tier,
+                timestampMs: release, tokens: short)
+            XCTAssertEqual(current.pricingStatus, .priced)
+            XCTAssertEqual(current.estimatedCost.rawValue, shortCost)
+            let long = PricingEvaluator.evaluate(modelCanonical: "gpt-6.1-sol", serviceTier: tier,
+                timestampMs: release,
+                tokens: TokenBreakdown(inputTokens: 300_000, cachedInputTokens: 100_000,
+                                       cacheWriteInputTokens: 20_000, outputTokens: 10_000))
+            XCTAssertEqual(long.pricingStatus, .priced)
+            XCTAssertEqual(long.estimatedCost.rawValue, longCost)
+        }
+        let old = PricingEvaluator.evaluate(modelCanonical: "gpt-6-sol", serviceTier: nil,
+            timestampMs: release, tokens: TokenBreakdown(inputTokens: 1_000, cachedInputTokens: 1_000))
+        XCTAssertEqual(old.estimatedCost.rawValue, 200_000)
+    }
+
+    func testAstraUltrafastStartsOnSeptember29() {
+        let release = HistoricalPricingCatalog.day("2026-09-29")
+        let tokens = TokenBreakdown(inputTokens: 300_000, cachedInputTokens: 100_000,
+                                   cacheWriteInputTokens: 20_000, outputTokens: 10_000)
+        let before = PricingEvaluator.evaluate(modelCanonical: "gpt-6-astra", serviceTier: "ultrafast",
+            timestampMs: release - 1, tokens: tokens)
+        XCTAssertEqual(before.pricingStatus, .unpricedHistoricalRuleMissing)
+        let current = PricingEvaluator.evaluate(modelCanonical: "gpt-6-astra", serviceTier: "ultrafast",
+            timestampMs: release, tokens: tokens)
+        XCTAssertEqual(current.pricingStatus, .priced)
+        XCTAssertEqual(current.estimatedCost.rawValue, 30_300_000_000)
+    }
+
+    func testSonnet55ReleaseCacheDurationsAndAlias() {
+        let release = HistoricalPricingCatalog.day("2026-09-28")
+        for model in ["claude-sonnet-5-5", "claude-sonnet-5.5"] {
+            let before = ClaudePricingCatalogService.evaluate(modelRaw: model,
+                uncachedInput: 1_000, cachedInput: 200, cacheWrite5m: 300, cacheWrite1h: 400,
+                output: 500, timestampMs: release - 1)
+            XCTAssertEqual(before.status, .unpricedHistoricalRuleMissing)
+            let current = ClaudePricingCatalogService.evaluate(modelRaw: model,
+                uncachedInput: 1_000, cachedInput: 200, cacheWrite5m: 300, cacheWrite1h: 400,
+                output: 500, timestampMs: release)
+            XCTAssertEqual(current.status, .priced)
+            XCTAssertEqual(current.cost.rawValue, 9_390_000)
+            XCTAssertEqual(AntigravityPricingCatalog.resolveModel(rawModel: model, displayName: nil), "claude-sonnet-5-5")
+        }
+        XCTAssertNil(ClaudeBundledPricingCatalog.resolveModel("claude-sonnet-5-5-private"))
+    }
+
+    func testLatestGeminiReferencesRetainUnitsAndPromotionalDates() throws {
+        let models = ["gemini-nano-banana-2.1", "gemini-3.8-live", "gemini-3.8-live-extended-thinking",
+                      "gemini-3.8-flash-tts", "gemini-3.8-flash-lite-tts"]
+        for model in models {
+            let entry = try XCTUnwrap(ModelPriceReferenceCatalog.entries.first { $0.modelID == model })
+            XCTAssertFalse(entry.rates.isEmpty)
+            XCTAssertTrue(entry.rates.allSatisfy { $0.unit == "millionTokens" })
+            let automatic = AntigravityPricingCatalog.evaluate(modelCanonical: model,
+                timestampMs: HistoricalPricingCatalog.day("2026-10-07"),
+                tokens: TokenBreakdown(inputTokens: 1_000, outputTokens: 1_000))
+            XCTAssertEqual(automatic.pricingStatus, .unpricedUnknownModel)
+        }
+        let image = try XCTUnwrap(ModelPriceReferenceCatalog.entries.first { $0.modelID == models[0] })
+        XCTAssertEqual(image.rates.first { $0.metric == "output_image" }?.usd, "30.00")
+        for (model, rates) in [(models[3], ["9.00", "18.00"]), (models[4], ["6.00", "12.00"])] {
+            let entry = try XCTUnwrap(ModelPriceReferenceCatalog.entries.first { $0.modelID == model })
+            let output = entry.rates.filter { $0.metric == "output_audio" }
+            XCTAssertEqual(output.map(\.usd), rates)
+            XCTAssertEqual(output.map(\.condition), ["2026-09-22 – 2026-12-31", "≥ 2027-01-01"])
+        }
+    }
+
     func testCatalogModelIDsAliasesAndRuleIDsAreUnique() {
         for entries in [BundledPricingCatalog.defaultCatalog.models, AntigravityPricingCatalog.geminiModels] {
             XCTAssertEqual(Set(entries.map(\.modelKey)).count, entries.count)

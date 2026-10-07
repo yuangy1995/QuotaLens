@@ -1,13 +1,13 @@
 # Model pricing audit — 2025 through 2026
 
-Verified on: **2026-09-23**. Currency: USD.
+Latest additions verified on: **2026-10-07**. Earlier catalog audit: **2026-09-07**, with GPT-6 Sol/Luna and Claude Opus 5.5 verified on **2026-09-23**. Currency: USD.
 
 ## Scope and coverage
 
 The target inventory is public OpenAI/Codex, Anthropic/Claude, and Google/Gemini model IDs released since 2025-01-01. A few older still-documented audio and embedding endpoints are retained as supplemental references. This is a source-backed coverage expansion, **not a claim that every historical price or every experimental endpoint has been recovered**.
 
-- 48 OpenAI, 18 Claude, and 16 Gemini model entries have automatic text-token estimation rules; exact aliases and dated snapshots are additional identifiers, not additional models.
-- 60 entries have reference prices only. These rates never enter the conversation cost evaluator.
+- 49 OpenAI, 19 Claude, and 16 Gemini model entries have automatic text-token estimation rules; exact aliases and dated snapshots are additional identifiers, not additional models.
+- 65 entries have reference prices only. These rates never enter the conversation cost evaluator.
 - 50 inventoried entries remain explicitly unverified. An empty price list is not a zero-dollar price.
 - Rules are bundled and offline. Neither importing logs nor opening the catalog downloads a remote price list.
 
@@ -20,6 +20,12 @@ Automatic estimates represent list-price **API-equivalent token value**, not sub
 OpenAI special service tiers are accepted only when a rule exists for the event timestamp. Newly added current Batch/Flex/Fast rows start on the verification date where their earlier start dates have not been verified. Older existing tier timelines remain intact. A cached-token count with no published cache rate is unpriced, not free.
 
 GPT-6 Sol and Luna use the official September 22, 2026 release date, standard short/long-context rates, and published Batch/Flex/Fast multipliers. Claude Opus 5.5 uses its September 22 release date, including its distinct cache-read price.
+
+GPT-6.1 Sol starts on September 29, 2026: $2 input, $0.10 cached input, $2.50 cache writes, and $10 output per million tokens. Standard long-context prices above 272K input tokens are $4 / $0.20 / $5 / $15; Batch/Flex use half the standard rates and Fast uses twice the standard rates. GPT-6 Astra Ultrafast starts on the same date at $60 / $6 / $75 / $300, with the published long-context multipliers. Existing GPT-6 Sol rates are unchanged.
+
+Claude Sonnet 5.5 starts on September 28, 2026: $2 input, $0.20 cache reads, $2.50 five-minute cache writes, $4 one-hour cache writes, and $10 output per million tokens.
+
+The October update adds reference-only Gemini Nano Banana 2.1, 3.8 Live, 3.8 Live Extended Thinking, 3.8 Flash TTS, and 3.8 Flash-Lite TTS. TTS entries explicitly distinguish the promotion through December 31, 2026 from the announced January 1, 2027 rates. The Gemini automatic text catalog already contains the latest Flash model, 3.8 Flash; no image/audio model is treated as a text-only endpoint. Windows receives the OpenAI/Claude standard reference rates through the existing exporter; the Gemini reference browser remains a macOS feature.
 
 Image/audio/video/embedding references preserve their own units (million tokens, million characters, seconds, minutes, images, songs). Approximate per-minute figures are estimates, not conversions used for conversation totals. Imagen rows sourced from **Google Cloud Agent Platform** are labeled accordingly and must not be treated as Gemini Developer API rates. Other reference prices describe the fetched source's current list prices; no historical range is asserted.
 
@@ -40,6 +46,7 @@ Image/audio/video/embedding references preserve their own units (million tokens,
 - [OpenAI current prices](https://developers.openai.com/api/docs/pricing) and its markdown representation expose full tables, including rows collapsed in the HTML page.
 - [OpenAI API changelog](https://developers.openai.com/api/docs/changelog), [GPT-6 Sol](https://developers.openai.com/api/docs/models/gpt-6-sol), [GPT-6 Luna](https://developers.openai.com/api/docs/models/gpt-6-luna), and [current prices](https://developers.openai.com/api/docs/pricing) establish release dates and model rates.
 - [Claude prices](https://platform.claude.com/docs/en/about-claude/pricing) and [release notes](https://platform.claude.com/docs/en/release-notes/overview) establish base/cache rates and lifecycle changes.
+- [GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol), [OpenAI changelog](https://developers.openai.com/api/docs/changelog), and [pricing](https://developers.openai.com/api/docs/pricing) establish the September 29 model and Ultrafast release rates.
 - [Claude Opus 5.5 launch](https://www.anthropic.com/claude-opus-5-5) establishes its release date, API model ID, and standard/cache-read prices.
 - [Claude Opus 4.6 launch](https://www.anthropic.com/news/claude-opus-4-6) documents its original long-context premium.
 - [Historical Claude long-context documentation](https://docs.anthropic.com/en/docs/about-claude/pricing?4810b549_page=3&73cdfb14_page=2&939688b5_page=1&e768fcd2_page=2) documents the Sonnet input/output premiums and stacking with cache multipliers. The canonical page changes over time.
@@ -54,6 +61,11 @@ These are **reference only**, not conversation billing rules. Values are copied 
 
 | Provider | Model | Category | Rates | Evidence |
 | --- | --- | --- | --- | --- |
+| Google | `gemini-nano-banana-2.1` | image | input_text: $1.50/millionTokens; input_image: $1.50/millionTokens; input_video: $1.50/millionTokens; output_text: $7.50/millionTokens; output_image: $30.00/millionTokens | [Source](https://ai.google.dev/gemini-api/docs/pricing) |
+| Google | `gemini-3.8-live` | audio | input_text: $0.75/millionTokens; input_audio: $3.00/millionTokens; input_image: $1.00/millionTokens; input_video: $1.00/millionTokens; output_text: $4.50/millionTokens; output_audio: $12.00/millionTokens | [Source](https://ai.google.dev/gemini-api/docs/pricing) |
+| Google | `gemini-3.8-live-extended-thinking` | audio | input_text: $0.75/millionTokens; input_audio: $3.00/millionTokens; input_image: $1.00/millionTokens; input_video: $1.00/millionTokens; output_text: $4.50/millionTokens; output_audio: $12.00/millionTokens | [Source](https://ai.google.dev/gemini-api/docs/pricing) |
+| Google | `gemini-3.8-flash-tts` | audio | input_text: $0.50/millionTokens (2026-09-22 – 2026-12-31); cached_text: $0.125/millionTokens (2026-09-22 – 2026-12-31); output_audio: $9.00/millionTokens (2026-09-22 – 2026-12-31); input_text: $1.00/millionTokens (≥ 2027-01-01); cached_text: $0.25/millionTokens (≥ 2027-01-01); output_audio: $18.00/millionTokens (≥ 2027-01-01) | [Source](https://ai.google.dev/gemini-api/docs/pricing) |
+| Google | `gemini-3.8-flash-lite-tts` | audio | input_text: $0.50/millionTokens (2026-09-22 – 2026-12-31); cached_text: $0.125/millionTokens (2026-09-22 – 2026-12-31); output_audio: $6.00/millionTokens (2026-09-22 – 2026-12-31); input_text: $1.00/millionTokens (≥ 2027-01-01); cached_text: $0.25/millionTokens (≥ 2027-01-01); output_audio: $12.00/millionTokens (≥ 2027-01-01) | [Source](https://ai.google.dev/gemini-api/docs/pricing) |
 | Anthropic | `claude-mythos-preview` | text | input_text: $25/millionTokens; output_text: $125/millionTokens | [Source](https://www.anthropic.com/glasswing) |
 | Google | `gemini-2.5-flash-image` | image | input_text: $0.3/millionTokens; input_image: $0.3/millionTokens; output_text: $2.5/millionTokens; output_image: $30/millionTokens | [Source](https://ai.google.dev/gemini-api/docs/pricing) |
 | Google | `gemini-2.5-flash-native-audio-preview-12-2025` | audio | input_text: $0.5/millionTokens; output_text: $2/millionTokens; input_audio: $3/millionTokens; output_audio: $12/millionTokens | [Source](https://ai.google.dev/gemini-api/docs/pricing) |

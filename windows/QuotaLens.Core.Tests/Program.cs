@@ -43,6 +43,8 @@ Check(window.Cycles.Count == 2 && window.Cycles[0].EndReason == "restored", "sam
 Check(StandardPriceCatalog.Entries.Count > 0, "standard reference catalog is bundled");
 Check(StandardPriceCatalog.Entries.Select(x => x.Model).Distinct(StringComparer.OrdinalIgnoreCase).Count() == StandardPriceCatalog.Entries.Count, "reference aliases are unique");
 Check(Pricing.Estimate(e with { Model = "gpt-5.4" }, StandardPriceCatalog.Entries) == 0.0004375m, "bundled standard reference rates are used");
+Check(Pricing.Estimate(e with { Model = "gpt-6.1-sol" }, StandardPriceCatalog.Entries) == 0.000305m, "GPT-6.1 Sol uses its distinct cache rate");
+Check(Pricing.Estimate(e with { Model = "claude-sonnet-5-5" }, StandardPriceCatalog.Entries) == 0.00031m, "Claude Sonnet 5.5 reference rates are bundled");
 Check(Pricing.Estimate(e with { Model = "unrecognized-model" }, StandardPriceCatalog.Entries) is null, "unknown models never inherit a reference price");
 Check(Pricing.Estimate(e with { Model = "test" }, [new("test", 2, 0, 4)]) is null, "unsupported cache input is not priced as free");
 Check(Pricing.Estimate(e with { Model = "test", Tokens = new(100, 0, 20, 5) }, [new("test", 2, 1, 4)]) is null, "unsupported cache write is not priced as free");

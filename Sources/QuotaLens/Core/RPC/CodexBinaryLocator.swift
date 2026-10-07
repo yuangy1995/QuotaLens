@@ -22,8 +22,12 @@ public struct CodexBinaryLocator: Sendable {
         "~/.bun/bin/codex",
         "~/.npm-global/bin/codex",
         "~/.cargo/bin/codex",
+        "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
+        "~/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
         "/Applications/ChatGPT.app/Contents/Resources/codex",
         "~/Applications/ChatGPT.app/Contents/Resources/codex",
+        "/Applications/Codex.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
+        "~/Applications/Codex.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
         "/Applications/Codex.app/Contents/Resources/codex",
         "~/Applications/Codex.app/Contents/Resources/codex",
         "/usr/bin/codex",
@@ -36,6 +40,10 @@ public struct CodexBinaryLocator: Sendable {
     }
 
     public static func inspectBinary(customPath: String? = nil) -> CodexBinaryLookupResult {
+        inspectBinary(customPath: customPath, searchPaths: standardSearchPaths)
+    }
+
+    static func inspectBinary(customPath: String?, searchPaths: [String]) -> CodexBinaryLookupResult {
         let fileManager = FileManager.default
         let homePath = fileManager.homeDirectoryForCurrentUser.path
         var inspectedPaths: [String] = []
@@ -61,7 +69,7 @@ public struct CodexBinaryLocator: Sendable {
                 : L10n.format("The selected Codex path does not exist: %@", zhHans: "已选择的 Codex 路径不存在：%@", expanded)
         }
 
-        for candidate in standardSearchPaths {
+        for candidate in searchPaths {
             if let binaryPath = inspectPath(candidate) {
                 return CodexBinaryLookupResult(binaryPath: binaryPath, failureReason: nil, inspectedPaths: inspectedPaths)
             }

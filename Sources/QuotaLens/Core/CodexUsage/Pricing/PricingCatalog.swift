@@ -90,11 +90,11 @@ public struct PricingRuleEntry: Codable, Sendable {
     }
 }
 
-// MARK: - 内置官方 OpenAI 价格目录 (2026-09-23 官方列表价)
+// MARK: - 内置官方 OpenAI 价格目录 (2026-10-07 官方列表价)
 public enum BundledPricingCatalog {
     // 保留历史规则，并按官方发布日期记录 GPT-6 系列和后续价格档位。
-    public static let currentVersion = "2026-09-v8"
-    public static let publishedAtMs: Int64 = 1790121600000 // 2026-09-23
+    public static let currentVersion = "2026-10-v9"
+    public static let publishedAtMs: Int64 = 1791331200000 // 2026-10-07
     private static let gpt56ReleaseMs: Int64 = 1783555200000 // 2026-07-09
     private static let gpt56TerraLunaCutoverMs: Int64 = 1785369600000 // 2026-07-30
     private static let gpt56FastLongContextFromMs: Int64 = 1785888000000 // 2026-08-05
@@ -214,7 +214,8 @@ public enum BundledPricingCatalog {
         }
     }
 
-    private static func gpt6Rules(modelKey: String, standard: GPT56Rate) -> [PricingRuleEntry] {
+    private static func gpt6Rules(modelKey: String, standard: GPT56Rate,
+                                  releasedAtMs: Int64 = gpt6SolLunaReleaseMs) -> [PricingRuleEntry] {
         let half = scaledGPT56Rate(standard, multiplierPpm: 500_000)
         let fast = scaledGPT56Rate(standard, multiplierPpm: 2_000_000)
         let tiers: [(String?, GPT56Rate)] = [
@@ -225,7 +226,7 @@ public enum BundledPricingCatalog {
                 modelKey: modelKey,
                 suffix: "release-v1",
                 serviceTier: serviceTier,
-                effectiveFromMs: gpt6SolLunaReleaseMs,
+                effectiveFromMs: releasedAtMs,
                 effectiveToMs: nil,
                 rate: rate
             )
@@ -326,6 +327,7 @@ public enum BundledPricingCatalog {
         catalogSha256: "",
         sourceURLs: [
             "https://developers.openai.com/api/docs/models/gpt-6-astra",
+            "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
             "https://developers.openai.com/api/docs/models/gpt-6-sol",
             "https://developers.openai.com/api/docs/models/gpt-6-luna",
             "https://developers.openai.com/api/docs/pricing",
@@ -370,7 +372,23 @@ public enum BundledPricingCatalog {
                             multiplierPpm: multiplier
                         )
                     )
-                }
+                } + [Self.gpt56Rule(
+                    modelKey: "gpt-6-astra",
+                    suffix: "release-v1",
+                    serviceTier: "ultrafast",
+                    effectiveFromMs: HistoricalPricingCatalog.day("2026-09-29"),
+                    effectiveToMs: nil,
+                    rate: GPT56Rate(input: 60_000, cached: 6_000, cacheWrite: 75_000, output: 300_000)
+                )]
+            ),
+            PricingModelEntry(
+                modelKey: "gpt-6.1-sol",
+                aliases: ["gpt-6.1-sol"],
+                rules: Self.gpt6Rules(
+                    modelKey: "gpt-6.1-sol",
+                    standard: GPT56Rate(input: 2_000, cached: 100, cacheWrite: 2_500, output: 10_000),
+                    releasedAtMs: HistoricalPricingCatalog.day("2026-09-29")
+                )
             ),
             PricingModelEntry(
                 modelKey: "gpt-6-sol",

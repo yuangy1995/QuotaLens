@@ -2,6 +2,14 @@
 
 All notable changes to QuotaLens are documented here. The complete original history through v1.1.1 is preserved without edits in [the historical changelog](docs/changelog-through-v1.1.1.md).
 
+## [v1.2.1] - 2026-10-07 — Codex connection recovery and latest model pricing
+
+- Fix repeated Codex connection failures after ChatGPT desktop updates by discovering the new bundled Codex location in both system and user Applications folders; retain older installations and explicit path selection.
+- Add GPT-6.1 Sol and Claude Sonnet 5.5 estimates with official release dates, input/output and cache rates; retain existing models and historical prices.
+- Add GPT-6 Astra Ultrafast pricing from September 29, including long-context rates.
+- Add reference prices for Gemini Nano Banana 2.1, Gemini 3.8 Live / Live Extended Thinking, and Gemini 3.8 Flash TTS / Flash-Lite TTS, including announced 2027 TTS rates. Image and audio prices remain separate from conversation estimates.
+- Synchronize GPT-6.1 Sol and Claude Sonnet 5.5 standard reference prices to Windows.
+
 ## [v1.2.0] - 2026-09-23 — Native Windows integration and model pricing
 
 - Add a C#/.NET 10/WinUI 3 Windows 11 x64 client beside the existing macOS application: overview, tool spaces, accounts, quota, local analytics, sessions, Codex capacity/subscription/reset-credit views, Antigravity activity, settings, tray, overlays and recovery.

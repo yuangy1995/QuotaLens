@@ -1,9 +1,223 @@
-// 核对日期：2026-09-07。仅供参考；缺失价格为空数组，不用零代替未知。
+// 新增条目核对日期：2026-10-07；原有条目：2026-09-07。仅供参考；缺失价格为空数组，不用零代替未知。
 import Foundation
 
 extension ModelPriceReferenceCatalog {
     static let referenceJSON = #"""
 [
+  {
+    "provider": "Google",
+    "modelID": "gemini-nano-banana-2.1",
+    "category": "image",
+    "rates": [
+      {
+        "metric": "input_text",
+        "usd": "1.50",
+        "unit": "millionTokens",
+        "condition": ""
+      },
+      {
+        "metric": "input_image",
+        "usd": "1.50",
+        "unit": "millionTokens",
+        "condition": ""
+      },
+      {
+        "metric": "input_video",
+        "usd": "1.50",
+        "unit": "millionTokens",
+        "condition": ""
+      },
+      {
+        "metric": "output_text",
+        "usd": "7.50",
+        "unit": "millionTokens",
+        "condition": ""
+      },
+      {
+        "metric": "output_image",
+        "usd": "30.00",
+        "unit": "millionTokens",
+        "condition": ""
+      }
+    ],
+    "sourceURL": "https://ai.google.dev/gemini-api/docs/pricing"
+  },
+  {
+    "provider": "Google",
+    "modelID": "gemini-3.8-live",
+    "category": "audio",
+    "rates": [
+      {
+        "metric": "input_text",
+        "usd": "0.75",
+        "unit": "millionTokens",
+        "condition": ""
+      },
+      {
+        "metric": "input_audio",
+        "usd": "3.00",
+        "unit": "millionTokens",
+        "condition": ""
+      },
+      {
+        "metric": "input_image",
+        "usd": "1.00",
+        "unit": "millionTokens",
+        "condition": ""
+      },
+      {
+        "metric": "input_video",
+        "usd": "1.00",
+        "unit": "millionTokens",
+        "condition": ""
+      },
+      {
+        "metric": "output_text",
+        "usd": "4.50",
+        "unit": "millionTokens",
+        "condition": ""
+      },
+      {
+        "metric": "output_audio",
+        "usd": "12.00",
+        "unit": "millionTokens",
+        "condition": ""
+      }
+    ],
+    "sourceURL": "https://ai.google.dev/gemini-api/docs/pricing"
+  },
+  {
+    "provider": "Google",
+    "modelID": "gemini-3.8-live-extended-thinking",
+    "category": "audio",
+    "rates": [
+      {
+        "metric": "input_text",
+        "usd": "0.75",
+        "unit": "millionTokens",
+        "condition": ""
+      },
+      {
+        "metric": "input_audio",
+        "usd": "3.00",
+        "unit": "millionTokens",
+        "condition": ""
+      },
+      {
+        "metric": "input_image",
+        "usd": "1.00",
+        "unit": "millionTokens",
+        "condition": ""
+      },
+      {
+        "metric": "input_video",
+        "usd": "1.00",
+        "unit": "millionTokens",
+        "condition": ""
+      },
+      {
+        "metric": "output_text",
+        "usd": "4.50",
+        "unit": "millionTokens",
+        "condition": ""
+      },
+      {
+        "metric": "output_audio",
+        "usd": "12.00",
+        "unit": "millionTokens",
+        "condition": ""
+      }
+    ],
+    "sourceURL": "https://ai.google.dev/gemini-api/docs/pricing"
+  },
+  {
+    "provider": "Google",
+    "modelID": "gemini-3.8-flash-tts",
+    "category": "audio",
+    "rates": [
+      {
+        "metric": "input_text",
+        "usd": "0.50",
+        "unit": "millionTokens",
+        "condition": "2026-09-22 – 2026-12-31"
+      },
+      {
+        "metric": "cached_text",
+        "usd": "0.125",
+        "unit": "millionTokens",
+        "condition": "2026-09-22 – 2026-12-31"
+      },
+      {
+        "metric": "output_audio",
+        "usd": "9.00",
+        "unit": "millionTokens",
+        "condition": "2026-09-22 – 2026-12-31"
+      },
+      {
+        "metric": "input_text",
+        "usd": "1.00",
+        "unit": "millionTokens",
+        "condition": "≥ 2027-01-01"
+      },
+      {
+        "metric": "cached_text",
+        "usd": "0.25",
+        "unit": "millionTokens",
+        "condition": "≥ 2027-01-01"
+      },
+      {
+        "metric": "output_audio",
+        "usd": "18.00",
+        "unit": "millionTokens",
+        "condition": "≥ 2027-01-01"
+      }
+    ],
+    "sourceURL": "https://ai.google.dev/gemini-api/docs/pricing"
+  },
+  {
+    "provider": "Google",
+    "modelID": "gemini-3.8-flash-lite-tts",
+    "category": "audio",
+    "rates": [
+      {
+        "metric": "input_text",
+        "usd": "0.50",
+        "unit": "millionTokens",
+        "condition": "2026-09-22 – 2026-12-31"
+      },
+      {
+        "metric": "cached_text",
+        "usd": "0.125",
+        "unit": "millionTokens",
+        "condition": "2026-09-22 – 2026-12-31"
+      },
+      {
+        "metric": "output_audio",
+        "usd": "6.00",
+        "unit": "millionTokens",
+        "condition": "2026-09-22 – 2026-12-31"
+      },
+      {
+        "metric": "input_text",
+        "usd": "1.00",
+        "unit": "millionTokens",
+        "condition": "≥ 2027-01-01"
+      },
+      {
+        "metric": "cached_text",
+        "usd": "0.25",
+        "unit": "millionTokens",
+        "condition": "≥ 2027-01-01"
+      },
+      {
+        "metric": "output_audio",
+        "usd": "12.00",
+        "unit": "millionTokens",
+        "condition": "≥ 2027-01-01"
+      }
+    ],
+    "sourceURL": "https://ai.google.dev/gemini-api/docs/pricing"
+  },
   {
     "provider": "OpenAI",
     "modelID": "gpt-realtime-2.1",

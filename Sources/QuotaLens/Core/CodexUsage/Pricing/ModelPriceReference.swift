@@ -18,7 +18,7 @@ struct ReferencePriceRate: Codable, Sendable {
 }
 
 enum ModelPriceReferenceCatalog {
-    static let verifiedOn = "2026-09-07"
+    static let verifiedOn = "2026-10-07"
     static let entries: [ModelPriceReference] = try! JSONDecoder().decode(
         [ModelPriceReference].self, from: Data(referenceJSON.utf8)
     )

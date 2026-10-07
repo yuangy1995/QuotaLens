@@ -14,8 +14,8 @@ struct ClaudePricingEntry: Codable, Sendable {
 }
 
 enum ClaudeBundledPricingCatalog {
-    static let version = "2026-09-claude-v4"
-    static let publishedAtMs: Int64 = 1_790_121_600_000 // 2026-09-23
+    static let version = "2026-10-claude-v5"
+    static let publishedAtMs: Int64 = 1_791_331_200_000 // 2026-10-07
 
     static let entries: [ClaudePricingEntry] = [
         entry("claude-3-7-sonnet-20250219", input: 3, cached: 0.3, output: 15),
@@ -28,6 +28,7 @@ enum ClaudeBundledPricingCatalog {
         entry("claude-opus-5", input: 5, cached: 0.5, output: 25),
         entry("claude-opus-5-5", input: 4, cached: 0.2, output: 20),
         entry("claude-fable-5", input: 10, cached: 1, output: 50),
+        entry("claude-sonnet-5-5", input: 2, cached: 0.2, output: 10),
         entry("claude-sonnet-5", input: 2, cached: 0.2, output: 10),
         entry("claude-opus-4-8", input: 5, cached: 0.5, output: 25),
         entry("claude-opus-4-7", input: 5, cached: 0.5, output: 25),
@@ -49,7 +50,7 @@ enum ClaudeBundledPricingCatalog {
         "claude-opus-4-8": "2026-05-28", "claude-fable-5": "2026-06-09",
         "claude-mythos-5": "2026-06-09", "claude-sonnet-5": "2026-06-30",
         "claude-opus-5": "2026-07-24", "claude-fable-5-1": "2026-09-01", "claude-mythos-5-1": "2026-09-01",
-        "claude-opus-5-5": "2026-09-22"
+        "claude-opus-5-5": "2026-09-22", "claude-sonnet-5-5": "2026-09-28"
     ]
 
     private static func entry(
